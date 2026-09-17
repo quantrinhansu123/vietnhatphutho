@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ExternalLink, Loader2, Minus, Plus, Printer, RefreshCw, Save, Trash2, X } from 'lucide-react';
+import { ClipboardList, ExternalLink, Loader2, Minus, Plus, Printer, RefreshCw, Save, Trash2, X } from 'lucide-react';
 import { BackButton } from '../../components/layout/NavButtons';
 import { pathFromTab } from '../../routes';
 import SearchableMultiSelect from '../../components/SearchableMultiSelect';
@@ -11,8 +11,8 @@ import {
   type MachineRow
 } from '../danh-sach-may';
 import { normalizeMaterialsInventory, type MaterialRow } from '../kho-nvl';
-import { printSoTronSlip } from './print';
 import { PhieuGiaoCaModal } from './PhieuGiaoCaModal';
+import { SoTronDatePicker, formatNgayVN } from './SoTronDatePicker';
 import { printPhieuGiaoCaSlip } from './printPhieuGiaoCa';
 import { normalizeProductionOrders, type ProductionOrderRow } from '../ke-hoach-san-xuat';
 import type { OrderProductLine } from '../_shared/productionProductHelpers';
@@ -441,6 +441,47 @@ function normalizeSoTronReports(data: unknown): SoTronSavedReport[] {
     .filter((item): item is SoTronSavedReport => Boolean(item && item.id));
 }
 
+/** Cụm nút thao tác inline cho 1 dòng sổ trộn (không dùng three-dots): tự xuống dòng, không chen lấn.
+ *  Theo yêu cầu: CHỈ giữ `In phiếu giao ca` (đã bỏ nút `In A4`). */
+function SoTronRowActions({
+  onEdit,
+  onDelete,
+  onPrintGiaoCa
+}: {
+  onEdit: () => void;
+  onDelete: () => void;
+  onPrintGiaoCa: () => void;
+}) {
+  const btnClass =
+    'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2 py-1 text-xs font-bold transition';
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <button
+        type="button"
+        onClick={onPrintGiaoCa}
+        title="In phiếu giao ca (cho xem và sửa trước khi in)"
+        className={`${btnClass} border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100`}
+      >
+        <Printer className="h-3.5 w-3.5" /> In phiếu giao ca
+      </button>
+      <button
+        type="button"
+        onClick={onEdit}
+        className={`${btnClass} border-slate-200 text-slate-600 hover:bg-slate-50`}
+      >
+        Sửa
+      </button>
+      <button
+        type="button"
+        onClick={onDelete}
+        className={`${btnClass} border-rose-200 text-rose-600 hover:bg-rose-50`}
+      >
+        Xóa
+      </button>
+    </div>
+  );
+}
+
 const inputClass =
   'w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[13px] font-semibold text-slate-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20';
 const numInputClass = `${inputClass} text-right tabular-nums`;
@@ -526,6 +567,19 @@ export function SoTronPanel({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [previewPhieuGiaoCaReport, setPreviewPhieuGiaoCaReport] = useState<SoTronSavedReport | null>(null);
   const [prevTonMap, setPrevTonMap] = useState<Map<string, number>>(new Map());
+  const [hasPrevReport, setHasPrevReport] = useState<boolean | null>(null);
+  const [activeTab, setActiveTab] = useState<'list' | 'form'>('list');
+  const [listFilterDate, setListFilterDate] = useState('');
+  const [listFilterMachine, setListFilterMachine] = useState('');
+  const [listFilterCa, setListFilterCa] = useState('');
+
+  const hasPrevTon = useMemo(() => {
+    if (hasPrevReport === false) return false;
+    if (prevTonMap.size > 0 && Array.from(prevTonMap.values()).some(v => v > 0)) return true;
+    if (banGiaoRows.some(r => parseNum(r.ton_dau_ca) > 0)) return true;
+    if (hasPrevReport === true && prevTonMap.size > 0) return true;
+    return false;
+  }, [hasPrevReport, prevTonMap, banGiaoRows]);
   // Tổng xuất kho NVL theo ngày-máy-ca (Nhập Trong Ngày trong bảng Bàn Giao Ca Sau)
   const [nhapTrongNgayMap, setNhapTrongNgayMap] = useState<Map<string, number>>(new Map());
 
@@ -581,54 +635,6 @@ export function SoTronPanel({
   const nvlRowKey = (materialId: string, ma: string) => {
     const disp = resolveNvlDisplay(materialId, ma, '', '');
     return (disp.material_id || disp.ma_nvl).toLowerCase();
-  };
-
-  // In phiếu đúng mẫu giấy: 1 tờ A4 ngang (cửa sổ in riêng)
-  const handlePrintA4 = () => {
-    printSoTronSlip({
-      ngay,
-      mayCa: orderCombos.map(c => formatMayCa(c.machine, c.ca)).join(' · '),
-      nhanSu: nhanSuText.trim(),
-      lenhSx: selectedLenh,
-      numLan,
-      nvl: nvlRows
-        .filter(row => row.ma_nvl.trim() !== '')
-        .map(row => ({
-          ma_nvl: row.ma_nvl.trim(),
-          ten_nvl: row.ten_nvl.trim(),
-          ten_nvl_sx: row.ten_nvl_sx.trim(),
-          dvt: row.dvt.trim() || 'kg',
-          lan: row.lan.map(v => v.trim()),
-          tong: round2(row.lan.reduce((s, v) => s + parseNum(v), 0))
-        })),
-      sp: spRows
-        .filter(row => row.ten_sp.trim() !== '' || row.ma_sp.trim() !== '')
-        .map(row => ({
-          ma_lenh_sx: row.ma_lenh_sx,
-          ten_sp: row.ten_sp.trim(),
-          so_luong: row.so_luong.trim(),
-          dinh_muc: row.dinh_muc.trim(),
-          trong_luong: row.trong_luong.trim(),
-          ghi_chu: row.ghi_chu.trim()
-        })),
-      loi: loiRows
-        .filter(row => row.ten_loi.trim() !== '')
-        .map(row => ({ ten_loi: row.ten_loi.trim(), so_luong: row.so_luong.trim() })),
-      banGiao: banGiaoRows
-        .filter(row => row.ma_nvl.trim() !== '')
-        .map(row => {
-          const suDung = nvlUsageOf(row.material_id, row.ma_nvl);
-          return {
-            ma_nvl: row.ma_nvl.trim(),
-            ten_nvl: `${row.ten_nvl.trim()}${row.ten_nvl_sx.trim() ? ` (${row.ten_nvl_sx.trim()})` : ''}`,
-            lay_trong_kho: row.lay_trong_kho.trim(),
-            ton_dau_ca: row.ton_dau_ca.trim(),
-            tong_su_dung: suDung,
-            ton_cuoi_ca: round2(parseNum(row.lay_trong_kho) + parseNum(row.ton_dau_ca) - suDung)
-          };
-        }),
-      ghiChu: ghiChu.trim()
-    });
   };
 
   // Nạp danh mục dùng chung 1 lần
@@ -1055,6 +1061,7 @@ export function SoTronPanel({
     const tenMay = resolved?.name || machineRaw;
     if (!maMay) {
       setPrevTonMap(new Map());
+      setHasPrevReport(null);
       return;
     }
     let alive = true;
@@ -1108,6 +1115,7 @@ export function SoTronPanel({
         });
 
         const prev = candidates[0];
+        setHasPrevReport(Boolean(prev));
         const map = new Map<string, number>();
         if (prev) {
           for (const line of prev.bang_ban_giao) {
@@ -1627,6 +1635,7 @@ export function SoTronPanel({
   useEffect(() => {
     if (!editReport || isLoading || machines.length === 0) return;
     loadReportToForm(editReport);
+    setActiveTab('form');
     onEditConsumed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editReport, isLoading, machines]);
@@ -1643,6 +1652,35 @@ export function SoTronPanel({
     'border border-slate-800 bg-slate-100 px-1 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-700';
   const paperTd = 'border border-slate-700 px-0.5 py-0.5';
 
+  const filteredSavedReports = useMemo(() => {
+    // Chưa chọn ngày thì không hiển thị gì (đúng yêu cầu: chọn ngày mới hiện danh sách).
+    if (!listFilterDate) return [];
+    return savedReports.filter(r => {
+      if (r.ngay !== listFilterDate) return false;
+      if (listFilterMachine) {
+        const m = listFilterMachine.toLowerCase();
+        if (!(r.ma_may?.toLowerCase().includes(m) || r.ten_may?.toLowerCase().includes(m))) return false;
+      }
+      if (listFilterCa && r.ca !== listFilterCa) return false;
+      return true;
+    });
+  }, [savedReports, listFilterDate, listFilterMachine, listFilterCa]);
+
+  const handleDeleteSavedReport = async (id: string) => {
+    if (!window.confirm('Xóa sổ trộn này?')) return;
+    try {
+      const res = await fetch(`/api/so-tron/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (res.ok) {
+        setSavedReports(prev => prev.filter(r => r.id !== id));
+        if (editingId === id) resetForm();
+      } else {
+        alert('Không thể xóa sổ trộn.');
+      }
+    } catch {
+      alert('Không thể xóa sổ trộn.');
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center gap-2 py-16 text-sm font-semibold text-slate-500">
@@ -1653,21 +1691,62 @@ export function SoTronPanel({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-start gap-3">
-        <BackButton onClick={onBack} />
-        <div className="min-w-0 flex-1">
-          <h2 className="font-display text-base font-semibold tracking-tight text-slate-900">Báo cáo theo ngày - máy - ca - lệnh sản xuất</h2>
-          <p className="mt-0.5 text-[11.5px] leading-snug text-slate-500">
-            Báo cáo cuối ngày của công nhân — Chi nhánh Phú Thọ. Chọn ngày + máy + ca để lọc lệnh SX rồi fill số liệu.
-          </p>
+      {/* 2 Tabs ở đầu: 1. Danh sách, 2. Thêm sổ trộn */}
+      <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 pt-2 rounded-xl shadow-2xs">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setActiveTab('list')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-bold border-b-2 transition -mb-[1px] ${
+              activeTab === 'list'
+                ? 'border-indigo-600 text-indigo-600'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <ClipboardList className="h-4 w-4" />
+            Danh sách
+            {savedReports.length > 0 && (
+              <span
+                className={`ml-1 px-1.5 py-0.5 text-[11px] rounded-full font-semibold ${
+                  activeTab === 'list' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {savedReports.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (activeTab === 'list' && !editingId) {
+                resetForm();
+              }
+              setActiveTab('form');
+            }}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-bold border-b-2 transition -mb-[1px] ${
+              activeTab === 'form'
+                ? 'border-indigo-600 text-indigo-600'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Plus className="h-4 w-4" />
+            {editingId ? 'Sửa sổ trộn' : 'Thêm sổ trộn'}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onOpenList}
-          className="shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
-        >
-          Danh sách
-        </button>
+
+        {activeTab === 'list' && (
+          <button
+            type="button"
+            onClick={() => {
+              resetForm();
+              setActiveTab('form');
+            }}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition shadow-xs"
+          >
+            <Plus className="h-3.5 w-3.5" /> Thêm sổ trộn mới
+          </button>
+        )}
       </div>
 
       {message && (
@@ -1684,7 +1763,141 @@ export function SoTronPanel({
         </div>
       )}
 
-      {/* 1. Header: ngày + máy + ca */}
+      {/* TAB 1: DANH SÁCH */}
+      {activeTab === 'list' && (
+        <div className="space-y-3">
+          {/* Bộ lọc cho danh sách */}
+          <div className={`${cardClass} p-3`}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 text-xs">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Chọn Ngày:</label>
+                <SoTronDatePicker value={listFilterDate} onChange={setListFilterDate} />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Lọc theo máy:</label>
+                <select
+                  value={listFilterMachine}
+                  onChange={e => setListFilterMachine(e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">-- Tất cả máy --</option>
+                  {machines.map(m => {
+                    const value = m.code || m.name;
+                    const label =
+                      m.name && m.code && m.name !== m.code ? `${m.name} (${m.code})` : m.name || m.code;
+                    return (
+                      <option key={m.id || value} value={value}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Lọc theo ca:</label>
+                <select
+                  value={listFilterCa}
+                  onChange={e => setListFilterCa(e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">-- Tất cả ca --</option>
+                  {shiftOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="mt-2.5 border-t border-slate-100 pt-2.5">
+              <p className="text-[11.5px] font-semibold text-slate-500">
+                {!listFilterDate
+                  ? 'Chọn ngày để xem danh sách sổ trộn'
+                  : `Ngày ${formatNgayVN(listFilterDate)}: ${filteredSavedReports.length} phiếu`}
+              </p>
+            </div>
+          </div>
+
+          {/* Bảng danh sách */}
+          <div className={`${cardClass} overflow-hidden`}>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[980px] text-left text-[12.5px]">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+                    <th className="w-12 px-3 py-2.5 text-center">STT</th>
+                    <th className="w-24 px-3 py-2.5">Ngày</th>
+                    <th className="w-28 px-3 py-2.5">Máy</th>
+                    <th className="w-20 px-3 py-2.5">Ca</th>
+                    <th className="px-3 py-2.5">Lệnh SX</th>
+                    <th className="px-3 py-2.5">Nhân sự</th>
+                    <th className="w-[300px] px-3 py-2.5 text-right">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSavedReports.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-3 py-8 text-center font-semibold text-slate-400">
+                        {!listFilterDate
+                          ? 'Vui lòng chọn ngày để xem danh sách sổ trộn.'
+                          : `Ngày ${formatNgayVN(listFilterDate)} chưa có sổ trộn nào phù hợp.`}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredSavedReports.map((report, idx) => (
+                      <tr key={report.id} className="border-b border-slate-50 hover:bg-slate-50/70 transition last:border-0">
+                        <td className="px-3 py-2.5 text-center text-slate-400">{idx + 1}</td>
+                        <td className="px-3 py-2.5 font-bold tabular-nums text-slate-800">{report.ngay}</td>
+                        <td className="px-3 py-2.5 font-semibold text-slate-800">{report.ten_may || report.ma_may}</td>
+                        <td className="px-3 py-2.5">
+                          <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            {report.ca}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 font-mono text-[11.5px] text-slate-700">
+                          {report.lenh_sx.map(l => l.ma_lenh).join(', ') || '—'}
+                        </td>
+                        <td className="max-w-[220px] truncate px-3 py-2.5 text-slate-600" title={report.nhan_su}>
+                          {report.nhan_su || '—'}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <SoTronRowActions
+                            onEdit={() => {
+                              loadReportToForm(report);
+                              setActiveTab('form');
+                            }}
+                            onDelete={() => void handleDeleteSavedReport(report.id)}
+                            onPrintGiaoCa={() => setPreviewPhieuGiaoCaReport(report)}
+                          />
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: NHẬP / SỬA SỔ TRỘN */}
+      {activeTab === 'form' && (
+        <div className="space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="font-display text-base font-semibold tracking-tight text-slate-900">
+                {editingId ? 'Chỉnh sửa sổ trộn' : 'Báo cáo theo ngày - máy - ca - lệnh sản xuất'}
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('list')}
+              className="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 transition hover:bg-slate-50 flex items-center gap-1"
+            >
+              <ClipboardList className="w-3.5 h-3.5" /> Xem danh sách
+            </button>
+          </div>
+
+          {/* 1. Header: ngày + máy + ca */}
           <section className={`${cardClass} space-y-3 p-4`}>
             <SectionHeader
               index="1"
@@ -2329,6 +2542,11 @@ export function SoTronPanel({
                 title="Nhựa bàn giao ca sau"
                 desc="Loại nhựa tự fill theo phiếu trộn. Nhập Trong Ngày = tự lấy từ phiếu xuất kho NVL theo ngày-máy-ca. Nhập Ca Trước = tồn cuối kỳ trước (so_tron cùng máy, ca trước). Tồn cuối = Nhập Trong Ngày + Nhập Ca Trước − tổng sử dụng."
               />
+              {!hasPrevTon && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600">
+                  Chưa có bàn giao ca trước
+                </div>
+              )}
               <button
                 type="button"
                 onClick={applyPrevTon}
@@ -2412,374 +2630,137 @@ export function SoTronPanel({
           </>)}
           {/* 3. Tờ phiếu nhập liệu kiểu sổ giấy (hiện sau khi chọn lệnh SX — giống mẫu hình) */}
           {selectedLenh.length > 0 && (
-            <section className="overflow-hidden rounded-xl border-2 border-slate-800 bg-white shadow-card">
-              {/* Đầu phiếu: Ngày + Nhân sự chạy máy */}
-              <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-1 border-b-2 border-slate-800 px-3 py-2 text-[13px] font-semibold text-slate-900">
-                <span>
-                  Ngày{' '}
-                  <span className="inline-block min-w-[28px] border-b border-dotted border-slate-400 px-1 text-center font-bold tabular-nums">
-                    {ngay.slice(8, 10) || '...'}
-                  </span>{' '}
-                  Tháng{' '}
-                  <span className="inline-block min-w-[28px] border-b border-dotted border-slate-400 px-1 text-center font-bold tabular-nums">
-                    {ngay.slice(5, 7) || '...'}
-                  </span>{' '}
-                  Năm{' '}
-                  <span className="inline-block min-w-[48px] border-b border-dotted border-slate-400 px-1 text-center font-bold tabular-nums">
-                    {ngay.slice(0, 4) || '...'}
+            <section className="overflow-x-auto rounded-xl border-2 border-slate-800 bg-white shadow-card">
+              <div className="min-w-[1220px]">
+                {/* Đầu phiếu: Ngày + Nhân sự chạy máy */}
+                <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-1 border-b-2 border-slate-800 px-3 py-2 text-[13px] font-semibold text-slate-900">
+                  <span>
+                    Ngày{' '}
+                    <span className="inline-block min-w-[28px] border-b border-dotted border-slate-400 px-1 text-center font-bold tabular-nums">
+                      {ngay.slice(8, 10) || '...'}
+                    </span>{' '}
+                    Tháng{' '}
+                    <span className="inline-block min-w-[28px] border-b border-dotted border-slate-400 px-1 text-center font-bold tabular-nums">
+                      {ngay.slice(5, 7) || '...'}
+                    </span>{' '}
+                    Năm{' '}
+                    <span className="inline-block min-w-[48px] border-b border-dotted border-slate-400 px-1 text-center font-bold tabular-nums">
+                      {ngay.slice(0, 4) || '...'}
+                    </span>
                   </span>
-                </span>
-                <span className="min-w-0 flex-1 text-right">
-                  Nhân sự chạy máy:{' '}
-                  <span className="font-bold text-slate-900">{nhanSuText.trim() || '...'}</span>
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-300 px-3 py-1.5 text-[11.5px] font-semibold text-slate-600">
-                <span className="min-w-0">
-                  Máy-Ca: <span className="font-bold text-slate-800">{orderCombos.map(c => formatMayCa(c.machine, c.ca)).join(' · ') || '...'}</span>
-                  {' '}· Lệnh: <span className="font-bold text-slate-800">{selectedLenh.join(', ')}</span>
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => resizeLan(numLan - 1)}
-                    disabled={numLan <= 1}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-                    title="Bớt 1 lần trộn"
-                  >
-                    <Minus className="h-3.5 w-3.5" />
-                  </button>
-                  <span className="min-w-[52px] text-center text-[12px] font-bold tabular-nums">{numLan} lần</span>
-                  <button
-                    type="button"
-                    onClick={() => resizeLan(numLan + 1)}
-                    disabled={numLan >= SO_LAN_TRON_TOI_DA}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-                    title="Thêm 1 lần trộn"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                </span>
-              </div>
-
-              {/* Bảng NVL trộn thực tế: Nguyên liệu | ĐVT | L1..Ln | Tổng */}
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-center" style={{ minWidth: 360 + numLan * 64 }}>
-                  <thead>
-                    <tr>
-                      <th rowSpan={2} className={`${paperTh} min-w-[150px]`}>Nguyên Liệu</th>
-                      <th rowSpan={2} className={`${paperTh} w-[56px]`}>ĐVT</th>
-                      <th colSpan={numLan} className={paperTh}>Trọng Lượng</th>
-                      <th rowSpan={2} className={`${paperTh} w-[70px]`}>Tổng</th>
-                      <th rowSpan={2} className={`${paperTh} w-[30px]`} />
-                    </tr>
-                    <tr>
-                      {Array.from({ length: numLan }, (_, i) => (
-                        <th key={i} className="border border-slate-800 bg-slate-50 px-0 py-1 text-[11px] font-bold tabular-nums text-slate-700">
-                          L{i + 1}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {nvlRows.length === 0 && (
-                      <tr>
-                        <td colSpan={numLan + 4} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
-                          Chưa có NVL — kiểm tra cối trộn mẫu của lệnh hoặc thêm NVL khác bên dưới.
-                        </td>
-                      </tr>
-                    )}
-                    {nvlRows.map((row, ri) => (
-                      <tr key={row.key}>
-                        <td className="border border-slate-700 px-1 py-0.5 text-left">
-                          <div className="text-[12.5px] font-bold text-slate-800">{row.ma_nvl || '—'}</div>
-                          {row.ten_nvl ? <div className="text-[11px] text-slate-500">{row.ten_nvl}</div> : null}
-                          {row.ten_nvl_sx ? (
-                            <div className="text-[11px] italic text-slate-400">{row.ten_nvl_sx}</div>
-                          ) : null}
-                          {row.nguon.length > 0 ? (
-                            <div className="text-[10.5px] font-semibold text-slate-400">{row.nguon.join(', ')}</div>
-                          ) : null}
-                        </td>
-                        <td className={paperTd}>
-                          <input
-                            value={row.dvt}
-                            onChange={e =>
-                              setNvlRows(rows => rows.map((r, i) => (i === ri ? { ...r, dvt: e.target.value } : r)))
-                            }
-                            className={paperCellInput}
-                          />
-                        </td>
-                        {row.lan.map((cell, li) => (
-                          <td key={li} className={paperTd}>
-                            <input
-                              inputMode="decimal"
-                              value={cell}
-                              onChange={e =>
-                                setNvlRows(rows =>
-                                  rows.map((r, i) =>
-                                    i === ri ? { ...r, lan: r.lan.map((c, j) => (j === li ? e.target.value : c)) } : r
-                                  )
-                                )
-                              }
-                              className={paperCellInput}
-                            />
-                          </td>
-                        ))}
-                        <td className="border border-slate-700 px-1 py-0.5 text-right text-[13px] font-bold tabular-nums">
-                          {formatQty(round2(row.lan.reduce((sum, v) => sum + parseNum(v), 0)))}
-                        </td>
-                        <td className="border border-slate-700 px-0.5 py-0.5">
-                          <button
-                            type="button"
-                            onClick={() => setNvlRows(rows => rows.filter((_, i) => i !== ri))}
-                            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:bg-rose-50 hover:text-rose-600"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-300 px-3 py-1.5">
-                <div className="min-w-[220px] flex-1">
-                  <SearchableMultiSelect<MaterialRow>
-                    values={[]}
-                    onChange={sel => addExtraNvls(sel)}
-                    options={mainMaterials}
-                    placeholder="Thêm NVL khác (chỉ NVL chính, gõ để tìm)..."
-                    getValue={m => m.id || m.code}
-                    getLabel={materialOptionLabel}
-                    getSearchText={materialOptionSearch}
-                    allowCustomValues={false}
-                    hideSelectedFromList
-                    keepOptionsOrder
-                    maxResults={100}
-                    inputClassName={inputClass}
-                  />
+                  <span className="min-w-0 flex-1 text-right">
+                    Nhân sự chạy máy:{' '}
+                    <span className="font-bold text-slate-900">{nhanSuText.trim() || '...'}</span>
+                  </span>
                 </div>
-                <span className="text-[12.5px] font-bold text-slate-700">
-                  Tổng sử dụng: <span className="tabular-nums text-brand-600">{formatQty(tongSuDungChung)} kg</span>
-                </span>
-              </div>
-
-              {/* Dòng tổng sản phẩm của quá trình chạy máy */}
-              <p className="border-y-2 border-slate-800 px-3 py-1.5 text-[13px] font-semibold text-slate-900">
-                Sản phẩm của quá trình chạy máy:{' '}
-                <span className="font-bold tabular-nums">{formatQty(round2(paperSpTotalTrongLuong))}</span> kg
-              </p>
-
-              {/* 3 bảng cạnh nhau: Sản phẩm | Hàng lỗi hỏng | Nhựa bàn giao ca sau */}
-              <div className="grid grid-cols-1 lg:grid-cols-12">
-                {/* Sản phẩm */}
-                <div className="border-b-2 border-slate-800 lg:col-span-5 lg:border-b-0 lg:border-r-2">
-                  <p className="border-b border-slate-800 bg-slate-100 py-1 text-center text-[12px] font-bold uppercase tracking-wide">
-                    Sản Phẩm
-                  </p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[440px] border-collapse text-center">
-                      <thead>
-                        <tr>
-                          <th className={`${paperTh} w-[64px]`}>Lệnh</th>
-                          <th className={paperTh}>Tên hàng hóa</th>
-                          <th className={`${paperTh} w-[56px]`}>Số Lượng</th>
-                          <th className={`${paperTh} w-[62px]`}>Định mức</th>
-                          <th className={`${paperTh} w-[68px]`}>Trọng lượng</th>
-                          <th className={`${paperTh} w-[70px]`}>Ghi chú</th>
-                          <th className={`${paperTh} w-[28px]`} />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {spRows.length === 0 && (
-                          <tr>
-                            <td colSpan={7} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
-                              Chưa có sản phẩm — bấm “Thêm sản phẩm”.
-                            </td>
-                          </tr>
-                        )}
-                        {spRows.map((row, ri) => (
-                          <tr key={row.key}>
-                            <td className={paperTd}>
-                              <select
-                                value={row.ma_lenh_sx}
-                                onChange={e =>
-                                  setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, ma_lenh_sx: e.target.value } : r)))
-                                }
-                                className={paperCellInput}
-                              >
-                                <option value="">—</option>
-                                {selectedLenh.map(code => (
-                                  <option key={code} value={code}>
-                                    {code}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className={paperTd}>
-                              <input
-                                value={row.ten_sp}
-                                list={`so-tron-paper-sp-${row.key}`}
-                                onChange={e => {
-                                  const value = e.target.value;
-                                  setSpRows(rows =>
-                                    rows.map((r, i) => {
-                                      if (i !== ri) return r;
-                                      const hit = productSuggestions.find(s => s.value === value || s.label === value);
-                                      return {
-                                        ...r,
-                                        ten_sp: value,
-                                        ma_sp: hit ? hit.maSp : r.ma_sp,
-                                        ma_lenh_sx: hit && !r.ma_lenh_sx ? hit.maLenh : r.ma_lenh_sx
-                                      };
-                                    })
-                                  );
-                                }}
-                                placeholder="Tên hàng / mã SP"
-                                className={paperCellInputLeft}
-                              />
-                              <datalist id={`so-tron-paper-sp-${row.key}`}>
-                                {productSuggestions.map(s => (
-                                  <option key={`${s.maLenh}-${s.maSp}`} value={s.value}>
-                                    {s.label}
-                                  </option>
-                                ))}
-                              </datalist>
-                            </td>
-                            <td className={paperTd}>
-                              <input
-                                value={row.so_luong}
-                                onChange={e =>
-                                  setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, so_luong: e.target.value } : r)))
-                                }
-                                className={paperCellInput}
-                              />
-                            </td>
-                            <td className={paperTd}>
-                              <input
-                                value={row.dinh_muc}
-                                onChange={e =>
-                                  setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, dinh_muc: e.target.value } : r)))
-                                }
-                                className={paperCellInput}
-                              />
-                            </td>
-                            <td className={paperTd}>
-                              <input
-                                value={row.trong_luong}
-                                onChange={e =>
-                                  setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, trong_luong: e.target.value } : r)))
-                                }
-                                className={paperCellInput}
-                              />
-                            </td>
-                            <td className={paperTd}>
-                              <input
-                                value={row.ghi_chu}
-                                onChange={e =>
-                                  setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, ghi_chu: e.target.value } : r)))
-                                }
-                                className={paperCellInputLeft}
-                              />
-                            </td>
-                            <td className="border border-slate-700 px-0.5 py-0.5">
-                              <button
-                                type="button"
-                                onClick={() => setSpRows(rows => rows.filter((_, i) => i !== ri))}
-                                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:bg-rose-50 hover:text-rose-600"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                        {spRows.length > 0 && (
-                          <tr className="bg-slate-50 font-bold">
-                            <td colSpan={2} className="border border-slate-700 px-1 py-1 text-left text-[12px]">Cộng</td>
-                            <td className="border border-slate-700 px-1 py-1 text-right tabular-nums">{formatQty(round2(paperSpTotalSoLuong))}</td>
-                            <td className="border border-slate-700" />
-                            <td className="border border-slate-700 px-1 py-1 text-right tabular-nums">{formatQty(round2(paperSpTotalTrongLuong))}</td>
-                            <td colSpan={2} className="border border-slate-700" />
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="p-1.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-300 px-3 py-1.5 text-[11.5px] font-semibold text-slate-600">
+                  <span className="min-w-0">
+                    Máy-Ca: <span className="font-bold text-slate-800">{orderCombos.map(c => formatMayCa(c.machine, c.ca)).join(' · ') || '...'}</span>
+                    {' '}· Lệnh: <span className="font-bold text-slate-800">{selectedLenh.join(', ')}</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={() =>
-                        setSpRows(rows => [
-                          ...rows,
-                          {
-                            key: uid(),
-                            ma_lenh_sx: selectedLenh[0] || '',
-                            ma_sp: '',
-                            ten_sp: '',
-                            so_luong: '',
-                            dinh_muc: '',
-                            trong_luong: '',
-                            ghi_chu: ''
-                          }
-                        ])
-                      }
-                      className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                      onClick={() => resizeLan(numLan - 1)}
+                      disabled={numLan <= 1}
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                      title="Bớt 1 lần trộn"
                     >
-                      <Plus className="h-3.5 w-3.5" /> Thêm sản phẩm
+                      <Minus className="h-3.5 w-3.5" />
                     </button>
-                  </div>
+                    <span className="min-w-[52px] text-center text-[12px] font-bold tabular-nums">{numLan} lần</span>
+                    <button
+                      type="button"
+                      onClick={() => resizeLan(numLan + 1)}
+                      disabled={numLan >= SO_LAN_TRON_TOI_DA}
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                      title="Thêm 1 lần trộn"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
                 </div>
 
-                {/* Hàng lỗi hỏng */}
-                <div className="border-b-2 border-slate-800 lg:col-span-3 lg:border-b-0 lg:border-r-2">
-                  <p className="border-b border-slate-800 bg-slate-100 py-1 text-center text-[12px] font-bold uppercase tracking-wide">
-                    Hàng Lỗi Hỏng
-                  </p>
-                  <table className="w-full border-collapse text-center">
+                {/* Bảng NVL trộn thực tế: Nguyên liệu | ĐVT | L1..Ln | Tổng */}
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-center" style={{ minWidth: 426 + numLan * 64 }}>
+                    <colgroup>
+                      <col style={{ width: '260px', minWidth: '260px' }} />
+                      <col style={{ width: '56px', minWidth: '56px' }} />
+                      {Array.from({ length: numLan }, (_, i) => (
+                        <col key={i} style={{ width: '64px', minWidth: '64px' }} />
+                      ))}
+                      <col style={{ width: '76px', minWidth: '76px' }} />
+                      <col style={{ width: '34px', minWidth: '34px' }} />
+                    </colgroup>
                     <thead>
                       <tr>
-                        <th className={`${paperTh} w-[36px]`}>Stt</th>
-                        <th className={paperTh}>Tên Lỗi</th>
-                        <th className={`${paperTh} w-[76px]`}>Số lượng</th>
-                        <th className={`${paperTh} w-[28px]`} />
+                        <th rowSpan={2} className={`${paperTh} w-[260px] min-w-[260px] max-w-[280px]`}>Nguyên Liệu</th>
+                        <th rowSpan={2} className={`${paperTh} w-[56px] min-w-[56px]`}>ĐVT</th>
+                        <th colSpan={numLan} className={paperTh}>Trọng Lượng</th>
+                        <th rowSpan={2} className={`${paperTh} w-[76px] min-w-[76px]`}>Tổng</th>
+                        <th rowSpan={2} className={`${paperTh} w-[34px] min-w-[34px]`} />
+                      </tr>
+                      <tr>
+                        {Array.from({ length: numLan }, (_, i) => (
+                          <th key={i} className="border border-slate-800 bg-slate-50 px-0 py-1 text-[11px] font-bold tabular-nums text-slate-700 w-[64px] min-w-[64px]">
+                            L{i + 1}
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {loiRows.length === 0 && (
+                      {nvlRows.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
-                            Không có hàng lỗi.
+                          <td colSpan={numLan + 4} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
+                            Chưa có NVL — kiểm tra cối trộn mẫu của lệnh hoặc thêm NVL khác bên dưới.
                           </td>
                         </tr>
                       )}
-                      {loiRows.map((row, ri) => (
+                      {nvlRows.map((row, ri) => (
                         <tr key={row.key}>
-                          <td className="border border-slate-700 px-1 py-1 tabular-nums text-slate-500">{ri + 1}</td>
-                          <td className={paperTd}>
-                            <input
-                              value={row.ten_loi}
-                              onChange={e =>
-                                setLoiRows(rows => rows.map((r, i) => (i === ri ? { ...r, ten_loi: e.target.value } : r)))
-                              }
-                              placeholder="VD: PDK..."
-                              className={paperCellInputLeft}
-                            />
+                          <td className="border border-slate-700 px-2 py-1 text-left w-[260px] min-w-[260px] max-w-[280px] break-words">
+                            <div className="text-[12.5px] font-bold text-slate-800">{row.ma_nvl || '—'}</div>
+                            {row.ten_nvl ? <div className="text-[11px] text-slate-500">{row.ten_nvl}</div> : null}
+                            {row.ten_nvl_sx ? (
+                              <div className="text-[11px] italic text-slate-400">{row.ten_nvl_sx}</div>
+                            ) : null}
+                            {row.nguon.length > 0 ? (
+                              <div className="text-[10.5px] font-semibold text-slate-400">{row.nguon.join(', ')}</div>
+                            ) : null}
                           </td>
-                          <td className={paperTd}>
+                          <td className={`${paperTd} w-[56px] min-w-[56px]`}>
                             <input
-                              inputMode="decimal"
-                              value={row.so_luong}
+                              value={row.dvt}
                               onChange={e =>
-                                setLoiRows(rows => rows.map((r, i) => (i === ri ? { ...r, so_luong: e.target.value } : r)))
+                                setNvlRows(rows => rows.map((r, i) => (i === ri ? { ...r, dvt: e.target.value } : r)))
                               }
                               className={paperCellInput}
                             />
                           </td>
-                          <td className="border border-slate-700 px-0.5 py-0.5">
+                          {row.lan.map((cell, li) => (
+                            <td key={li} className={`${paperTd} w-[64px] min-w-[64px]`}>
+                              <input
+                                inputMode="decimal"
+                                value={cell}
+                                onChange={e =>
+                                  setNvlRows(rows =>
+                                    rows.map((r, i) =>
+                                      i === ri ? { ...r, lan: r.lan.map((c, j) => (j === li ? e.target.value : c)) } : r
+                                    )
+                                  )
+                                }
+                                className={paperCellInput}
+                              />
+                            </td>
+                          ))}
+                          <td className="border border-slate-700 px-1 py-0.5 text-right text-[13px] font-bold tabular-nums w-[76px] min-w-[76px]">
+                            {formatQty(round2(row.lan.reduce((sum, v) => sum + parseNum(v), 0)))}
+                          </td>
+                          <td className="border border-slate-700 px-0.5 py-0.5 w-[34px] min-w-[34px]">
                             <button
                               type="button"
-                              onClick={() => setLoiRows(rows => rows.filter((_, i) => i !== ri))}
+                              onClick={() => setNvlRows(rows => rows.filter((_, i) => i !== ri))}
                               className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:bg-rose-50 hover:text-rose-600"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -2787,103 +2768,359 @@ export function SoTronPanel({
                           </td>
                         </tr>
                       ))}
-                      {loiRows.length > 0 && (
-                        <tr className="bg-slate-50 font-bold">
-                          <td colSpan={2} className="border border-slate-700 px-1 py-1 text-left text-[12px]">Cộng tổng</td>
-                          <td className="border border-slate-700 px-1 py-1 text-right tabular-nums">{formatQty(round2(paperLoiTotal))}</td>
-                          <td className="border border-slate-700" />
-                        </tr>
-                      )}
                     </tbody>
                   </table>
-                  <div className="p-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setLoiRows(rows => [...rows, { key: uid(), ten_loi: '', so_luong: '' }])}
-                      className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
-                    >
-                      <Plus className="h-3.5 w-3.5" /> Thêm lỗi
-                    </button>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-300 px-3 py-1.5">
+                  <div className="min-w-[220px] flex-1">
+                    <SearchableMultiSelect<MaterialRow>
+                      values={[]}
+                      onChange={sel => addExtraNvls(sel)}
+                      options={mainMaterials}
+                      placeholder="Thêm NVL khác (chỉ NVL chính, gõ để tìm)..."
+                      getValue={m => m.id || m.code}
+                      getLabel={materialOptionLabel}
+                      getSearchText={materialOptionSearch}
+                      allowCustomValues={false}
+                      hideSelectedFromList
+                      keepOptionsOrder
+                      maxResults={100}
+                      inputClassName={inputClass}
+                    />
                   </div>
+                  <span className="text-[12.5px] font-bold text-slate-700">
+                    Tổng sử dụng: <span className="tabular-nums text-brand-600">{formatQty(tongSuDungChung)} kg</span>
+                  </span>
                 </div>
 
-                {/* Nhựa bàn giao ca sau */}
-                <div className="lg:col-span-4">
-                  <p className="border-b border-slate-800 bg-slate-100 py-1 text-center text-[12px] font-bold uppercase tracking-wide">
-                    Nhựa Bàn Giao Ca Sau
-                  </p>
-                  <table className="w-full border-collapse text-center">
-                    <thead>
-                      <tr>
-                        <th className={paperTh}>Loại Nhựa</th>
-                        <th className={`${paperTh} w-[76px]`}>Nhập Trong Ngày</th>
-                        <th className={`${paperTh} w-[76px]`}>Nhập Ca Trước</th>
-                        <th className={`${paperTh} w-[76px]`}>Tồn Cuối Ca</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {banGiaoRows.length === 0 && (
-                        <tr>
-                          <td colSpan={4} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
-                            Chưa có loại nhựa.
-                          </td>
-                        </tr>
-                      )}
-                      {banGiaoRows.map((row, ri) => {
-                        const suDung = nvlUsageOf(row.material_id, row.ma_nvl);
-                        const tonCuoi = round2(parseNum(row.lay_trong_kho) + parseNum(row.ton_dau_ca) - suDung);
-                        return (
-                          <tr key={row.key}>
-                            <td className="border border-slate-700 px-1 py-0.5 text-left">
-                              <div className="text-[12.5px] font-bold text-slate-800">{row.ma_nvl || '—'}</div>
-                              {row.ten_nvl ? <div className="text-[11px] text-slate-500">{row.ten_nvl}</div> : null}
-                              {row.ten_nvl_sx ? (
-                                <div className="text-[11px] italic text-slate-400">{row.ten_nvl_sx}</div>
-                              ) : null}
-                            </td>
-                            <td className={paperTd}>
-                              <input
-                                inputMode="decimal"
-                                value={row.lay_trong_kho}
-                                onChange={e =>
-                                  setBanGiaoRows(rows =>
-                                    rows.map((r, i) => (i === ri ? { ...r, lay_trong_kho: e.target.value } : r))
-                                  )
-                                }
-                                className={paperCellInput}
-                              />
-                            </td>
-                            <td className={paperTd}>
-                              <input
-                                inputMode="decimal"
-                                value={row.ton_dau_ca}
-                                onChange={e =>
-                                  setBanGiaoRows(rows =>
-                                    rows.map((r, i) =>
-                                      i === ri ? { ...r, ton_dau_ca: e.target.value, ton_dau_tu_dong: false } : r
-                                    )
-                                  )
-                                }
-                                className={paperCellInput}
-                              />
-                            </td>
-                            <td className="border border-slate-700 px-1 py-0.5 text-right text-[13px] font-bold tabular-nums text-brand-700">
-                              {formatQty(tonCuoi)}
-                            </td>
+                {/* 3 bảng cạnh nhau: Sản phẩm | Hàng lỗi hỏng | Nhựa bàn giao ca sau */}
+                <div className="border-t-2 border-slate-800 flex flex-col lg:flex-row divide-y-2 lg:divide-y-0 lg:divide-x-2 divide-slate-800">
+                  {/* Sản phẩm */}
+                  <div className="min-w-[580px] flex-1 flex flex-col justify-between">
+                    <div>
+                      <p className="border-b border-slate-800 bg-slate-100 py-1 text-center text-[12px] font-bold uppercase tracking-wide">
+                        Sản Phẩm
+                      </p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[580px] border-collapse text-center">
+                          <thead>
+                            <tr>
+                              <th className={`${paperTh} w-[140px] min-w-[130px]`}>Lệnh SX</th>
+                              <th className={`${paperTh} min-w-[180px]`}>Tên hàng hóa</th>
+                              <th className={`${paperTh} w-[56px] min-w-[50px]`}>Số Lượng</th>
+                              <th className={`${paperTh} w-[62px] min-w-[56px]`}>Định mức</th>
+                              <th className={`${paperTh} w-[68px] min-w-[60px]`}>Trọng lượng</th>
+                              <th className={`${paperTh} w-[70px] min-w-[64px]`}>Ghi chú</th>
+                              <th className={`${paperTh} w-[28px] min-w-[28px]`} />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {spRows.length === 0 && (
+                              <tr>
+                                <td colSpan={7} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
+                                  Chưa có sản phẩm — bấm “Thêm sản phẩm”.
+                                </td>
+                              </tr>
+                            )}
+                            {spRows.map((row, ri) => (
+                              <tr key={row.key}>
+                                <td className={`${paperTd} w-[140px] min-w-[130px]`}>
+                                  <select
+                                    value={row.ma_lenh_sx}
+                                    onChange={e =>
+                                      setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, ma_lenh_sx: e.target.value } : r)))
+                                    }
+                                    className={`${paperCellInput} font-mono text-[12px] truncate`}
+                                    title={row.ma_lenh_sx}
+                                  >
+                                    <option value="">—</option>
+                                    {selectedLenh.map(code => (
+                                      <option key={code} value={code}>
+                                        {code}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className={`${paperTd} min-w-[180px]`}>
+                                  <input
+                                    value={row.ten_sp}
+                                    list={`so-tron-paper-sp-${row.key}`}
+                                    onChange={e => {
+                                      const value = e.target.value;
+                                      setSpRows(rows =>
+                                        rows.map((r, i) => {
+                                          if (i !== ri) return r;
+                                          const hit = productSuggestions.find(s => s.value === value || s.label === value);
+                                          return {
+                                            ...r,
+                                            ten_sp: value,
+                                            ma_sp: hit ? hit.maSp : r.ma_sp,
+                                            ma_lenh_sx: hit && !r.ma_lenh_sx ? hit.maLenh : r.ma_lenh_sx
+                                          };
+                                        })
+                                      );
+                                    }}
+                                    placeholder="Tên hàng / mã SP"
+                                    className={paperCellInputLeft}
+                                    title={row.ten_sp}
+                                  />
+                                  <datalist id={`so-tron-paper-sp-${row.key}`}>
+                                    {productSuggestions.map(s => (
+                                      <option key={`${s.maLenh}-${s.maSp}`} value={s.value}>
+                                        {s.label}
+                                      </option>
+                                    ))}
+                                  </datalist>
+                                </td>
+                                <td className={`${paperTd} w-[56px] min-w-[50px]`}>
+                                  <input
+                                    value={row.so_luong}
+                                    onChange={e =>
+                                      setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, so_luong: e.target.value } : r)))
+                                    }
+                                    className={paperCellInput}
+                                  />
+                                </td>
+                                <td className={`${paperTd} w-[62px] min-w-[56px]`}>
+                                  <input
+                                    value={row.dinh_muc}
+                                    onChange={e =>
+                                      setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, dinh_muc: e.target.value } : r)))
+                                    }
+                                    className={paperCellInput}
+                                  />
+                                </td>
+                                <td className={`${paperTd} w-[68px] min-w-[60px]`}>
+                                  <input
+                                    value={row.trong_luong}
+                                    onChange={e =>
+                                      setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, trong_luong: e.target.value } : r)))
+                                    }
+                                    className={paperCellInput}
+                                  />
+                                </td>
+                                <td className={`${paperTd} w-[70px] min-w-[64px]`}>
+                                  <input
+                                    value={row.ghi_chu}
+                                    onChange={e =>
+                                      setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, ghi_chu: e.target.value } : r)))
+                                    }
+                                    className={paperCellInputLeft}
+                                  />
+                                </td>
+                                <td className="border border-slate-700 px-0.5 py-0.5 w-[28px] min-w-[28px]">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSpRows(rows => rows.filter((_, i) => i !== ri))}
+                                    className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:bg-rose-50 hover:text-rose-600"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                            {spRows.length > 0 && (
+                              <tr className="bg-slate-50 font-bold">
+                                <td colSpan={2} className="border border-slate-700 px-1 py-1 text-left text-[12px]">Cộng</td>
+                                <td className="border border-slate-700 px-1 py-1 text-right tabular-nums">{formatQty(round2(paperSpTotalSoLuong))}</td>
+                                <td className="border border-slate-700" />
+                                <td className="border border-slate-700 px-1 py-1 text-right tabular-nums">{formatQty(round2(paperSpTotalTrongLuong))}</td>
+                                <td colSpan={2} className="border border-slate-700" />
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                    <div className="p-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSpRows(rows => [
+                            ...rows,
+                            {
+                              key: uid(),
+                              ma_lenh_sx: selectedLenh[0] || '',
+                              ma_sp: '',
+                              ten_sp: '',
+                              so_luong: '',
+                              dinh_muc: '',
+                              trong_luong: '',
+                              ghi_chu: ''
+                            }
+                          ])
+                        }
+                        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Thêm sản phẩm
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Hàng lỗi hỏng */}
+                  <div className="w-[280px] shrink-0 flex flex-col justify-between">
+                    <div>
+                      <p className="border-b border-slate-800 bg-slate-100 py-1 text-center text-[12px] font-bold uppercase tracking-wide">
+                        Hàng Lỗi Hỏng
+                      </p>
+                      <table className="w-full border-collapse text-center">
+                        <thead>
+                          <tr>
+                            <th className={`${paperTh} w-[36px] min-w-[36px]`}>Stt</th>
+                            <th className={`${paperTh} min-w-[140px]`}>Tên Lỗi</th>
+                            <th className={`${paperTh} w-[76px] min-w-[70px]`}>Số lượng</th>
+                            <th className={`${paperTh} w-[28px] min-w-[28px]`} />
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  <div className="p-1.5">
-                    <button
-                      type="button"
-                      onClick={applyPrevTon}
-                      disabled={prevTonMap.size === 0 && nhapTrongNgayMap.size === 0}
-                      className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" /> Đồng bộ xuất kho & tồn ca trước
-                    </button>
+                        </thead>
+                        <tbody>
+                          {loiRows.length === 0 && (
+                            <tr>
+                              <td colSpan={4} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
+                                Không có hàng lỗi.
+                              </td>
+                            </tr>
+                          )}
+                          {loiRows.map((row, ri) => (
+                            <tr key={row.key}>
+                              <td className="border border-slate-700 px-1 py-1 tabular-nums text-slate-500 w-[36px]">{ri + 1}</td>
+                              <td className={`${paperTd} min-w-[140px]`}>
+                                <input
+                                  value={row.ten_loi}
+                                  onChange={e =>
+                                    setLoiRows(rows => rows.map((r, i) => (i === ri ? { ...r, ten_loi: e.target.value } : r)))
+                                  }
+                                  placeholder="VD: PDK..."
+                                  className={paperCellInputLeft}
+                                  title={row.ten_loi}
+                                />
+                              </td>
+                              <td className={`${paperTd} w-[76px] min-w-[70px]`}>
+                                <input
+                                  inputMode="decimal"
+                                  value={row.so_luong}
+                                  onChange={e =>
+                                    setLoiRows(rows => rows.map((r, i) => (i === ri ? { ...r, so_luong: e.target.value } : r)))
+                                  }
+                                  className={paperCellInput}
+                                />
+                              </td>
+                              <td className="border border-slate-700 px-0.5 py-0.5 w-[28px] min-w-[28px]">
+                                <button
+                                  type="button"
+                                  onClick={() => setLoiRows(rows => rows.filter((_, i) => i !== ri))}
+                                  className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:bg-rose-50 hover:text-rose-600"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                          {loiRows.length > 0 && (
+                            <tr className="bg-slate-50 font-bold">
+                              <td colSpan={2} className="border border-slate-700 px-1 py-1 text-left text-[12px]">Cộng tổng</td>
+                              <td className="border border-slate-700 px-1 py-1 text-right tabular-nums">{formatQty(round2(paperLoiTotal))}</td>
+                              <td className="border border-slate-700" />
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="p-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setLoiRows(rows => [...rows, { key: uid(), ten_loi: '', so_luong: '' }])}
+                        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Thêm lỗi
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Nhựa bàn giao ca sau */}
+                  <div className="w-[360px] shrink-0 flex flex-col justify-between">
+                    <div>
+                      <p className="border-b border-slate-800 bg-slate-100 py-1 text-center text-[12px] font-bold uppercase tracking-wide">
+                        Nhựa Bàn Giao Ca Sau
+                      </p>
+                      {!hasPrevTon && (
+                        <p className="border-b border-slate-800 bg-red-50 py-1 text-center text-[11.5px] font-bold text-red-600">
+                          Chưa có bàn giao ca trước
+                        </p>
+                      )}
+                      <table className="w-full border-collapse text-center">
+                        <thead>
+                          <tr>
+                            <th className={`${paperTh} min-w-[110px]`}>Loại Nhựa</th>
+                            <th className={`${paperTh} w-[76px] min-w-[70px]`}>Nhập Trong Ngày</th>
+                            <th className={`${paperTh} w-[76px] min-w-[70px]`}>Nhập Ca Trước</th>
+                            <th className={`${paperTh} w-[76px] min-w-[70px]`}>Tồn Cuối Ca</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {banGiaoRows.length === 0 && (
+                            <tr>
+                              <td colSpan={4} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
+                                Chưa có loại nhựa.
+                              </td>
+                            </tr>
+                          )}
+                          {banGiaoRows.map((row, ri) => {
+                            const suDung = nvlUsageOf(row.material_id, row.ma_nvl);
+                            const tonCuoi = round2(parseNum(row.lay_trong_kho) + parseNum(row.ton_dau_ca) - suDung);
+                            return (
+                              <tr key={row.key}>
+                                <td className="border border-slate-700 px-1 py-0.5 text-left min-w-[110px]">
+                                  <div className="text-[12.5px] font-bold text-slate-800">{row.ma_nvl || '—'}</div>
+                                  {row.ten_nvl ? <div className="text-[11px] text-slate-500">{row.ten_nvl}</div> : null}
+                                  {row.ten_nvl_sx ? (
+                                    <div className="text-[11px] italic text-slate-400">{row.ten_nvl_sx}</div>
+                                  ) : null}
+                                </td>
+                                <td className={`${paperTd} w-[76px] min-w-[70px]`}>
+                                  <input
+                                    inputMode="decimal"
+                                    value={row.lay_trong_kho}
+                                    onChange={e =>
+                                      setBanGiaoRows(rows =>
+                                        rows.map((r, i) => (i === ri ? { ...r, lay_trong_kho: e.target.value } : r))
+                                      )
+                                    }
+                                    className={paperCellInput}
+                                  />
+                                </td>
+                                <td className={`${paperTd} w-[76px] min-w-[70px]`}>
+                                  <input
+                                    inputMode="decimal"
+                                    value={row.ton_dau_ca}
+                                    onChange={e =>
+                                      setBanGiaoRows(rows =>
+                                        rows.map((r, i) =>
+                                          i === ri ? { ...r, ton_dau_ca: e.target.value, ton_dau_tu_dong: false } : r
+                                        )
+                                      )
+                                    }
+                                    className={paperCellInput}
+                                  />
+                                </td>
+                                <td className="border border-slate-700 px-1 py-0.5 text-right text-[13px] font-bold tabular-nums text-brand-700 w-[76px] min-w-[70px]">
+                                  {formatQty(tonCuoi)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="p-1.5">
+                      <button
+                        type="button"
+                        onClick={applyPrevTon}
+                        disabled={prevTonMap.size === 0 && nhapTrongNgayMap.size === 0}
+                        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" /> Đồng bộ xuất kho & tồn ca trước
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2911,14 +3148,6 @@ export function SoTronPanel({
               >
                 {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 {editingId ? 'Cập nhật sổ trộn' : 'Lưu sổ trộn'}
-              </button>
-              <button
-                type="button"
-                onClick={() => handlePrintA4()}
-                disabled={nvlRows.length === 0 && spRows.length === 0}
-                className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-              >
-                <Printer className="h-4 w-4" /> In A4
               </button>
               <button
                 type="button"
@@ -2993,6 +3222,8 @@ export function SoTronPanel({
             </div>
           </section>
           )}
+        </div>
+      )}
 
       {previewPhieuGiaoCaReport && (
         <PhieuGiaoCaModal
@@ -3024,27 +3255,87 @@ export function SoTronListView({
   const [selectedPhieuGiaoCa, setSelectedPhieuGiaoCa] = useState<SoTronSavedReport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState('');
+  const [machines, setMachines] = useState<MachineRow[]>([]);
+  const [shiftOptions, setShiftOptions] = useState<{ value: string; label: string }[]>([]);
+  const [filterDate, setFilterDate] = useState('');
+  const [filterMachine, setFilterMachine] = useState('');
+  const [filterCa, setFilterCa] = useState('');
 
   const load = async () => {
     setIsLoading(true);
+    setMessage('');
+    // Tải danh sách phiếu trước để trang hiển thị ngay khi vào (không chờ danh mục phụ).
     try {
-      const res = await fetch('/api/so-tron?limit=100');
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setReports(normalizeSoTronReports(data));
+      const reportRes = await fetch('/api/so-tron?limit=100');
+      const reportData = await reportRes.json().catch(() => ({}));
+      if (reportRes.ok) {
+        setReports(normalizeSoTronReports(reportData));
       } else {
-        setMessage(str(data.error) || 'Không thể tải danh sách sổ trộn.');
+        setMessage(str(reportData.error) || 'Không thể tải danh sách sổ trộn.');
       }
     } catch {
       setMessage('Không thể tải danh sách sổ trộn.');
     } finally {
       setIsLoading(false);
     }
+    // Danh mục máy + ca tải riêng, lỗi thì bỏ qua (không làm trắng danh sách).
+    try {
+      const [machineRes, settingRes] = await Promise.all([
+        fetch('/api/danh-sach-may'),
+        fetch('/api/cai-dat')
+      ]);
+      const [machineData, settingData] = await Promise.all([
+        machineRes.json().catch(() => ({})),
+        settingRes.json().catch(() => ({}))
+      ]);
+      if (machineRes.ok) {
+        try {
+          const list = normalizeMachines(machineData).filter(
+            m => !m.branch || m.branch === '-' || /phú thọ/i.test(m.branch)
+          );
+          setMachines(list.length > 0 ? list : normalizeMachines(machineData));
+        } catch {
+          setMachines([]);
+        }
+      }
+      if (settingRes.ok) {
+        try {
+          const options = getProductionShiftOptions(normalizeShiftSettings(settingData));
+          setShiftOptions(options.length > 0 ? options : STANDARD_SHIFTS.map(s => ({ value: s, label: s })));
+        } catch {
+          setShiftOptions(STANDARD_SHIFTS.map(s => ({ value: s, label: s })));
+        }
+      } else {
+        setShiftOptions(STANDARD_SHIFTS.map(s => ({ value: s, label: s })));
+      }
+    } catch {
+      setShiftOptions(prev => (prev.length > 0 ? prev : STANDARD_SHIFTS.map(s => ({ value: s, label: s }))));
+    }
   };
 
   useEffect(() => {
     void load();
   }, []);
+
+  const filteredReports = useMemo(() => {
+    // Chưa chọn ngày thì không hiển thị gì (đúng yêu cầu: chọn ngày mới hiện danh sách).
+    if (!filterDate) return [];
+    return reports.filter(r => {
+      if (r.ngay !== filterDate) return false;
+      if (filterMachine) {
+        const m = filterMachine.toLowerCase();
+        if (!(r.ma_may?.toLowerCase().includes(m) || r.ten_may?.toLowerCase().includes(m))) return false;
+      }
+      if (filterCa && r.ca !== filterCa) return false;
+      return true;
+    });
+  }, [reports, filterDate, filterMachine, filterCa]);
+
+  const hasExtraFilter = Boolean(filterMachine || filterCa);
+  const clearFilters = () => {
+    setFilterMachine('');
+    setFilterCa('');
+  };
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Xóa sổ trộn này?')) return;
@@ -3060,14 +3351,10 @@ export function SoTronListView({
   return (
     <div className="space-y-3">
       <div className="flex items-start gap-3">
-        <BackButton onClick={onBack} />
         <div className="min-w-0 flex-1">
           <h2 className="font-display text-base font-semibold tracking-tight text-slate-900">
             Danh sách sổ trộn
           </h2>
-          <p className="mt-0.5 text-[11.5px] leading-snug text-slate-500">
-            Mỗi dòng là 1 máy + 1 ngày + 1 ca. Cuối ngày có nhiều máy, nhiều ca.
-          </p>
         </div>
         <button
           type="button"
@@ -3084,6 +3371,60 @@ export function SoTronListView({
         </div>
       )}
 
+      <div className={`${cardClass} p-3`}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 text-xs">
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Chọn Ngày:</label>
+            <SoTronDatePicker value={filterDate} onChange={setFilterDate} />
+          </div>
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Lọc theo máy:</label>
+            <select value={filterMachine} onChange={e => setFilterMachine(e.target.value)} className={inputClass}>
+              <option value="">-- Tất cả máy --</option>
+              {machines.map(m => {
+                const value = m.code || m.name;
+                const label =
+                  m.name && m.code && m.name !== m.code ? `${m.name} (${m.code})` : m.name || m.code;
+                return (
+                  <option key={m.id || value} value={value}>
+                    {label}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">Lọc theo ca:</label>
+            <select value={filterCa} onChange={e => setFilterCa(e.target.value)} className={inputClass}>
+              <option value="">-- Tất cả ca --</option>
+              {shiftOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2.5">
+          <p className="text-[11.5px] font-semibold text-slate-500">
+            {isLoading
+              ? 'Đang tải...'
+              : !filterDate
+                ? 'Chọn ngày để xem danh sách sổ trộn'
+                : `Ngày ${formatNgayVN(filterDate)}: ${filteredReports.length} phiếu`}
+          </p>
+          {hasExtraFilter && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11.5px] font-bold text-slate-600 transition hover:bg-slate-50"
+            >
+              <X className="h-3.5 w-3.5" /> Xóa bộ lọc
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className={`${cardClass} overflow-hidden`}>
         {isLoading ? (
           <div className="flex items-center justify-center gap-2 py-16 text-sm font-semibold text-slate-500">
@@ -3091,26 +3432,28 @@ export function SoTronListView({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-[12.5px]">
+            <table className="w-full min-w-[980px] text-left text-[12.5px]">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
-                  <th className="px-3 py-2">Ngày</th>
-                  <th className="px-3 py-2">Máy</th>
-                  <th className="px-3 py-2">Ca</th>
+                  <th className="w-24 px-3 py-2">Ngày</th>
+                  <th className="w-32 px-3 py-2">Máy</th>
+                  <th className="w-20 px-3 py-2">Ca</th>
                   <th className="px-3 py-2">Lệnh SX</th>
                   <th className="px-3 py-2">Nhân sự</th>
-                  <th className="px-3 py-2 text-right">Thao tác</th>
+                  <th className="w-[300px] px-3 py-2 text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody>
-                {reports.length === 0 && (
+                {filteredReports.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-3 py-6 text-center font-semibold text-slate-400">
-                      Chưa có sổ trộn nào.
+                      {!filterDate
+                        ? 'Vui lòng chọn ngày để xem danh sách sổ trộn.'
+                        : `Ngày ${formatNgayVN(filterDate)} chưa có sổ trộn nào phù hợp.`}
                     </td>
                   </tr>
                 )}
-                {reports.map(report => (
+                {filteredReports.map(report => (
                   <tr key={report.id} className="border-b border-slate-50 last:border-0">
                     <td className="px-3 py-2 font-bold tabular-nums">{report.ngay}</td>
                     <td className="px-3 py-2 font-semibold">{report.ten_may || report.ma_may}</td>
@@ -3118,30 +3461,11 @@ export function SoTronListView({
                     <td className="px-3 py-2 text-slate-600">{report.lenh_sx.map(l => l.ma_lenh).join(', ')}</td>
                     <td className="max-w-[220px] truncate px-3 py-2 text-slate-600">{report.nhan_su}</td>
                     <td className="px-3 py-2">
-                      <span className="flex justify-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPhieuGiaoCa(report)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 transition"
-                          title="In phiếu giao ca (cho xem và sửa trước khi in)"
-                        >
-                          <Printer className="h-3.5 w-3.5" /> In phiếu giao ca
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onEdit(report)}
-                          className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
-                        >
-                          Sửa
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleDelete(report.id)}
-                          className="rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50"
-                        >
-                          Xóa
-                        </button>
-                      </span>
+                      <SoTronRowActions
+                        onEdit={() => onEdit(report)}
+                        onDelete={() => void handleDelete(report.id)}
+                        onPrintGiaoCa={() => setSelectedPhieuGiaoCa(report)}
+                      />
                     </td>
                   </tr>
                 ))}

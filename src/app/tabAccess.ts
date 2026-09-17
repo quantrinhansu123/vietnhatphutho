@@ -11,6 +11,8 @@ export const TAB_ACCESS_ALIASES: Record<string, string> = {
   'mixing-report': 'mixing-report-list',
   'machine-nvl-report': 'machine-nvl-report-list',
   'so-tron': 'so-tron-list',
+  'so-giao-ca-mmtb': 'so-giao-ca-mmtb-list',
+  'so-che-do-may': 'so-che-do-may-list',
   'machine-downtime-report': 'machine-downtime-list',
   'acceptance-report': 'acceptance-report-list',
   'machine-run-log': 'machine-run-log-list'
@@ -22,7 +24,9 @@ export const TAB_ACCESS_ALIASES: Record<string, string> = {
  */
 export const HUB_IMPLIED_TABS: Record<string, readonly string[]> = {
   'report-forms': [
+    'so-giao-ca-mmtb',
     'so-tron',
+    'so-che-do-may',
     'machine-nvl-report',
     'mixing-report',
     'weighing-summary',
@@ -32,6 +36,9 @@ export const HUB_IMPLIED_TABS: Record<string, readonly string[]> = {
     'acceptance-report',
     'kiem-kho',
     // form ↔ list (nút Danh sách / Sửa)
+    'so-giao-ca-mmtb-list',
+    'so-tron-list',
+    'so-che-do-may-list',
     'machine-nvl-report-list',
     'mixing-report-list',
     'weighing-summary-list',
@@ -41,7 +48,9 @@ export const HUB_IMPLIED_TABS: Record<string, readonly string[]> = {
     'acceptance-report-list'
   ],
   'report-lists': [
+    'so-giao-ca-mmtb-list',
     'so-tron-list',
+    'so-che-do-may-list',
     'machine-nvl-report-list',
     'mixing-report-list',
     'weighing-summary-list',

@@ -17,10 +17,11 @@
 
 | File | Nội dung |
 |------|----------|
-| `src/features/so-tron/index.tsx` | Panel nhập (`SoTronPanel`: props `onBack/onOpenList/editReport/onEditConsumed`) + danh sách (`SoTronListView`: props `onBack/onCreate/onEdit`). Thao tác **In phiếu giao ca** mở modal xem & sửa phiếu trước khi in. |
+| `src/features/so-tron/index.tsx` | Panel nhập (`SoTronPanel`: props `onBack/onOpenList/editReport/onEditConsumed`) + danh sách (`SoTronListView`: props `onBack/onCreate/onEdit`). Cụm nút thao tác dòng dùng `SoTronRowActions` (inline, xem quy ước UI bên dưới). Ô chọn ngày dùng `SoTronDatePicker` (lịch popup 1 nút). |
+| `src/features/so-tron/SoTronDatePicker.tsx` | Lịch popup chọn ngày 1 nút (hiển thị DD/MM/YYYY, lưới tháng T2–CN tiếng Việt, nút Hôm nay/Xóa, đóng khi click ngoài/Esc) + `formatNgayVN`. Chọn năm nhanh: nút « / » nhảy ±1 năm, bấm `Tháng M / YYYY` mở panel gõ năm (1–2999) + lưới 12 tháng. Dùng cho ô lọc ngày ở cả 2 màn hình danh sách + toàn bộ ô ngày sổ MMTB — KHÔNG dùng 3 ô Ngày/Tháng/Năm rời (`VnDatePicker`). |
 | `src/features/so-tron/PhieuGiaoCaModal.tsx` | Modal xem trước & cho phép sửa trực tiếp phiếu giao ca (nhật ký sản xuất) 2 trang chuẩn theo mẫu thực tế (Trang 1: Vật tư L1..L10 + tồn đầu + lấy kho + tồn cuối; Trang 2: Thành phẩm + Hàng lỗi + Sự cố + 4 Chữ ký). Có các nút: Lưu, Lưu & In, In, Đóng. |
 | `src/features/so-tron/printPhieuGiaoCa.ts` | Tạo HTML và kích hoạt in phiếu giao ca 2 trang A4 Portrait (`@page size: A4 portrait`). |
-| `src/features/so-tron/print.ts` | Phiếu in đúng mẫu giấy: 1 tờ A4 ngang (`@page landscape`, font 7.5–9pt, `table-layout: fixed`). Header Ngày/Máy-Ca/Nhân sự → bảng NVL L1..L20 + Tổng → dòng tổng SP → 3 bảng cạnh nhau (Sản phẩm có Cộng | Hàng lỗi có Stt + Cộng | Bàn giao). Đệm dòng trống cho đủ form. In qua cửa sổ riêng (`printSoTronSlip`, pattern `LichLamViecPrintModal`). |
+| `src/features/so-tron/print.ts` | (HIỆN KHÔNG DÙNG — nút `In A4` đã bỏ theo yêu cầu, giữ file phòng khi cần lại) Phiếu in đúng mẫu giấy: 1 tờ A4 ngang (`@page landscape`, font 7.5–9pt, `table-layout: fixed`). Header Ngày/Máy-Ca/Nhân sự → bảng NVL L1..L20 + Tổng → dòng tổng SP → 3 bảng cạnh nhau (Sản phẩm có Cộng | Hàng lỗi có Stt + Cộng | Bàn giao). Đệm dòng trống cho đủ form. In qua cửa sổ riêng (`printSoTronSlip`, pattern `LichLamViecPrintModal`). |
 | `src/App.tsx` | Shell routing — import panel, không chứa logic bảng |
 | `src/routes.ts` | `so-tron` → `/so-tron`, `so-tron-list` → `/danh-sach-so-tron` |
 | `src/app/menus.tsx` | Card Sổ trộn trong `REPORT_FORM_MENU_ITEMS` |
@@ -38,6 +39,21 @@
 - **Bảng 3 Hàng lỗi hỏng:** tên lỗi + số lượng (kg).
 - **Bảng 4 Bàn giao ca sau (Nhựa Bàn Giao Ca Sau):** loại nhựa tự fill theo NVL cối mẫu. Cột **Nhập Trong Ngày** (trường `lay_trong_kho`) tự động lấy từ phiếu xuất kho NVL theo ngày - máy - ca. Cột **Nhập Ca Trước** (trường `ton_dau_ca`) tự động lấy từ tồn ca trước theo ngày - máy - ca (cùng máy, ca trước gần nhất). `tổng_sử_dụng` = Σ bảng 1 theo mã NVL. `tồn_cuối = Nhập Trong Ngày + Nhập Ca Trước − tổng_sử_dụng`.
 - **Phiếu giao ca (Nhật ký sản xuất):** Thao tác in phiếu giao ca trực tiếp từ danh sách (`/danh-sach-so-tron`) hoặc panel (`/so-tron`). Thiết kế chuẩn 2 trang theo form thực tế (ảnh 1: Vật tư, ảnh 2: Thành phẩm/Lỗi/Sự cố/Chữ ký), cho phép xem & sửa trước khi in, nút Lưu, Lưu & In, In.
+
+## Quy ước UI bắt buộc (không được tái phạm)
+
+- **CHỈ có nút `In phiếu giao ca` — đã BỎ nút `In A4` (theo yêu cầu), không tự ý thêm lại:**
+  - Form nhập (`SoTronPanel` tab form, chân trang): chỉ `Lưu/Cập nhật` + `In phiếu giao ca` (dựng snapshot `SoTronSavedReport` → `PhieuGiaoCaModal` → `printPhieuGiaoCaSlip`, 2 trang A4 dọc) + `Phiếu mới`.
+  - Từng dòng danh sách (tab Danh sách trong panel + `SoTronListView` ở `/danh-sach-so-tron`): chỉ `In phiếu giao ca` (→ `setPreviewPhieuGiaoCaReport`/`setSelectedPhieuGiaoCa`) + `Sửa` + `Xóa`.
+- **Cột Thao tác KHÔNG dùng menu three-dots:** dùng `SoTronRowActions` — 4 nút inline `In A4` / `In phiếu giao ca` / `Sửa` / `Xóa`, `flex flex-wrap justify-end gap-1.5` + `whitespace-nowrap`; bảng `min-w-[980px]`, cột Thao tác `w-[300px]` để không chen lấn.
+- **Bộ lọc danh sách (date-gated):** Vào trang danh sách KHÔNG hiển thị gì — chỉ khi chọn ngày mới hiện phiếu của ngày đó (lọc thêm theo Máy/Ca trên kết quả của ngày). Ô ngày là **`SoTronDatePicker`** nhãn `Chọn Ngày:` (lịch popup 1 nút, hiển thị DD/MM/YYYY). **Không dùng 3 ô Ngày/Tháng/Năm rời** (`VnDatePicker`). **Không có ô Tìm từ khóa** (đã bỏ theo yêu cầu). Dòng đếm: chưa chọn ngày → `Chọn ngày để xem danh sách sổ trộn`; đã chọn → `Ngày DD/MM/YYYY: X phiếu`; rỗng → `Vui lòng chọn ngày…` / `Ngày … chưa có sổ trộn nào phù hợp.` Nút `Xóa bộ lọc` chỉ xóa Máy/Ca (giữ ngày); nút `Xóa` trong lịch để xóa ngày.
+- **Danh sách tải nền:** `SoTronListView.load()` tải `/api/so-tron` trước rồi mới tải danh mục máy/ca riêng (lỗi danh mục không được làm trắng/trắng trang).
+
+## Chống kẹt cache khi đổi UI (đã từng khiến nút `In A4` không hiện dù code đã có)
+
+- Nguyên nhân đã gặp: `public/sw.js` cache-first mọi request + `VERSION` cứng → trình duyệt giữ `index.html`/bundle cũ mãi, người dùng không thấy nút mới.
+- Quy tắc: `sw.js` dùng network-first cho navigation (`req.mode === 'navigate'`) để `index.html` luôn mới (bundle JS/CSS có hash nên cache-first vẫn an toàn); **mỗi bản build có đổi giao diện phải đổi `VERSION`** trong `public/sw.js` để xóa cache cũ.
+- Sau build (`npm run build`), kiểm tra `dist/assets/*.js` mới nhất có chứa chuỗi UI mới (vd đếm `In A4`) và `dist/sw.js` đã lên VERSION mới; dặn người dùng hard-reload (Ctrl+F5) 1–2 lần nếu vẫn thấy giao diện cũ.
 
 ## Liên kết
 
