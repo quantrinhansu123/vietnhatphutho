@@ -50,6 +50,8 @@ Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...
 | `bao_cao_nghiem_thu` | `/bao-cao-san-luong` | [bao_cao_nghiem_thu.md](./bao_cao_nghiem_thu.md) |
 | `bao_cao_may_nvl_ton` | `/bao-cao-may-nvl-ton` | [bao_cao_may_nvl_ton.md](./bao_cao_may_nvl_ton.md) |
 | `so_tron` | `/so-tron` (card Sổ trộn trong `/phieu-bao-cao`, vào từ `/nha-may/cong-nhan`) | [so_tron.md](./so_tron.md) |
+| `so_giao_ca_mmtb` | `/so-giao-ca-mmtb` (card Sổ giao ca MMTB trong `/phieu-bao-cao`) | [so_giao_ca_mmtb.md](./so_giao_ca_mmtb.md) |
+| `so_che_do_may` | `/so-che-do-may` (card Sổ chế độ máy trong `/phieu-bao-cao`) + `/danh-sach-so-che-do-may` | [so_che_do_may.md](./so_che_do_may.md) |
 | `phieu_bao_dung_may` | `/phieu-bao-dung-may` | [phieu_bao_dung_may.md](./phieu_bao_dung_may.md) |
 | *(tổng hợp)* | `/bang-dieu-khien` | [control_board.md](./control_board.md) |
 

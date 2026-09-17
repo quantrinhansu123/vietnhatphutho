@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { Icon as IconifyIcon } from '@iconify/react';
 import type { IconifyIcon as IconifyIconData } from '@iconify/types';
 import gear3d from '@iconify-icons/fluent-emoji/gear';
@@ -150,11 +150,25 @@ export function MenuPageHeader({ title, desc }: { title: string; desc: string })
 
 export const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
   {
+    title: 'Sổ giao ca MMTB',
+    desc: 'Bảng theo dõi chế độ chạy máy và chất lượng hàng ngày (Trưởng ca/Công nhân).',
+    icon: ClipboardList,
+    icon3d: notebook3d,
+    tab: 'so-giao-ca-mmtb'
+  },
+  {
     title: 'Sổ trộn',
     desc: 'Báo cáo cuối ngày của công nhân: ngày + máy/ca, lệnh SX, NVL thực tế, sản phẩm, hàng lỗi và nhựa bàn giao.',
     icon: ClipboardList,
     icon3d: spiralNotepad3d,
     tab: 'so-tron'
+  },
+  {
+    title: 'Sổ chế độ máy',
+    desc: 'Theo dõi chế độ chạy máy theo tháng: 8 khu vực x 3 ca, v/x từng ngày, bàn giao và ghi chú gộp ô.',
+    icon: ClipboardList,
+    icon3d: ledger3d,
+    tab: 'so-che-do-may'
   },
   {
     title: 'Báo cáo tồn',
@@ -285,11 +299,25 @@ export const FACILITY_MENU_ITEMS: MenuCardConfig[] = [
 
 export const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
   {
+    title: 'Danh sách sổ giao ca MMTB',
+    desc: 'Xem, sửa và in sổ giao ca máy móc thiết bị theo ngày, máy và ca.',
+    icon: History,
+    icon3d: notebookCover3d,
+    tab: 'so-giao-ca-mmtb-list'
+  },
+  {
     title: 'Danh sách sổ trộn',
     desc: 'Xem, sửa và xóa các sổ trộn đã lưu theo ngày, máy và ca.',
     icon: History,
     icon3d: spiralNotepad3d,
     tab: 'so-tron-list'
+  },
+  {
+    title: 'Danh sách sổ chế độ máy',
+    desc: 'Chọn tháng, năm để xem sổ chế độ máy đã lưu (chỉ xem).',
+    icon: History,
+    icon3d: ledger3d,
+    tab: 'so-che-do-may-list'
   },
   {
     title: 'Danh sách báo cáo tồn',
@@ -988,6 +1016,10 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'machine-nvl-report': { group: 'Sản xuất', sub: 'Báo cáo máy-NVL' },
   'so-tron': { group: 'Sản xuất', sub: 'Sổ trộn' },
   'so-tron-list': { group: 'Sản xuất', sub: 'Danh sách sổ trộn' },
+  'so-giao-ca-mmtb': { group: 'Sản xuất', sub: 'Sổ giao ca MMTB' },
+  'so-giao-ca-mmtb-list': { group: 'Sản xuất', sub: 'Danh sách sổ giao ca MMTB' },
+  'so-che-do-may': { group: 'Sản xuất', sub: 'Sổ chế độ máy' },
+  'so-che-do-may-list': { group: 'Sản xuất', sub: 'Danh sách sổ chế độ máy' },
   'machine-nvl-report-list': { group: 'Kho', sub: 'Báo cáo tồn máy' },
   'acceptance-report': { group: 'Sản xuất', sub: 'Phiếu nghiệm thu' },
   'machine-downtime-report': { group: 'Sản xuất', sub: 'Báo cáo máy dừng' },

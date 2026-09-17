@@ -32,6 +32,7 @@ export type TableId =
   | 'bao_cao_nghiem_thu'
   | 'bao_cao_may_nvl_ton'
   | 'so_tron'
+  | 'so_che_do_may'
   | 'phieu_bao_dung_may'
   | 'nhat_ky_chay_may'
   | 'dieu_dong_nhan_su'
@@ -399,6 +400,28 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     serverLines: 'parseSoTronBody + GET/POST/PUT/DELETE /api/so-tron (sau bulk-delete bao-cao-may-nvl-ton)',
     appTab: 'so-tron | so-tron-list',
     appLines: 'src/features/so-tron/index.tsx (SoTronPanel + SoTronListView)',
+    components: [],
+    utils: []
+  },
+  so_giao_ca_mmtb: {
+    table: 'so_giao_ca_mmtb',
+    label: 'Sổ giao ca MMTB (Bảng theo dõi chế độ chạy máy & chất lượng)',
+    sql: ['supabase-so-giao-ca-mmtb.sql'],
+    apiPrefix: '/api/so-giao-ca-mmtb',
+    serverLines: 'parseSoGiaoCaMmtbBody + GET/POST/PUT/DELETE /api/so-giao-ca-mmtb',
+    appTab: 'so-giao-ca-mmtb | so-giao-ca-mmtb-list',
+    appLines: 'src/features/so-giao-ca-mmtb/index.tsx (SoGiaoCaMmtbPanel + SoGiaoCaMmtbListView)',
+    components: ['src/features/so-giao-ca-mmtb/SoGiaoCaMmtbPreviewModal.tsx'],
+    utils: ['src/features/so-giao-ca-mmtb/print.ts']
+  },
+  so_che_do_may: {
+    table: 'so_che_do_may',
+    label: 'Sổ chế độ máy theo tháng (MÁY ĐẶC)',
+    sql: ['supabase-so-che-do-may.sql', 'supabase-so-che-do-may-ma-may.sql'],
+    apiPrefix: '/api/so-che-do-may',
+    serverLines: 'parseSoCheDoMayBody + GET/POST/PUT/DELETE /api/so-che-do-may (sau so-giao-ca-mmtb)',
+    appTab: 'so-che-do-may | so-che-do-may-list',
+    appLines: 'src/features/so-che-do-may/index.tsx (SoCheDoMayPanel + SoCheDoMayListView + SoCheDoMayGrid)',
     components: [],
     utils: []
   },

@@ -1,4 +1,4 @@
-export type AppTab = 'menu' | 'quan-tri' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'factory-quan-doc' | 'factory-qc' | 'factory-cong-nhan' | 'factory-kho' | 'control-board' | 'form' | 'weighing-summary' | 'weighing-summary-list' | 'can-tu-dong' | 'kiem-kho' | 'quan-ly-kho' | 'damaged-goods-report' | 'damaged-goods-report-list' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-nvl-report-list' | 'so-tron' | 'so-tron-list' | 'machine-downtime-report' | 'machine-downtime-list' | 'machine-run-log' | 'machine-run-log-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'vehicles' | 'products' | 'inventory-limits' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'shipping-orders' | 'production-orders' | 'production-plan-history' | 'dieu-dong-nhan-su' | 'sap-xep-lich-lam-viec' | 'settings' | 'dashboard' | 'canh-bao-ton-kho';
+export type AppTab = 'menu' | 'quan-tri' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'factory-quan-doc' | 'factory-qc' | 'factory-cong-nhan' | 'factory-kho' | 'control-board' | 'form' | 'weighing-summary' | 'weighing-summary-list' | 'can-tu-dong' | 'kiem-kho' | 'quan-ly-kho' | 'damaged-goods-report' | 'damaged-goods-report-list' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-nvl-report-list' | 'so-tron' | 'so-tron-list' | 'so-giao-ca-mmtb' | 'so-giao-ca-mmtb-list' | 'so-che-do-may' | 'so-che-do-may-list' | 'machine-downtime-report' | 'machine-downtime-list' | 'machine-run-log' | 'machine-run-log-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'vehicles' | 'products' | 'inventory-limits' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'shipping-orders' | 'production-orders' | 'production-plan-history' | 'dieu-dong-nhan-su' | 'sap-xep-lich-lam-viec' | 'settings' | 'dashboard' | 'canh-bao-ton-kho';
 
 export const TAB_ROUTES: Record<AppTab, string> = {
   menu: '/',
@@ -29,6 +29,10 @@ export const TAB_ROUTES: Record<AppTab, string> = {
   'machine-nvl-report-list': '/danh-sach-bao-cao-may-nvl-ton',
   'so-tron': '/so-tron',
   'so-tron-list': '/danh-sach-so-tron',
+  'so-giao-ca-mmtb': '/so-giao-ca-mmtb',
+  'so-giao-ca-mmtb-list': '/danh-sach-so-giao-ca-mmtb',
+  'so-che-do-may': '/so-che-do-may',
+  'so-che-do-may-list': '/danh-sach-so-che-do-may',
   'machine-downtime-report': '/phieu-bao-dung-may',
   'machine-downtime-list': '/danh-sach-bao-cao-dung-may',
   'machine-run-log': '/nhat-ky-chay-may',

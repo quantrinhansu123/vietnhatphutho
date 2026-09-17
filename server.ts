@@ -131,6 +131,8 @@ const SUPABASE_MACHINE_DOWNTIME_TABLE =
 const SUPABASE_MACHINE_RUN_LOG_TABLE =
   process.env.SUPABASE_MACHINE_RUN_LOG_TABLE || 'nhat_ky_chay_may';
 const SUPABASE_SO_TRON_TABLE = process.env.SUPABASE_SO_TRON_TABLE || 'so_tron';
+const SUPABASE_SO_GIAO_CA_MMTB_TABLE = process.env.SUPABASE_SO_GIAO_CA_MMTB_TABLE || 'so_giao_ca_mmtb';
+const SUPABASE_SO_CHE_DO_MAY_TABLE = process.env.SUPABASE_SO_CHE_DO_MAY_TABLE || 'so_che_do_may';
 const SUPABASE_STAFF_DEPARTMENT = process.env.SUPABASE_STAFF_DEPARTMENT || 'Sản xuất';
 const SUPABASE_STAFF_BRANCH = process.env.SUPABASE_STAFF_BRANCH || 'Phú Thọ';
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME?.trim();
@@ -14043,6 +14045,406 @@ export function createApp() {
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa sổ trộn.' });
+    }
+  });
+
+  function parseSoGiaoCaMmtbBody(body: unknown) {
+    const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+    const asText = (value: unknown) => (value === null || value === undefined ? '' : String(value));
+    const asJsonArray = (value: unknown) => (Array.isArray(value) ? value : []);
+    const asJsonObject = (value: unknown) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
+    const ngay = asText(source.ngay).trim().slice(0, 10);
+    const maMay = asText(source.ma_may ?? source.maMay).trim();
+    const ca = asText(source.ca).trim();
+    if (!ngay) return { error: 'Thiếu ngày sổ giao ca MMTB.' };
+    if (!maMay) return { error: 'Thiếu máy.' };
+    if (!ca) return { error: 'Thiếu ca.' };
+    return {
+      record: {
+        chi_nhanh: asText(source.chi_nhanh ?? source.chiNhanh).trim() || 'Phú Thọ',
+        ngay,
+        ma_may: maMay,
+        ten_may: asText(source.ten_may ?? source.tenMay).trim(),
+        ca,
+        ma_lenh_sx: asText(source.ma_lenh_sx ?? source.maLenhSx).trim(),
+        ten_san_pham: asText(source.ten_san_pham ?? source.tenSanPham).trim(),
+        quy_cach: asText(source.quy_cach ?? source.quyCach).trim(),
+        truong_ca: asText(source.truong_ca ?? source.truongCa).trim(),
+        nguoi_kiem_tra: asText(source.nguoi_kiem_tra ?? source.nguoiKiemTra).trim(),
+        dong_tieu_chuan: asJsonObject(source.dong_tieu_chuan ?? source.dongTieuChuan),
+        bang_che_do_chay: asJsonArray(source.bang_che_do_chay ?? source.bangCheDoChay),
+        bang_san_pham: asJsonArray(source.bang_san_pham ?? source.bangSanPham),
+        ghi_chu_tieu_chuan_sp: asText(source.ghi_chu_tieu_chuan_sp ?? source.ghiChuTieuChuanSp).trim(),
+        chu_ky: asJsonObject(source.chu_ky ?? source.chuKy)
+      }
+    };
+  }
+
+  function soGiaoCaMmtbWriteError(error: { message?: string; code?: string }) {
+    const message = String(error?.message ?? '');
+    if (error?.code === '42P01' || /does not exist|not exist|Could not find the table/i.test(message)) {
+      return 'Bảng so_giao_ca_mmtb chưa tồn tại trên Supabase. Hãy chạy file supabase-so-giao-ca-mmtb.sql trong Supabase SQL Editor.';
+    }
+    if (error?.code === '23505' || /duplicate|unique/i.test(message)) {
+      return 'Đã tồn tại sổ giao ca MMTB cho máy + ngày + ca + lệnh SX này. Hãy mở phiếu cũ để sửa.';
+    }
+    return message ? `Không thể lưu sổ giao ca MMTB. ${message}` : 'Không thể lưu sổ giao ca MMTB.';
+  }
+
+  app.get('/api/so-giao-ca-mmtb', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
+      const maMay = typeof req.query.ma_may === 'string' ? req.query.ma_may.trim() : '';
+      const ca = typeof req.query.ca === 'string' ? req.query.ca.trim() : '';
+      const maLenhSx = typeof req.query.ma_lenh_sx === 'string' ? req.query.ma_lenh_sx.trim() : '';
+      const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : 100;
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 300) : 100;
+
+      let query = supabase
+        .from(SUPABASE_SO_GIAO_CA_MMTB_TABLE)
+        .select('*')
+        .order('ngay', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (ngay) query = query.eq('ngay', ngay);
+      if (maMay) query = query.eq('ma_may', maMay);
+      if (ca) query = query.eq('ca', ca);
+      if (maLenhSx) query = query.eq('ma_lenh_sx', maLenhSx);
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('Supabase so giao ca mmtb query error:', error);
+        return res.status(500).json({ error: soGiaoCaMmtbWriteError(error) });
+      }
+
+      return res.json({ records: data || [], total: data?.length || 0 });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải sổ giao ca MMTB.' });
+    }
+  });
+
+  app.post('/api/so-giao-ca-mmtb', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const parsed = parseSoGiaoCaMmtbBody(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_SO_GIAO_CA_MMTB_TABLE)
+        .insert(parsed.record)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase so giao ca mmtb insert error:', error);
+        const status = error?.code === '23505' ? 409 : 500;
+        return res.status(status).json({ error: soGiaoCaMmtbWriteError(error) });
+      }
+
+      return res.status(201).json({ success: true, record: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu sổ giao ca MMTB.' });
+    }
+  });
+
+  app.put('/api/so-giao-ca-mmtb/:id', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID sổ giao ca MMTB.' });
+
+      const parsed = parseSoGiaoCaMmtbBody(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_SO_GIAO_CA_MMTB_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase so giao ca mmtb update error:', error);
+        const status = error?.code === '23505' ? 409 : 500;
+        return res.status(status).json({ error: soGiaoCaMmtbWriteError(error) });
+      }
+
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy sổ giao ca MMTB.' });
+      return res.json({ success: true, record: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật sổ giao ca MMTB.' });
+    }
+  });
+
+  app.delete('/api/so-giao-ca-mmtb/:id', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID sổ giao ca MMTB.' });
+
+      const { data, error } = await supabase
+        .from(SUPABASE_SO_GIAO_CA_MMTB_TABLE)
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Supabase so giao ca mmtb delete error:', error);
+        return res.status(500).json({ error: soGiaoCaMmtbWriteError(error) });
+      }
+
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy sổ giao ca MMTB.' });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa sổ giao ca MMTB.' });
+    }
+  });
+
+  function parseSoCheDoMayBody(body: unknown) {
+    const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+    const asText = (value: unknown) => (value === null || value === undefined ? '' : String(value));
+    const thangRaw = source.thang ?? (source as Record<string, unknown>).month;
+    const namRaw = source.nam ?? (source as Record<string, unknown>).year;
+    const thang = Number(thangRaw);
+    const nam = Number(namRaw);
+    if (!Number.isInteger(thang) || thang < 1 || thang > 12) return { error: 'Tháng không hợp lệ (1–12).' };
+    if (!Number.isInteger(nam) || nam < 1 || nam > 2999) return { error: 'Năm không hợp lệ (1–2999).' };
+    const oCheDo = source.o_che_do ?? (source as Record<string, unknown>).oCheDo;
+    const banGiao = source.ban_giao ?? (source as Record<string, unknown>).banGiao;
+    const ghiChu = source.ghi_chu ?? (source as Record<string, unknown>).ghiChu;
+    const cleanOCheDo: Record<string, string> = {};
+    if (oCheDo && typeof oCheDo === 'object' && !Array.isArray(oCheDo)) {
+      for (const [k, v] of Object.entries(oCheDo as Record<string, unknown>)) {
+        const val = String(v ?? '').trim().toLowerCase();
+        if (val === 'v' || val === 'x') cleanOCheDo[k.slice(0, 32)] = val;
+      }
+    }
+    const cleanBanGiao: Record<string, { ban_giao: string; nhan: string }> = {};
+    if (banGiao && typeof banGiao === 'object' && !Array.isArray(banGiao)) {
+      for (const [k, v] of Object.entries(banGiao as Record<string, unknown>)) {
+        const day = Number(k);
+        if (!Number.isInteger(day) || day < 1 || day > 31) continue;
+        const row = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+        cleanBanGiao[String(day)] = {
+          ban_giao: asText(row.ban_giao ?? row.banGiao).trim().slice(0, 120),
+          nhan: asText(row.nhan ?? row.nhanBanGiao).trim().slice(0, 120)
+        };
+      }
+    }
+    const daysInBodyMonth = (m: number, y: number) => {
+      if (m === 2) return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0 ? 29 : 28;
+      return [4, 6, 9, 11].includes(m) ? 30 : 31;
+    };
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    /** Ghi chú lưu ngày đầy đủ YYYY-MM-DD; tương thích số ngày cũ (1–31) → đổi theo tháng/năm của sổ. */
+    const cleanNoteDate = (value: unknown): string | null => {
+      if (typeof value === 'string') {
+        const m = /^(\d{1,4})-(\d{1,2})-(\d{1,2})$/.exec(value.trim());
+        if (m) {
+          const y = Number(m[1]);
+          const mo = Number(m[2]);
+          const d = Number(m[3]);
+          if (mo >= 1 && mo <= 12 && y >= 1 && y <= 2999 && d >= 1 && d <= daysInBodyMonth(mo, y)) {
+            return `${y}-${pad2(mo)}-${pad2(d)}`;
+          }
+        }
+        return null;
+      }
+      const n = Number(value);
+      if (Number.isInteger(n) && n >= 1 && n <= 31) {
+        return `${nam}-${pad2(thang)}-${pad2(Math.min(n, daysInBodyMonth(thang, nam)))}`;
+      }
+      return null;
+    };
+    const cleanGhiChu: { id: string; tu_ngay: string; den_ngay: string; may: string[]; noi_dung: string }[] = [];
+    if (Array.isArray(ghiChu)) {
+      for (const item of ghiChu.slice(0, 100)) {
+        if (!item || typeof item !== 'object') continue;
+        const row = item as Record<string, unknown>;
+        const tu = cleanNoteDate(row.tu_ngay ?? row.tuNgay);
+        const den = cleanNoteDate(row.den_ngay ?? row.denNgay);
+        const noiDung = asText(row.noi_dung ?? row.noiDung).trim().slice(0, 500);
+        if (!tu || !den || !noiDung) continue;
+        const mayRaw = row.may ?? row.machines ?? row.ma_may_list;
+        const mayList = Array.isArray(mayRaw)
+          ? mayRaw.map(v => asText(v).trim()).filter(Boolean).slice(0, 50)
+          : (typeof mayRaw === 'string' && mayRaw.trim() ? [mayRaw.trim().slice(0, 120)] : []);
+        cleanGhiChu.push({
+          id: asText(row.id).trim().slice(0, 64) || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          tu_ngay: tu <= den ? tu : den,
+          den_ngay: tu <= den ? den : tu,
+          may: mayList,
+          noi_dung: noiDung
+        });
+      }
+    }
+    return {
+      record: {
+        chi_nhanh: asText(source.chi_nhanh ?? (source as Record<string, unknown>).chiNhanh).trim().slice(0, 120) || 'Phú Thọ',
+        ma_may: asText(source.ma_may ?? (source as Record<string, unknown>).maMay).trim().slice(0, 120),
+        ten_may: asText(source.ten_may ?? (source as Record<string, unknown>).tenMay).trim().slice(0, 200),
+        thang,
+        nam,
+        o_che_do: cleanOCheDo,
+        ban_giao: cleanBanGiao,
+        ghi_chu: cleanGhiChu
+      }
+    };
+  }
+
+  function soCheDoMayWriteError(error: { message?: string; code?: string }) {
+    const message = String(error?.message ?? '');
+    if (error?.code === '42P01' || /does not exist|not exist|Could not find the table/i.test(message)) {
+      return 'Bảng so_che_do_may chưa tồn tại trên Supabase. Hãy chạy file supabase-so-che-do-may.sql trong Supabase SQL Editor.';
+    }
+    if (error?.code === '23505' || /duplicate|unique/i.test(message)) {
+      return 'Đã tồn tại sổ chế độ máy cho máy + tháng + năm này. Hãy mở sổ cũ để sửa.';
+    }
+    return message ? `Không thể lưu sổ chế độ máy. ${message}` : 'Không thể lưu sổ chế độ máy.';
+  }
+
+  app.get('/api/so-che-do-may', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const thangRaw = typeof req.query.thang === 'string' ? Number(req.query.thang) : NaN;
+      const namRaw = typeof req.query.nam === 'string' ? Number(req.query.nam) : NaN;
+      const maMayParam = typeof req.query.ma_may === 'string' ? req.query.ma_may.trim() : null;
+      const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : 100;
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 300) : 100;
+
+      let query = supabase
+        .from(SUPABASE_SO_CHE_DO_MAY_TABLE)
+        .select('*')
+        .order('nam', { ascending: false })
+        .order('thang', { ascending: false })
+        .limit(limit);
+
+      if (Number.isInteger(thangRaw)) query = query.eq('thang', thangRaw);
+      if (Number.isInteger(namRaw)) query = query.eq('nam', namRaw);
+      if (maMayParam !== null) query = query.eq('ma_may', maMayParam);
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('Supabase so che do may query error:', error);
+        return res.status(500).json({ error: soCheDoMayWriteError(error) });
+      }
+
+      return res.json({ records: data || [], total: data?.length || 0 });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải sổ chế độ máy.' });
+    }
+  });
+
+  app.post('/api/so-che-do-may', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const parsed = parseSoCheDoMayBody(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_SO_CHE_DO_MAY_TABLE)
+        .insert(parsed.record)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase so che do may insert error:', error);
+        const status = error?.code === '23505' ? 409 : 500;
+        return res.status(status).json({ error: soCheDoMayWriteError(error) });
+      }
+
+      return res.status(201).json({ success: true, record: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu sổ chế độ máy.' });
+    }
+  });
+
+  app.put('/api/so-che-do-may/:id', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID sổ chế độ máy.' });
+
+      const parsed = parseSoCheDoMayBody(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_SO_CHE_DO_MAY_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase so che do may update error:', error);
+        const status = error?.code === '23505' ? 409 : 500;
+        return res.status(status).json({ error: soCheDoMayWriteError(error) });
+      }
+
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy sổ chế độ máy.' });
+      return res.json({ success: true, record: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật sổ chế độ máy.' });
+    }
+  });
+
+  app.delete('/api/so-che-do-may/:id', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID sổ chế độ máy.' });
+
+      const { data, error } = await supabase
+        .from(SUPABASE_SO_CHE_DO_MAY_TABLE)
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Supabase so che do may delete error:', error);
+        return res.status(500).json({ error: soCheDoMayWriteError(error) });
+      }
+
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy sổ chế độ máy.' });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa sổ chế độ máy.' });
     }
   });
 

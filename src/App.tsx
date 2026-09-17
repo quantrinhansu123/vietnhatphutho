@@ -84,6 +84,8 @@ import { KiemKhoPanel } from './features/kiem-kho';
 import { QuanLyKhoPanel } from './features/quan-ly-kho';
 import { MachineNvlReportPanel } from './features/bao-cao-may-nvl-ton';
 import { SoTronPanel, SoTronListView, type SoTronSavedReport } from './features/so-tron';
+import { SoGiaoCaMmtbPanel, SoGiaoCaMmtbListView, type SoGiaoCaMmtbRecord } from './features/so-giao-ca-mmtb';
+import { SoCheDoMayWorkspace } from './features/so-che-do-may';
 import { InventoryAlertPanel } from './features/canh-bao-ton-kho';
 
 const DEFAULT_REPORT: Omit<ProductionReport, 'id' | 'createdAt'> = {
@@ -213,6 +215,7 @@ export default function App() {
   } | null>(null);
   const [machineNvlEditReport, setMachineNvlEditReport] = useState<MachineNvlSavedReport | null>(null);
   const [soTronEditReport, setSoTronEditReport] = useState<SoTronSavedReport | null>(null);
+  const [soGiaoCaMmtbEditRecord, setSoGiaoCaMmtbEditRecord] = useState<SoGiaoCaMmtbRecord | null>(null);
   const [weighingPendingAdd, setWeighingPendingAdd] = useState<WeighingPendingAdd | null>(null);
   const navigateToTab = (tab: AppTab, options?: { replace?: boolean }) => {
     let nextTab = tab;
@@ -1269,6 +1272,61 @@ export default function App() {
                     navigateToTab('so-tron');
                   }}
                 />
+              </motion.div>
+            ) : activeTab === 'so-giao-ca-mmtb' ? (
+              <motion.div
+                key="so-giao-ca-mmtb"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <SoGiaoCaMmtbPanel
+                  onBack={() => goBack('report-forms')}
+                  onOpenList={() => navigateToTab('so-giao-ca-mmtb-list')}
+                  editRecord={soGiaoCaMmtbEditRecord}
+                  onEditConsumed={() => setSoGiaoCaMmtbEditRecord(null)}
+                />
+              </motion.div>
+            ) : activeTab === 'so-giao-ca-mmtb-list' ? (
+              <motion.div
+                key="so-giao-ca-mmtb-list"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <SoGiaoCaMmtbListView
+                  onBack={() => goBack('report-lists')}
+                  onCreate={() => {
+                    setSoGiaoCaMmtbEditRecord(null);
+                    navigateToTab('so-giao-ca-mmtb');
+                  }}
+                  onEdit={rec => {
+                    setSoGiaoCaMmtbEditRecord(rec);
+                    navigateToTab('so-giao-ca-mmtb');
+                  }}
+                />
+              </motion.div>
+            ) : activeTab === 'so-che-do-may' ? (
+              <motion.div
+                key="so-che-do-may"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <SoCheDoMayWorkspace onBack={() => goBack('report-forms')} />
+              </motion.div>
+            ) : activeTab === 'so-che-do-may-list' ? (
+              <motion.div
+                key="so-che-do-may-list"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <SoCheDoMayWorkspace onBack={() => goBack('report-lists')} />
               </motion.div>
             ) : activeTab === 'acceptance-report' ? (
               <motion.div

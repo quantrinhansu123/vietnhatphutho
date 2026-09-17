@@ -185,7 +185,6 @@ export function buildSoTronSlipHtml(input: SoTronPrintInput) {
     </tr></thead>
     <tbody>${nvlRows}</tbody>
   </table>
-  <p class="sp-line">Sản phẩm của quá trình chạy máy: <b>${fmt(spTotalTl)} kg</b>${input.lenhSx.length ? ` <span class="muted">(Lệnh: ${esc(input.lenhSx.join(', '))})</span>` : ''}</p>
   <div class="bottom">
     <div class="col-sp">
       <p class="cap">Sản Phẩm</p>
