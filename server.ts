@@ -6067,8 +6067,8 @@ function extractLastName(fullName: string): string {
 }
 
 /**
- * Tên gọn khi in lịch: viết tắt họ + tên đệm + tên.
- * VD "Nguyễn Văn An" → "NVA An". Tên đơn ("An") hoặc mã ("NV012") giữ nguyên.
+ * Tên gọn khi in lịch: viết tắt họ + tên đệm (không lấy chữ cái của tên) + tên.
+ * VD "Vũ Văn Cường" → "VV Cường". Tên đơn ("An") hoặc mã ("NV012") giữ nguyên.
  */
 function formatShortStaffName(fullName: string): string {
   const clean = String(fullName || '').trim().replace(/\s+/g, ' ');
@@ -6077,7 +6077,7 @@ function formatShortStaffName(fullName: string): string {
   if (parts.length <= 1) return clean;
   if (/^[A-Za-z0-9._-]+$/.test(clean) && /\d/.test(clean)) return clean;
   const last = parts[parts.length - 1] || '';
-  const initials = parts.map(p => (p[0] || '').toLocaleUpperCase('vi')).join('');
+  const initials = parts.slice(0, -1).map(p => (p[0] || '').toLocaleUpperCase('vi')).join('');
   return initials ? `${initials} ${last}` : last;
 }
 
@@ -8023,25 +8023,69 @@ export function createApp() {
     }
   });
 
-  app.get('/api/don-hang', async (_req, res) => {
+  /** Soft delete đơn hàng: deleted_at != null = đã xóa (ẩn khỏi /don-hang). */
+  function isOrderDeletedRow(row: Record<string, unknown>) {
+    const deletedAt = row.deleted_at ?? row.deletedAt;
+    if (deletedAt !== null && deletedAt !== undefined && String(deletedAt).trim() !== '') return true;
+    return false;
+  }
+
+  function shouldIncludeDeletedOrders(req: express.Request) {
+    const query = req.query as Record<string, unknown>;
+    for (const key of ['includeDeleted', 'include_deleted', 'withDeleted', 'with_deleted', 'showDeleted']) {
+      const value = query[key];
+      if (value === true || value === 1) return true;
+      const text = String(value ?? '').trim().toLowerCase();
+      if (['1', 'true', 'yes', 'y'].includes(text)) return true;
+    }
+    return false;
+  }
+
+  function orderSoftDeleteMissingColumnHint(error: { code?: string; message?: string } | null) {
+    if (isMissingColumnError(error) && /deleted/i.test(error?.message || '')) {
+      return ' Bảng don_hang thiếu cột deleted_at — chạy supabase-don-hang-soft-delete.sql trong Supabase SQL Editor.';
+    }
+    return '';
+  }
+
+  app.get('/api/don-hang', async (req, res) => {
     if (!supabase) {
       return res.json({ orders: [], total: 0, source: 'local' });
     }
 
     try {
-      const { data, error } = await supabase
+      const includeDeleted = shouldIncludeDeletedOrders(req);
+      let query = supabase
         .from(SUPABASE_ORDERS_TABLE)
-        .select('*')
+        .select('*');
+      if (!includeDeleted) {
+        query = query.is('deleted_at', null);
+      }
+      let { data, error } = await query
         .order('updated_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false, nullsFirst: false });
+
+      if (error && !includeDeleted && isMissingColumnError(error)) {
+        // DB chưa chạy migration soft-delete → đọc toàn bộ như cũ.
+        ({ data, error } = await supabase
+          .from(SUPABASE_ORDERS_TABLE)
+          .select('*')
+          .order('updated_at', { ascending: false, nullsFirst: false })
+          .order('created_at', { ascending: false, nullsFirst: false }));
+      }
 
       if (error) {
         return respondSupabaseReadError(res, error, SUPABASE_ORDERS_TABLE, { orders: [], total: 0 });
       }
 
+      let orders = data || [];
+      if (!includeDeleted && Array.isArray(orders)) {
+        orders = (orders as Record<string, unknown>[]).filter(row => !isOrderDeletedRow(row));
+      }
+
       return res.json({
-        orders: data || [],
-        total: data?.length || 0,
+        orders,
+        total: orders?.length || 0,
         source: 'supabase'
       });
     } catch (err: any) {
@@ -8180,6 +8224,7 @@ export function createApp() {
     }
   });
 
+  /** Xóa mềm đơn hàng: ẩn khỏi danh sách (deleted_at), không mất dữ liệu. Thêm ?hard=1 để xóa vĩnh viễn. */
   app.delete('/api/don-hang/:id', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
@@ -8191,25 +8236,93 @@ export function createApp() {
         return res.status(400).json({ error: 'Thiếu ID đơn hàng.' });
       }
 
-      const { data, error } = await supabase
+      const hardQuery = String((req.query as Record<string, unknown>).hard ?? '').trim().toLowerCase();
+      const hardBody = (req.body as Record<string, unknown> | undefined)?.hard;
+      const hard = ['1', 'true', 'yes'].includes(hardQuery) || hardBody === true || String(hardBody ?? '').trim() === '1';
+
+      if (hard) {
+        const { data, error } = await supabase
+          .from(SUPABASE_ORDERS_TABLE)
+          .delete()
+          .eq('id', id)
+          .select('id')
+          .maybeSingle();
+
+        if (error) {
+          console.error('Supabase don_hang hard delete error:', error);
+          return res.status(500).json({ error: `Không thể xóa vĩnh viễn đơn hàng. ${error.message}` });
+        }
+
+        if (!data) {
+          return res.status(404).json({ error: 'Không tìm thấy đơn hàng cần xóa.' });
+        }
+
+        return res.json({ success: true, hardDeleted: true });
+      }
+
+      const { data, error: softDeleteError } = await supabase
         .from(SUPABASE_ORDERS_TABLE)
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq('id', id)
-        .select('id')
+        .is('deleted_at', null)
+        .select('id');
+
+      if (softDeleteError) {
+        console.error('Supabase don_hang soft delete error:', softDeleteError);
+        const hint = orderSoftDeleteMissingColumnHint(softDeleteError);
+        return res.status(500).json({ error: `Không thể xóa đơn hàng. ${softDeleteError.message}${hint}`.trim() });
+      }
+
+      if (!data || data.length === 0) {
+        const { data: existing } = await supabase
+          .from(SUPABASE_ORDERS_TABLE)
+          .select('id')
+          .eq('id', id)
+          .limit(1);
+        if (!existing || existing.length === 0) {
+          return res.status(404).json({ error: 'Không tìm thấy đơn hàng cần xóa.' });
+        }
+        return res.json({ success: true, softDeleted: true, alreadyDeleted: true });
+      }
+
+      return res.json({ success: true, softDeleted: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa đơn hàng.' });
+    }
+  });
+
+  /** Khôi phục 1 đơn hàng đã xóa mềm. */
+  app.post('/api/don-hang/:id/restore', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) {
+        return res.status(400).json({ error: 'Thiếu ID đơn hàng.' });
+      }
+
+      const { data, error: restoreError } = await supabase
+        .from(SUPABASE_ORDERS_TABLE)
+        .update({ deleted_at: null })
+        .eq('id', id)
+        .select('*')
         .maybeSingle();
 
-      if (error) {
-        console.error('Supabase don_hang delete error:', error);
-        return res.status(500).json({ error: `Không thể xóa đơn hàng. ${error.message}` });
+      if (restoreError) {
+        console.error('Supabase don_hang restore error:', restoreError);
+        const hint = orderSoftDeleteMissingColumnHint(restoreError);
+        return res.status(500).json({ error: `Không thể khôi phục đơn hàng. ${restoreError.message}${hint}`.trim() });
       }
 
       if (!data) {
-        return res.status(404).json({ error: 'Không tìm thấy đơn hàng cần xóa.' });
+        return res.status(404).json({ error: 'Không tìm thấy đơn hàng cần khôi phục.' });
       }
 
-      return res.json({ success: true });
+      return res.json({ success: true, order: data });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message || 'Lỗi khi xóa đơn hàng.' });
+      return res.status(500).json({ error: err.message || 'Lỗi khi khôi phục đơn hàng.' });
     }
   });
 
@@ -8870,6 +8983,10 @@ export function createApp() {
 
       if (!order) {
         return res.status(404).json({ error: 'Không tìm thấy đơn hàng.' });
+      }
+
+      if (isOrderDeletedRow(order as Record<string, unknown>)) {
+        return res.status(400).json({ error: 'Đơn hàng đã bị xóa (xóa mềm). Hãy khôi phục đơn trước khi tạo lệnh sản xuất.' });
       }
 
       const orderRow = order as Record<string, unknown>;

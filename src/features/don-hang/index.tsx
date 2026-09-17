@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowDown, ArrowUp, Eye, GripVertical, Loader2, Pencil, Plus, Printer, Save, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Archive, Eye, GripVertical, Loader2, Pencil, Plus, Printer, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { useTabAccess } from '../../app/useTabAccess';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { convertProductQuantity } from '../../utils/productUnitConversion';
@@ -128,6 +128,8 @@ export function normalizeOrders(data: unknown): OrderRow[] {
       const record = item as Record<string, unknown>;
       const orderCode = pickText(record, ['ma_don_hang', 'order_code', 'code'], '');
       const updatedRaw = record.updated_at ?? record.updatedAt;
+      const deletedRaw = record.deleted_at ?? record.deletedAt;
+      const deletedAt = deletedRaw ? formatCell(deletedRaw) : null;
       const products = parseOrderProductsFromRecord(record, { includeSourceProduct: true });
       const summary = summarizeOrderProducts(products);
       if (!orderCode && products.length === 0) return null;
@@ -159,7 +161,9 @@ export function normalizeOrders(data: unknown): OrderRow[] {
           return '';
         })(),
         createdAt: formatCell(record.created_at),
-        updatedAt: updatedRaw ? formatCell(updatedRaw) : ''
+        updatedAt: updatedRaw ? formatCell(updatedRaw) : '',
+        deletedAt,
+        isDeleted: Boolean(deletedAt)
       };
     })
     .filter((order): order is OrderRow => Boolean(order))
@@ -804,6 +808,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const [printOrder, setPrintOrder] = useState<OrderRow | null>(null);
   const [pendingPrint, setPendingPrint] = useState(false);
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
+  const [restoringOrderId, setRestoringOrderId] = useState<string | null>(null);
+  const [showDeleted, setShowDeleted] = useState(false);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [formError, setFormError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
@@ -818,12 +824,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const [selectedProductLineKey, setSelectedProductLineKey] = useState<string | null>(null);
   const [dragProductIndex, setDragProductIndex] = useState<number | null>(null);
 
-  const loadOrders = async () => {
+  const loadOrders = async (includeDeleted = showDeleted) => {
     setIsLoadingOrders(true);
     setOrdersError('');
 
     try {
-      const res = await fetch('/api/don-hang');
+      const res = await fetch(`/api/don-hang${includeDeleted ? '?includeDeleted=1' : ''}`);
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
@@ -838,6 +844,20 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       setIsLoadingOrders(false);
     }
   };
+
+  const toggleShowDeleted = () => {
+    const next = !showDeleted;
+    setShowDeleted(next);
+    setSearchText('');
+    setSelectedType('all');
+    void loadOrders(next);
+  };
+
+  /** Danh sách theo chế độ xem: mặc định ẩn đơn đã xóa mềm; thùng rác chỉ hiện đơn đã xóa. */
+  const visibleOrders = useMemo(
+    () => (showDeleted ? orders.filter(order => order.isDeleted) : orders.filter(order => !order.isDeleted)),
+    [orders, showDeleted]
+  );
 
   useEffect(() => {
     loadOrders();
@@ -1345,27 +1365,30 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     }
   };
 
-  const handleDeleteOrder = async (order: OrderRow) => {
+  const handleDeleteOrder = async (order: OrderRow, hard = false) => {
     if (!order.id) {
       setOrdersError('Không tìm thấy ID để xóa.');
       return;
     }
 
-    if (!window.confirm(`Bạn có chắc muốn xóa đơn "${order.orderCode || order.productCode}"?`)) return;
+    if (hard) {
+      if (!window.confirm(`Xóa VĨNH VIỄN đơn "${order.orderCode || order.productCode}"? Dữ liệu sẽ mất hoàn toàn, không thể khôi phục.`)) return;
+    } else if (!window.confirm(`Bạn có chắc muốn xóa đơn "${order.orderCode || order.productCode}"?\n\nDữ liệu được giữ lại (xóa mềm) và có thể khôi phục từ mục "Đơn đã xóa".`)) return;
 
     setDeletingOrderId(order.id);
     setActionMessage('');
 
     try {
-      const res = await fetch(`/api/don-hang/${order.id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/don-hang/${order.id}${hard ? '?hard=1' : ''}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(data.error || 'Không thể xóa đơn hàng.');
+        throw new Error(data.error || (hard ? 'Không thể xóa vĩnh viễn đơn hàng.' : 'Không thể xóa đơn hàng.'));
       }
 
       if (viewingOrder?.id === order.id) setViewingOrder(null);
-      setActionMessage('Đã xóa đơn hàng.');
+      setActionMessage(hard ? 'Đã xóa vĩnh viễn đơn hàng.' : 'Đã xóa đơn hàng (có thể khôi phục).');
+      showAppToast(hard ? 'Đã xóa vĩnh viễn đơn hàng.' : 'Đã xóa đơn hàng (có thể khôi phục).');
       await loadOrders();
     } catch (error: any) {
       setOrdersError(error.message || 'Không thể xóa đơn hàng.');
@@ -1374,15 +1397,42 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const handleRestoreOrder = async (order: OrderRow) => {
+    if (!order.id) {
+      setOrdersError('Không tìm thấy ID để khôi phục.');
+      return;
+    }
+
+    setRestoringOrderId(order.id);
+    setActionMessage('');
+
+    try {
+      const res = await fetch(`/api/don-hang/${order.id}/restore`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể khôi phục đơn hàng.');
+      }
+
+      setActionMessage(`Đã khôi phục đơn ${order.orderCode || order.productCode}.`);
+      showAppToast(`Đã khôi phục đơn ${order.orderCode || order.productCode}.`);
+      await loadOrders();
+    } catch (error: any) {
+      setOrdersError(error.message || 'Không thể khôi phục đơn hàng.');
+    } finally {
+      setRestoringOrderId(null);
+    }
+  };
+
   const orderTypeOptions = useMemo(() => {
-    const types = orders
+    const types = visibleOrders
       .map(order => order.orderType)
       .filter((type): type is string => type !== '-' && type.length > 0);
     return [...new Set(types)].sort((a, b) => String(a).localeCompare(String(b), 'vi'));
-  }, [orders]);
+  }, [visibleOrders]);
   const normalizedSearch = searchText.trim().toLowerCase();
   const filteredOrders = useMemo(() => {
-    return orders.filter(order => {
+    return visibleOrders.filter(order => {
       const matchesType = selectedType === 'all' || order.orderType === selectedType;
       const matchesSearch =
         !normalizedSearch ||
@@ -1391,7 +1441,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
           .includes(normalizedSearch);
       return matchesType && matchesSearch;
     });
-  }, [orders, normalizedSearch, selectedType]);
+  }, [visibleOrders, normalizedSearch, selectedType]);
 
   const hasActiveFilters = selectedType !== 'all' || Boolean(searchText);
 
@@ -1400,8 +1450,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     setSearchText('');
   };
 
-  const customerCount = new Set(orders.map(order => order.customer).filter(customer => customer && customer !== '-')).size;
-  const totalQuantity = orders.reduce((sum, order) => {
+  const customerCount = new Set(visibleOrders.map(order => order.customer).filter(customer => customer && customer !== '-')).size;
+  const totalQuantity = visibleOrders.reduce((sum, order) => {
     const value = Number(order.quantity);
     return Number.isFinite(value) ? sum + value : sum;
   }, 0);
@@ -2155,13 +2205,24 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 <Printer className="h-4 w-4" />
                 In phiếu
               </button>
-              {canEdit ? (
+              {canEdit && !viewingOrder.isDeleted ? (
                 <button type="button" onClick={() => openEditForm(viewingOrder)} className="flex h-10 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/20 bg-red-50 px-4 text-xs font-extrabold text-[#ef1b2d] transition hover:bg-red-100">
                   <Pencil className="h-4 w-4" />
                   Sửa
                 </button>
               ) : null}
-              {canDelete ? (
+              {canEdit && viewingOrder.isDeleted ? (
+                <button
+                  type="button"
+                  onClick={() => handleRestoreOrder(viewingOrder)}
+                  disabled={restoringOrderId === viewingOrder.id}
+                  className="flex h-10 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {restoringOrderId === viewingOrder.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                  Khôi phục
+                </button>
+              ) : null}
+              {canDelete && !viewingOrder.isDeleted ? (
                 <button
                   type="button"
                   onClick={() => handleDeleteOrder(viewingOrder)}
@@ -2184,12 +2245,22 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3 text-[11px] font-bold text-zinc-500">
-            <span>{orders.length} đơn</span>
+            <span>{visibleOrders.length} đơn{showDeleted ? ' đã xóa' : ''}</span>
             <span>{customerCount} KH</span>
             <span>SL {formatNumber(totalQuantity)}</span>
           </div>
 
-          {canCreate ? (
+          <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleShowDeleted}
+            className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-extrabold transition ${showDeleted ? 'border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-700' : 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'}`}
+            title={showDeleted ? 'Về danh sách đơn hàng' : 'Xem đơn đã xóa (thùng rác)'}
+          >
+            <Archive className="h-4 w-4" />
+            {showDeleted ? 'Về danh sách' : 'Đơn đã xóa'}
+          </button>
+          {canCreate && !showDeleted ? (
             <button
               type="button"
               onClick={openAddForm}
@@ -2199,6 +2270,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               Thêm mới
             </button>
           ) : null}
+          </div>
         </div>
 
         <TableToolbar
@@ -2333,7 +2405,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       >
                         <Eye className="h-4 w-4" />
                       </button>
-                      {canEdit ? (
+                      {canEdit && !showDeleted ? (
                         <button
                           type="button"
                           onClick={() => openEditForm(order)}
@@ -2343,13 +2415,43 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           <Pencil className="h-4 w-4" />
                         </button>
                       ) : null}
-                      {canDelete ? (
+                      {canDelete && !showDeleted ? (
                         <button
                           type="button"
                           onClick={() => handleDeleteOrder(order)}
                           disabled={deletingOrderId === order.id}
-                          title="Xóa"
+                          title="Xóa (giữ lại, có thể khôi phục)"
                           className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {deletingOrderId === order.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </button>
+                      ) : null}
+                      {showDeleted && canEdit ? (
+                        <button
+                          type="button"
+                          onClick={() => handleRestoreOrder(order)}
+                          disabled={restoringOrderId === order.id}
+                          title="Khôi phục đơn hàng"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-200 text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {restoringOrderId === order.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <RotateCcw className="h-4 w-4" />
+                          )}
+                        </button>
+                      ) : null}
+                      {showDeleted && canDelete ? (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteOrder(order, true)}
+                          disabled={deletingOrderId === order.id}
+                          title="Xóa vĩnh viễn (không thể khôi phục)"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-300 bg-rose-50 text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {deletingOrderId === order.id ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -2367,7 +2469,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
             {!isLoadingOrders && filteredOrders.length === 0 && (
               <TableEmptyRow colSpan={9}>
-                Bảng don_hang chưa có dữ liệu hoặc không có đơn phù hợp bộ lọc.
+                {showDeleted
+                  ? 'Không có đơn hàng đã xóa.'
+                  : 'Bảng don_hang chưa có dữ liệu hoặc không có đơn phù hợp bộ lọc.'}
               </TableEmptyRow>
             )}
           </TableBody>

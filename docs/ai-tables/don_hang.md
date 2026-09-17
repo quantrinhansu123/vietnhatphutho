@@ -4,13 +4,21 @@
 |---|---|
 | **Bảng** | `don_hang` |
 | **Tab** | `orders` → `/don-hang` |
-| **SQL** | `supabase-don-hang-*.sql` (bao gồm `supabase-don-hang-updated-at.sql`) |
+| **SQL** | `supabase-don-hang-*.sql` (bao gồm `supabase-don-hang-updated-at.sql`, `supabase-don-hang-soft-delete.sql`) |
 
 ## API (`server.ts`)
 
 | Method | Path | Dòng |
 |--------|------|------|
 | GET/POST/PATCH/DELETE | `/api/don-hang` | 7475–7645 |
+| POST | `/api/don-hang/:id/restore` | khôi phục xóa mềm |
+
+### Xóa mềm (soft delete)
+
+- Cột `deleted_at` (+ `deleted_by`, migration `supabase-don-hang-soft-delete.sql`).
+- `GET /api/don-hang` mặc định ẩn đã xóa; `?includeDeleted=1` để xem thùng rác.
+- `DELETE` → xóa mềm; `?hard=1` → xóa vĩnh viễn. Frontend có nút "Đơn đã xóa" (khôi phục / xóa vĩnh viễn).
+- `POST /api/lenh-sx/from-don-hang/:id` từ chối đơn đã xóa mềm.
 
 Helper parse/lưu JSON `san_pham` (kèm `stt`): ~4986–5550.
 Helper bổ sung quy đổi theo cờ thay đổi từ form sửa: ~5376–5455.

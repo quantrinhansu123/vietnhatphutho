@@ -51,6 +51,9 @@ export interface OrderRow {
   updatedAt?: string;
   productionOrder?: string;
   khu_vuc?: string;
+  /** Soft delete: có giá trị = đã xóa (ẩn khỏi danh sách, xem lại ở thùng rác). */
+  deletedAt?: string | null;
+  isDeleted?: boolean;
 }
 
 export function parseOrderProductsFromRecord(
