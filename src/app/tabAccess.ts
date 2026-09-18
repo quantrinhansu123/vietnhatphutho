@@ -15,6 +15,7 @@ export const TAB_ACCESS_ALIASES: Record<string, string> = {
   'so-che-do-may': 'so-che-do-may-list',
   'machine-downtime-report': 'machine-downtime-list',
   'acceptance-report': 'acceptance-report-list',
+  'bao-cao-thang': 'bao-cao-thang-list',
   'bao-cao-ngay': 'bao-cao-ngay-list',
   'machine-run-log': 'machine-run-log-list'
 };
@@ -33,8 +34,9 @@ export const HUB_IMPLIED_TABS: Record<string, readonly string[]> = {
     'weighing-summary',
     'machine-downtime-report',
     'machine-run-log',
-    'bao-cao-ngay',
     'bao-cao-tuan',
+    'bao-cao-thang',
+    'bao-cao-ngay',
     'damaged-goods-report',
     'acceptance-report',
     'kiem-kho',
@@ -47,6 +49,7 @@ export const HUB_IMPLIED_TABS: Record<string, readonly string[]> = {
     'weighing-summary-list',
     'machine-downtime-list',
     'machine-run-log-list',
+    'bao-cao-thang-list',
     'bao-cao-ngay-list',
     'damaged-goods-report-list',
     'acceptance-report-list'
@@ -55,6 +58,7 @@ export const HUB_IMPLIED_TABS: Record<string, readonly string[]> = {
     'so-giao-ca-mmtb-list',
     'so-tron-list',
     'so-che-do-may-list',
+    'bao-cao-thang-list',
     'bao-cao-ngay-list',
     'machine-nvl-report-list',
     'mixing-report-list',

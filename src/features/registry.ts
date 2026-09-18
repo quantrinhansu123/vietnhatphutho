@@ -37,6 +37,7 @@ export type TableId =
   | 'so_giao_ca_mmtb'
   | 'bao_cao_ngay'
   | 'so_che_do_may'
+  | 'bao_cao_thang'
   | 'phieu_bao_dung_may'
   | 'nhat_ky_chay_may'
   | 'dieu_dong_nhan_su'
@@ -428,6 +429,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appLines: 'src/features/bao-cao-ngay/index.tsx (BaoCaoNgayPanel 2 tab + BaoCaoNgayListView + HaoHutThongKeEditor + BaoCaoNgayHaoHutPreview)',
     components: [],
     utils: []
+  },
+  bao_cao_thang: {
+    table: 'bao_cao_thang',
+    label: 'Báo cáo tháng (tổng hợp từ báo cáo từng đợt)',
+    sql: ['supabase-bao-cao-thang.sql'],
+    apiPrefix: '/api/bao-cao-thang',
+    serverLines: 'GET /api/bao-cao-thang/aggregate + GET/POST/PUT/DELETE /api/bao-cao-thang',
+    appTab: 'bao-cao-thang | bao-cao-thang-list',
+    appLines: 'src/features/bao-cao-thang/index.tsx (BaoCaoThangPanel + BaoCaoThangListView)',
+    components: ['src/features/bao-cao-thang/PrintPreviewModal.tsx'],
+    utils: ['src/features/so-che-do-may (toMonthStr, parseMonthStr)']
   },
   so_test_mau_nhua: {
     table: 'so_test_mau_nhua',

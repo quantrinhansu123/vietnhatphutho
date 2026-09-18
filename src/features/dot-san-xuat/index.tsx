@@ -17,11 +17,21 @@ export interface DotSanXuatLenh {
   may?: string;
   ca?: string;
   trang_thai?: string;
+  /** True = trạng thái Hoàn thành. */
+  hoan_thanh?: boolean;
+  /** True = lệnh có sổ trộn (SX thực tế) trong phạm vi đợt. */
+  co_so_tron?: boolean;
+  /** True = khớp máy đã chọn; false = ứng viên trong khoảng ngày nhưng khác/chưa gán máy. */
+  khop_may?: boolean;
 }
 
 export interface DotSanXuatPhieu {
   ma_phieu: string;
   ngay_phieu: string;
+  /** Các máy ghi trên dòng phiếu (rỗng = phiếu chưa gán máy). */
+  may?: string[];
+  /** True = có dòng khớp máy đã chọn. */
+  khop_may?: boolean;
   tong_tl_chinh: number;
   tong_tien_chinh: number;
   tong_tl_phu: number;
@@ -36,6 +46,8 @@ export interface DotSanXuatPreview {
   den_ngay: string;
   ma_may: string;
   lenh_sx: DotSanXuatLenh[];
+  /** Mã lệnh (lowercase) đã có sổ trộn trong phạm vi — để đối chiếu. */
+  so_tron_lenh?: string[];
   phieu_xuat: DotSanXuatPhieu[];
   tong: {
     tong_tl_nvl_chinh: number;
@@ -69,6 +81,9 @@ export interface DotSanXuatRow {
   thu_hoi_phe_tien: number;
   hao_hut_kg: number;
   tl_chinh_thuc_te_override?: number | null;
+  gia_vt_tt_hao_hut?: number | null;
+  chenh_lech_hao_hut?: number | null;
+  ti_le_hao_hut?: number | null;
   so_cong_truc: number;
   so_cong_dau_may: number;
   so_cong_cuoi_may: number;
@@ -110,7 +125,6 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
   const [preview, setPreview] = useState<DotSanXuatPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
-  const [selectedLenh, setSelectedLenh] = useState<Set<string>>(new Set());
 
   // Tổng tự động (cho phép sửa tay khi phiếu chưa có tổng chuẩn)
   const [tongTlChinh, setTongTlChinh] = useState('0');
@@ -123,6 +137,9 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
   const [thuHoiTien, setThuHoiTien] = useState('0');
   const [haoHutKg, setHaoHutKg] = useState('0');
   const [tlThucTeOverride, setTlThucTeOverride] = useState('');
+  const [donGiaTongOverride, setDonGiaTongOverride] = useState('');
+  const [chenhLechOverride, setChenhLechOverride] = useState('');
+  const [tiLeOverride, setTiLeOverride] = useState('');
   const [soCongTruc, setSoCongTruc] = useState('0');
   const [soCongDauMay, setSoCongDauMay] = useState('0');
   const [soCongCuoiMay, setSoCongCuoiMay] = useState('0');
@@ -178,6 +195,21 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
     }
   }
 
+  /** Lấy số đợt tiếp theo trong tháng của máy (chỉ khi bấm nút Gợi ý). */
+  async function suggestDotSo() {
+    const { thang, nam } = monthYearOf(denNgay);
+    try {
+      const sug = await fetch(`/api/dot-san-xuat/next-so?thang=${thang}&nam=${nam}&ma_may=${encodeURIComponent(maMay)}`);
+      const sugData = (await sug.json().catch(() => ({}))) as { dot_so?: number; ten_dot?: string };
+      if (sug.ok && sugData.dot_so) {
+        setDotSo(sugData.dot_so);
+        setTenDot(sugData.ten_dot || `Đợt ${sugData.dot_so} tháng ${thang}/${nam}`);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   async function handlePreview() {
     if (!parseDateStr(tuNgay) || !parseDateStr(denNgay)) {
       setPreviewError('Vui lòng chọn Từ ngày và Đến ngày hợp lệ.');
@@ -195,32 +227,19 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
     setPreviewError('');
     try {
       const res = await fetch(
-        `/api/dot-san-xuat/preview?tu_ngay=${encodeURIComponent(tuNgay)}&den_ngay=${encodeURIComponent(denNgay)}&ma_may=${encodeURIComponent(maMay)}`
+        `/api/dot-san-xuat/preview?tu_ngay=${encodeURIComponent(tuNgay)}&den_ngay=${encodeURIComponent(denNgay)}&ma_may=${encodeURIComponent(maMay)}&ten_may=${encodeURIComponent(tenMay)}`
       );
       const data = (await res.json().catch(() => ({}))) as DotSanXuatPreview & { error?: string };
       if (!res.ok) throw new Error(data.error || 'Không truy xuất được dữ liệu đợt.');
       setPreview(data);
-      setSelectedLenh(new Set(data.lenh_sx.map(l => l.id)));
       setTongTlChinh(String(data.tong.tong_tl_nvl_chinh));
       setTongTienChinh(String(data.tong.tong_tien_nvl_chinh));
       setTongTlPhu(String(data.tong.tong_tl_nvl_phu));
       setTongTienPhu(String(data.tong.tong_tien_nvl_phu));
-      // Gợi ý tên đợt tiếp theo trong tháng của máy này
-      const { thang, nam } = monthYearOf(denNgay);
-      try {
-        const sug = await fetch(`/api/dot-san-xuat/next-so?thang=${thang}&nam=${nam}&ma_may=${encodeURIComponent(maMay)}`);
-        const sugData = (await sug.json().catch(() => ({}))) as { dot_so?: number; ten_dot?: string };
-        if (sug.ok && sugData.dot_so) {
-          if (!editingId) {
-            setDotSo(sugData.dot_so);
-            setTenDot(sugData.ten_dot || `Đợt ${sugData.dot_so} tháng ${thang}/${nam}`);
-          }
-        } else if (!editingId && !tenDot) {
-          setTenDot(`Đợt ${dotSo} tháng ${thang}/${nam}`);
-        }
-      } catch {
-        /* ignore */
+      if (data.lenh_sx.length === 0 && data.phieu_xuat.length === 0) {
+        setPreviewError('Không có lệnh SX và phiếu xuất NVL nào trong khoảng ngày này.');
       }
+      // Số đợt + tên đợt do người dùng tự điền (không tự gợi ý sau truy xuất).
     } catch (err: unknown) {
       setPreview(null);
       setPreviewError(err instanceof Error ? err.message : 'Không truy xuất được dữ liệu đợt.');
@@ -245,25 +264,34 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
     const donGiaChinhThucTe = tlThucTe > 0 ? tienThucTe / tlThucTe : 0;
     const donGiaChuaHaoHut = donGiaChinh + (tlThucTe > 0 ? tienPhu / tlThucTe : 0);
     // Lưu ý: đơn giá phụ & chưa hao hụt dùng TL thực tế làm mẫu số (theo mẫu Excel đợt 4 T8/2026).
-    const donGiaTong = donGiaChinhThucTe + donGiaPhu;
-    const chenhLech = donGiaTong - donGiaChuaHaoHut;
-    const tiLe = donGiaChuaHaoHut !== 0 ? (chenhLech / donGiaChuaHaoHut) * 100 : 0;
+    // Ba dòng tổng hợp cho phép nhập tay: trống = tự tính; nhập = dùng số tay (số sau kéo theo số trước nếu số trước để trống).
+    const donGiaTongManual = donGiaTongOverride.trim() === '' ? null : toNum(donGiaTongOverride);
+    const donGiaTong = donGiaTongManual ?? (donGiaChinhThucTe + donGiaPhu);
+    const chenhLechManual = chenhLechOverride.trim() === '' ? null : toNum(chenhLechOverride);
+    const chenhLech = chenhLechManual ?? (donGiaTong - donGiaChuaHaoHut);
+    const tiLeManual = tiLeOverride.trim() === '' ? null : toNum(tiLeOverride);
+    const tiLe = tiLeManual ?? (donGiaChuaHaoHut !== 0 ? (chenhLech / donGiaChuaHaoHut) * 100 : 0);
     const donGiaThuHoi = thuTl > 0 ? thuTien / thuTl : 0;
     const tongPhiNhanCong = toNum(tongChiPhiNhanCong);
     const donGiaNhanCong = tlThucTe > 0 ? tongPhiNhanCong / tlThucTe : 0;
     const bqVatTuNhanCong = donGiaTong + donGiaNhanCong;
     const prev = preview?.dot_truoc as Record<string, unknown> | null;
-    const prevTl = toNum(prev?.tong_tl_nvl_chinh);
-    const prevTien = toNum(prev?.tong_tien_nvl_chinh);
-    const prevDonGiaChinh = prevTl > 0 ? prevTien / prevTl : 0;
+    const prevDonGiaChinh = toNum(prev?.don_gia_chinh);
+    const prevDonGiaPhu = toNum(prev?.don_gia_phu);
+    const prevDonGiaChinhThucTe = toNum(prev?.don_gia_chinh_thuc_te);
+    const prevDonGiaTong = toNum(prev?.don_gia_tong);
+    const prevDonGiaNhanCong = toNum(prev?.don_gia_nhan_cong);
+    const prevChuaHaoHut = prevDonGiaChinh + prevDonGiaPhu;
     return {
       tlChinh, tienChinh, tlPhu, tienPhu, thuTl, thuTien, haoHut,
       tlThucTe, tienThucTe, donGiaChinh, donGiaPhu, donGiaChinhThucTe,
       donGiaChuaHaoHut, donGiaTong, chenhLech, tiLe, donGiaThuHoi,
-      tongPhiNhanCong, donGiaNhanCong, bqVatTuNhanCong, prevDonGiaChinh,
+      tongPhiNhanCong, donGiaNhanCong, bqVatTuNhanCong,
+      prevDonGiaChinh, prevDonGiaPhu, prevDonGiaChinhThucTe, prevDonGiaTong,
+      prevDonGiaNhanCong, prevChuaHaoHut,
       prevTen: String(prev?.ten_dot ?? '')
     };
-  }, [tongTlChinh, tongTienChinh, tongTlPhu, tongTienPhu, thuHoiTl, thuHoiTien, haoHutKg, tlThucTeOverride, tongChiPhiNhanCong, preview]);
+  }, [tongTlChinh, tongTienChinh, tongTlPhu, tongTienPhu, thuHoiTl, thuHoiTien, haoHutKg, tlThucTeOverride, donGiaTongOverride, chenhLechOverride, tiLeOverride, tongChiPhiNhanCong, preview]);
 
   function fillFromRow(row: DotSanXuatRow) {
     setEditingId(row.id);
@@ -272,6 +300,7 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
     setTuNgay(String(row.tu_ngay).slice(0, 10));
     setDenNgay(String(row.den_ngay).slice(0, 10));
     setMaMay(String(row.ma_may || ''));
+    setPreview(null);
     setTongTlChinh(String(row.tong_tl_nvl_chinh ?? 0));
     setTongTienChinh(String(row.tong_tien_nvl_chinh ?? 0));
     setTongTlPhu(String(row.tong_tl_nvl_phu ?? 0));
@@ -283,6 +312,19 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
       row.tl_chinh_thuc_te_override !== null && row.tl_chinh_thuc_te_override !== undefined
         ? String(row.tl_chinh_thuc_te_override)
         : ''
+    );
+    setDonGiaTongOverride(
+      row.gia_vt_tt_hao_hut !== null && row.gia_vt_tt_hao_hut !== undefined
+        ? String(row.gia_vt_tt_hao_hut)
+        : ''
+    );
+    setChenhLechOverride(
+      row.chenh_lech_hao_hut !== null && row.chenh_lech_hao_hut !== undefined
+        ? String(row.chenh_lech_hao_hut)
+        : ''
+    );
+    setTiLeOverride(
+      row.ti_le_hao_hut !== null && row.ti_le_hao_hut !== undefined ? String(row.ti_le_hao_hut) : ''
     );
     setSoCongTruc(String(row.so_cong_truc ?? 0));
     setSoCongDauMay(String(row.so_cong_dau_may ?? 0));
@@ -296,11 +338,13 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
   function resetForm() {
     setEditingId(null);
     setPreview(null);
-    setSelectedLenh(new Set());
     setThuHoiTl('0');
     setThuHoiTien('0');
     setHaoHutKg('0');
     setTlThucTeOverride('');
+    setDonGiaTongOverride('');
+    setChenhLechOverride('');
+    setTiLeOverride('');
     setSoCongTruc('0');
     setSoCongDauMay('0');
     setSoCongCuoiMay('0');
@@ -334,7 +378,6 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
   function buildPrintDataFromForm(): DotSanXuatPrintData | null {
     if (!preview) return null;
     const { thang, nam } = monthYearOf(denNgay);
-    const lenhSelected = preview.lenh_sx.filter(l => selectedLenh.has(l.id));
     const prev = preview.dot_truoc as Record<string, unknown> | null;
     return {
       ten_dot: tenDot.trim() || `Đợt ${dotSo} tháng ${thang}/${nam}`,
@@ -342,7 +385,7 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
       den_ngay: denNgay,
       ma_may: maMay,
       ten_may: tenMay,
-      lenh_sx: lenhSelected.map(l => ({ ma_lenh_sx: l.ma_lenh_sx, ngay_bat_dau: String(l.ngay_bat_dau || '').slice(0, 10) || undefined })),
+      lenh_sx: preview.lenh_sx.map(l => ({ ma_lenh_sx: l.ma_lenh_sx, ngay_bat_dau: String(l.ngay_bat_dau || '').slice(0, 10) || undefined })),
       phieu_xuat_codes: preview.phieu_xuat.map(p => p.ma_phieu),
       tong_tl_nvl_chinh: toNum(tongTlChinh),
       tong_tien_nvl_chinh: Math.round(toNum(tongTienChinh)),
@@ -352,19 +395,31 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
       thu_hoi_phe_tien: Math.round(toNum(thuHoiTien)),
       hao_hut_kg: toNum(haoHutKg),
       tl_chinh_thuc_te_override: tlThucTeOverride.trim() === '' ? null : toNum(tlThucTeOverride),
+      gia_vt_tt_hao_hut: donGiaTongOverride.trim() === '' ? null : toNum(donGiaTongOverride),
+      chenh_lech_hao_hut: chenhLechOverride.trim() === '' ? null : toNum(chenhLechOverride),
+      ti_le_hao_hut: tiLeOverride.trim() === '' ? null : toNum(tiLeOverride),
       so_cong_truc: toNum(soCongTruc),
       so_cong_dau_may: toNum(soCongDauMay),
       so_cong_cuoi_may: toNum(soCongCuoiMay),
       tong_chi_phi_nhan_cong: Math.round(toNum(tongChiPhiNhanCong)),
       ghi_chu: ghiChu.trim(),
       prev_ten_dot: prev ? String(prev.ten_dot ?? '') : undefined,
-      prev_don_gia_chinh: derived.prevDonGiaChinh || undefined
+      prev_don_gia_chinh: derived.prevDonGiaChinh || undefined,
+      prev_don_gia_phu: derived.prevDonGiaPhu || undefined,
+      prev_don_gia_chinh_thuc_te: derived.prevDonGiaChinhThucTe || undefined,
+      prev_don_gia_tong: derived.prevDonGiaTong || undefined,
+      prev_don_gia_nhan_cong: derived.prevDonGiaNhanCong || undefined
     };
   }
 
   /** Bản xem trước từ một đợt đã lưu (không cần truy xuất lại). */
   function buildPrintDataFromRow(row: DotSanXuatRow): DotSanXuatPrintData {
     const overrideRaw = row.tl_chinh_thuc_te_override;
+    const numOrNull = (v: unknown) => {
+      if (v === null || v === undefined || String(v).trim() === '') return null;
+      const n = Number(String(v).replace(/,/g, ''));
+      return Number.isFinite(n) ? n : null;
+    };
     return {
       ten_dot: row.ten_dot,
       tu_ngay: String(row.tu_ngay).slice(0, 10),
@@ -384,6 +439,9 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
         overrideRaw === null || overrideRaw === undefined || String(overrideRaw).trim() === ''
           ? null
           : toNum(overrideRaw),
+      gia_vt_tt_hao_hut: numOrNull(row.gia_vt_tt_hao_hut),
+      chenh_lech_hao_hut: numOrNull(row.chenh_lech_hao_hut),
+      ti_le_hao_hut: numOrNull(row.ti_le_hao_hut),
       so_cong_truc: toNum(row.so_cong_truc),
       so_cong_dau_may: toNum(row.so_cong_dau_may),
       so_cong_cuoi_may: toNum(row.so_cong_cuoi_may),
@@ -412,7 +470,7 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
       return;
     }
     const { thang, nam } = monthYearOf(denNgay);
-    const lenhSelected = (preview?.lenh_sx || []).filter(l => selectedLenh.has(l.id));
+    const lenhSelected = preview?.lenh_sx || [];
     const payload = {
       ten_dot: tenDot.trim() || `Đợt ${dotSo} tháng ${thang}/${nam}`,
       dot_so: dotSo,
@@ -433,6 +491,9 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
       thu_hoi_phe_tien: Math.round(toNum(thuHoiTien)),
       hao_hut_kg: toNum(haoHutKg),
       tl_chinh_thuc_te_override: tlThucTeOverride.trim() === '' ? null : toNum(tlThucTeOverride),
+      gia_vt_tt_hao_hut: donGiaTongOverride.trim() === '' ? null : toNum(donGiaTongOverride),
+      chenh_lech_hao_hut: chenhLechOverride.trim() === '' ? null : toNum(chenhLechOverride),
+      ti_le_hao_hut: tiLeOverride.trim() === '' ? null : toNum(tiLeOverride),
       so_cong_truc: toNum(soCongTruc),
       so_cong_dau_may: toNum(soCongDauMay),
       so_cong_cuoi_may: toNum(soCongCuoiMay),
@@ -478,6 +539,8 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
   const inputCls =
     'h-10 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] font-semibold text-slate-900 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100';
   const labelCls = 'mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-500';
+  const cellEditCls =
+    'h-8 w-full min-w-[90px] rounded-md border border-amber-300 bg-amber-50 px-1.5 text-right text-[12.5px] font-bold tabular-nums text-slate-900 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-200';
 
   return (
     <div className="space-y-3">
@@ -486,8 +549,8 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
         <div className="min-w-0 flex-1">
           <h2 className="font-display text-base font-semibold tracking-tight text-slate-900">Đợt sản xuất</h2>
           <p className="mt-0.5 text-[11.5px] leading-snug text-slate-500">
-            Chọn Từ ngày → Đến ngày → Máy → tick lệnh SX trong khoảng đó. Hệ thống truy xuất phiếu xuất kho NVL cùng
-            khoảng ngày + máy để tính tổng vật tư chính/phụ. Khoản nào không suy luận được thì nhập tay.
+            Chọn Từ ngày → Đến ngày → Máy để truy xuất lệnh SX và phiếu xuất kho NVL đúng phạm vi đó,
+            tính tổng vật tư chính/phụ. Khoản nào không suy luận được thì sửa trực tiếp trong bảng xem trước.
           </p>
         </div>
         <div className="flex shrink-0 gap-1.5">
@@ -528,7 +591,7 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
             <div className="px-4 py-6 text-[13px] text-slate-500">Chưa có đợt nào. Sang tab Lập đợt để tạo.</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-[12.5px]">
+              <table className="w-full min-w-[1100px] text-[12.5px]">
                 <thead>
                   <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
                     <th className="px-3 py-2">Đợt</th>
@@ -538,6 +601,9 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
                     <th className="px-3 py-2 text-right">Tiền chính</th>
                     <th className="px-3 py-2 text-right">TL phụ (kg)</th>
                     <th className="px-3 py-2 text-right">Tiền phụ</th>
+                    <th className="px-3 py-2 text-right">Đơn giá tổng</th>
+                    <th className="px-3 py-2 text-right">Chênh lệch</th>
+                    <th className="px-3 py-2 text-right">Tỉ lệ (%)</th>
                     <th className="px-3 py-2 text-right">Thao tác</th>
                   </tr>
                 </thead>
@@ -553,6 +619,15 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
                       <td className="px-3 py-2 text-right tabular-nums">{formatMoney(Math.round(Number(row.tong_tien_nvl_chinh) || 0))}</td>
                       <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatNumber(Number(row.tong_tl_nvl_phu) || 0)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatMoney(Math.round(Number(row.tong_tien_nvl_phu) || 0))}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {row.gia_vt_tt_hao_hut != null ? safeFixed(Number(row.gia_vt_tt_hao_hut)) : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {row.chenh_lech_hao_hut != null ? safeFixed(Number(row.chenh_lech_hao_hut), 0) : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {row.ti_le_hao_hut != null ? `${safeFixed(Number(row.ti_le_hao_hut))}%` : <span className="text-slate-300">—</span>}
+                      </td>
                       <td className="px-3 py-2">
                         <span className="flex justify-end gap-1.5">
                           <button
@@ -626,22 +701,30 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
             {previewError ? <p className="mt-2 text-[12.5px] font-semibold text-rose-600">{previewError}</p> : null}
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
-                <span className={labelCls}>Tên đợt (tự gen Đợt 1,2,3,4...)</span>
+                <span className={labelCls}>Tên đợt (tự điền, vd Đợt 1 tháng 9/2026)</span>
                 <input value={tenDot} onChange={e => setTenDot(e.target.value)} className={inputCls} placeholder="Đợt 4 tháng 8/2026" />
               </div>
               <div>
-                <span className={labelCls}>Số đợt</span>
-                <input
-                  value={String(dotSo)}
-                  onChange={e => {
-                    const n = Math.max(1, Math.round(Number(e.target.value) || 1));
-                    setDotSo(n);
-                    const { thang, nam } = monthYearOf(denNgay);
-                    if (!tenDot || /^Đợt \d+ tháng/.test(tenDot)) setTenDot(`Đợt ${n} tháng ${thang}/${nam}`);
-                  }}
-                  inputMode="numeric"
-                  className={inputCls}
-                />
+                <span className={labelCls}>Số đợt (tự điền)</span>
+                <span className="flex gap-1.5">
+                  <input
+                    value={String(dotSo)}
+                    onChange={e => {
+                      const n = Math.max(1, Math.round(Number(e.target.value) || 1));
+                      setDotSo(n);
+                    }}
+                    inputMode="numeric"
+                    className={inputCls}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void suggestDotSo()}
+                    title="Lấy số đợt tiếp theo trong tháng của máy này"
+                    className="h-10 shrink-0 rounded-lg border border-slate-200 px-2.5 text-[12px] font-bold text-slate-500 hover:bg-slate-50"
+                  >
+                    Gợi ý
+                  </button>
+                </span>
               </div>
               <div>
                 <span className={labelCls}>Khoảng đã chọn</span>
@@ -657,40 +740,38 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                 <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
                   <div className="border-b border-slate-100 px-4 py-2.5 text-[12px] font-bold uppercase tracking-wide text-slate-500">
-                    Lệnh sản xuất trong khoảng ({preview.lenh_sx.length}) — tick để gom vào đợt
+                    Lệnh sản xuất theo ngày và máy ({preview.lenh_sx.length})
                   </div>
                   <div className="max-h-[260px] overflow-auto">
                     {preview.lenh_sx.length === 0 ? (
-                      <p className="px-4 py-4 text-[12.5px] text-slate-500">Không có lệnh SX nào khớp máy + khoảng ngày.</p>
+                      <p className="px-4 py-4 text-[12.5px] text-slate-500">Không có lệnh SX nào theo ngày và máy này.</p>
                     ) : (
                       <table className="w-full text-[12.5px]">
                         <thead className="sticky top-0 bg-slate-50">
                           <tr className="text-left text-[11px] uppercase text-slate-500">
-                            <th className="px-3 py-2">Chọn</th>
                             <th className="px-3 py-2">Mã lệnh</th>
                             <th className="px-3 py-2">Ngày BĐ</th>
+                            <th className="px-3 py-2">Máy</th>
                             <th className="px-3 py-2">Trạng thái</th>
                           </tr>
                         </thead>
                         <tbody>
                           {preview.lenh_sx.map(l => (
                             <tr key={l.id} className="border-t border-slate-100">
-                              <td className="px-3 py-1.5">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedLenh.has(l.id)}
-                                  onChange={e => {
-                                    const next = new Set(selectedLenh);
-                                    if (e.target.checked) next.add(l.id);
-                                    else next.delete(l.id);
-                                    setSelectedLenh(next);
-                                  }}
-                                  className="h-4 w-4 accent-brand-600"
-                                />
-                              </td>
                               <td className="px-3 py-1.5 font-bold">{l.ma_lenh_sx || '-'}</td>
                               <td className="px-3 py-1.5">{formatDateVN(String(l.ngay_bat_dau || '').slice(0, 10))}</td>
-                              <td className="px-3 py-1.5 text-slate-500">{l.trang_thai || '-'}</td>
+                              <td className="px-3 py-1.5 text-slate-500">{l.may || '-'}</td>
+                              <td className="px-3 py-1.5">
+                                <span className="text-slate-600">{l.trang_thai || '-'}</span>
+                                {l.co_so_tron ? (
+                                  <span className="ml-1.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">có SX thực tế</span>
+                                ) : (
+                                  <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">chưa có sổ trộn</span>
+                                )}
+                                {l.hoan_thanh ? null : (
+                                  <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">chưa hoàn thành</span>
+                                )}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -701,13 +782,12 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
 
                 <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
                   <div className="border-b border-slate-100 px-4 py-2.5 text-[12px] font-bold uppercase tracking-wide text-slate-500">
-                    Phiếu xuất NVL trong khoảng ({preview.phieu_xuat.length}) — tổng TL + tiền chính/phụ từng phiếu
+                    Phiếu xuất NVL trong khoảng ({preview.phieu_xuat.length})
                   </div>
                   <div className="max-h-[260px] overflow-auto">
                     {preview.phieu_xuat.length === 0 ? (
                       <p className="px-4 py-4 text-[12.5px] text-slate-500">
-                        Không có phiếu xuất NVL nào khớp máy + khoảng ngày. Nếu phiếu chưa có tổng, bảng này chính là tổng
-                        tính từ dòng (trọng lượng kg + thành tiền, chia chính/phụ).
+                        Không có phiếu xuất kho NVL nào theo ngày và máy này.
                       </p>
                     ) : (
                       <table className="w-full min-w-[560px] text-[12px]">
@@ -740,9 +820,29 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
                 </div>
               </div>
 
+              {(() => {
+                const hasPhieu = preview.phieu_xuat.length > 0;
+                const hasLenh = preview.lenh_sx.length > 0;
+                const anyHoanThanh = preview.lenh_sx.some(l => l.hoan_thanh);
+                const anySoTron = preview.lenh_sx.some(l => l.co_so_tron);
+                if (!hasPhieu || (hasLenh && anyHoanThanh && anySoTron)) return null;
+                const reasons: string[] = [];
+                if (!hasLenh) reasons.push(`có ${preview.phieu_xuat.length} phiếu xuất NVL nhưng không có lệnh SX nào trong phạm vi`);
+                else {
+                  if (!anyHoanThanh) reasons.push('chưa có lệnh nào chuyển Hoàn thành');
+                  if (!anySoTron) reasons.push('chưa có sổ trộn (SX thực tế) nào trong phạm vi');
+                }
+                return (
+                  <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-[12.5px] font-semibold leading-relaxed text-amber-800">
+                    Lưu ý đối chiếu: {reasons.join(' · ')}. Tổng vật tư vẫn tính đúng từ phiếu xuất kho;
+                    hãy kiểm tra trạng thái lệnh và sổ trộn trước khi chốt đợt.
+                  </div>
+                );
+              })()}
+
               <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-card">
                 <h3 className="text-[12px] font-bold uppercase tracking-wide text-slate-500">
-                  Tổng vật tư truy xuất (tự động — được sửa tay nếu phiếu chưa có tổng chuẩn)
+                  Tổng vật tư truy xuất (tự động — sửa tay nếu phiếu chưa có tổng chuẩn)
                 </h3>
                 <div className="mt-2 grid grid-cols-2 gap-3 lg:grid-cols-4">
                   <div>
@@ -765,57 +865,20 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-card">
-                <h3 className="text-[12px] font-bold uppercase tracking-wide text-slate-500">
-                  Nhập tay — khoản không suy luận được (thu hồi phế, hao hụt, nhân công, ghi chú)
-                </h3>
-                <div className="mt-2 grid grid-cols-2 gap-3 lg:grid-cols-4">
-                  <div>
-                    <span className={labelCls}>Thu hồi phế — TL (kg)</span>
-                    <input value={thuHoiTl} onChange={e => setThuHoiTl(e.target.value)} inputMode="decimal" className={inputCls} />
-                  </div>
-                  <div>
-                    <span className={labelCls}>Thu hồi phế — tiền (VND)</span>
-                    <input value={thuHoiTien} onChange={e => setThuHoiTien(e.target.value)} inputMode="numeric" className={inputCls} />
-                  </div>
-                  <div>
-                    <span className={labelCls}>Hao hụt (kg)</span>
-                    <input value={haoHutKg} onChange={e => setHaoHutKg(e.target.value)} inputMode="decimal" className={inputCls} />
-                  </div>
-                  <div>
-                    <span className={labelCls}>TL thực tế override (trống = tự tính)</span>
-                    <input value={tlThucTeOverride} onChange={e => setTlThucTeOverride(e.target.value)} inputMode="decimal" className={inputCls} placeholder="vd 9449" />
-                  </div>
-                  <div>
-                    <span className={labelCls}>Số công — Trực</span>
-                    <input value={soCongTruc} onChange={e => setSoCongTruc(e.target.value)} inputMode="decimal" className={inputCls} />
-                  </div>
-                  <div>
-                    <span className={labelCls}>Số công — Đầu máy</span>
-                    <input value={soCongDauMay} onChange={e => setSoCongDauMay(e.target.value)} inputMode="decimal" className={inputCls} />
-                  </div>
-                  <div>
-                    <span className={labelCls}>Số công — Cuối máy</span>
-                    <input value={soCongCuoiMay} onChange={e => setSoCongCuoiMay(e.target.value)} inputMode="decimal" className={inputCls} />
-                  </div>
-                  <div>
-                    <span className={labelCls}>Tổng chi phí nhân công (VND)</span>
-                    <input value={tongChiPhiNhanCong} onChange={e => setTongChiPhiNhanCong(e.target.value)} inputMode="numeric" className={inputCls} />
-                  </div>
-                </div>
-                <div className="mt-3">
-                  <span className={labelCls}>Ghi chú đợt (vd máy chạy ổn định, không phát sinh sự cố)</span>
-                  <textarea value={ghiChu} onChange={e => setGhiChu(e.target.value)} rows={2} className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-[13px] outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                </div>
+                <span className={labelCls}>Ghi chú đợt (vd máy chạy ổn định, không phát sinh sự cố) — sửa trực tiếp, hiện trên bản in</span>
+                <textarea value={ghiChu} onChange={e => setGhiChu(e.target.value)} rows={2} className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-[13px] outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               </div>
 
               <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
-                <div className="border-b border-slate-100 px-4 py-2.5 text-[12px] font-bold uppercase tracking-wide text-slate-500">
-                  Kết quả định giá vật tư — {tenDot || `Đợt ${dotSo}`} {derived.prevTen ? `(so với ${derived.prevTen})` : ''}
+                <div className="bg-[#1d4ed8] px-4 py-2.5 text-[13px] font-black uppercase tracking-wide text-white">
+                  ĐẶC - Kết quả định giá vật tư - nhân công thực tế sản xuất {tenDot || `đợt ${dotSo}`}
+                  {derived.prevTen ? <span className="ml-2 font-semibold normal-case opacity-80">(so với {derived.prevTen})</span> : null}
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[860px] text-[12.5px]">
+                  <table className="w-full min-w-[920px] text-[12.5px]">
                     <thead>
-                      <tr className="bg-slate-900 text-white">
+                      <tr className="bg-[#1d4ed8] text-white">
+                        <th className="px-2 py-2 text-center">TT</th>
                         <th className="px-3 py-2 text-left">Diễn giải</th>
                         <th className="px-3 py-2 text-right">Trọng lượng (kg)</th>
                         <th className="px-3 py-2 text-right">Giá trị vật tư (VND)</th>
@@ -825,75 +888,91 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
                       </tr>
                     </thead>
                     <tbody>
-                      <tr className="border-t border-slate-100">
+                      <tr className="border-t border-slate-200">
+                        <td className="px-2 py-2 text-center">1</td>
                         <td className="px-3 py-2">Tổng vật tư chính xuất vào sản xuất</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{formatNumber(derived.tlChinh)}</td>
+                        <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatNumber(derived.tlChinh)}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{formatMoney(Math.round(derived.tienChinh))}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{safeFixed(derived.donGiaChinh, 0)}</td>
+                        <td className="px-3 py-2 text-right font-bold tabular-nums text-[#b91c1c]">{safeFixed(derived.donGiaChinh, 0)}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{derived.prevDonGiaChinh ? safeFixed(derived.prevDonGiaChinh, 0) : '-'}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{derived.prevDonGiaChinh ? safeFixed(derived.donGiaChinh - derived.prevDonGiaChinh, 0) : '-'}</td>
+                        <td className="px-3 py-2 text-right font-bold tabular-nums text-[#1d4ed8]">{derived.prevDonGiaChinh ? safeFixed(derived.donGiaChinh - derived.prevDonGiaChinh, 0) : '-'}</td>
                       </tr>
-                      <tr className="border-t border-slate-100">
+                      <tr className="border-t border-slate-200">
+                        <td className="px-2 py-2 text-center">2</td>
                         <td className="px-3 py-2">Tổng vật tư phụ xuất vào sản xuất</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{formatNumber(derived.tlPhu)}</td>
+                        <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatNumber(derived.tlPhu)}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{formatMoney(Math.round(derived.tienPhu))}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{safeFixed(derived.donGiaPhu)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">-</td>
-                        <td className="px-3 py-2 text-right tabular-nums">-</td>
+                        <td className="px-3 py-2 text-right font-bold tabular-nums text-[#b91c1c]">{safeFixed(derived.donGiaPhu)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{derived.prevDonGiaPhu ? safeFixed(derived.prevDonGiaPhu) : '-'}</td>
+                        <td className="px-3 py-2 text-right font-bold tabular-nums text-[#1d4ed8]">{derived.prevDonGiaPhu ? safeFixed(derived.donGiaPhu - derived.prevDonGiaPhu, 0) : '-'}</td>
                       </tr>
-                      <tr className="border-t border-slate-100 bg-amber-50/60">
-                        <td className="px-3 py-2 font-semibold">Giá vật tư kg chưa có hao hụt (chính + phụ)</td>
+                      <tr className="border-t border-slate-200 bg-amber-50/70">
+                        <td className="px-2 py-2 text-center">3</td>
+                        <td className="px-3 py-2 font-semibold">Giá vật tư kg chưa có hao hụt vật tư sản xuất như phế sản xuất, hao hụt không tên, phế bắt buộc</td>
                         <td className="px-3 py-2 text-right">-</td>
                         <td className="px-3 py-2 text-right">-</td>
-                        <td className="px-3 py-2 text-right font-bold tabular-nums">{safeFixed(derived.donGiaChuaHaoHut)}</td>
-                        <td className="px-3 py-2 text-right">-</td>
-                        <td className="px-3 py-2 text-right">-</td>
+                        <td className="px-3 py-2 text-right font-bold tabular-nums text-[#b91c1c]">{safeFixed(derived.donGiaChuaHaoHut)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{derived.prevChuaHaoHut ? safeFixed(derived.prevChuaHaoHut) : '-'}</td>
+                        <td className="px-3 py-2 text-right font-bold tabular-nums text-[#1d4ed8]">{derived.prevChuaHaoHut ? safeFixed(derived.donGiaChuaHaoHut - derived.prevChuaHaoHut, 0) : '-'}</td>
                       </tr>
-                      <tr className="border-t border-slate-100">
-                        <td className="px-3 py-2">Trừ giá trị vật tư thu hồi (phế bắt buộc & phế SX)</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{formatNumber(derived.thuTl)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{formatMoney(Math.round(derived.thuTien))}</td>
+                      <tr className="border-t border-slate-200">
+                        <td className="px-2 py-2 text-center">4</td>
+                        <td className="px-3 py-2">Trừ giá trị vật tư thu hồi cho phế bắt buộc & phế sản xuất <span className="text-[11px] text-slate-400">(sửa trực tiếp)</span></td>
+                        <td className="px-3 py-2"><input value={thuHoiTl} onChange={e => setThuHoiTl(e.target.value)} inputMode="decimal" className={cellEditCls} /></td>
+                        <td className="px-3 py-2"><input value={thuHoiTien} onChange={e => setThuHoiTien(e.target.value)} inputMode="numeric" className={cellEditCls} /></td>
                         <td className="px-3 py-2 text-right tabular-nums">{derived.thuTl > 0 ? safeFixed(derived.donGiaThuHoi, 0) : '-'}</td>
                         <td className="px-3 py-2 text-right">-</td>
                         <td className="px-3 py-2 text-right">-</td>
                       </tr>
-                      <tr className="border-t border-slate-100">
-                        <td className="px-3 py-2">Hao hụt</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{formatNumber(derived.haoHut)}</td>
+                      <tr className="border-t border-slate-200">
+                        <td className="px-2 py-2 text-center">5</td>
+                        <td className="px-3 py-2">Hao hụt <span className="text-[11px] text-slate-400">(sửa trực tiếp)</span></td>
+                        <td className="px-3 py-2"><input value={haoHutKg} onChange={e => setHaoHutKg(e.target.value)} inputMode="decimal" className={cellEditCls} /></td>
                         <td className="px-3 py-2 text-right">-</td>
                         <td className="px-3 py-2 text-right">-</td>
                         <td className="px-3 py-2 text-right">-</td>
                         <td className="px-3 py-2 text-right">-</td>
                       </tr>
-                      <tr className="border-t border-slate-100">
-                        <td className="px-3 py-2 font-semibold">Giá vật tư chính thực tế sau SX có màng</td>
-                        <td className="px-3 py-2 text-right font-bold tabular-nums">{formatNumber(derived.tlThucTe)}</td>
+                      <tr className="border-t border-slate-200">
+                        <td className="px-2 py-2 text-center">6</td>
+                        <td className="px-3 py-2 font-semibold">Giá vật tư chính thực tế sau sản xuất có màng</td>
+                        <td className="px-3 py-2">
+                          <input value={tlThucTeOverride} onChange={e => setTlThucTeOverride(e.target.value)} inputMode="decimal" className={cellEditCls} placeholder={formatNumber(derived.tlThucTe)} title="Để trống = tự tính (chính − thu hồi − hao hụt)" />
+                        </td>
                         <td className="px-3 py-2 text-right font-bold tabular-nums">{formatMoney(Math.round(derived.tienThucTe))}</td>
-                        <td className="px-3 py-2 text-right font-bold tabular-nums">{safeFixed(derived.donGiaChinhThucTe)}</td>
+                        <td className="px-3 py-2 text-right font-bold tabular-nums text-[#b91c1c]">{safeFixed(derived.donGiaChinhThucTe)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{derived.prevDonGiaChinhThucTe ? safeFixed(derived.prevDonGiaChinhThucTe) : '-'}</td>
+                        <td className="px-3 py-2 text-right font-bold tabular-nums text-[#1d4ed8]">{derived.prevDonGiaChinhThucTe ? safeFixed(derived.donGiaChinhThucTe - derived.prevDonGiaChinhThucTe, 0) : '-'}</td>
+                      </tr>
+                      <tr className="border-t border-slate-200">
+                        <td className="px-2 py-2 text-center">7</td>
+                        <td className="px-3 py-2">Giá vật tư thực tế sau sản xuất có hao hụt vật tư sản xuất như phế sản xuất, hao hụt không tên, phế bắt buộc <span className="text-[11px] text-slate-400">(sửa trực tiếp)</span></td>
+                        <td className="px-3 py-2 text-right">-</td>
+                        <td className="px-3 py-2 text-right">-</td>
+                        <td className="px-3 py-2"><input value={donGiaTongOverride} onChange={e => setDonGiaTongOverride(e.target.value)} inputMode="decimal" className={cellEditCls} placeholder={safeFixed(derived.donGiaChinhThucTe + derived.donGiaPhu)} title="Để trống = tự tính (chính thực tế + phụ)" /></td>
+                        <td className="px-3 py-2 text-right tabular-nums">{derived.prevDonGiaTong ? safeFixed(derived.prevDonGiaTong) : '-'}</td>
+                        <td className="px-3 py-2 text-right font-bold tabular-nums text-[#1d4ed8]">{derived.prevDonGiaTong ? safeFixed(derived.donGiaTong - derived.prevDonGiaTong, 0) : '-'}</td>
+                      </tr>
+                      <tr className="border-t border-slate-200 bg-[#1d4ed8] font-bold text-white">
+                        <td className="px-2 py-2 text-center">8</td>
+                        <td className="px-3 py-2">Chênh lệch trước và sau hao hụt <span className="text-[11px] opacity-70">(sửa trực tiếp)</span></td>
+                        <td className="px-3 py-2 text-right">-</td>
+                        <td className="px-3 py-2 text-right">-</td>
+                        <td className="px-3 py-2"><input value={chenhLechOverride} onChange={e => setChenhLechOverride(e.target.value)} inputMode="decimal" className="h-8 w-full min-w-[90px] rounded-md border border-white/40 bg-white/10 px-1.5 text-right text-[12.5px] font-bold tabular-nums text-white outline-none placeholder:text-white/50 focus:border-white focus:ring-1 focus:ring-white/40" placeholder={safeFixed(derived.donGiaTong - derived.donGiaChuaHaoHut, 0)} title="Để trống = tự tính (tổng − chưa hao hụt)" /></td>
                         <td className="px-3 py-2 text-right">-</td>
                         <td className="px-3 py-2 text-right">-</td>
                       </tr>
-                      <tr className="border-t border-slate-100">
-                        <td className="px-3 py-2">Giá vật tư thực tế sau SX có hao hụt (chính thực tế + phụ)</td>
+                      <tr className="bg-[#1d4ed8] font-bold text-white">
+                        <td className="px-2 py-2 text-center">9</td>
+                        <td className="px-3 py-2">Tỉ lệ chênh lệch trước và sau hao hụt <span className="text-[11px] opacity-70">(sửa trực tiếp)</span></td>
                         <td className="px-3 py-2 text-right">-</td>
                         <td className="px-3 py-2 text-right">-</td>
-                        <td className="px-3 py-2 text-right font-bold tabular-nums">{safeFixed(derived.donGiaTong)}</td>
-                        <td className="px-3 py-2 text-right">-</td>
-                        <td className="px-3 py-2 text-right">-</td>
-                      </tr>
-                      <tr className="border-t border-slate-100 bg-slate-900 text-white">
-                        <td className="px-3 py-2 font-bold">Chênh lệch trước và sau hao hụt</td>
-                        <td className="px-3 py-2 text-right">-</td>
-                        <td className="px-3 py-2 text-right">-</td>
-                        <td className="px-3 py-2 text-right font-bold tabular-nums">{safeFixed(derived.chenhLech, 0)}</td>
-                        <td className="px-3 py-2 text-right">-</td>
-                        <td className="px-3 py-2 text-right">-</td>
-                      </tr>
-                      <tr className="bg-slate-900 text-white">
-                        <td className="px-3 py-2 font-bold">Tỉ lệ chênh lệch trước và sau hao hụt</td>
-                        <td className="px-3 py-2 text-right">-</td>
-                        <td className="px-3 py-2 text-right">-</td>
-                        <td className="px-3 py-2 text-right font-bold">{safeFixed(derived.tiLe)}%</td>
+                        <td className="px-3 py-2">
+                          <span className="flex items-center gap-1">
+                            <input value={tiLeOverride} onChange={e => setTiLeOverride(e.target.value)} inputMode="decimal" className="h-8 w-full min-w-[70px] rounded-md border border-white/40 bg-white/10 px-1.5 text-right text-[12.5px] font-bold tabular-nums text-white outline-none placeholder:text-white/50 focus:border-white focus:ring-1 focus:ring-white/40" placeholder={safeFixed(derived.donGiaChuaHaoHut !== 0 ? (derived.donGiaTong - derived.donGiaChuaHaoHut) / derived.donGiaChuaHaoHut * 100 : 0)} title="Để trống = tự tính (%)" />
+                            <span>%</span>
+                          </span>
+                        </td>
                         <td className="px-3 py-2 text-right">-</td>
                         <td className="px-3 py-2 text-right">-</td>
                       </tr>
@@ -907,32 +986,43 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
               </div>
 
               <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
-                <div className="border-b border-slate-100 px-4 py-2.5 text-[12px] font-bold uppercase tracking-wide text-slate-500">
-                  Kết quả định giá nhân công thực tế — {tenDot || `Đợt ${dotSo}`}
+                <div className="bg-[#1d4ed8] px-4 py-2.5 text-[13px] font-black uppercase tracking-wide text-white">
+                  ĐẶC - Kết quả định giá nhân công thực tế sản xuất {tenDot || `đợt ${dotSo}`}
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[720px] text-[12.5px]">
+                  <table className="w-full min-w-[920px] text-[12.5px]">
                     <thead>
-                      <tr className="bg-slate-900 text-white">
+                      <tr className="bg-[#1d4ed8] text-white">
                         <th className="px-3 py-2 text-left">Đợt</th>
-                        <th className="px-3 py-2 text-right">Số công</th>
+                        <th className="px-3 py-2 text-left">Số công <span className="font-semibold normal-case opacity-80">(sửa trực tiếp)</span></th>
+                        <th className="px-3 py-2 text-right">Số nhân công (số công)</th>
                         <th className="px-3 py-2 text-right">Tổng chi phí nhân công</th>
                         <th className="px-3 py-2 text-right">Đơn giá nhân công/kg đợt này</th>
-                        <th className="px-3 py-2 text-right">BQ vật tư + nhân công/kg</th>
+                        <th className="px-3 py-2 text-right">Đơn giá nhân công/kg đợt trước</th>
+                        <th className="px-3 py-2 text-right">Chênh lệch</th>
                       </tr>
                     </thead>
                     <tbody>
-                      <tr className="border-t border-slate-100">
-                        <td className="px-3 py-2">
-                          <span className="font-bold">{tenDot || `Đợt ${dotSo}`}</span>
-                          <span className="block text-[11.5px] text-slate-500">
-                            Trực: {formatNumber(toNum(soCongTruc))} · Đầu máy: {formatNumber(toNum(soCongDauMay))} · Cuối máy: {formatNumber(toNum(soCongCuoiMay))}
-                          </span>
-                        </td>
+                      <tr className="border-t border-slate-200">
+                        <td className="px-3 py-2 font-bold" rowSpan={4}>{tenDot || `Đợt ${dotSo}`}</td>
+                        <td className="px-3 py-2 text-slate-500">Trực</td>
+                        <td className="px-3 py-2"><input value={soCongTruc} onChange={e => setSoCongTruc(e.target.value)} inputMode="decimal" className={cellEditCls} /></td>
+                        <td className="px-3 py-2" rowSpan={4}><input value={tongChiPhiNhanCong} onChange={e => setTongChiPhiNhanCong(e.target.value)} inputMode="numeric" className={cellEditCls} /></td>
+                        <td className="px-3 py-2 text-right font-bold tabular-nums" rowSpan={4}>{safeFixed(derived.donGiaNhanCong, 0)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums" rowSpan={4}>{derived.prevDonGiaNhanCong ? safeFixed(derived.prevDonGiaNhanCong, 0) : '-'}</td>
+                        <td className="px-3 py-2 text-right font-bold tabular-nums text-[#1d4ed8]" rowSpan={4}>{derived.prevDonGiaNhanCong ? safeFixed(derived.donGiaNhanCong - derived.prevDonGiaNhanCong, 0) : '-'}</td>
+                      </tr>
+                      <tr className="border-t border-slate-200">
+                        <td className="px-3 py-2 text-slate-500">Đầu máy</td>
+                        <td className="px-3 py-2"><input value={soCongDauMay} onChange={e => setSoCongDauMay(e.target.value)} inputMode="decimal" className={cellEditCls} /></td>
+                      </tr>
+                      <tr className="border-t border-slate-200">
+                        <td className="px-3 py-2 text-slate-500">Cuối máy</td>
+                        <td className="px-3 py-2"><input value={soCongCuoiMay} onChange={e => setSoCongCuoiMay(e.target.value)} inputMode="decimal" className={cellEditCls} /></td>
+                      </tr>
+                      <tr className="border-t border-slate-200 bg-slate-50 font-bold">
+                        <td className="px-3 py-2">Tổng chi phí nhân công</td>
                         <td className="px-3 py-2 text-right tabular-nums">{formatNumber(toNum(soCongTruc) + toNum(soCongDauMay) + toNum(soCongCuoiMay))}</td>
-                        <td className="px-3 py-2 text-right font-bold tabular-nums">{formatMoney(Math.round(derived.tongPhiNhanCong))}</td>
-                        <td className="px-3 py-2 text-right font-bold tabular-nums">{safeFixed(derived.donGiaNhanCong, 0)}</td>
-                        <td className="px-3 py-2 text-right font-bold tabular-nums">{safeFixed(derived.bqVatTuNhanCong, 0)}</td>
                       </tr>
                     </tbody>
                   </table>

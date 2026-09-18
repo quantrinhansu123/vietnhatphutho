@@ -122,6 +122,8 @@ export const BACK_TAB_MAP: Record<string, string> = {
   'machine-run-log': 'report-forms',
   'machine-run-log-list': 'report-lists',
   'bao-cao-tuan': 'report-forms',
+  'bao-cao-thang': 'report-forms',
+  'bao-cao-thang-list': 'report-lists',
   'bao-cao-ngay': 'report-forms',
   'bao-cao-ngay-list': 'report-lists',
   'acceptance-report': 'report-forms',

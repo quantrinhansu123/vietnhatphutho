@@ -1926,10 +1926,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                                 value={line.tem || ''}
                                 onChange={tem => updateConversionProductLine(line.key, { tem })}
                                 options={[...SOUTH_TEM_OPTIONS]}
-                                placeholder="Chọn tem"
+                                placeholder="Chọn/nhập tem"
                                 getLabel={item => String(item)}
                                 getValue={item => String(item)}
                                 allowEmpty
+                                allowCustomValue
                                 inputClassName={orderFieldClass}
                               />
                             </div>
@@ -1942,6 +1943,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                                 getLabel={item => String(item)}
                                 getValue={item => String(item)}
                                 allowEmpty
+                                allowCustomValue
                                 inputClassName={orderFieldClass}
                               />
                             </div>

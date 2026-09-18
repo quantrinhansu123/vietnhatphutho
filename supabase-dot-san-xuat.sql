@@ -27,6 +27,9 @@ create table if not exists public.dot_san_xuat (
   thu_hoi_phe_tien numeric(16,0) not null default 0,
   hao_hut_kg numeric(14,3) not null default 0,
   tl_chinh_thuc_te_override numeric(14,3),
+  gia_vt_tt_hao_hut numeric(14,2),
+  chenh_lech_hao_hut numeric(14,2),
+  ti_le_hao_hut numeric(8,4),
   -- Nhân công thực tế (nhập tay, bảng 2 trong ảnh)
   so_cong_truc numeric(10,2) not null default 0,
   so_cong_dau_may numeric(10,2) not null default 0,
@@ -58,6 +61,9 @@ alter table public.dot_san_xuat
   add column if not exists thu_hoi_phe_tien numeric(16,0),
   add column if not exists hao_hut_kg numeric(14,3),
   add column if not exists tl_chinh_thuc_te_override numeric(14,3),
+  add column if not exists gia_vt_tt_hao_hut numeric(14,2),
+  add column if not exists chenh_lech_hao_hut numeric(14,2),
+  add column if not exists ti_le_hao_hut numeric(8,4),
   add column if not exists so_cong_truc numeric(10,2),
   add column if not exists so_cong_dau_may numeric(10,2),
   add column if not exists so_cong_cuoi_may numeric(10,2),
@@ -66,6 +72,26 @@ alter table public.dot_san_xuat
   add column if not exists nguoi_lap text,
   add column if not exists created_at timestamptz,
   add column if not exists updated_at timestamptz;
+
+-- Đổi tên cột sang tiếng Việt (an toàn khi chạy lại: chỉ đổi nếu cột cũ còn tồn tại)
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+             where table_schema='public' and table_name='dot_san_xuat'
+               and column_name='don_gia_tong_override') then
+    alter table public.dot_san_xuat rename column don_gia_tong_override to gia_vt_tt_hao_hut;
+  end if;
+  if exists (select 1 from information_schema.columns
+             where table_schema='public' and table_name='dot_san_xuat'
+               and column_name='chenh_lech_override') then
+    alter table public.dot_san_xuat rename column chenh_lech_override to chenh_lech_hao_hut;
+  end if;
+  if exists (select 1 from information_schema.columns
+             where table_schema='public' and table_name='dot_san_xuat'
+               and column_name='ti_le_override') then
+    alter table public.dot_san_xuat rename column ti_le_override to ti_le_hao_hut;
+  end if;
+end $$;
 
 create unique index if not exists dot_san_xuat_unique_dot
   on public.dot_san_xuat (nam, thang, dot_so, ma_may);

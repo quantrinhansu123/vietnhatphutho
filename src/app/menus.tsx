@@ -234,6 +234,13 @@ export const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'bao-cao-tuan'
   },
   {
+    title: 'Báo cáo tháng',
+    desc: 'Tổng hợp kết quả định giá vật tư - nhân công theo tháng và máy từ các báo cáo từng đợt.',
+    icon: ClipboardList,
+    icon3d: calendarPlain3d,
+    tab: 'bao-cao-thang-list'
+  },
+  {
     title: 'Báo cáo ngày',
     desc: 'Danh sách theo ngày, thêm/sửa báo cáo: thành phẩm, phế hồng, vật tư tồn/nhập/hao hụt.',
     icon: ClipboardList,
@@ -339,6 +346,13 @@ export const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
     icon: History,
     icon3d: spiralCalendar3d,
     tab: 'bao-cao-ngay-list'
+  },
+  {
+    title: 'Danh sách báo cáo tháng',
+    desc: 'Xem, sửa, in và xóa báo cáo tháng tổng hợp từ các đợt sản xuất.',
+    icon: History,
+    icon3d: calendarPlain3d,
+    tab: 'bao-cao-thang-list'
   },
   {
     title: 'Danh sách báo cáo tồn',
@@ -1064,6 +1078,8 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'machine-run-log': { group: 'Sản xuất', sub: 'Nhật ký chạy máy' },
   'machine-run-log-list': { group: 'Quản Đốc', sub: 'DS nhật ký chạy máy' },
   'bao-cao-tuan': { group: 'Sản xuất', sub: 'Báo cáo tuần' },
+  'bao-cao-thang': { group: 'Sản xuất', sub: 'Báo cáo tháng' },
+  'bao-cao-thang-list': { group: 'Sản xuất', sub: 'Danh sách báo cáo tháng' },
   'bao-cao-ngay': { group: 'Sản xuất', sub: 'Báo cáo ngày' },
   'bao-cao-ngay-list': { group: 'Sản xuất', sub: 'Danh sách báo cáo ngày' },
   'production-plan-history': { group: 'Quản Đốc', sub: 'Kế hoạch sản xuất' },
