@@ -4737,3 +4737,214 @@ input[type="number"] {
     break-inside: avoid !important;
   }
 }
+
+/* ===== Đợt sản xuất: xem trước + in báo cáo định giá ===== */
+.dot-san-xuat-print-sheet {
+  display: none;
+}
+
+.dot-san-xuat-print-batch {
+  display: none;
+}
+
+.dot-san-xuat-print-preview .dot-san-xuat-print-sheet {
+  display: block;
+}
+
+.dot-san-xuat-print-doc {
+  width: 100%;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 11pt;
+  line-height: 1.35;
+  color: #111111;
+}
+
+.dot-san-xuat-print-header {
+  margin-bottom: 5mm;
+}
+
+.dot-san-xuat-print-brand {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4mm;
+  margin: 0 0 3mm;
+  padding: 0;
+}
+
+.dot-san-xuat-print-logo {
+  height: 16mm;
+  width: auto;
+  max-width: 48mm;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.dot-san-xuat-print-company-name {
+  margin: 0;
+  font-size: 13pt;
+  font-weight: 900;
+  text-transform: uppercase;
+  line-height: 1.25;
+}
+
+.dot-san-xuat-print-project-name {
+  margin: 1.5mm 0 0;
+  font-size: 10.5pt;
+  font-style: italic;
+  line-height: 1.3;
+}
+
+.dot-san-xuat-print-title {
+  margin: 2mm 0 0;
+  font-size: 14pt;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-align: center;
+}
+
+.dot-san-xuat-print-subtitle {
+  margin: 5mm 0 2mm;
+  font-size: 12pt;
+  font-weight: 900;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.dot-san-xuat-print-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5mm 6mm;
+  margin-top: 4mm;
+  margin-bottom: 2mm;
+  font-size: 10.5pt;
+}
+
+.dot-san-xuat-print-meta p {
+  margin: 0;
+}
+
+.dot-san-xuat-print-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 4mm;
+}
+
+.dot-san-xuat-print-table th,
+.dot-san-xuat-print-table td {
+  border: 1px solid #111111;
+  padding: 2mm 2.5mm;
+  vertical-align: top;
+}
+
+.dot-san-xuat-print-table th {
+  background: #f4f4f5;
+  font-weight: 800;
+  text-align: center;
+}
+
+.dot-san-xuat-print-center {
+  text-align: center;
+}
+
+.dot-san-xuat-print-right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.dot-san-xuat-print-highlight td {
+  background: #fffbeb;
+}
+
+.dot-san-xuat-print-total td {
+  background: #f4f4f5;
+  font-weight: 800;
+}
+
+.dot-san-xuat-print-note {
+  margin: 2mm 0 0;
+  padding: 2.5mm 3mm;
+  border: 1px solid #111111;
+  background: #f0fdf4;
+  font-size: 10.5pt;
+  font-weight: 700;
+}
+
+.dot-san-xuat-print-muted {
+  font-size: 10.5pt;
+  color: #333333;
+}
+
+.dot-san-xuat-print-signatures {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4mm;
+  margin-top: 10mm;
+  text-align: center;
+  font-size: 10.5pt;
+}
+
+.dot-san-xuat-print-signatures p {
+  margin: 0;
+  font-weight: 800;
+}
+
+.dot-san-xuat-print-signatures span {
+  font-style: italic;
+  font-size: 9.5pt;
+}
+
+@media print {
+  body.dot-san-xuat-print-active #root,
+  body.dot-san-xuat-print-active .dot-san-xuat-print-modal {
+    display: none !important;
+  }
+
+  body.dot-san-xuat-print-active .dot-san-xuat-print-batch {
+    display: block !important;
+  }
+}
+
+@media print {
+  .dot-san-xuat-print-batch,
+  .dot-san-xuat-print-batch * {
+    visibility: visible !important;
+  }
+
+  .dot-san-xuat-print-batch {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    left: 0;
+    top: 0;
+    width: 100%;
+    z-index: 9999;
+    background: #ffffff;
+    color: #111111;
+    padding: 0;
+  }
+
+  .dot-san-xuat-print-batch .dot-san-xuat-print-sheet {
+    display: block !important;
+    position: relative;
+    inset: auto;
+    width: auto;
+    background: #ffffff;
+    padding: 0;
+  }
+
+  .dot-san-xuat-print-batch .dot-san-xuat-print-doc {
+    width: 190mm;
+    margin: 0;
+    padding: 0;
+  }
+
+  .dot-san-xuat-print-table {
+    page-break-inside: auto;
+  }
+
+  .dot-san-xuat-print-table tr {
+    page-break-inside: avoid;
+  }
+}

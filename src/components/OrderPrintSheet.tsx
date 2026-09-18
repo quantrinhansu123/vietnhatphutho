@@ -2,7 +2,7 @@ import React from 'react';
 import { formatNumber, parsePercentInput } from '../utils';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import { getOrderProductLines, type OrderRow } from '../features/_shared/orderRecordHelpers';
-import { CUT_ORDER_TYPE } from '../features/_shared/orderHelpers';
+import { SOUTH_ORDER_TYPE, SOUTH_TEM_COLOR_DEFAULT, isCutLikeOrderType, southMvByMauTem } from '../features/_shared/orderHelpers';
 import { formatProductionNameWithLength } from '../features/_shared/productionProductHelpers';
 
 function formatOrderCreatedAt(value: string): string {
@@ -27,7 +27,8 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
   const productLines = getOrderProductLines(order);
   const totalQuantity = productLines.reduce((sum, item) => sum + parsePercentInput(item.quantity), 0);
   const orderNote = displayCell(order.note);
-  const isCutOrder = order.orderType === CUT_ORDER_TYPE;
+  const isCutOrder = isCutLikeOrderType(order.orderType);
+  const isSouthOrder = order.orderType === SOUTH_ORDER_TYPE;
 
   const formatLineSpec = (line: ReturnType<typeof getOrderProductLines>[number]) => {
     if (line.quyCach) return line.quyCach;
@@ -57,7 +58,7 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
           </div>
         </header>
 
-        <h1 className="order-print-title">{isCutOrder ? 'ĐƠN ĐẶT CẮT LẺ' : 'ĐƠN ĐẶT HÀNG SẢN XUẤT'}</h1>
+        <h1 className="order-print-title">{isSouthOrder ? 'ĐƠN ĐẶT HÀNG MIỀN NAM' : isCutOrder ? 'ĐƠN ĐẶT CẮT LẺ' : 'ĐƠN ĐẶT HÀNG SẢN XUẤT'}</h1>
 
         <table className="order-print-meta-table">
           <tbody>
@@ -117,6 +118,9 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
                         { tenGhep: line.tenGhep }
                       )
                     ) || displayCell(line.productName)}
+                    {(line.tem || line.mauTem || line.danTem2Dau) ? (
+                      <div>{line.tem ? `(Dán Tem ${displayCell(line.tem)})` : ''}{line.mauTem ? ` Màu ${displayCell(line.mauTem)} ${southMvByMauTem(line.mauTem)}` : line.tem ? ` Màu ${SOUTH_TEM_COLOR_DEFAULT} ${southMvByMauTem(SOUTH_TEM_COLOR_DEFAULT)}` : ''}{line.danTem2Dau ? ' Dán Tem 2 Đầu' : ''}</div>
+                    ) : null}
                   </td>
                   <td>{formatLineSpec(line)}</td>
                   <td className="order-print-center">{displayCell(line.unit)}</td>

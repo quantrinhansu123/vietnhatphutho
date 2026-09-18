@@ -19,7 +19,6 @@ import {
   TableHead,
   TableHeadCell,
   TableBody,
-  TableRow,
   TableEmptyRow,
   RowActionsMenu
 } from '../../components/shared/table';
@@ -30,6 +29,8 @@ import {
 } from './StaffRoleAssignmentPanel';
 import { isSpecialSettingsRow } from './staffAssignments';
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronRight,
   Clock3,
   Eye,
@@ -53,6 +54,20 @@ export interface SettingRow {
   endTime: string;
   group: string;
   note: string;
+  /** Loai ca san xuat: Ca8H (HC1 -> HC2 -> HC3) / Ca12H (12C1 -> 12C2). Rong = khong thuoc chuoi. */
+  loaiCa: string;
+  /** Thu tu ca trong loai ca — null = chua xep (cuoi loai). */
+  thuTu: number | null;
+}
+
+function pickThuTu(record: Record<string, unknown>): number | null {
+  const raw = record.thu_tu ?? record.thuTu;
+  if (typeof raw === 'number' && Number.isFinite(raw)) return Math.trunc(raw);
+  if (typeof raw === 'string' && raw.trim()) {
+    const parsed = Number(raw.trim());
+    if (Number.isFinite(parsed)) return Math.trunc(parsed);
+  }
+  return null;
 }
 
 export function normalizeSettings(data: unknown): SettingRow[] {
@@ -89,7 +104,9 @@ export function normalizeSettings(data: unknown): SettingRow[] {
                 startTime: startTime === '-' ? parsedStart : startTime,
                 endTime: endTime === '-' ? parsedEnd : endTime,
                 group: pickText(record, ['nhom', 'group', 'phan_loai'], '-'),
-                note: pickText(record, ['mo_ta', 'ghi_chu', 'note', 'description'], '')
+                note: pickText(record, ['mo_ta', 'ghi_chu', 'note', 'description'], ''),
+                loaiCa: pickText(record, ['loai_ca', 'loaiCa'], ''),
+                thuTu: pickThuTu(record)
               };
             }
           }
@@ -106,7 +123,9 @@ export function normalizeSettings(data: unknown): SettingRow[] {
         startTime,
         endTime,
         group: pickText(record, ['nhom', 'group', 'phan_loai'], '-'),
-        note: pickText(record, ['mo_ta', 'ghi_chu', 'note', 'description'], '')
+        note: pickText(record, ['mo_ta', 'ghi_chu', 'note', 'description'], ''),
+        loaiCa: pickText(record, ['loai_ca', 'loaiCa'], ''),
+        thuTu: pickThuTu(record)
       };
     })
     .filter((setting): setting is SettingRow => Boolean(setting));
@@ -134,6 +153,10 @@ export type SettingFormState = {
   endTime: string;
   group: string;
   note: string;
+  /** Loai ca san xuat: Ca8H / Ca12H (rong = khong thuoc chuoi). */
+  loaiCa: string;
+  /** Thu tu ca trong loai ca — chuoi rong = chua xep. */
+  thuTu: string;
 };
 
 function isValid24HourTime(value: string) {
@@ -157,7 +180,9 @@ const emptySettingForm = (): SettingFormState => ({
   startTime: '',
   endTime: '',
   group: 'Chung',
-  note: ''
+  note: '',
+  loaiCa: '',
+  thuTu: ''
 });
 
 export function settingToForm(setting: SettingRow): SettingFormState {
@@ -172,7 +197,9 @@ export function settingToForm(setting: SettingRow): SettingFormState {
     startTime: setting.startTime === '-' ? '' : setting.startTime,
     endTime: setting.endTime === '-' ? '' : setting.endTime,
     group: setting.group === '-' ? 'Chung' : setting.group,
-    note: setting.note === '-' ? '' : setting.note
+    note: setting.note === '-' ? '' : setting.note,
+    loaiCa: setting.loaiCa || '',
+    thuTu: setting.thuTu === null || setting.thuTu === undefined ? '' : String(setting.thuTu)
   };
 }
 
@@ -191,6 +218,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewingSetting, setViewingSetting] = useState<SettingRow | null>(null);
   const [deletingSettingId, setDeletingSettingId] = useState<string | null>(null);
+  const [movingShiftId, setMovingShiftId] = useState<string | null>(null);
   const [isSavingSetting, setIsSavingSetting] = useState(false);
   const [formError, setFormError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
@@ -318,6 +346,13 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
       setFormError('Giờ kết thúc phải đúng định dạng 24 giờ HH:mm (00:00–23:59).');
       return false;
     }
+    if (settingForm.loaiCaiDat === 'Thời gian' && settingForm.thuTu.trim()) {
+      const parsed = Number(settingForm.thuTu.trim());
+      if (!Number.isInteger(parsed) || parsed < 1) {
+        setFormError('Thứ tự ca trong loại ca phải là số nguyên từ 1 trở lên (để trống = cuối loại).');
+        return false;
+      }
+    }
     return true;
   };
 
@@ -356,8 +391,115 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
     }
   };
 
-  const handleDeleteSetting = async (setting: SettingRow) => {
-    if (!setting.id) {
+  const settingRowToPayload = (setting: SettingRow, thuTu: number | null) => ({
+    code: setting.code === '-' ? '' : setting.code,
+    name: setting.name === '-' ? '' : setting.name,
+    loaiCaiDat: setting.loaiCaiDat === '-' ? 'Thời gian' : setting.loaiCaiDat,
+    startTime: setting.startTime === '-' ? '' : setting.startTime,
+    endTime: setting.endTime === '-' ? '' : setting.endTime,
+    group: setting.group === '-' ? 'Chung' : setting.group,
+    note: setting.note === '-' ? '' : setting.note,
+    loaiCa: setting.loaiCa || '',
+    thuTu: thuTu === null ? '' : String(thuTu)
+  });
+
+  /** Danh so lai 1..n cho ca trong cung loai (chi PATCH cac dong doi so). */
+  const persistShiftOrder = async (ordered: SettingRow[]) => {
+    for (let order = 0; order < ordered.length; order += 1) {
+      const row = ordered[order];
+      const want = order + 1;
+      if ((row.thuTu ?? -1) === want) continue;
+      const res = await fetch(`/api/cai-dat/${row.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settingRowToPayload(row, want))
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Không thể đổi thứ tự ca ${row.name}.`);
+      }
+    }
+  };
+
+  const sortPeersByOrder = (peers: SettingRow[]) =>
+    [...peers].sort(
+      (a, b) =>
+        (a.thuTu ?? Number.MAX_SAFE_INTEGER) - (b.thuTu ?? Number.MAX_SAFE_INTEGER) ||
+        a.name.localeCompare(b.name, 'vi')
+    );
+
+  // Doi thu tu ca trong cung loai ca (nut ↑↓ — dung duoc ca mobile).
+  const moveShiftOrder = async (setting: SettingRow, dir: -1 | 1) => {
+    if (!canEdit || movingShiftId || !setting.loaiCa) return;
+    const peers = sortPeersByOrder(
+      settings.filter(
+        item =>
+          !isSpecialSettingsRow(item) &&
+          item.loaiCaiDat === 'Thời gian' &&
+          item.loaiCa === setting.loaiCa
+      )
+    );
+    const idx = peers.findIndex(item => item.id === setting.id);
+    const target = idx + dir;
+    if (idx < 0 || target < 0 || target >= peers.length) return;
+    const next = [...peers];
+    const [moved] = next.splice(idx, 1);
+    next.splice(target, 0, moved);
+    setMovingShiftId(setting.id);
+    setActionMessage('');
+    try {
+      await persistShiftOrder(next);
+      setActionMessage(`Đã đổi thứ tự ca ${setting.name} trong loại ${setting.loaiCa}.`);
+      await loadSettings();
+    } catch (error: any) {
+      setActionMessage(error.message || 'Không thể đổi thứ tự ca.');
+    } finally {
+      setMovingShiftId(null);
+    }
+  };
+
+  // Keo-tha sap xep ca trong cung loai ca (desktop). Tinh theo full danh sach
+  // (khong theo bo loc) de khong lam lech thu tu cac dong dang bi an.
+  const [dragShiftId, setDragShiftId] = useState<string | null>(null);
+  const [dropShiftId, setDropShiftId] = useState<string | null>(null);
+  /** Loai ca cua dong dang keo — chi cho tha vao cung loai. */
+  const draggedLoaiCa = useMemo(() => {
+    if (!dragShiftId) return null;
+    return settings.find(item => item.id === dragShiftId)?.loaiCa || null;
+  }, [dragShiftId, settings]);
+  const commitShiftDrop = async (target: SettingRow) => {
+    const draggedId = dragShiftId;
+    setDragShiftId(null);
+    setDropShiftId(null);
+    if (!canEdit || movingShiftId || !draggedId || draggedId === target.id || !target.loaiCa) return;
+    const peers = sortPeersByOrder(
+      settings.filter(
+        item =>
+          !isSpecialSettingsRow(item) &&
+          item.loaiCaiDat === 'Thời gian' &&
+          item.loaiCa === target.loaiCa
+      )
+    );
+    const from = peers.findIndex(item => item.id === draggedId);
+    const to = peers.findIndex(item => item.id === target.id);
+    if (from < 0 || to < 0) return;
+    const next = [...peers];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setMovingShiftId(draggedId);
+    setActionMessage('');
+    try {
+      await persistShiftOrder(next);
+      setActionMessage(`Đã xếp lại thứ tự loại ca ${target.loaiCa}.`);
+      await loadSettings();
+    } catch (error: any) {
+      setActionMessage(error.message || 'Không thể đổi thứ tự ca.');
+    } finally {
+      setMovingShiftId(null);
+    }
+  };
+
+  const handleDeleteSetting = async (setting: SettingRow) => {    if (!setting.id) {
       setActionMessage('Không tìm thấy ID để xóa.');
       return;
     }
@@ -400,12 +542,52 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
       const matchesGroup = selectedGroup === 'all' || setting.group === selectedGroup;
       const matchesSearch =
         !normalizedSearch ||
-        `${setting.code} ${setting.name} ${setting.loaiCaiDat} ${setting.timeFrame} ${setting.startTime} ${setting.endTime} ${setting.group} ${setting.note}`
+        `${setting.code} ${setting.name} ${setting.loaiCaiDat} ${setting.loaiCa} ${setting.timeFrame} ${setting.startTime} ${setting.endTime} ${setting.group} ${setting.note}`
           .toLowerCase()
           .includes(normalizedSearch);
       return matchesGroup && matchesSearch;
     });
   }, [normalizedSearch, selectedGroup, settings]);
+
+  const sortShiftRow = (a: SettingRow, b: SettingRow) =>
+    (a.loaiCa || '~~~').localeCompare(b.loaiCa || '~~~', 'vi') ||
+    (a.thuTu ?? Number.MAX_SAFE_INTEGER) - (b.thuTu ?? Number.MAX_SAFE_INTEGER) ||
+    (a.code || '').localeCompare(b.code || '', 'vi');
+
+  /** Ca san xuat gop theo Loai ca (Ca8H / Ca12H / chua xep) — keo-tha sap xep trong tung loai. */
+  const timeShiftGroups = useMemo(() => {
+    const rows = filteredSettings
+      .filter(setting => setting.loaiCaiDat === 'Thời gian')
+      .sort(sortShiftRow);
+    const groups: { key: string; rows: SettingRow[] }[] = [];
+    for (const row of rows) {
+      const key = row.loaiCa || '';
+      let group = groups.find(item => item.key === key);
+      if (!group) {
+        group = { key, rows: [] };
+        groups.push(group);
+      }
+      group.rows.push(row);
+    }
+    return groups;
+  }, [filteredSettings]);
+
+  /** Cac cai dat khac (khong phai ca san xuat). */
+  const otherSettingRows = useMemo(() => {
+    return filteredSettings
+      .filter(setting => setting.loaiCaiDat !== 'Thời gian')
+      .sort(
+        (a, b) =>
+          (a.group || '~~~').localeCompare(b.group || '~~~', 'vi') ||
+          (a.code || '').localeCompare(b.code || '', 'vi')
+      );
+  }, [filteredSettings]);
+
+  /** Thu tu hien thi: tung loai ca truoc, cai dat khac sau. */
+  const sortedFlatSettings = useMemo(
+    () => [...timeShiftGroups.flatMap(group => group.rows), ...otherSettingRows],
+    [timeShiftGroups, otherSettingRows]
+  );
 
   const permissionSettings = useMemo(
     () =>
@@ -435,6 +617,60 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
     );
   }, [branches, permissionSettings]);
 
+
+  // Goi y Loai ca san xuat: Ca8H / Ca12H + cac loai da co.
+  const loaiCaOptions = useMemo(() => {
+    const kinds = new Set<string>(['Ca8H', 'Ca12H']);
+    settings.forEach(setting => {
+      if (setting.loaiCaiDat === 'Thời gian' && setting.loaiCa) {
+        kinds.add(setting.loaiCa);
+      }
+    });
+    return [...kinds];
+  }, [settings]);
+
+  // Goi y Nhom chung (loc hien thi).
+  const allGroupOptions = useMemo(() => {
+    const groups = new Set<string>();
+    settings.forEach(setting => {
+      if (setting.group && setting.group !== '-') groups.add(setting.group);
+    });
+    return [...groups].sort((a, b) => a.localeCompare(b, 'vi'));
+  }, [settings]);
+
+  // Preview chuoi ca cua loai dang nhap: HC1 → HC2 → HC3 ↺ + ca truoc cua ca nay.
+  const chainPreview = useMemo(() => {
+    if (settingForm.loaiCaiDat !== 'Thời gian') return '';
+    const loaiCa = settingForm.loaiCa.trim();
+    if (!loaiCa) return '';
+    const peers = settings
+      .filter(
+        setting =>
+          setting.loaiCaiDat === 'Thời gian' &&
+          setting.loaiCa === loaiCa &&
+          setting.id !== editingId &&
+          setting.name
+      )
+      .map(setting => ({
+        name: setting.name,
+        order: setting.thuTu === null || setting.thuTu === undefined ? Number.MAX_SAFE_INTEGER : setting.thuTu
+      }));
+    const draftOrder = settingForm.thuTu.trim() ? Number(settingForm.thuTu.trim()) : Number.MAX_SAFE_INTEGER;
+    const draftName = settingForm.name.trim() || '(ca đang nhập)';
+    const merged = [...peers, { name: draftName, order: draftOrder }].sort(
+      (a, b) => a.order - b.order || a.name.localeCompare(b.name, 'vi')
+    );
+    const chain = merged.map(item => item.name).join(' → ') + (merged.length > 1 ? ' ↺' : '');
+    const idx = merged.findIndex(item => item.name === draftName);
+    let prevText = '';
+    if (merged.length > 1 && idx >= 0) {
+      prevText =
+        idx > 0
+          ? `Ca trước của ca này: ${merged[idx - 1].name} (cùng ngày)`
+          : `Ca trước của ca này: ${merged[merged.length - 1].name} (hôm trước — ca đêm tính theo ngày bắt đầu)`;
+    }
+    return prevText ? `${chain}. ${prevText}.` : chain;
+  }, [settings, settingForm.loaiCaiDat, settingForm.loaiCa, settingForm.name, settingForm.thuTu, editingId]);
 
   // Phòng ban = distinct phong_ban từ bảng nhan_su
   const departmentOptions = useMemo(() => {
@@ -692,8 +928,51 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                   onChange={e => setSettingForm(prev => ({ ...prev, group: e.target.value }))}
                   className={orderFieldClass}
                   placeholder="VD: Thời gian"
+                  list="setting-group-options"
                 />
+                <datalist id="setting-group-options">
+                  {allGroupOptions.map(group => (
+                    <option key={group} value={group} />
+                  ))}
+                </datalist>
               </label>
+              {settingForm.loaiCaiDat === 'Thời gian' && (
+                <label className="space-y-1.5">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Loại ca *</span>
+                  <input
+                    value={settingForm.loaiCa}
+                    onChange={e => setSettingForm(prev => ({ ...prev, loaiCa: e.target.value }))}
+                    className={orderFieldClass}
+                    placeholder="VD: Ca8H"
+                    list="setting-loai-ca-options"
+                  />
+                  <datalist id="setting-loai-ca-options">
+                    {loaiCaOptions.map(kind => (
+                      <option key={kind} value={kind} />
+                    ))}
+                  </datalist>
+                  <span className="block text-[11px] font-semibold text-zinc-400">
+                    <b>Ca8H</b> (HC1 → HC2 → HC3) hoặc <b>Ca12H</b> (12C1 → 12C2). Bỏ trống = không thuộc chuỗi nào.
+                  </span>
+                </label>
+              )}
+              {settingForm.loaiCaiDat === 'Thời gian' && (
+                <label className="space-y-1.5">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Thứ tự trong loại ca</span>
+                  <input
+                    value={settingForm.thuTu}
+                    onChange={e => setSettingForm(prev => ({ ...prev, thuTu: e.target.value.replace(/[^0-9]/g, '') }))}
+                    className={orderFieldClass}
+                    placeholder="VD: 1 (để trống = cuối loại)"
+                    inputMode="numeric"
+                  />
+                </label>
+              )}
+              {settingForm.loaiCaiDat === 'Thời gian' && chainPreview && (
+                <p className="col-span-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold leading-5 text-sky-900">
+                  Chuỗi loại ca {settingForm.loaiCa.trim() || '…'}: {chainPreview}
+                </p>
+              )}
               <label className="col-span-2 space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
                 <input
@@ -750,6 +1029,8 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                 ['Giờ bắt đầu', viewingSetting.startTime],
                 ['Giờ kết thúc', viewingSetting.endTime],
                 ['Nhóm', viewingSetting.group],
+                ['Loại ca', viewingSetting.loaiCaiDat === 'Thời gian' ? (viewingSetting.loaiCa || 'Chưa xếp') : '-'],
+                ['Thứ tự trong loại ca', viewingSetting.loaiCaiDat === 'Thời gian' ? (viewingSetting.thuTu ?? '—') : '-'],
                 ['Ghi chú', viewingSetting.note || '-']
               ].map(([label, value]) => (
                 <div key={label} className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
@@ -956,27 +1237,103 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
         )}
       </section>
 
-      <TableShell minWidthClassName="min-w-[1080px]">
+      <TableShell minWidthClassName="min-w-[1240px]">
         <TableHead>
           <TableHeadCell>Mã</TableHeadCell>
           <TableHeadCell>Tên cài đặt</TableHeadCell>
           <TableHeadCell>Loại</TableHeadCell>
+          <TableHeadCell>Loại ca</TableHeadCell>
           <TableHeadCell>Giờ bắt đầu</TableHeadCell>
           <TableHeadCell>Giờ kết thúc</TableHeadCell>
           <TableHeadCell>Nhóm</TableHeadCell>
+          <TableHeadCell>Thứ tự</TableHeadCell>
           <TableHeadCell>Ghi chú</TableHeadCell>
           <TableHeadCell align="center">Thao tác</TableHeadCell>
         </TableHead>
         <TableBody>
-          {filteredSettings.map(setting => (
+          {sortedFlatSettings.map((setting, idx) => {
+            const prev = idx > 0 ? sortedFlatSettings[idx - 1] : null;
+            const isShiftRow = setting.loaiCaiDat === 'Thời gian';
+            const shiftGroupKey = setting.loaiCa || '';
+            const showShiftGroupHeader =
+              isShiftRow &&
+              (!prev || prev.loaiCaiDat !== 'Thời gian' || (prev.loaiCa || '') !== shiftGroupKey);
+            const showOtherGroupHeader =
+              !isShiftRow && (!prev || prev.loaiCaiDat === 'Thời gian');
+            const shiftDraggable = isShiftRow && canEdit && !movingShiftId && Boolean(shiftGroupKey);
+            const dropAllowed =
+              shiftDraggable && dragShiftId && dragShiftId !== setting.id && draggedLoaiCa === shiftGroupKey;
+            return (
             <React.Fragment key={setting.id}>
-              <TableRow>
+              {showShiftGroupHeader ? (
+                <tr className="bg-zinc-950/[0.04]">
+                  <td colSpan={10} className="px-4 py-2 text-xs font-black uppercase tracking-wider text-zinc-600">
+                    {shiftGroupKey ? `Loại ca ${shiftGroupKey}` : 'Chưa xếp loại ca'}
+                    {shiftGroupKey && canEdit ? (
+                      <span className="ml-2 font-semibold normal-case text-zinc-400">
+                        Kéo thả dòng để sắp xếp (hoặc dùng nút ↑↓)
+                      </span>
+                    ) : null}
+                  </td>
+                </tr>
+              ) : null}
+              {showOtherGroupHeader ? (
+                <tr className="bg-zinc-950/[0.04]">
+                  <td colSpan={10} className="px-4 py-2 text-xs font-black uppercase tracking-wider text-zinc-600">
+                    Cài đặt khác
+                  </td>
+                </tr>
+              ) : null}
+              <tr
+                draggable={shiftDraggable}
+                onDragStart={e => {
+                  if (!shiftDraggable) return;
+                  e.dataTransfer.effectAllowed = 'move';
+                  try {
+                    e.dataTransfer.setData('text/plain', setting.id);
+                  } catch {
+                    /* bo qua */
+                  }
+                  setDragShiftId(setting.id);
+                }}
+                onDragOver={e => {
+                  if (!dropAllowed) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  setDropShiftId(setting.id);
+                }}
+                onDragLeave={() => {
+                  if (dropShiftId === setting.id) setDropShiftId(null);
+                }}
+                onDrop={e => {
+                  e.preventDefault();
+                  void commitShiftDrop(setting);
+                }}
+                onDragEnd={() => {
+                  setDragShiftId(null);
+                  setDropShiftId(null);
+                }}
+                className={`transition hover:bg-red-50/40 ${dragShiftId === setting.id ? 'opacity-40' : ''} ${dropShiftId === setting.id ? 'outline-2 outline-offset-[-2px] outline-[#ef1b2d]' : ''} ${shiftDraggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
+              >
                 <td className="px-4 py-3 font-black text-zinc-950">{setting.code || '-'}</td>
                 <td className="px-4 py-3 font-black text-zinc-950">{setting.name || '-'}</td>
                 <td className="px-4 py-3">
                   <span className="rounded-full border border-zinc-300 bg-zinc-50 px-2.5 py-1 text-xs font-black text-zinc-800">
                     {setting.loaiCaiDat}
                   </span>
+                </td>
+                <td className="px-4 py-3">
+                  {setting.loaiCaiDat === 'Thời gian' ? (
+                    setting.loaiCa ? (
+                      <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-black text-sky-800">
+                        {setting.loaiCa}
+                      </span>
+                    ) : (
+                      <span className="text-xs font-bold text-amber-600">Chưa xếp</span>
+                    )
+                  ) : (
+                    '—'
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <span className="rounded-full border border-[#ef1b2d]/20 bg-red-50 px-2.5 py-1 text-xs font-black text-[#ef1b2d]">
@@ -989,10 +1346,43 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                   </span>
                 </td>
                 <td className="px-4 py-3 font-semibold text-zinc-700">{setting.group}</td>
+                <td className="px-4 py-3 text-center font-black tabular-nums text-zinc-800">
+                  {setting.loaiCaiDat === 'Thời gian' ? (setting.thuTu ?? '—') : '—'}
+                </td>
                 <td className="px-4 py-3 font-semibold text-zinc-500">{setting.note || '-'}</td>
                 <td className="px-4 py-3">
                   <RowActionsMenu label={`Thao tác ${setting.name}`}>
                   <div className="flex items-center justify-center gap-1">
+                    {canEdit && setting.loaiCaiDat === 'Thời gian' ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => moveShiftOrder(setting, -1)}
+                          disabled={movingShiftId === setting.id}
+                          title="Lên trên (ca trước đó trong loại ca)"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
+                        >
+                          {movingShiftId === setting.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <ArrowUp className="h-4 w-4" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveShiftOrder(setting, 1)}
+                          disabled={movingShiftId === setting.id}
+                          title="Xuống dưới (ca sau đó trong loại ca)"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50 disabled:opacity-50"
+                        >
+                          {movingShiftId === setting.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <ArrowDown className="h-4 w-4" />
+                          )}
+                        </button>
+                      </>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => setViewingSetting(setting)}
@@ -1029,12 +1419,13 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                   </div>
                   </RowActionsMenu>
                 </td>
-              </TableRow>
+              </tr>
             </React.Fragment>
-          ))}
+            );
+          })}
 
           {!isLoadingSettings && filteredSettings.length === 0 && (
-            <TableEmptyRow colSpan={8}>
+            <TableEmptyRow colSpan={10}>
               Bảng cai_dat_thoi_gian chưa có dữ liệu hoặc không có mục phù hợp bộ lọc.
             </TableEmptyRow>
           )}

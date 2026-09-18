@@ -571,6 +571,13 @@ export const FACTORY_QUAN_DOC_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'production-plan-history'
   },
   {
+    title: 'Đợt sản xuất',
+    desc: 'Gom lệnh SX theo máy + Từ ngày → Đến ngày, truy xuất phiếu xuất NVL và chốt tổng vật tư chính/phụ.',
+    icon: CalendarDays,
+    icon3d: spiralNotepad3d,
+    tab: 'dot-san-xuat'
+  },
+  {
     title: 'Lệnh sản xuất',
     desc: 'Xem danh sách lệnh SX, mã hàng, trạng thái và kế hoạch sản xuất.',
     icon: Factory,
@@ -964,6 +971,7 @@ export const PRIMARY_NAV_GROUPS: {
     tab: 'factory-quan-doc',
     children: [
       { label: 'Kế hoạch sản xuất', tab: 'production-plan-history' },
+      { label: 'Đợt sản xuất', tab: 'dot-san-xuat' },
       { label: 'Lệnh sản xuất', tab: 'production-orders' },
       { label: 'Theo dõi sản xuất', tab: 'control-board' },
       { label: 'Báo cáo sản xuất', tab: 'production-reports' },
@@ -1059,6 +1067,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'bao-cao-ngay': { group: 'Sản xuất', sub: 'Báo cáo ngày' },
   'bao-cao-ngay-list': { group: 'Sản xuất', sub: 'Danh sách báo cáo ngày' },
   'production-plan-history': { group: 'Quản Đốc', sub: 'Kế hoạch sản xuất' },
+  'dot-san-xuat': { group: 'Quản Đốc', sub: 'Đợt sản xuất' },
   'facility-management': { group: 'Kho', sub: 'Quản lý CSVC' },
   'factory': { group: 'Trang chủ', sub: 'Chọn vai trò' },
   'materials': { group: 'Kho', sub: 'Kho nguyên vật liệu' },

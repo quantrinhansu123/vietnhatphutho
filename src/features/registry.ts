@@ -19,6 +19,7 @@ export type TableId =
   | 'lenh_xuat_hang'
   | 'lenh_sx'
   | 'ke_hoach_san_xuat'
+  | 'dot_san_xuat'
   | 'nhan_su'
   | 'danh_sach_xe'
   | 'doi_chieu_lai_xe'
@@ -235,6 +236,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     components: ['src/components/ProductionPlanNvlPrintSheet.tsx', 'src/components/ControlBoardShiftSummaryTable.tsx'],
     utils: ['src/utils/controlBoardShiftSummary.ts', 'src/utils/controlBoardShiftSummaryDetails.ts']
   },
+  dot_san_xuat: {
+    table: 'dot_san_xuat',
+    label: 'Đợt sản xuất (Quản đốc)',
+    sql: ['supabase-dot-san-xuat.sql'],
+    apiPrefix: '/api/dot-san-xuat',
+    serverLines: 'dot-san-xuat routes (preview/next-so/CRUD)',
+    appTab: 'dot-san-xuat',
+    appLines: 'src/features/dot-san-xuat/index.tsx',
+    components: [],
+    utils: ['src/features/so-che-do-may (VnCalendarPicker, parseDateStr, formatDateVN)']
+  },
   nhan_su: {
     table: 'nhan_su',
     label: 'Nhân sự',
@@ -313,7 +325,7 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   cai_dat_thoi_gian: {
     table: 'cai_dat_thoi_gian',
     label: 'Cài đặt ca / thời gian',
-    sql: ['supabase-cai-dat-thoi-gian.sql'],
+    sql: ['supabase-cai-dat-thoi-gian.sql', 'supabase-cai-dat-thoi-gian-thu-tu.sql (cột loai_ca: Ca8H/Ca12H + thu_tu: thứ tự ca trong loại)'],
     apiPrefix: '/api/cai-dat',
     serverLines: '4481–4603',
     appTab: 'settings',

@@ -90,6 +90,10 @@ export function parseOrderProductsFromRecord(
         const productName = pickText(row, ['ten_sp', 'ten_hang', 'productName', 'name'], '');
         const productionName = pickText(row, ['ten_san_xuat', 'productionName'], '');
         const tenGhep = pickText(row, ['ten_ghep', 'tenGhep'], '');
+        const tem = pickText(row, ['tem', 'tem_dan', 'dan_tem'], '');
+        const mauTem = pickText(row, ['mau_tem', 'mauTem', 'mau'], '');
+        const danTem2DauRaw = row.dan_tem_2_dau ?? row.danTem2Dau ?? row.dan_tem_hai_dau;
+        const danTem2Dau = danTem2DauRaw === true || String(danTem2DauRaw || '').trim() === '1' || /2\s*đầu/ui.test(String(danTem2DauRaw || '')) || /Dán Tem 2 Đầu/u.test(tenGhep);
         const unit = formatCell(row.don_vi ?? row.unit);
         const quantity = formatCell(row.so_luong ?? row.quantity);
         const doLi = pickText(row, ['do_li', 'doLi'], '');
@@ -126,6 +130,9 @@ export function parseOrderProductsFromRecord(
           productName,
           productionName,
           tenGhep: tenGhep || undefined,
+          tem: tem || undefined,
+          mauTem: mauTem || undefined,
+          danTem2Dau: danTem2Dau || undefined,
           unit,
           quantity,
           stt: readOrderProductStt(row.stt ?? row.STT, index),

@@ -2,7 +2,9 @@
 
 | **Bảng** | `cai_dat_thoi_gian` |
 | **Tab** | `settings` → `/cai-dat` |
-| **SQL** | `supabase-cai-dat-thoi-gian.sql` |
+| **SQL** | `supabase-cai-dat-thoi-gian.sql` + `supabase-cai-dat-thoi-gian-thu-tu.sql` (cột `loai_ca` + `thu_tu`) |
+
+**Chuỗi ca sản xuất (sổ trộn):** ca (`loai_cai_dat = 'Thời gian'`, giữ nguyên để dropdown toàn app không gãy) xếp vào **Loại ca = cột `loai_ca` riêng**: `Ca8H` (HC1→HC2→HC3), `Ca12H` (12C1→12C2) + **Thứ tự trong loại = cột `thu_tu`** (1,2,3…; trống = cuối loại). Ca đêm tính theo NGÀY BẮT ĐẦU. Danh sách gộp theo Loại ca, đổi thứ tự bằng **kéo-thả dòng** (desktop) hoặc nút ↑↓ (mobile) — đánh số lại 1..n cả loại, tính theo full danh sách (không theo bộ lọc). Resolver: `resolveLogicalPreviousShiftSlot` (`src/utils/shiftSettings.ts`) — ca đầu loại (N) ← ca cuối cùng loại (N-1).
 
 **API:** `server.ts` — `/api/cai-dat` (xem `registry.ts` / grep route)  
 **UI:** `src/features/cai-dat-thoi-gian/index.tsx` — `SettingsPanel`  

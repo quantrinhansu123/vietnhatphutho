@@ -19,7 +19,7 @@ import { SoTronDatePicker, formatNgayVN } from './SoTronDatePicker';
 import { printPhieuGiaoCaSlip } from './printPhieuGiaoCa';
 import { normalizeProductionOrders, type ProductionOrderRow } from '../ke-hoach-san-xuat';
 import type { OrderProductLine } from '../_shared/productionProductHelpers';
-import { getProductionShiftOptions, normalizeShiftSettings } from '../../utils/shiftSettings';
+import { findShiftChainMeta, getProductionShiftOptions, normalizeShiftSettings, resolveLogicalPreviousShiftSlot, resolveShiftName, type ShiftSetting } from '../../utils/shiftSettings';
 import { STANDARD_SHIFTS } from '../../types';
 import { normalizeWarehouseMovements } from '../phieu-xuat-nhap-kho';
 
@@ -547,6 +547,8 @@ export function SoTronPanel({
   const [machines, setMachines] = useState<MachineRow[]>([]);
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
   const [shiftOptions, setShiftOptions] = useState<{ value: string; label: string }[]>([]);
+  /** Raw settings ca (giu nhom Loai ca + thu tu) — de giai chuoi ca truoc theo vong lap. */
+  const [shiftSettingsRaw, setShiftSettingsRaw] = useState<ShiftSetting[]>([]);
   const [orders, setOrders] = useState<ProductionOrderRow[]>([]);
   // Tổng số lệnh tải được (null = chưa tải xong / tải lỗi) — để chẩn đoán lọc
   const [ordersTotal, setOrdersTotal] = useState<number | null>(null);
@@ -596,6 +598,8 @@ export function SoTronPanel({
   const [previewPhieuGiaoCaReport, setPreviewPhieuGiaoCaReport] = useState<SoTronSavedReport | null>(null);
   const [prevTonMap, setPrevTonMap] = useState<Map<string, number>>(new Map());
   const [hasPrevReport, setHasPrevReport] = useState<boolean | null>(null);
+  /** O ca logic da lay ton (ngay + ca cua phieu ca truoc) — hien ở (!) cot Nhap Ca Truoc. */
+  const [prevSource, setPrevSource] = useState<{ ngay: string; ca: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'list' | 'form'>('list');
   const [listFilterDate, setListFilterDate] = useState('');
   const [listFilterMachine, setListFilterMachine] = useState('');
@@ -608,6 +612,10 @@ export function SoTronPanel({
     if (hasPrevReport === true && prevTonMap.size > 0) return true;
     return false;
   }, [hasPrevReport, prevTonMap, banGiaoRows]);
+  /** Tooltip (!) cột Nhập Ca Trước: ngày + ca của phiếu đã lấy tồn. */
+  const prevSourceText = prevSource
+    ? `Tồn ca trước lấy từ ca ${prevSource.ca || '—'} ngày ${formatNgayVN(prevSource.ngay) || prevSource.ngay}`
+    : 'Chưa có bàn giao ca trước';
   // Tổng xuất kho NVL theo ngày-máy-ca (Nhập Trong Ngày trong bảng Bàn Giao Ca Sau)
   const [nhapTrongNgayMap, setNhapTrongNgayMap] = useState<Map<string, number>>(new Map());
 
@@ -706,7 +714,9 @@ export function SoTronPanel({
           }
         }
         if (settingRes.ok) {
-          const options = getProductionShiftOptions(normalizeShiftSettings(settingData));
+          const rawSettings = normalizeShiftSettings(settingData);
+          setShiftSettingsRaw(rawSettings);
+          const options = getProductionShiftOptions(rawSettings);
           setShiftOptions(options.length > 0 ? options : STANDARD_SHIFTS.map(s => ({ value: s, label: s })));
         } else {
           setShiftOptions(STANDARD_SHIFTS.map(s => ({ value: s, label: s })));
@@ -1099,7 +1109,9 @@ export function SoTronPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coiMau, materials, selectedLenh, numLan]);
 
-  // Nhập Ca Trước = tồn cuối kỳ trước (theo ngày - máy - ca: tìm phiếu ca trước gần nhất của đúng máy đó)
+  // Nhập Ca Trước = tồn cuối ô ca trước LOGIC theo vòng lặp nhóm (Loại ca 8H/12H,
+  // ca đêm tính theo NGÀY BẮT ĐẦU). Ô logic thiếu phiếu thì lùi tiếp về quá khứ
+  // trong cùng chuỗi. Ca chưa xếp chuỗi → fallback phiếu gần nhất cùng máy.
   useEffect(() => {
     const machineRaw = machineRef.trim() || orderCombos[0]?.machine || '';
     const caVal = selectedCa.trim() || orderCombos[0]?.ca || '';
@@ -1109,60 +1121,105 @@ export function SoTronPanel({
     if (!maMay) {
       setPrevTonMap(new Map());
       setHasPrevReport(null);
+      setPrevSource(null);
       return;
     }
     let alive = true;
     (async () => {
       try {
-        const res = await fetch(`/api/so-tron?ma_may=${encodeURIComponent(maMay)}&limit=100`);
+        const res = await fetch(`/api/so-tron?ma_may=${encodeURIComponent(maMay)}&limit=300`);
         const data = await res.json().catch(() => ({}));
         if (!alive || !res.ok) return;
         const allReports = normalizeSoTronReports(data);
 
-        // Thứ tự các ca trong ngày từ shiftOptions (để xác định ca nào trước ca nào)
-        const getShiftIndex = (shiftName: string) => {
-          if (!shiftName) return -1;
-          const s = shiftName.trim().toLowerCase();
-          const idx = shiftOptions.findIndex(
-            o => o.value.trim().toLowerCase() === s || o.label.trim().toLowerCase() === s
-          );
-          if (idx >= 0) return idx;
-          const m = s.match(/\d+/);
-          return m ? parseInt(m[0], 10) : -1;
-        };
-        const targetShiftIdx = getShiftIndex(caVal);
-
-        // Lọc các phiếu ca trước của đúng máy đó:
-        // - ngày trước (r.ngay < ngay)
-        // - hoặc cùng ngày nhưng ca trước (targetShiftIdx >= 0 ? rShift < targetShift : r.ca !== caVal)
-        const candidates = allReports.filter(r => {
-          if (!machineMatches(r.ma_may || r.ten_may, maMay, tenMay)) return false;
-          if (r.ngay === ngay && r.ca === caVal) return false;
-          if (r.ngay > ngay) return false;
-          if (r.ngay === ngay) {
-            if (targetShiftIdx >= 0) {
-              const rShiftIdx = getShiftIndex(r.ca);
-              if (rShiftIdx >= 0) return rShiftIdx < targetShiftIdx;
+        // Ca chuẩn hoá: khớp phiếu lịch sử (ghi tay) với value trong /cai-dat.
+        const canonShift = (value: string) => {
+          if (!value) return '';
+          if (shiftOptions.length > 0) {
+            try {
+              return resolveShiftName(value, shiftOptions);
+            } catch {
+              return value.trim();
             }
-            return r.ca !== caVal;
           }
-          return true;
-        });
+          return value.trim();
+        };
+        const slotKey = (ngayVal: string, caRaw: string) =>
+          `${ngayVal}||${canonShift(caRaw).trim().toLowerCase()}`;
 
-        // Sắp xếp giảm dần theo ngày, sau đó giảm dần theo thứ tự ca trong ngày
-        candidates.sort((a, b) => {
-          const dateCmp = b.ngay.localeCompare(a.ngay);
-          if (dateCmp !== 0) return dateCmp;
-          const aShiftIdx = getShiftIndex(a.ca);
-          const bShiftIdx = getShiftIndex(b.ca);
-          if (aShiftIdx >= 0 && bShiftIdx >= 0 && aShiftIdx !== bShiftIdx) {
-            return bShiftIdx - aShiftIdx;
+        // Index phiếu cùng máy theo (ngày, ca chuẩn) — bỏ phiếu tương lai.
+        const bySlot = new Map<string, (typeof allReports)[number]>();
+        for (const r of allReports) {
+          if (!machineMatches(r.ma_may || r.ten_may, maMay, tenMay)) continue;
+          if (r.ngay > ngay) continue;
+          const key = slotKey(r.ngay, r.ca || '');
+          if (!bySlot.has(key)) bySlot.set(key, r);
+        }
+
+        let prev: (typeof allReports)[number] | undefined;
+        const inChain = caVal && ngay ? findShiftChainMeta(caVal, shiftOptions, shiftSettingsRaw) : null;
+        if (inChain) {
+          // Đi ngược vòng lặp nhóm, lùi tiếp về quá khứ khi ô logic thiếu phiếu.
+          let slot = resolveLogicalPreviousShiftSlot(ngay, caVal, shiftOptions, shiftSettingsRaw);
+          for (let step = 0; step < 120 && slot; step += 1) {
+            const hit = bySlot.get(slotKey(slot.ngay, slot.shift));
+            if (hit) {
+              prev = hit;
+              break;
+            }
+            slot = resolveLogicalPreviousShiftSlot(slot.ngay, slot.shift, shiftOptions, shiftSettingsRaw);
           }
-          return (b.id || '').localeCompare(a.id || '');
-        });
+        }
 
-        const prev = candidates[0];
+        if (!prev && !inChain) {
+          // Fallback cho ca chưa xếp Loại ca / thứ tự: phiếu gần nhất cùng máy.
+          // Thứ tự các ca trong ngày từ shiftOptions (để xác định ca nào trước ca nào)
+          const getShiftIndex = (shiftName: string) => {
+            if (!shiftName) return -1;
+            const s = shiftName.trim().toLowerCase();
+            const idx = shiftOptions.findIndex(
+              o => o.value.trim().toLowerCase() === s || o.label.trim().toLowerCase() === s
+            );
+            if (idx >= 0) return idx;
+            const m = s.match(/\d+/);
+            return m ? parseInt(m[0], 10) : -1;
+          };
+          const targetShiftIdx = getShiftIndex(caVal);
+
+          // Lọc các phiếu ca trước của đúng máy đó:
+          // - ngày trước (r.ngay < ngay)
+          // - hoặc cùng ngày nhưng ca trước (targetShiftIdx >= 0 ? rShift < targetShift : r.ca !== caVal)
+          const candidates = allReports.filter(r => {
+            if (!machineMatches(r.ma_may || r.ten_may, maMay, tenMay)) return false;
+            if (r.ngay === ngay && r.ca === caVal) return false;
+            if (r.ngay > ngay) return false;
+            if (r.ngay === ngay) {
+              if (targetShiftIdx >= 0) {
+                const rShiftIdx = getShiftIndex(r.ca);
+                if (rShiftIdx >= 0) return rShiftIdx < targetShiftIdx;
+              }
+              return r.ca !== caVal;
+            }
+            return true;
+          });
+
+          // Sắp xếp giảm dần theo ngày, sau đó giảm dần theo thứ tự ca trong ngày
+          candidates.sort((a, b) => {
+            const dateCmp = b.ngay.localeCompare(a.ngay);
+            if (dateCmp !== 0) return dateCmp;
+            const aShiftIdx = getShiftIndex(a.ca);
+            const bShiftIdx = getShiftIndex(b.ca);
+            if (aShiftIdx >= 0 && bShiftIdx >= 0 && aShiftIdx !== bShiftIdx) {
+              return bShiftIdx - aShiftIdx;
+            }
+            return (b.id || '').localeCompare(a.id || '');
+          });
+
+          prev = candidates[0];
+        }
+
         setHasPrevReport(Boolean(prev));
+        setPrevSource(prev ? { ngay: prev.ngay, ca: prev.ca } : null);
         const map = new Map<string, number>();
         if (prev) {
           for (const line of prev.bang_ban_giao) {
@@ -1192,7 +1249,7 @@ export function SoTronPanel({
     return () => {
       alive = false;
     };
-  }, [machineRef, selectedCa, orderCombos, machines, materials, ngay, shiftOptions]);
+  }, [machineRef, selectedCa, orderCombos, machines, materials, ngay, shiftOptions, shiftSettingsRaw]);
 
   // Nhập Trong Ngày = tổng xuất kho NVL (loại xuat, kho nvl) theo ngày + máy + ca hiện tại
   useEffect(() => {
@@ -1480,6 +1537,7 @@ export function SoTronPanel({
     setSpRows([]);
     setLoiRows([]);
     setBanGiaoRows([]);
+    setPrevSource(null);
     setGhiChu('');
     setNumLan(SO_LAN_TRON_MAC_DINH);
     setMessage(null);
@@ -2633,7 +2691,7 @@ export function SoTronPanel({
               <SectionHeader
                 index="3.4"
                 title="Nhựa bàn giao ca sau"
-                desc="Loại nhựa tự fill theo phiếu trộn. Nhập Trong Ngày = tự lấy từ phiếu xuất kho NVL theo ngày-máy-ca. Nhập Ca Trước = tồn cuối kỳ trước (so_tron cùng máy, ca trước). Tồn cuối = Nhập Trong Ngày + Nhập Ca Trước − tổng sử dụng."
+                desc="Loại nhựa tự fill theo phiếu trộn. Nhập Trong Ngày = tự lấy từ phiếu xuất kho NVL theo ngày-máy-ca. Nhập Ca Trước = tồn cuối ô ca trước theo vòng lặp nhóm (Loại ca 8H/12H, ca đêm tính ngày bắt đầu), thiếu phiếu thì lùi về quá khứ. Tồn cuối = Nhập Trong Ngày + Nhập Ca Trước − tổng sử dụng."
               />
               {!hasPrevTon && (
                 <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600">
@@ -2655,7 +2713,12 @@ export function SoTronPanel({
                   <tr className="border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
                     <th className="px-2 py-2">Loại nhựa</th>
                     <th className="w-[110px] px-2 py-2">Nhập Trong Ngày</th>
-                    <th className="w-[110px] px-2 py-2">Nhập Ca Trước</th>
+                    <th className="w-[130px] px-2 py-2">
+                      Nhập Ca Trước{' '}
+                      <span title={prevSourceText} className="cursor-help font-black text-amber-500">
+                        (!)
+                      </span>
+                    </th>
                     <th className="w-[100px] px-2 py-2 text-right">Tổng sử dụng</th>
                     <th className="w-[110px] px-2 py-2 text-right">Tồn cuối ca</th>
                   </tr>
@@ -3171,7 +3234,12 @@ export function SoTronPanel({
                           <tr>
                             <th className={`${paperTh} min-w-[110px]`}>Loại Nhựa</th>
                             <th className={`${paperTh} w-[76px] min-w-[70px]`}>Nhập Trong Ngày</th>
-                            <th className={`${paperTh} w-[76px] min-w-[70px]`}>Nhập Ca Trước</th>
+                            <th className={`${paperTh} w-[76px] min-w-[70px]`}>
+                              Nhập Ca Trước{' '}
+                              <span title={prevSourceText} className="cursor-help font-black text-amber-500">
+                                (!)
+                              </span>
+                            </th>
                             <th className={`${paperTh} w-[76px] min-w-[70px]`}>Tồn Cuối Ca</th>
                           </tr>
                         </thead>
