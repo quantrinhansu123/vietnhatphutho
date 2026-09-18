@@ -25,6 +25,10 @@ export interface OrderProductLine {
   quyCachMDai?: number | string;
   /** Tên ghép (đơn cắt lẻ) — hiển thị thay ten_san_xuat khi in đơn / lệnh SX. */
   tenGhep?: string;
+  /** Chỉ dùng cho "Đơn miền nam": loại tem (vd 5li) + màu tem (Hồng/Vàng) + checkbox Dán Tem 2 Đầu. */
+  tem?: string;
+  mauTem?: string;
+  danTem2Dau?: boolean;
   tlCuon?: string;
   tlTam?: string;
   m2?: string;

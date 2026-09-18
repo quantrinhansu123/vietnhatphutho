@@ -46,6 +46,7 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
     label: 'Quản Đốc',
     children: [
       { tab: 'production-plan-history', label: 'Kế hoạch sản xuất' },
+      { tab: 'dot-san-xuat', label: 'Đợt sản xuất' },
       { tab: 'production-orders', label: 'Lệnh sản xuất' },
       { tab: 'control-board', label: 'Theo dõi sản xuất' },
       { tab: 'production-reports', label: 'Báo cáo sản xuất' },

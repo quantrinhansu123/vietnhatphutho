@@ -36,6 +36,7 @@ Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...
 | `lenh_xuat_hang` | `/lenh-xuat-hang` | [lenh_xuat_hang.md](./lenh_xuat_hang.md) |
 | `lenh_sx` | `/lenh-san-xuat` | [lenh_sx.md](./lenh_sx.md) |
 | `ke_hoach_san_xuat` | `/ke-hoach-san-xuat` | [ke_hoach_san_xuat.md](./ke_hoach_san_xuat.md) |
+| `dot_san_xuat` | `/dot-san-xuat` | [dot_san_xuat.md](./dot_san_xuat.md) |
 | `nhan_su` | `/nhan-su` | [nhan_su.md](./nhan_su.md) |
 | `danh_sach_xe` | `/danh-sach-xe` | [danh_sach_xe.md](./danh_sach_xe.md) |
 | `doi_chieu_lai_xe` | `/danh-sach-xe` | [danh_sach_xe.md](./danh_sach_xe.md) |

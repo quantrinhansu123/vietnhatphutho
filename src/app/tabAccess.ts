@@ -136,6 +136,7 @@ export function hubHasAllowedChild(hubTab: string, allowed: Set<string>): boolea
       'production-reports',
       'production-orders',
       'production-plan-history',
+      'dot-san-xuat',
       'control-board'
     ].some(tab => allowed.has(tab) || hubHasAllowedChild(tab, allowed));
   }

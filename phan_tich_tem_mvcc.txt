@@ -1,0 +1,92 @@
+PHAN TICH TEM - TU FILE .ai/sp_mien_nam.xlsx
+(Luu y: file .ai/sp_san_pham.xlsx KHONG ton tai. Trong thu muc .ai chi co 2 file:
+ - quy_doi_so_new.xlsx (2770 dong, khong co Dán Tem/MVCC)
+ - sp_mien_nam.xlsx (file duoc phan tich duoi day, don dat hang Minh Vuong - MVCC/MVKH)
+ Ngay phan tich: 18/09/2026
+ Keyword loc: "Dán Tem" + "MVCC" (case-insensitive, chuan hoa Unicode NFC)
+================================================================
+
+1. TONG QUAN 4 SHEET (sp_mien_nam.xlsx)
+----------------------------------------------------------------
+- Sheet "Sóng" (96 SP): 96 MVCC, 0 Dán Tem. VD: Nhựa 11 Sóng Kính Trắng(6zem) 4.8kg MVCC (2m) NP
+- Sheet "RỖNG STANDA" (18 SP): 18 MVCC, 0 Dán Tem. VD: Nhựa Rỗng 4li Trắng (Màng STANDA) NP (5m8) MVCC
+- Sheet "Đặc SUNPC" (112 SP Dán Tem + 1 dong THANH TIEN bo qua):
+  + 112 co Dán Tem = 100 MVCC + 12 MVKH
+  + Mau: Màu Hồng (100) / Màu Vàng (12-MVKH)
+- Sheet "Đặc STANDA" (114 SP + 1 dong THANH TIEN bo qua):
+  + 112 co Dán Tem = 112 MVCC (100% Tem Hồng, Dán Tem 2 Đầu)
+  + 2 SP khong Tem (NP): Nhựa Đặc 8zem Trắng/Xanh 1.22x30m (Màng STANDA) NP
+
+=> Tong SP co "Dán Tem" ca file: 224 (212 MVCC + 12 MVKH)
+=> Tong SP thoa ca 2 keyword "Dán Tem" + "MVCC": 212
+
+2. KET LUAN NHANH (Dán Tem + MVCC)
+----------------------------------------------------------------
+- Co bao nhieu loai Tem (theo do day tem trong ngoac): 11 loai
+  1.2li, 1.5li, 1.6li, 1.8li, 1.9li, 2li, 2.2li, 2.5li, 2.6li, 3li, 5li
+- Co bao nhieu mau tem: 1 mau duy nhat = Hồng
+  (Sheet SUNPC ghi "Màu Hồng", sheet STANDA ghi "Tem Hồng" + "Dán Tem 2 Đầu" - cung 1 mau)
+- Ngoai le can biet: 12 SP "Dán Tem 1.5li Màu Vàng" la MVKH (khong phai MVCC),
+  nam o sheet Đặc SUNPC, dong 31-42 (Nhựa Đặc Xanh/Trà/Xám Khói 1.1li).
+
+3. CHI TIET 11 LOAI TEM (MVCC only, tong 212 SP)
+----------------------------------------------------------------
+1) Dán Tem 1.2li | Màu Hồng | 16 SP | 100% sheet Đặc STANDA
+   VD: Nhựa Đặc 1.1li Trắng (1.22x30m) Màng STANDA (Dán Tem 1.2li) MVCC Tem Hồng) Dán Tem 2 Đầu
+   Gom: Trắng 1.1li x 4 kho (1.22/1.52/1.82/2.1x30m) + Xanh 1.1li x4 + Trà 1.1li x4 + Xám Khói 1.1li x4
+
+2) Dán Tem 1.5li | Màu Hồng | 4 SP | 100% sheet Đặc SUNPC
+   VD: Nhựa Đặc Trắng 1.1li (1.22x30m) Màng SUNPC (Dán Tem 1.5li) Màu Hồng MVCC
+   Gom: Trắng 1.1li x 4 kho (1.22/1.52/1.82/2.1x30m)
+   Luu y: cung loai tem 1.5li nay con 12 SP Màu Vàng MVKH (Xanh/Trà/Xám Khói 1.1li) -> khong tinh vao MVCC.
+
+3) Dán Tem 1.6li | Màu Hồng (Tem Hồng) | 16 SP | 100% sheet Đặc STANDA
+   VD: Nhựa Đặc 1.5li Trắng (1.22x30m) Màng STANDA (Dán Tem 1.6li) MVCC Tem Hồng) Dán Tem 2 Đầu
+   Gom: Trắng/Xanh/Trà/Xám Khói 1.5li x 4 kho
+
+4) Dán Tem 1.8li | Màu Hồng | 16 SP | 100% sheet Đặc SUNPC
+   VD: Nhựa Đặc Trắng 1.5li (1.22x30m) Màng SUNPC (Dán Tem 1.8li) Màu Hồng MVCC
+   Gom: Trắng/Xanh/Trà/Xám Khói 1.5li x 4 kho
+
+5) Dán Tem 1.9li | Màu Hồng | 16 SP | 100% sheet Đặc SUNPC
+   VD: Nhựa Đặc Trắng 1.7li (1.22x30m) Màng SUNPC (Dán Tem 1.9li) Màu Hồng MVCC
+   Gom: Trắng/Xanh/Trà/Xám Khói 1.7li x 4 kho (nhom nay STT de trong trong file goc)
+
+6) Dán Tem 2li | Màu Hồng (Tem Hồng) | 16 SP | 100% sheet Đặc STANDA
+   VD: Nhựa Đặc 1.9li Trắng (1.22x30m) Màng STANDA (Dán Tem 2li) MVCC Tem Hồng) Dán Tem 2 Đầu
+   Gom: Trắng/Xanh/Trà/Xám Khói 1.9li x 4 kho
+
+7) Dán Tem 2.2li | Màu Hồng | 16 SP | 100% sheet Đặc SUNPC
+   VD: Nhựa Đặc Trắng 1.8li (1.22x30m) Màng SUNPC (Dán Tem 2.2li) Màu Hồng MVCC
+   Gom: Trắng/Xanh/Trà/Xám Khói 1.8li x 4 kho
+
+8) Dán Tem 2.5li | Màu Hồng | 32 SP | SUNPC 16 + STANDA 16
+   - SUNPC 16 VD: Nhựa Đặc Trắng 2.1li (1.22x30m) Màng SUNPC (Dán Tem 2.5li) Màu Hồng MVCC (Trắng/Xanh/Trà/Xám Khói 2.1li)
+   - STANDA 16 VD: Nhựa Đặc 2.4li Trắng (1.22x30m) Màng STANDA (Dán Tem 2.5li) MVCC Tem Hồng) Dán Tem 2 Đầu (Trắng/Xanh/Trà/Xám Khói 2.4li)
+
+9) Dán Tem 2.6li | Màu Hồng | 16 SP | 100% sheet Đặc SUNPC
+   VD: Nhựa Đặc Trắng 2.5li (1.22x30m) Màng SUNPC (Dán Tem 2.6li) Màu Hồng MVCC
+   Gom: Trắng/Xanh/Trà/Xám Khói 2.5li x 4 kho
+
+10) Dán Tem 3li | Màu Hồng (Tem Hồng) | 16 SP | 100% sheet Đặc STANDA
+    VD: Nhựa Đặc 2.8li Trắng (1.22x30m) Màng STANDA (Dán Tem 3li) MVCC Tem Hồng) Dán Tem 2 Đầu
+    Gom: Trắng/Xanh/Trà/Xám Khói 2.8li x 4 kho
+
+11) Dán Tem 5li | Màu Hồng | 48 SP | SUNPC 16 + STANDA 32 (loai nhieu nhat)
+    - SUNPC 16 VD: Nhựa Đặc Trắng 4.2li (1.22x30m) Màng SUNPC (Dán Tem 5li) Màu Hồng MVCC (Trắng/Xanh/Trà/Xám Khói 4.2li)
+    - STANDA 32 VD: Nhựa Đặc 4.1li/4.7li Trắng/Xanh/Trà/Xám Khói (1.22/1.52/1.82/2.1x30m) Màng STANDA (Dán Tem 5li) MVCC Tem Hồng) Dán Tem 2 Đầu
+    Luu y: STANDA co 1 dong loi chinh ta "4.11i Xám Khói (2.1x30m)" = 4.1li, van tinh vao nhom 5li.
+
+4. MAU TEM
+----------------------------------------------------------------
+- MVCC + Dán Tem: 1 mau = Hồng (212/212 = 100%)
+  + Cach ghi SUNPC: "(Dán Tem X) Màu Hồng MVCC" (chu Hồng trong file goc co 2 dang unicode Hồng/Hồng, da chuan hoa NFC -> cung 1 mau)
+  + Cach ghi STANDA: "(Dán Tem X) MVCC Tem Hồng) Dán Tem 2 Đầu"
+- Neu tinh ca MVKH: them 1 mau = Vàng (12 SP Dán Tem 1.5li Màu Vàng MVKH, sheet Đặc SUNPC R31-R42)
+=> Ca file (Dán Tem): 2 mau (Hồng 212, Vàng 12). Rieng MVCC: 1 mau (Hồng).
+
+5. PHUONG PHAP
+----------------------------------------------------------------
+- Doc bang lib xlsx (Node), lay cot B "TEN SAN PHAM" tu dong 11 tro di, bo dong trong/THANH TIEN.
+- Regex: /Dán Tem\s*([^\)]*?)\)/gi lay do day tem, /Màu\s*\w+|Tem\s*Hồng/ lay mau, chuan hoa NFC + gop khoang trang.
+- Dem distinct theo chuoi tem size + mau, cross-check theo sheet.

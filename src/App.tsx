@@ -72,6 +72,7 @@ import { ShippingOrdersPanel } from './features/lenh-xuat-hang';
 import { OrdersPanel } from './features/don-hang';
 import { ProductionOrdersPanel } from './features/lenh-sx';
 import { ProductionPlanHistoryPanel } from './features/ke-hoach-san-xuat';
+import { DotSanXuatPanel } from './features/dot-san-xuat';
 import { DieuDongNhanSuPanel } from './features/dieu-dong-nhan-su';
 import SapXepLichLamViecPanel from './features/sap-xep-lich-lam-viec';
 import { SettingsPanel } from './features/cai-dat-thoi-gian';
@@ -1581,6 +1582,16 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <ProductionPlanHistoryPanel onBack={() => goBack('production-reports')} />
+              </motion.div>
+            ) : activeTab === 'dot-san-xuat' ? (
+              <motion.div
+                key="dot-san-xuat"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <DotSanXuatPanel onBack={() => goBack('factory-quan-doc')} />
               </motion.div>
             ) : activeTab === 'dieu-dong-nhan-su' ? (
               <motion.div
