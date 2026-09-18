@@ -56,7 +56,7 @@ import {
   FilePlus2, Layers, History, UsersRound, Building2, BriefcaseBusiness, Package, Cpu, Boxes,
   ClipboardList, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, Scale, Settings,
   CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity, Truck,
-  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, AlertTriangle
+  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, AlertTriangle, Coins
 } from 'lucide-react';
 import type { AppTab } from '../routes';
 import { hubHasAllowedChild, resolveAccessTab } from './tabAccess';
@@ -465,6 +465,13 @@ export const HCNS_MENU_ITEMS: MenuCardConfig[] = [
     icon: UsersRound,
     icon3d: bustSingle3d,
     tab: 'hr'
+  },
+  {
+    title: 'Chi phí nhân công',
+    desc: 'Tổng hợp và tính toán chi phí nhân công theo tháng và máy.',
+    icon: Coins,
+    icon3d: moneyBag3d,
+    tab: 'chi-phi-nhan-cong'
   },
   {
     title: 'Cơ cấu tổ chức',
@@ -1095,6 +1102,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'warehouse-history': { group: 'Kho', sub: 'Lịch sử xuất nhập' },
   'settings': { group: 'Quản trị', sub: 'Người dùng và phân quyền / Cấu hình hệ thống' },
   'hr': { group: 'HCNS', sub: 'Hồ sơ nhân sự' },
+  'chi-phi-nhan-cong': { group: 'HCNS', sub: 'Chi phí nhân công' },
   'vehicles': { group: 'Trang chủ', sub: 'Lái xe' },
   'orders': { group: 'Kinh doanh', sub: 'Đơn đặt hàng' },
   'customers': { group: 'Kinh doanh', sub: 'Khách hàng' },

@@ -42,6 +42,7 @@ export type TableId =
   | 'nhat_ky_chay_may'
   | 'dieu_dong_nhan_su'
   | 'phan_cong_nhan_su_chi_tiet'
+  | 'chi_phi_nhan_cong'
   | 'control_board';
 
 export interface TableRegistryEntry {
@@ -527,6 +528,22 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appLines: 'src/features/sap-xep-lich-lam-viec/index.tsx',
     components: ['src/features/sap-xep-lich-lam-viec/index.tsx'],
     utils: []
+  },
+  chi_phi_nhan_cong: {
+    table: 'chi_phi_nhan_cong',
+    label: 'Chi phí nhân công theo tháng và máy',
+    sql: ['supabase-chi-phi-nhan-cong.sql'],
+    apiPrefix: '/api/chi-phi-nhan-cong',
+    serverLines: '17675–17835',
+    appTab: 'chi-phi-nhan-cong',
+    appLines: 'src/features/chi-phi-nhan-cong/index.tsx',
+    components: [
+      'src/features/chi-phi-nhan-cong/index.tsx',
+      'src/features/chi-phi-nhan-cong/ChiPhiNhanCongList.tsx',
+      'src/features/chi-phi-nhan-cong/ChiPhiNhanCongForm.tsx',
+      'src/features/chi-phi-nhan-cong/MonthYearPickerVi.tsx'
+    ],
+    utils: ['src/features/chi-phi-nhan-cong/calculateLabor.ts']
   },
   control_board: {
     table: 'control_board',

@@ -334,7 +334,11 @@ export default function BaoCaoThangPrintPreviewModal({
   data: BaoCaoThangPrintData | null;
   onClose: () => void;
 }) {
-  const [printing, setPrinting] = useState(false);
+  const [pendingPrint, setPendingPrint] = useState(false);
+
+  useEffect(() => {
+    if (!open) setPendingPrint(false);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -345,49 +349,91 @@ export default function BaoCaoThangPrintPreviewModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [open, onClose]);
 
-  if (!open || !data) return null;
+  useEffect(() => {
+    if (!pendingPrint || !data) return;
+    document.body.classList.add('dot-san-xuat-print-active');
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      waitForPrintImagesReady().then(() => {
+        if (cancelled) return;
+        window.print();
+        setPendingPrint(false);
+        document.body.classList.remove('dot-san-xuat-print-active');
+      });
+    }, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      document.body.classList.remove('dot-san-xuat-print-active');
+    };
+  }, [pendingPrint, data]);
 
-  async function handlePrint() {
-    setPrinting(true);
-    try {
-      await waitForPrintImagesReady();
-      window.print();
-    } finally {
-      setPrinting(false);
-    }
+  if (!open || !data) {
+    return pendingPrint && data
+      ? createPortal(
+          <div className="dot-san-xuat-print-batch">
+            <BaoCaoThangPrintSheet data={data} />
+          </div>,
+          document.body
+        )
+      : null;
   }
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex flex-col bg-slate-900/80 backdrop-blur-sm">
-      <div className="no-print flex items-center justify-between border-b border-slate-700 bg-slate-800 px-6 py-3 text-white">
-        <div className="flex items-center gap-2">
-          <Printer className="h-5 w-5 text-blue-400" />
-          <h2 className="text-base font-semibold">Xem trước bản in — {data.ten_bao_cao}</h2>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => void handlePrint()}
-            disabled={printing}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 disabled:opacity-50"
-          >
-            {printing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-            In báo cáo
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-slate-400 hover:bg-slate-700 hover:text-white"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-      </div>
+  return (
+    <>
+      {pendingPrint &&
+        createPortal(
+          <div className="dot-san-xuat-print-batch">
+            <BaoCaoThangPrintSheet data={data} />
+          </div>,
+          document.body
+        )}
 
-      <div className="flex-1 overflow-auto p-6 flex justify-center bg-slate-100">
-        <BaoCaoThangPrintSheet data={data} />
+      <div className="dot-san-xuat-print-modal fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+        <div className="dot-san-xuat-print-modal-chrome flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+          <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-4 py-4 sm:px-5">
+            <div>
+              <h3 className="text-lg font-black text-zinc-950">Xem trước bản in báo cáo tháng</h3>
+              <p className="mt-1 text-sm font-medium text-zinc-500">
+                {data.ten_bao_cao} · Máy {data.ten_may || data.ma_may} · Tháng {data.thang}/{data.nam}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+              aria-label="Đóng xem trước"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto bg-zinc-100 px-4 py-4 sm:px-5">
+            <div className="dot-san-xuat-print-preview mx-auto max-w-[210mm] rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+              <BaoCaoThangPrintSheet data={data} />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 px-4 py-4 sm:px-5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-sm font-bold text-zinc-700"
+            >
+              Đóng
+            </button>
+            <button
+              type="button"
+              onClick={() => setPendingPrint(true)}
+              disabled={pendingPrint}
+              className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-sm font-extrabold text-white transition hover:bg-[#b30d1c] disabled:opacity-60"
+            >
+              {pendingPrint ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+              In báo cáo
+            </button>
+          </div>
+        </div>
       </div>
-    </div>,
-    document.body
+    </>
   );
 }

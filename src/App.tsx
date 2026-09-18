@@ -79,6 +79,7 @@ import { SettingsPanel } from './features/cai-dat-thoi-gian';
 import { DashboardWindow } from './features/dashboard';
 import { ControlBoardPanel } from './features/control-board';
 import { HumanResourcesPanel } from './features/nhan-su';
+import { ChiPhiNhanCongPanel } from './features/chi-phi-nhan-cong';
 import { VehiclesPanel } from './features/danh-sach-xe';
 import { CanTuDongPanel } from './features/can-tu-dong';
 import { KiemKhoPanel } from './features/kiem-kho';
@@ -1486,6 +1487,16 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <HumanResourcesPanel onBack={() => goBack('hcns')} />
+              </motion.div>
+            ) : activeTab === 'chi-phi-nhan-cong' ? (
+              <motion.div
+                key="chi-phi-nhan-cong"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <ChiPhiNhanCongPanel onBack={() => goBack('hcns')} currentUser={authUser} />
               </motion.div>
             ) : activeTab === 'vehicles' ? (
               <motion.div

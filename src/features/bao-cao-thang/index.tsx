@@ -45,6 +45,10 @@ function formatPrintDate(value: string): string {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value || '-');
 }
 
+/** Ô lọc Máy đồng bộ chiều cao h-9 với MonthYearPicker (SearchableSelect mặc định h-11 nên bị to). */
+const mayFilterInputClass =
+  'h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none transition hover:border-blue-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 placeholder:font-normal placeholder:text-slate-400 disabled:opacity-50';
+
 /** Picker Tháng + Năm lịch popup tiếng Việt chuẩn AGENTS.md (năm 1-2999). */
 export function MonthYearPicker({
   value,
@@ -544,7 +548,7 @@ export function BaoCaoThangPanel({
             label="Chọn Tháng & Năm"
           />
 
-          <div className="w-56">
+          <div className="w-56 max-w-full">
             <span className="mb-1 block text-xs font-semibold text-slate-600">Chọn Máy</span>
             <SearchableSelect
               options={machineOptions}
@@ -554,6 +558,7 @@ export function BaoCaoThangPanel({
                 if (monthStr) void handleAggregate(monthStr, val);
               }}
               placeholder="-- Chọn máy --"
+              inputClassName={mayFilterInputClass}
               getLabel={(item: unknown) => String((item as { label?: unknown }).label ?? '')}
               getValue={(item: unknown) => String((item as { value?: unknown }).value ?? '')}
             />
@@ -1019,13 +1024,14 @@ export function BaoCaoThangListView({
             />
           </div>
 
-          <div className="w-56">
+          <div className="w-56 max-w-full">
             <span className="mb-1 block text-xs font-semibold text-slate-600">Lọc theo Máy (tùy chọn)</span>
             <SearchableSelect
               options={machineOptions}
               value={maMay}
               onChange={setMaMay}
               placeholder="-- Tất cả máy --"
+              inputClassName={mayFilterInputClass}
               getLabel={(item: unknown) => String((item as { label?: unknown }).label ?? '')}
               getValue={(item: unknown) => String((item as { value?: unknown }).value ?? '')}
             />
