@@ -50,7 +50,9 @@ Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...
 | `bao_cao_nghiem_thu` | `/bao-cao-san-luong` | [bao_cao_nghiem_thu.md](./bao_cao_nghiem_thu.md) |
 | `bao_cao_may_nvl_ton` | `/bao-cao-may-nvl-ton` | [bao_cao_may_nvl_ton.md](./bao_cao_may_nvl_ton.md) |
 | `so_tron` | `/so-tron` (card Sổ trộn trong `/phieu-bao-cao`, vào từ `/nha-may/cong-nhan`) | [so_tron.md](./so_tron.md) |
+| `bao_cao_ngay` | `/bao-cao-ngay` (card Báo cáo ngày trong `/phieu-bao-cao`) + `/danh-sach-bao-cao-ngay` | [bao_cao_ngay.md](./bao_cao_ngay.md) |
 | `so_giao_ca_mmtb` | `/so-giao-ca-mmtb` (card Sổ giao ca MMTB trong `/phieu-bao-cao`) | [so_giao_ca_mmtb.md](./so_giao_ca_mmtb.md) |
+| `so_test_mau_nhua` | `/so-test-mau-nhua` (card Sổ test mẫu nhựa trong QC `/nha-may/qc`) | [so_test_mau_nhua.md](./so_test_mau_nhua.md) |
 | `so_che_do_may` | `/so-che-do-may` (card Sổ chế độ máy trong `/phieu-bao-cao`) + `/danh-sach-so-che-do-may` | [so_che_do_may.md](./so_che_do_may.md) |
 | `phieu_bao_dung_may` | `/phieu-bao-dung-may` | [phieu_bao_dung_may.md](./phieu_bao_dung_may.md) |
 | *(chưa có bảng)* | `/bao-cao-tuan` (card Báo cáo tuần trong `/phieu-bao-cao`) | [bao_cao_tuan.md](./bao_cao_tuan.md) |

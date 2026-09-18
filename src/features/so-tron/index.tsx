@@ -11,6 +11,9 @@ import {
   type MachineRow
 } from '../danh-sach-may';
 import { normalizeMaterialsInventory, type MaterialRow } from '../kho-nvl';
+import { normalizeProducts } from '../san-pham';
+import { parseProductionNameParts } from '../../utils/productProductionName';
+import { computeSoTronSummary, normalizeMang, SO_TRON_CHI_TIEU_MAU } from './summary';
 import { PhieuGiaoCaModal } from './PhieuGiaoCaModal';
 import { SoTronDatePicker, formatNgayVN } from './SoTronDatePicker';
 import { printPhieuGiaoCaSlip } from './printPhieuGiaoCa';
@@ -24,6 +27,8 @@ import { normalizeWarehouseMovements } from '../phieu-xuat-nhap-kho';
 const CHI_NHANH_MAC_DINH = 'Phú Thọ';
 const SO_LAN_TRON_MAC_DINH = 5;
 const SO_LAN_TRON_TOI_DA = 20;
+/** Gợi ý màng SP (cho sửa tay cột Màng) — khớp cột `mang` danh mục sản phẩm. */
+const MANG_SUGGESTIONS = ['ECO', 'STD', 'SUN PC', 'HA', 'LUX'];
 
 type CoiMauNvl = {
   material_id: string;
@@ -69,6 +74,8 @@ type SanPhamRow = {
   ma_lenh_sx: string;
   ma_sp: string;
   ten_sp: string;
+  /** Màng SP (ECO/STD/...) — tự tra theo mã SP từ danh mục, cho sửa tay; rỗng = không màng */
+  mang: string;
   so_luong: string;
   dinh_muc: string;
   trong_luong: string;
@@ -103,6 +110,7 @@ export type SoTronSavedReport = {
     ma_lenh_sx: string;
     ma_sp: string;
     ten_sp: string;
+    mang: string;
     so_luong: string;
     dinh_muc: string;
     trong_luong: string;
@@ -120,6 +128,14 @@ export type SoTronSavedReport = {
     ton_cuoi_ca: number;
   }[];
   ghi_chu: string;
+  /** 5 số tổng hợp lưu cùng phiếu (tự tính khi lưu, xem summary.ts) */
+  tong_nvl: number;
+  /** Tổng Nhập Trong Ngày = Σ lay_trong_kho (Nhập Trong Ngày) trong bảng bàn giao */
+  tong_nhap_nvl: number;
+  tong_sp_co_mang: number;
+  tong_sp_khong_mang: number;
+  tong_loi_hong: number;
+  chi_tieu_phan_tram: number;
   created_at?: string;
   updated_at?: string;
 };
@@ -418,6 +434,10 @@ function normalizeSoTronReports(data: unknown): SoTronSavedReport[] {
       if (!item || typeof item !== 'object') return null;
       const r = item as Record<string, unknown>;
       const asArray = (value: unknown) => (Array.isArray(value) ? value : []);
+      const asNum = (value: unknown) => {
+        const parsed = Number(str(value).replace(',', '.'));
+        return Number.isFinite(parsed) ? parsed : 0;
+      };
       return {
         id: str(r.id),
         chi_nhanh: str(r.chi_nhanh) || CHI_NHANH_MAC_DINH,
@@ -434,6 +454,12 @@ function normalizeSoTronReports(data: unknown): SoTronSavedReport[] {
         bang_hang_loi: asArray(r.bang_hang_loi) as SoTronSavedReport['bang_hang_loi'],
         bang_ban_giao: asArray(r.bang_ban_giao) as SoTronSavedReport['bang_ban_giao'],
         ghi_chu: str(r.ghi_chu),
+        tong_nvl: asNum(r.tong_nvl),
+        tong_nhap_nvl: asNum(r.tong_nhap_nvl),
+        tong_sp_co_mang: asNum(r.tong_sp_co_mang),
+        tong_sp_khong_mang: asNum(r.tong_sp_khong_mang),
+        tong_loi_hong: asNum(r.tong_loi_hong),
+        chi_tieu_phan_tram: asNum(r.chi_tieu_phan_tram),
         created_at: str(r.created_at),
         updated_at: str(r.updated_at)
       } as SoTronSavedReport;
@@ -526,6 +552,8 @@ export function SoTronPanel({
   const [ordersTotal, setOrdersTotal] = useState<number | null>(null);
   const [staffMap, setStaffMap] = useState<Map<string, string>>(new Map());
   const [savedReports, setSavedReports] = useState<SoTronSavedReport[]>([]);
+  // Map mã SP (thường) → màng (ECO/STD/...) từ danh mục, để tự điền cột Màng
+  const [mangByCode, setMangByCode] = useState<Map<string, string>>(new Map());
 
   const [ngay, setNgay] = useState(todayLocal());
   // Máy (chọn 1) + Ca (chọn 1) để lọc lệnh SX
@@ -643,22 +671,25 @@ export function SoTronPanel({
     const load = async () => {
       setIsLoading(true);
       try {
-        const [machineRes, materialRes, settingRes, orderRes, staffRes, reportRes] = await Promise.all([
+        const [machineRes, materialRes, settingRes, orderRes, staffRes, reportRes, productRes] = await Promise.all([
           fetch('/api/danh-sach-may'),
           fetch('/api/kho-nvl'),
           fetch('/api/cai-dat'),
           fetch('/api/lenh-sx'),
           // format=groups để có cả mã + tên nhân viên (API thường chỉ trả tên)
           fetch('/api/nhan-su?format=groups&scope=all'),
-          fetch('/api/so-tron?limit=100')
+          fetch('/api/so-tron?limit=100'),
+          // Danh mục SP để tự tra màng theo mã SP
+          fetch('/api/san-pham?limit=5000')
         ]);
-        const [machineData, materialData, settingData, orderData, staffData, reportData] = await Promise.all([
+        const [machineData, materialData, settingData, orderData, staffData, reportData, productData] = await Promise.all([
           machineRes.json().catch(() => ({})),
           materialRes.json().catch(() => ({})),
           settingRes.json().catch(() => ({})),
           orderRes.json().catch(() => ({})),
           staffRes.json().catch(() => ({})),
-          reportRes.json().catch(() => ({}))
+          reportRes.json().catch(() => ({})),
+          productRes.json().catch(() => ({}))
         ]);
         if (!alive) return;
         if (machineRes.ok) {
@@ -692,6 +723,22 @@ export function SoTronPanel({
         }
         if (staffRes.ok) setStaffMap(normalizeStaffDirectory(staffData));
         if (reportRes.ok) setSavedReports(normalizeSoTronReports(reportData));
+        if (productRes.ok) {
+          try {
+            const map = new Map<string, string>();
+            for (const p of normalizeProducts(productData)) {
+              const mang = normalizeMang(p.mang || '');
+              if (!mang) continue;
+              for (const code of [p.code, p.amisCode, p.newCode]) {
+                const key = str(code).toLowerCase();
+                if (key && !map.has(key)) map.set(key, mang);
+              }
+            }
+            setMangByCode(map);
+          } catch {
+            setMangByCode(new Map());
+          }
+        }
       } finally {
         if (alive) setIsLoading(false);
       }
@@ -1302,6 +1349,13 @@ export function SoTronPanel({
     [nvlTotals]
   );
 
+  /** Tổng Nhập Trong Ngày (tong_nhap_nvl) = Σ Nhập Trong Ngày (lay_trong_kho) bảng bàn giao */
+  const tongNhapTrongNgay = useMemo(
+    () => round2(banGiaoRows.reduce((sum, row) => sum + parseNum(row.lay_trong_kho), 0)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [banGiaoRows]
+  );
+
   // Gom cối mẫu theo SẢN PHẨM (tên hiển thị cho công nhân trộn, không hiện tên phiếu
   // trộn định mức). Chỉ lấy NVL cối chính — NVL phụ (nvl_phu) không đọc vào.
   const coiMauGroups = useMemo(() => {
@@ -1336,8 +1390,21 @@ export function SoTronPanel({
     return selectedLenh.filter(code => !covered.has(code.trim().toLowerCase()));
   }, [coiMau, selectedLenh]);
 
+  /** Màng của 1 SP: ưu tiên tra danh mục theo mã, rớt lại tách từ tên hàng (ECO/STD/...),
+   *  cuối cùng là rỗng (= không màng). */
+  const resolveMang = (maSp: string, tenSp: string) => {
+    const byCode = mangByCode.get(str(maSp).toLowerCase());
+    if (byCode) return byCode;
+    try {
+      const parsed = parseProductionNameParts(str(tenSp), '');
+      return normalizeMang(parsed.mang || '');
+    } catch {
+      return '';
+    }
+  };
+
   const productSuggestions = useMemo(() => {
-    const list: { value: string; label: string; maLenh: string; maSp: string; tenSp: string }[] = [];
+    const list: { value: string; label: string; maLenh: string; maSp: string; tenSp: string; mang: string }[] = [];
     for (const order of selectedOrders) {
       const products: OrderProductLine[] = Array.isArray(order.products) ? order.products : [];
       for (const p of products) {
@@ -1349,12 +1416,14 @@ export function SoTronPanel({
           label: `${maSp} — ${tenSp} (${order.code})`,
           maLenh: order.code,
           maSp,
-          tenSp
+          tenSp,
+          mang: resolveMang(maSp, str(p.productionName) || tenSp)
         });
       }
     }
     return list;
-  }, [selectedOrders]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOrders, mangByCode]);
 
   // Các combo của lệnh đã chọn mà ngày này đã có sổ trộn (trừ phiếu đang sửa)
   const existingForCombos = useMemo(() => {
@@ -1469,6 +1538,7 @@ export function SoTronPanel({
         ma_lenh_sx: str(line.ma_lenh_sx),
         ma_sp: str(line.ma_sp),
         ten_sp: str(line.ten_sp),
+        mang: normalizeMang(str((line as { mang?: unknown }).mang)) || resolveMang(str(line.ma_sp), str(line.ten_sp)),
         so_luong: str(line.so_luong),
         dinh_muc: str(line.dinh_muc),
         trong_luong: str(line.trong_luong),
@@ -1568,6 +1638,7 @@ export function SoTronPanel({
             ma_lenh_sx: row.ma_lenh_sx,
             ma_sp: row.ma_sp.trim(),
             ten_sp: row.ten_sp.trim(),
+            mang: normalizeMang(row.mang),
             so_luong: row.so_luong.trim(),
             dinh_muc: row.dinh_muc.trim(),
             trong_luong: row.trong_luong.trim(),
@@ -1577,6 +1648,12 @@ export function SoTronPanel({
           .filter(row => row.ten_loi.trim() !== '')
           .map(row => ({ ten_loi: row.ten_loi.trim(), so_luong: row.so_luong.trim() })),
         bang_ban_giao: bangBanGiao,
+        tong_nvl: soTronSummary.tong_nvl,
+        tong_nhap_nvl: round2(bangBanGiao.reduce((s, line) => s + (Number(line.lay_trong_kho) || 0), 0)),
+        tong_sp_co_mang: soTronSummary.tong_sp_co_mang,
+        tong_sp_khong_mang: soTronSummary.tong_sp_khong_mang,
+        tong_loi_hong: soTronSummary.tong_loi_hong,
+        chi_tieu_phan_tram: soTronSummary.chi_tieu_phan_tram,
         ghi_chu: ghiChu.trim()
       };
       const sendOne = async (idn: { ma_may: string; ten_may: string; ca: string }) => {
@@ -1644,6 +1721,18 @@ export function SoTronPanel({
   const paperSpTotalSoLuong = spRows.reduce((s, r) => s + parseNum(r.so_luong), 0);
   const paperSpTotalTrongLuong = spRows.reduce((s, r) => s + parseNum(r.trong_luong), 0);
   const paperLoiTotal = loiRows.reduce((s, r) => s + parseNum(r.so_luong), 0);
+  // 5 số tổng hợp lưu cùng phiếu: Tổng NVL (kg) / SP có màng (kg) / SP không màng (kg) /
+  // Tổng lỗi hỏng (kg) / Chỉ tiêu % = tổng SP / 3100 * 100 (xem summary.ts)
+  const soTronSummary = useMemo(
+    () =>
+      computeSoTronSummary({
+        spLines: spRows.map(r => ({ trong_luong: r.trong_luong, mang: r.mang })),
+        tongNvl: tongSuDungChung,
+        tongLoi: paperLoiTotal
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [spRows, tongSuDungChung, paperLoiTotal]
+  );
   const paperCellInput =
     'w-full bg-transparent px-1 py-1 text-center text-[12.5px] font-semibold tabular-nums text-slate-900 outline-none focus:bg-brand-50';
   const paperCellInputLeft =
@@ -2316,6 +2405,9 @@ export function SoTronPanel({
               </div>
               <span className="text-[12.5px] font-bold text-slate-700">
                 Tổng sử dụng: <span className="tabular-nums text-brand-600">{formatQty(tongSuDungChung)} kg</span>
+                <span className="ml-2">
+                  Tổng Nhập Trong Ngày: <span className="tabular-nums text-indigo-600">{formatQty(tongNhapTrongNgay)} kg</span>
+                </span>
               </span>
             </div>
           </section>
@@ -2456,6 +2548,7 @@ export function SoTronPanel({
                     ma_lenh_sx: selectedLenh[0] || '',
                     ma_sp: '',
                     ten_sp: '',
+                    mang: '',
                     so_luong: '',
                     dinh_muc: '',
                     trong_luong: '',
@@ -2631,7 +2724,7 @@ export function SoTronPanel({
           {/* 3. Tờ phiếu nhập liệu kiểu sổ giấy (hiện sau khi chọn lệnh SX — giống mẫu hình) */}
           {selectedLenh.length > 0 && (
             <section className="overflow-x-auto rounded-xl border-2 border-slate-800 bg-white shadow-card">
-              <div className="min-w-[1220px]">
+              <div className="min-w-[1310px]">
                 {/* Đầu phiếu: Ngày + Nhân sự chạy máy */}
                 <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-1 border-b-2 border-slate-800 px-3 py-2 text-[13px] font-semibold text-slate-900">
                   <span>
@@ -2790,23 +2883,27 @@ export function SoTronPanel({
                   </div>
                   <span className="text-[12.5px] font-bold text-slate-700">
                     Tổng sử dụng: <span className="tabular-nums text-brand-600">{formatQty(tongSuDungChung)} kg</span>
+                    <span className="ml-2">
+                      Tổng Nhập Trong Ngày: <span className="tabular-nums text-indigo-600">{formatQty(tongNhapTrongNgay)} kg</span>
+                    </span>
                   </span>
                 </div>
 
                 {/* 3 bảng cạnh nhau: Sản phẩm | Hàng lỗi hỏng | Nhựa bàn giao ca sau */}
                 <div className="border-t-2 border-slate-800 flex flex-col lg:flex-row divide-y-2 lg:divide-y-0 lg:divide-x-2 divide-slate-800">
                   {/* Sản phẩm */}
-                  <div className="min-w-[580px] flex-1 flex flex-col justify-between">
+                  <div className="min-w-[670px] flex-1 flex flex-col justify-between">
                     <div>
                       <p className="border-b border-slate-800 bg-slate-100 py-1 text-center text-[12px] font-bold uppercase tracking-wide">
                         Sản Phẩm
                       </p>
                       <div className="overflow-x-auto">
-                        <table className="w-full min-w-[580px] border-collapse text-center">
+                        <table className="w-full min-w-[670px] border-collapse text-center">
                           <thead>
                             <tr>
                               <th className={`${paperTh} w-[140px] min-w-[130px]`}>Lệnh SX</th>
                               <th className={`${paperTh} min-w-[180px]`}>Tên hàng hóa</th>
+                              <th className={`${paperTh} w-[92px] min-w-[86px]`} title="Màng SP: tự tra theo mã SP từ danh mục, sửa tay được">Màng</th>
                               <th className={`${paperTh} w-[56px] min-w-[50px]`}>Số Lượng</th>
                               <th className={`${paperTh} w-[62px] min-w-[56px]`}>Định mức</th>
                               <th className={`${paperTh} w-[68px] min-w-[60px]`}>Trọng lượng</th>
@@ -2817,7 +2914,7 @@ export function SoTronPanel({
                           <tbody>
                             {spRows.length === 0 && (
                               <tr>
-                                <td colSpan={7} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
+                                <td colSpan={8} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
                                   Chưa có sản phẩm — bấm “Thêm sản phẩm”.
                                 </td>
                               </tr>
@@ -2855,7 +2952,11 @@ export function SoTronPanel({
                                             ...r,
                                             ten_sp: value,
                                             ma_sp: hit ? hit.maSp : r.ma_sp,
-                                            ma_lenh_sx: hit && !r.ma_lenh_sx ? hit.maLenh : r.ma_lenh_sx
+                                            ma_lenh_sx: hit && !r.ma_lenh_sx ? hit.maLenh : r.ma_lenh_sx,
+                                            // Màng tự điền khi chọn gợi ý; gõ tay mà màng đang trống thì thử tách từ tên
+                                            mang: hit
+                                              ? hit.mang || resolveMang(hit.maSp, value)
+                                              : r.mang || resolveMang(r.ma_sp, value)
                                           };
                                         })
                                       );
@@ -2869,6 +2970,23 @@ export function SoTronPanel({
                                       <option key={`${s.maLenh}-${s.maSp}`} value={s.value}>
                                         {s.label}
                                       </option>
+                                    ))}
+                                  </datalist>
+                                </td>
+                                <td className={`${paperTd} w-[92px] min-w-[86px]`}>
+                                  <input
+                                    value={row.mang}
+                                    list={`so-tron-paper-mang-${row.key}`}
+                                    onChange={e =>
+                                      setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, mang: e.target.value } : r)))
+                                    }
+                                    placeholder="Không màng"
+                                    className={`${paperCellInput} ${row.mang ? 'text-emerald-700' : 'text-slate-400'}`}
+                                    title={row.mang ? `Có màng ${row.mang}` : 'Không màng (để trống)'}
+                                  />
+                                  <datalist id={`so-tron-paper-mang-${row.key}`}>
+                                    {MANG_SUGGESTIONS.map(m => (
+                                      <option key={m} value={m} />
                                     ))}
                                   </datalist>
                                 </td>
@@ -2921,7 +3039,7 @@ export function SoTronPanel({
                             ))}
                             {spRows.length > 0 && (
                               <tr className="bg-slate-50 font-bold">
-                                <td colSpan={2} className="border border-slate-700 px-1 py-1 text-left text-[12px]">Cộng</td>
+                                <td colSpan={3} className="border border-slate-700 px-1 py-1 text-left text-[12px]">Cộng</td>
                                 <td className="border border-slate-700 px-1 py-1 text-right tabular-nums">{formatQty(round2(paperSpTotalSoLuong))}</td>
                                 <td className="border border-slate-700" />
                                 <td className="border border-slate-700 px-1 py-1 text-right tabular-nums">{formatQty(round2(paperSpTotalTrongLuong))}</td>
@@ -2943,6 +3061,7 @@ export function SoTronPanel({
                               ma_lenh_sx: selectedLenh[0] || '',
                               ma_sp: '',
                               ten_sp: '',
+                              mang: '',
                               so_luong: '',
                               dinh_muc: '',
                               trong_luong: '',
@@ -3182,6 +3301,7 @@ export function SoTronPanel({
                       ma_lenh_sx: row.ma_lenh_sx,
                       ma_sp: row.ma_sp.trim(),
                       ten_sp: row.ten_sp.trim(),
+                      mang: normalizeMang(row.mang),
                       so_luong: row.so_luong.trim(),
                       dinh_muc: row.dinh_muc.trim(),
                       trong_luong: row.trong_luong.trim(),
@@ -3203,6 +3323,12 @@ export function SoTronPanel({
                         ton_cuoi_ca: round2(lay + dau - suDung)
                       };
                     }),
+                    tong_nvl: soTronSummary.tong_nvl,
+                    tong_nhap_nvl: tongNhapTrongNgay,
+                    tong_sp_co_mang: soTronSummary.tong_sp_co_mang,
+                    tong_sp_khong_mang: soTronSummary.tong_sp_khong_mang,
+                    tong_loi_hong: soTronSummary.tong_loi_hong,
+                    chi_tieu_phan_tram: soTronSummary.chi_tieu_phan_tram,
                     ghi_chu: ghiChu.trim()
                   };
                   setPreviewPhieuGiaoCaReport(reportSnapshot);

@@ -741,7 +741,7 @@ export function weekdayMondayFirst(nam: number, thang: number, ngay: number): nu
 }
 
 /** Lịch popup tiếng Việt để chọn ngày (tuần bắt đầu Thứ 2). Giá trị YYYY-MM-DD. */
-function VnCalendarPicker({
+export function VnCalendarPicker({
   value,
   onChange,
   alignRight

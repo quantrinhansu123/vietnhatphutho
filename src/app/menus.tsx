@@ -232,6 +232,13 @@ export const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
     icon: ClipboardList,
     icon3d: spiralCalendar3d,
     tab: 'bao-cao-tuan'
+  },
+  {
+    title: 'Báo cáo ngày',
+    desc: 'Danh sách theo ngày, thêm/sửa báo cáo: thành phẩm, phế hồng, vật tư tồn/nhập/hao hụt.',
+    icon: ClipboardList,
+    icon3d: spiralNotepad3d,
+    tab: 'bao-cao-ngay-list'
   }
 ];
 
@@ -325,6 +332,13 @@ export const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
     icon: History,
     icon3d: ledger3d,
     tab: 'so-che-do-may-list'
+  },
+  {
+    title: 'Danh sách báo cáo ngày',
+    desc: 'Xem, sửa và xóa mềm báo cáo ngày tổng hợp từ sổ trộn.',
+    icon: History,
+    icon3d: spiralCalendar3d,
+    tab: 'bao-cao-ngay-list'
   },
   {
     title: 'Danh sách báo cáo tồn',
@@ -602,6 +616,12 @@ export const FACTORY_QUAN_DOC_MENU_ITEMS: MenuCardConfig[] = [
 
 export const FACTORY_QC_MENU_ITEMS: MenuCardConfig[] = [
   {
+    title: 'Sổ test mẫu nhựa',
+    desc: 'Nhập, sửa kết quả test nguyên vật liệu theo ngày và in sổ.',
+    icon: ClipboardCheck,
+    tab: 'so-test-mau-nhua'
+  },
+  {
     title: 'BOM và tỷ lệ phối trộn',
     desc: 'Tỷ lệ trộn theo mặt hàng, theo lệnh và theo mẻ.',
     icon: Layers,
@@ -806,7 +826,7 @@ function MainMenuFlowCard({
               className={largeIcon ? 'h-[52px] w-[52px] drop-shadow-md' : 'h-9 w-9 drop-shadow-sm'}
             />
           ) : (
-            <Icon className={largeIcon ? 'h-8 w-8' : 'h-5 w-5'} strokeWidth={largeIcon ? 1.8 : 2} />
+            <Icon className={largeIcon ? 'h-8 w-8' : 'h-5 w-5'} />
           )}
         </span>
         <span className="min-w-0 flex-1">
@@ -961,6 +981,7 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Phiếu cân ca', tab: 'weighing-summary-list' },
       { label: 'Dữ liệu cân tự động', tab: 'can-tu-dong' },
       { label: 'Kiểm tra kho thành phẩm', tab: 'acceptance-report-list' },
+      { label: 'Sổ test mẫu nhựa', tab: 'so-test-mau-nhua' },
       { label: 'Báo cáo chất lượng', tab: 'factory-qc', disabled: true }
     ]
   },
@@ -1011,6 +1032,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'form': { group: 'Sản xuất', sub: 'Nhập báo cáo ca' },
   'report-lists': { group: 'Sản xuất', sub: 'Lịch sử công việc' },
   'acceptance-report-list': { group: 'QC', sub: 'Kiểm tra kho thành phẩm' },
+  'so-test-mau-nhua': { group: 'QC', sub: 'Sổ test mẫu nhựa' },
   'weighing-summary': { group: 'Sản xuất', sub: 'Phiếu cân' },
   'weighing-summary-list': { group: 'QC', sub: 'Phiếu cân ca' },
   'can-tu-dong': { group: 'QC', sub: 'Dữ liệu cân tự động' },
@@ -1034,6 +1056,8 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'machine-run-log': { group: 'Sản xuất', sub: 'Nhật ký chạy máy' },
   'machine-run-log-list': { group: 'Quản Đốc', sub: 'DS nhật ký chạy máy' },
   'bao-cao-tuan': { group: 'Sản xuất', sub: 'Báo cáo tuần' },
+  'bao-cao-ngay': { group: 'Sản xuất', sub: 'Báo cáo ngày' },
+  'bao-cao-ngay-list': { group: 'Sản xuất', sub: 'Danh sách báo cáo ngày' },
   'production-plan-history': { group: 'Quản Đốc', sub: 'Kế hoạch sản xuất' },
   'facility-management': { group: 'Kho', sub: 'Quản lý CSVC' },
   'factory': { group: 'Trang chủ', sub: 'Chọn vai trò' },

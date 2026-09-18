@@ -4,7 +4,7 @@ import { Loader2, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
 interface MachineCell {
   maMay: string;
   tenMay: string;
-  nhanSu: Array<{ name: string; vaiTro?: string; batDau?: string; ketThuc?: string; dispatch?: string }>;
+  nhanSu: Array<{ name: string; maNhanSu?: string; vaiTro?: string; batDau?: string; ketThuc?: string; dispatch?: string }>;
 }
 
 interface LichRow {
@@ -933,40 +933,72 @@ export function LichLamViecPrintModal({ ngay, isOpen, onClose }: Props) {
                         {row.machines.map((cell, midx) => {
                           // Luôn in theo thứ tự vai trò cố định (Trưởng ca → Trộn → Ra Tấm → Ra Tấm 2),
                           // kể cả khi có điều động hay giờ làm sớm/muộn khác giờ ca.
+                          // Luôn hiển thị tên kể cả khi chưa có chức vụ (vaiTro trống): fallback về mã NV.
+                          const displayNameOf = (p: { name?: string; maNhanSu?: string }) =>
+                            String(p.name || p.maNhanSu || '').trim();
                           const orderedNhanSu = sortSchedulePeopleForPrint(cell.nhanSu);
                           const cellNotes =
                             notesByCell.get(noteCellKey(cell.maMay, canonicalShift(row.tenCa))) ??
                             notesByCell.get(noteCellKey(cell.maMay, canonicalShift(row.maCa || ''))) ??
                             [];
                           // Dòng 1: tên NV cách nhau bằng dấu phẩy (kèm giờ riêng nếu khác giờ ca).
+                          // NV chưa có chức vụ (vaiTro trống — VD máy Công việc khác / Hành chính):
+                          // luôn hiện tên plain để không bị "mất tên" khi giờ riêng lệch khung giờ ca.
                           // Các điều động + ghi chú gom xuống dưới cùng, mỗi dòng kèm tên NV.
                           const namesLine = orderedNhanSu
                             .map(p => {
+                              const displayName = displayNameOf(p);
+                              if (!displayName) return '';
+                              if (!String(p.vaiTro || '').trim()) return displayName;
                               const schedPhrase = !p.dispatch
                                 ? formatPersonTimeRange(p.batDau, p.ketThuc, row.khungGio)
                                 : '';
-                              return schedPhrase ? `(${p.name} ${schedPhrase})` : p.name;
+                              return schedPhrase ? `(${displayName} ${schedPhrase})` : displayName;
                             })
                             .filter(Boolean)
                             .join(', ');
                           const dispatched = orderedNhanSu.filter(p => String(p.dispatch || '').trim());
+                          // Giờ riêng (làm lúc / về lúc) của NV chưa có chức vụ: đã hiện tên plain
+                          // ở dòng 1 nên đưa phần giờ xuống dòng phụ bên dưới (kiểu dòng điều động)
+                          // để không mất thông tin. NV có chức vụ giữ nguyên logic ngoặc inline cũ.
+                          const timeNotes = orderedNhanSu
+                            .map(p => {
+                              const displayName = displayNameOf(p);
+                              if (!displayName) return '';
+                              if (String(p.vaiTro || '').trim()) return '';
+                              if (String(p.dispatch || '').trim()) return '';
+                              const schedPhrase = formatPersonTimeRange(p.batDau, p.ketThuc, row.khungGio);
+                              return schedPhrase ? `(${displayName} ${schedPhrase})` : '';
+                            })
+                            .filter(Boolean);
+                          const hasNhanSu = orderedNhanSu.some(p => displayNameOf(p));
                           return (
                             <td key={midx} className="border border-zinc-300 px-2 py-2 align-top">
-                              {orderedNhanSu.length === 0 && cellNotes.length === 0 ? (
+                              {!hasNhanSu && cellNotes.length === 0 ? (
                                 <span className="text-zinc-400">-</span>
                               ) : (
                                 <div className="space-y-1">
                                   {namesLine ? <div>{namesLine}</div> : null}
+                                  {timeNotes.map((line, tidx) => (
+                                    <div
+                                      key={`time-${tidx}`}
+                                      className="note-cell italic text-zinc-600"
+                                      style={{ whiteSpace: 'pre-line' }}
+                                    >
+                                      {line}
+                                    </div>
+                                  ))}
                                   {dispatched.map((p, pidx) => {
+                                    const displayName = displayNameOf(p) || 'NV';
                                     const rawLines = String(p.dispatch || '')
                                       .split('\n')
                                       .map(line => line.trim())
                                       .filter(Boolean);
                                     const fixedLines = rawLines.map(line => {
-                                      if (line.includes(p.name)) return line;
+                                      if (line.includes(displayName)) return line;
                                       // Dữ liệu cũ thiếu tên: chèn tên vào trong ngoặc.
-                                      if (line.startsWith('(')) return `(${p.name} ${line.slice(1).trimStart()}`;
-                                      return `(${p.name} ${line})`;
+                                      if (line.startsWith('(')) return `(${displayName} ${line.slice(1).trimStart()}`;
+                                      return `(${displayName} ${line})`;
                                     });
                                     return (
                                       <div

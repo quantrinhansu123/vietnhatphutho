@@ -32,11 +32,17 @@ const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 export function SoTronDatePicker({
   value,
   onChange,
-  placeholder = 'Chọn ngày'
+  placeholder = 'Chọn ngày',
+  min,
+  max,
+  lockMonth
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  min?: string;
+  max?: string;
+  lockMonth?: { y: number; m: number };
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -46,10 +52,15 @@ export function SoTronDatePicker({
   // Panel chọn nhanh tháng/năm (để nhảy năm khác không phải bấm từng tháng).
   const [pickMY, setPickMY] = useState(false);
 
-  // Mỗi lần mở lịch: nhảy tới tháng của ngày đang chọn (hoặc tháng hiện tại).
+  // Mỗi lần mở lịch: nhảy tới tháng bị khóa (nếu có), hoặc tháng của ngày đang chọn (hoặc tháng hiện tại).
   useEffect(() => {
     if (!open) return;
     setPickMY(false);
+    if (lockMonth) {
+      setViewY(lockMonth.y);
+      setViewM(lockMonth.m);
+      return;
+    }
     const p = parseIso(value);
     if (p) {
       setViewY(p.y);
@@ -59,7 +70,7 @@ export function SoTronDatePicker({
       setViewY(t.getFullYear());
       setViewM(t.getMonth() + 1);
     }
-  }, [open, value]);
+  }, [open, value, lockMonth?.y, lockMonth?.m]);
 
   useEffect(() => {
     if (!open) return;
@@ -121,54 +132,62 @@ export function SoTronDatePicker({
       {open && (
         <div className="absolute left-0 top-full z-30 mt-1 w-[248px] rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
           <div className="mb-1.5 flex items-center justify-between gap-0.5">
-            <div className="flex items-center">
-              <button
-                type="button"
-                onClick={() => moveYear(-1)}
-                aria-label="Năm trước"
-                title="Năm trước"
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100"
-              >
-                <ChevronsLeft className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => moveMonth(-1)}
-                aria-label="Tháng trước"
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => setPickMY(v => !v)}
-              title="Chọn nhanh tháng/năm"
-              className={`rounded-lg px-2 py-1 text-[13px] font-bold transition hover:bg-slate-100 ${pickMY ? 'bg-indigo-50 text-indigo-700' : 'text-slate-800'}`}
-            >
-              Tháng {viewM} / {viewY}
-            </button>
-            <div className="flex items-center">
-              <button
-                type="button"
-                onClick={() => moveMonth(1)}
-                aria-label="Tháng sau"
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => moveYear(1)}
-                aria-label="Năm sau"
-                title="Năm sau"
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100"
-              >
-                <ChevronsRight className="h-4 w-4" />
-              </button>
-            </div>
+            {!lockMonth ? (
+              <>
+                <div className="flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => moveYear(-1)}
+                    aria-label="Năm trước"
+                    title="Năm trước"
+                    className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100"
+                  >
+                    <ChevronsLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveMonth(-1)}
+                    aria-label="Tháng trước"
+                    className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPickMY(v => !v)}
+                  title="Chọn nhanh tháng/năm"
+                  className={`rounded-lg px-2 py-1 text-[13px] font-bold transition hover:bg-slate-100 ${pickMY ? 'bg-indigo-50 text-indigo-700' : 'text-slate-800'}`}
+                >
+                  Tháng {viewM} / {viewY}
+                </button>
+                <div className="flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => moveMonth(1)}
+                    aria-label="Tháng sau"
+                    className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveYear(1)}
+                    aria-label="Năm sau"
+                    title="Năm sau"
+                    className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100"
+                  >
+                    <ChevronsRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="w-full py-1 text-center text-[13px] font-bold text-slate-800">
+                Tháng {viewM} / {viewY}
+              </div>
+            )}
           </div>
-          {pickMY && (
+          {!lockMonth && pickMY && (
             <div className="mb-1.5 rounded-xl bg-slate-50 p-1.5">
               <div className="mb-1.5 flex items-center justify-between gap-1">
                 <button
@@ -240,6 +259,21 @@ export function SoTronDatePicker({
               const iso = `${viewY}-${pad2(viewM)}-${pad2(d)}`;
               const isSelected = selected?.y === viewY && selected?.m === viewM && selected?.d === d;
               const isToday = today?.y === viewY && today?.m === viewM && today?.d === d;
+              const isOutOfRange = Boolean((min && iso < min) || (max && iso > max));
+
+              if (isOutOfRange) {
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    disabled
+                    className="flex h-8 items-center justify-center rounded-lg text-[12.5px] font-semibold tabular-nums text-slate-300 opacity-35 cursor-not-allowed"
+                  >
+                    {d}
+                  </button>
+                );
+              }
+
               return (
                 <button
                   key={d}
@@ -262,16 +296,27 @@ export function SoTronDatePicker({
             })}
           </div>
           <div className="mt-1.5 flex items-center justify-between gap-1.5 border-t border-slate-100 pt-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                onChange(todayIso());
-                setOpen(false);
-              }}
-              className="rounded-lg px-2 py-1 text-[11.5px] font-bold text-indigo-600 transition hover:bg-indigo-50"
-            >
-              Hôm nay
-            </button>
+            {(() => {
+              const todayStr = todayIso();
+              const isTodayOutOfRange = Boolean(
+                (min && todayStr < min) ||
+                (max && todayStr > max) ||
+                (lockMonth && (today?.y !== lockMonth.y || today?.m !== lockMonth.m))
+              );
+              if (isTodayOutOfRange) return <span />;
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange(todayIso());
+                    setOpen(false);
+                  }}
+                  className="rounded-lg px-2 py-1 text-[11.5px] font-bold text-indigo-600 transition hover:bg-indigo-50"
+                >
+                  Hôm nay
+                </button>
+              );
+            })()}
             {value && (
               <button
                 type="button"
