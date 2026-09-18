@@ -40,6 +40,32 @@ export interface BaoCaoNgayVatTuLine {
   su_dung?: number;
 }
 
+/** 1 dòng ca trong bảng Hao hụt thống kê (theo máy + ca, tổng hợp từ sổ trộn). */
+export interface BaoCaoNgayHaoHutCaLine {
+  ca: string;
+  truong_ca: string;
+  /** Ứng viên Trưởng ca từ sổ trộn (vai trò Trưởng ca trước, rồi tới cả tổ) — chọn lại bằng dropdown */
+  truong_ca_options: string[];
+  /** Số kg hao hụt âm trong ca (tự tổng hợp, cho sửa tay) */
+  hao_hut_am: string;
+  /** Số kg TP đạt trong ca = Σ trọng lượng SP (tự tổng hợp, cho sửa tay) */
+  tp_dat: string;
+  /** Số kg Phế trong ca = Σ hàng lỗi (tự tổng hợp, cho sửa tay) */
+  phe_kg: string;
+  /** Các dòng ghi chép còn lại (NKSX, Trong ca, tự thêm) — cho thêm/xóa tay */
+  ghi_chep: string[];
+  /** Chỉ 'Đạt' | 'Không đạt' */
+  danh_gia: string;
+}
+
+/** 1 máy trong bảng Hao hụt thống kê (SL mục tiêu nhập tay). */
+export interface BaoCaoNgayHaoHutMayGroup {
+  ma_may: string;
+  ten_may: string;
+  muc_tieu: string;
+  rows: BaoCaoNgayHaoHutCaLine[];
+}
+
 export interface BaoCaoNgaySavedReport {
   id: string;
   chi_nhanh: string;
@@ -56,6 +82,10 @@ export interface BaoCaoNgaySavedReport {
   tong_ton_trong_ngay: number;
   tong_hao_hut: number;
   ghi_chu: string;
+  /** Hao hụt thống kê theo máy/ca (tab 2, tổng hợp từ sổ trộn, SL mục tiêu + ghi chép nhập tay) */
+  hao_hut_thong_ke: BaoCaoNgayHaoHutMayGroup[];
+  /** Ghi chú chung dưới bảng Hao hụt thống kê (tab 2) */
+  hao_hut_ghi_chu: string;
   deleted_at?: string | null;
   created_at?: string;
   updated_at?: string;
@@ -227,6 +257,71 @@ export function normalizeBaoCaoNgayReports(data: unknown): BaoCaoNgaySavedReport
       hao_hut: asNumField(x.hao_hut ?? x.haoHut),
       su_dung: asNumField(x.su_dung ?? x.suDung)
     })) : [];
+    const rawHaoHut = r.hao_hut_thong_ke ?? (r as unknown as Record<string, unknown>).haoHutThongKe;
+    const haoHutParsed: unknown[] = Array.isArray(rawHaoHut)
+      ? rawHaoHut
+      : typeof rawHaoHut === 'string'
+        ? (() => {
+            try {
+              const parsed = JSON.parse(rawHaoHut);
+              return Array.isArray(parsed) ? parsed : [];
+            } catch {
+              return [];
+            }
+          })()
+        : [];
+    const hao_hut_thong_ke: BaoCaoNgayHaoHutMayGroup[] = haoHutParsed.map(g => {
+      const gg = (g || {}) as Record<string, unknown>;
+      const rowsRaw = Array.isArray(gg.rows) ? (gg.rows as Record<string, unknown>[]) : [];
+      return {
+        ma_may: str(gg.ma_may ?? gg.maMay),
+        ten_may: str(gg.ten_may ?? gg.tenMay),
+        muc_tieu: str(gg.muc_tieu ?? gg.mucTieu),
+        rows: rowsRaw.map(rr => {
+          const gcRaw = Array.isArray(rr.ghi_chep ?? rr.ghiChep)
+            ? ((rr.ghi_chep ?? rr.ghiChep) as unknown[])
+            : [];
+          const leftovers: string[] = [];
+          let haoAm = str(rr.hao_hut_am ?? rr.haoHutAm);
+          let tpDat = str(rr.tp_dat ?? rr.tpDat);
+          let pheKg = str(rr.phe_kg ?? rr.pheKg);
+          // Tương thích bản ghi cũ: bóc số từ dòng text "Hao hụt âm Xkg" / "TP đạt Ykg. Phế Zkg".
+          for (const raw of gcRaw) {
+            const line = str(raw);
+            if (!line) continue;
+            if (haoAm === '') {
+              const m = /hao\s*hụt\s*âm\s*(-?[\d.,]+)\s*kg/i.exec(line);
+              if (m) {
+                haoAm = m[1].replace(',', '.');
+                continue;
+              }
+            }
+            if (tpDat === '' || pheKg === '') {
+              const m = /TP\s*đạt\s*([\d.,]+)\s*kg.*Phế\s*([\d.,]+)\s*kg/i.exec(line);
+              if (m) {
+                if (tpDat === '') tpDat = m[1].replace(',', '.');
+                if (pheKg === '') pheKg = m[2].replace(',', '.');
+                continue;
+              }
+            }
+            leftovers.push(line);
+          }
+          const optsRaw = rr.truong_ca_options ?? rr.truongCaOptions;
+          return {
+            ca: str(rr.ca),
+            truong_ca: str(rr.truong_ca ?? rr.truongCa),
+            truong_ca_options: Array.isArray(optsRaw)
+              ? (optsRaw as unknown[]).map(x => str(x)).filter(x => x !== '')
+              : [],
+            hao_hut_am: haoAm === '' ? '0' : haoAm,
+            tp_dat: tpDat === '' ? '0' : tpDat,
+            phe_kg: pheKg === '' ? '0' : pheKg,
+            ghi_chep: leftovers,
+            danh_gia: normalizeDanhGia(rr.danh_gia ?? rr.danhGia)
+          };
+        }).filter(rr => rr.ca || rr.truong_ca || rr.ghi_chep.length > 0 || rr.danh_gia || rr.tp_dat !== '0' || rr.phe_kg !== '0')
+      };
+    }).filter(g => g.ma_may || g.ten_may || g.rows.length > 0);
     return {
       id: str(r.id),
       chi_nhanh: str(r.chi_nhanh) || 'Phú Thọ',
@@ -242,6 +337,8 @@ export function normalizeBaoCaoNgayReports(data: unknown): BaoCaoNgaySavedReport
       tong_ton_trong_ngay: asNumField(r.tong_ton_trong_ngay),
       tong_hao_hut: asNumField(r.tong_hao_hut),
       ghi_chu: str(r.ghi_chu),
+      hao_hut_thong_ke,
+      hao_hut_ghi_chu: str(r.hao_hut_ghi_chu ?? (r as Record<string, unknown>).haoHutGhiChu),
       deleted_at: (r.deleted_at as string | null) ?? null,
       created_at: str(r.created_at),
       updated_at: str(r.updated_at)
@@ -255,8 +352,12 @@ export interface SoTronDayRecord {
   ma_may: string;
   ten_may: string;
   ca: string;
+  nhan_su?: unknown;
+  nhan_su_chi_tiet?: unknown;
+  ghi_chu?: unknown;
   tong_nvl: number;
   tong_nhap_nvl?: number;
+  tong_loi_hong?: unknown;
   bang_nvl?: { lan?: unknown[]; tong?: unknown }[];
   bang_san_pham?: { ma_sp?: unknown; ten_sp?: unknown; ten_ghep?: unknown; tenGhep?: unknown; so_luong?: unknown; trong_luong?: unknown }[];
   bang_hang_loi?: { ten_loi?: unknown; so_luong?: unknown }[];
@@ -394,6 +495,444 @@ export function buildBaoCaoNgayFromSoTron(records: SoTronDayRecord[], catalogs?:
   return { thanh_pham, phe_hong, vat_tu, hasCaDau, tongSuDung };
 }
 
+// --- Hao hụt thống kê: tổng hợp từ sổ trộn theo máy, theo ca ---
+
+export const DANH_GIA_OPTIONS = ['Đạt', 'Không đạt'] as const;
+
+type EditHaoHutLine = { key: string; text: string };
+type EditHaoHutCaRow = {
+  key: string;
+  ca: string;
+  truong_ca: string;
+  truong_ca_options: string[];
+  hao_hut_am: string;
+  tp_dat: string;
+  phe_kg: string;
+  ghi_chep: EditHaoHutLine[];
+  danh_gia: string;
+};
+type EditHaoHutMayGroup = { key: string; ma_may: string; ten_may: string; muc_tieu: string; rows: EditHaoHutCaRow[] };
+
+/** Kg hiển thị trong dòng ghi chép mặc định (2348, không phân cách hàng nghìn như mẫu giấy). */
+function fmtKg(value: number) {
+  const v = round2(value);
+  return Number.isInteger(v) ? String(v) : String(v);
+}
+
+/** Chuẩn hóa đánh giá về 1 trong 2 giá trị 'Đạt' | 'Không đạt'. */
+function normalizeDanhGia(value: unknown): string {
+  const v = str(value);
+  if (/không\s*đạt/i.test(v)) return 'Không đạt';
+  return 'Đạt';
+}
+
+/** Ngày ISO → "27/8/2026" như tiêu đề mẫu giấy. */
+function formatNgayGachCheo(iso: string) {
+  if (!iso) return '';
+  const parts = iso.split('-');
+  if (parts.length !== 3) return iso;
+  return `${Number(parts[2])}/${Number(parts[1])}/${parts[0]}`;
+}
+
+// ---------------------------------------------------------------------------
+// Trưởng ca: truy vấn lại từ lịch phân công theo ngày/máy/ca.
+// Nguồn gốc nhân sự là bảng `phan_cong_nhan_su_chi_tiet` (tab Sắp xếp lịch làm
+// việc). Sổ trộn cũng chỉ tra từ đó rồi nhúng vào phiếu (`nhan_su` là tên cả
+// tổ gộp phẩy, `nhan_su_chi_tiet` có vai_tro) — phiếu cũ/ca chưa phân công thì
+// cả hai đều rỗng nên tab Hao hụt không có gì để hiện. Vì vậy báo cáo ngày tự
+// tra lại `GET /api/phan-cong-nhan-su?ngay_lam_viec&ca` (server đã lọc ca chuẩn
+// hóa) + resolve tên qua `/api/nhan-su`, rồi hợp nhất với dữ liệu nhúng.
+// ---------------------------------------------------------------------------
+
+type PhanCongRecord = Record<string, unknown>;
+
+function normMachineKey(value: unknown) {
+  return str(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function staffComboKey(maMay: string, tenMay: string, ca: string) {
+  return `${(str(maMay) || str(tenMay)).toLowerCase()}|||${str(ca).toLowerCase()}`;
+}
+
+/** Khớp dòng phân công với máy của phiếu (theo mã hoặc tên, nới lỏng chứa nhau như sổ trộn). */
+function phanCongMatchesMachine(item: PhanCongRecord, maMay: string, tenMay: string) {
+  const code = normMachineKey(maMay);
+  const name = normMachineKey(tenMay);
+  const iCode = normMachineKey(item.ma_may);
+  const iName = normMachineKey(item.may);
+  if (code && (iCode === code || iName === code)) return true;
+  if (name && (iCode === name || iName === name)) return true;
+  const rawCode = str(maMay).toLowerCase();
+  const rawName = str(tenMay).toLowerCase();
+  const rawICode = str(item.ma_may).toLowerCase();
+  const rawIName = str(item.may).toLowerCase();
+  for (const ref of [rawCode, rawName]) {
+    if (!ref || ref === '-') continue;
+    for (const key of [rawICode, rawIName]) {
+      if (!key) continue;
+      if (ref.includes(key) || key.includes(ref)) return true;
+    }
+  }
+  return false;
+}
+
+function pickStaffText(record: PhanCongRecord, keys: string[]) {
+  for (const key of keys) {
+    const value = str(record[key]);
+    if (value && value !== '-') return value;
+  }
+  return '';
+}
+
+/** Mã → tên nhân viên từ danh mục (giống sổ trộn: format=groups + by-code bù thiếu). */
+function normalizeStaffDirectory(data: unknown): Map<string, string> {
+  const map = new Map<string, string>();
+  const visitMember = (item: unknown) => {
+    if (!item || typeof item !== 'object') return;
+    const record = item as Record<string, unknown>;
+    const code = pickStaffText(record, ['ma_nhan_su', 'ma_nv', 'code', 'id']);
+    const name = pickStaffText(record, ['ten_nhan_su', 'ho_ten', 'ten', 'name']);
+    if (code && name && !map.has(code)) map.set(code, name);
+    if (name && !map.has(name)) map.set(name, name);
+  };
+  const visitUnknown = (value: unknown, depth: number) => {
+    if (depth > 4 || !value) return;
+    if (typeof value === 'string') {
+      const name = value.trim();
+      if (name && !map.has(name)) map.set(name, name);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(item => visitUnknown(item, depth + 1));
+      return;
+    }
+    if (typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      if (Array.isArray(record.branches) || Array.isArray(record.departments) || Array.isArray(record.members)) {
+        visitUnknown(record.branches ?? record.departments ?? record.members, depth + 1);
+        return;
+      }
+      if (Array.isArray(record.staff) || Array.isArray(record.data) || Array.isArray(record.items)) {
+        visitUnknown(record.staff ?? record.data ?? record.items, depth + 1);
+        return;
+      }
+      visitMember(value);
+    }
+  };
+  visitUnknown(data, 0);
+  return map;
+}
+
+let staffDirPromise: Promise<Map<string, string>> | null = null;
+
+/** Danh mục mã → tên nhân viên, tải 1 lần rồi cache (dùng chung các lần tra). */
+function loadStaffDirectory(): Promise<Map<string, string>> {
+  if (!staffDirPromise) {
+    staffDirPromise = (async () => {
+      try {
+        const res = await fetch('/api/nhan-su?format=groups&scope=all');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return new Map<string, string>();
+        return normalizeStaffDirectory(data);
+      } catch {
+        return new Map<string, string>();
+      }
+    })();
+  }
+  return staffDirPromise;
+}
+
+/** Bù tên cho các mã chưa có trong danh mục (tối đa 200 mã như sổ trộn). */
+async function resolveStaffNames(dir: Map<string, string>, codes: string[]): Promise<Map<string, string>> {
+  const merged = new Map(dir);
+  const missing = [...new Set(codes.map(c => str(c)).filter(Boolean))].filter(
+    code => !merged.has(code) && !merged.has(code.toLowerCase())
+  );
+  if (missing.length === 0) return merged;
+  try {
+    const res = await fetch(`/api/nhan-su/by-code?codes=${encodeURIComponent(missing.join(','))}`);
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data && typeof (data as { names?: unknown }).names === 'object') {
+      for (const [code, name] of Object.entries((data as { names: Record<string, unknown> }).names)) {
+        const text = str(name);
+        if (!text) continue;
+        merged.set(code, text);
+        merged.set(code.toLowerCase(), text);
+      }
+    }
+  } catch {
+    /* bỏ qua, dùng mã thay tên */
+  }
+  return merged;
+}
+
+function staffNameOf(item: PhanCongRecord, dir: Map<string, string>) {
+  const direct = pickStaffText(item, ['ten_nhan_su', 'ho_ten', 'ten', 'name']);
+  if (direct) return direct;
+  const ma = pickStaffText(item, ['ma_nhan_su', 'ma_nv', 'code']);
+  if (!ma) return '';
+  return dir.get(ma) ?? dir.get(ma.toLowerCase()) ?? ma;
+}
+
+function isTruongCaRole(item: PhanCongRecord) {
+  return isTruongCaRoleText(pickStaffText(item, ['vai_tro', 'role', 'chuc_vu']));
+}
+
+/** Vai trò có phải Trưởng ca không (không dấu vẫn nhận: "Truong ca"). */
+function isTruongCaRoleText(value: unknown) {
+  const v = str(value)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+  return v.includes('truong');
+}
+
+/**
+ * Tra Trưởng ca từ lịch phân công cho các combo máy+ca trong ngày.
+ * Trả về Map comboKey → danh sách tên (vai trò Trưởng ca trước, rồi tới cả tổ).
+ * Lỗi mạng → Map rỗng (báo cáo vẫn dùng dữ liệu nhúng trong sổ trộn).
+ */
+async function fetchTruongCaOptions(
+  ngay: string,
+  combos: { ma_may: string; ten_may: string; ca: string }[]
+): Promise<Map<string, string[]>> {
+  const result = new Map<string, string[]>();
+  const target = str(ngay).slice(0, 10);
+  const valid = combos.filter(c => str(c.ca));
+  if (!target || valid.length === 0) return result;
+  try {
+    const cas = [...new Set(valid.map(c => str(c.ca)))];
+    const settled = await Promise.all(cas.map(async ca => {
+      try {
+        const params = new URLSearchParams({ ngay_lam_viec: target, ca });
+        const res = await fetch(`/api/phan-cong-nhan-su?${params.toString()}`);
+        const data = await res.json().catch(() => ({}));
+        const items = res.ok && data && Array.isArray((data as { items?: unknown }).items)
+          ? ((data as { items: unknown[] }).items as PhanCongRecord[])
+          : [];
+        return { ca, items };
+      } catch {
+        return { ca, items: [] as PhanCongRecord[] };
+      }
+    }));
+    const byCa = new Map(settled.map(s => [s.ca.toLowerCase(), s.items]));
+    const dir = await loadStaffDirectory();
+    const codes = settled.flatMap(s => s.items.map(it => pickStaffText(it, ['ma_nhan_su', 'ma_nv', 'code'])));
+    const full = await resolveStaffNames(dir, codes);
+    for (const combo of valid) {
+      const items = byCa.get(str(combo.ca).toLowerCase()) ?? [];
+      const leaders: string[] = [];
+      const others: string[] = [];
+      for (const item of items) {
+        if (!phanCongMatchesMachine(item, combo.ma_may, combo.ten_may)) continue;
+        const name = staffNameOf(item, full);
+        if (!name) continue;
+        (isTruongCaRole(item) ? leaders : others).push(name);
+      }
+      // Dropdown chỉ hiện vai trò Trưởng ca; chưa xếp ai làm trưởng ca thì
+      // fallback cả tổ để không kẹt (vẫn chọn được tay).
+      const picked = leaders.length > 0 ? leaders : others;
+      const options: string[] = [];
+      for (const name of picked) {
+        if (!options.some(x => x.toLowerCase() === name.toLowerCase())) options.push(name);
+      }
+      if (options.length > 0) result.set(staffComboKey(combo.ma_may, combo.ten_may, combo.ca), options);
+    }
+  } catch {
+    /* bỏ qua, dùng dữ liệu nhúng trong sổ trộn */
+  }
+  return result;
+}
+
+/** Hợp ứng viên tra lại vào danh sách có sẵn (tra lại lên trước vì đã xếp vai trò). */
+function unionTruongCaOptions(existing: string[], fresh: string[]) {
+  const merged = [...fresh];
+  for (const name of existing) {
+    if (!merged.some(x => x.toLowerCase() === name.toLowerCase())) merged.push(name);
+  }
+  return merged;
+}
+
+function truongCaFromSoTron(r: SoTronDayRecord): { name: string; options: string[] } {
+  const raw = (r as unknown as Record<string, unknown>);
+  // Tên trong chi tiết phân công — dropdown chỉ hiện vai trò Trưởng ca.
+  const leaders: string[] = [];
+  const others: string[] = [];
+  const detail = raw.nhan_su_chi_tiet;
+  if (Array.isArray(detail)) {
+    for (const item of detail) {
+      const o = (item || {}) as Record<string, unknown>;
+      const name = str(o.ten ?? o.ten_nhan_su ?? o.ho_ten ?? o.ma_nhan_su);
+      if (!name) continue;
+      if (isTruongCaRoleText(o.vai_tro ?? o.role ?? o.chuc_vu)) leaders.push(name);
+      else others.push(name);
+    }
+  }
+  // `nhan_su` là tên đã resolve đủ cả tổ (VD "Quy, Luyên, ...") — không rõ vai
+  // trò nên chỉ dùng fallback khi chưa tìm được trưởng ca nào.
+  const extra = str(raw.nhan_su)
+    .split(',')
+    .map(part => str(part))
+    .filter(Boolean);
+  const picked = leaders.length > 0 ? leaders : [...others, ...extra];
+  const options: string[] = [];
+  for (const name of picked) {
+    if (!options.some(x => x.toLowerCase() === name.toLowerCase())) options.push(name);
+  }
+  // Có 2 trưởng ca thì lấy người đầu tiên; người dùng chọn lại bằng dropdown.
+  return { name: options[0] ?? '', options };
+}
+
+/**
+ * Tổng hợp Hao hụt thống kê từ sổ trộn theo máy + ca:
+ * - Mỗi máy (ma_may fallback ten_may) = 1 bảng; mỗi phiếu (ca) = 1 dòng.
+ * - TP đạt = Σ trong_luong bang_san_pham trong ca; Phế = Σ so_luong bang_hang_loi
+ *   (trống thì fallback tong_loi_hong của phiếu). Cả 2 đều là ô nhập tay.
+ * - Hao hụt âm = Σ (ton_dau_ca + lay_trong_kho − tong_su_dung − ton_cuoi_ca) trong ca (ô nhập tay).
+ * - Trưởng ca = trưởng ca của máy+ca+ngày (dropdown chỉ hiện vai trò Trưởng ca,
+ *   chưa xếp thì fallback cả tổ để vẫn chọn được tay), chọn lại bằng dropdown.
+ *   `staffOptions` (tra lại từ lịch phân công) được hợp nhất lên trước vì đã xếp vai trò mới nhất.
+ */
+export function buildHaoHutThongKeFromSoTron(
+  records: SoTronDayRecord[],
+  staffOptions?: Map<string, string[]>
+): BaoCaoNgayHaoHutMayGroup[] {
+  const byMay = new Map<string, { ma_may: string; ten_may: string; recs: SoTronDayRecord[] }>();
+  for (const r of records) {
+    const maMay = str(r.ma_may);
+    const tenMay = str(r.ten_may);
+    const key = (maMay || tenMay || str(r.id)).toLowerCase();
+    if (!key) continue;
+    const cur = byMay.get(key) ?? { ma_may: maMay, ten_may: tenMay, recs: [] };
+    if (!cur.ma_may && maMay) cur.ma_may = maMay;
+    if (!cur.ten_may && tenMay) cur.ten_may = tenMay;
+    cur.recs.push(r);
+    byMay.set(key, cur);
+  }
+  const groups: BaoCaoNgayHaoHutMayGroup[] = [...byMay.values()]
+    .sort((a, b) => (a.ten_may || a.ma_may).localeCompare(b.ten_may || b.ma_may, 'vi'))
+    .map(g => {
+      const rows = [...g.recs]
+        .sort((a, b) => str(a.ca).localeCompare(str(b.ca), 'vi'))
+        .map((r): BaoCaoNgayHaoHutCaLine => {
+          const tpKg = Array.isArray(r.bang_san_pham)
+            ? round2(r.bang_san_pham.reduce((s, l) => s + parseNum(l.trong_luong), 0))
+            : 0;
+          let pheKg = Array.isArray(r.bang_hang_loi)
+            ? round2(r.bang_hang_loi.reduce((s, l) => s + parseNum(l.so_luong), 0))
+            : 0;
+          if (pheKg === 0) {
+            const fallback = parseNum((r as unknown as Record<string, unknown>).tong_loi_hong);
+            if (fallback !== 0) pheKg = round2(fallback);
+          }
+          const haoAm = Array.isArray(r.bang_ban_giao)
+            ? round2(r.bang_ban_giao.reduce((s, l) => {
+                const dau = parseNum(l.ton_dau_ca);
+                const nhap = parseNum(l.lay_trong_kho);
+                const suDung = parseNum(l.tong_su_dung);
+                const cuoi = parseNum(l.ton_cuoi_ca);
+                return s + dau + nhap - suDung - cuoi;
+              }, 0))
+            : 0;
+          const truongCa = truongCaFromSoTron(r);
+          const maMay = str(r.ma_may);
+          const tenMay = str(r.ten_may);
+          const fresh = staffOptions?.get(staffComboKey(maMay, tenMay, str(r.ca))) ?? [];
+          // Ưu tiên người tra lại từ lịch phân công đúng máy+ca+ngày (đã xếp vai
+          // trò Trưởng ca lên trước); dữ liệu nhúng trong phiếu chỉ fallback.
+          const options = unionTruongCaOptions(truongCa.options, fresh);
+          return {
+            ca: str(r.ca),
+            truong_ca: options[0] ?? '',
+            truong_ca_options: options,
+            hao_hut_am: fmtKg(haoAm),
+            tp_dat: fmtKg(tpKg),
+            phe_kg: fmtKg(pheKg),
+            // Không ghi chép mặc định — user tự bấm "Thêm dòng ghi chép".
+            ghi_chep: [],
+            danh_gia: 'Đạt'
+          };
+        });
+      return { ma_may: g.ma_may, ten_may: g.ten_may, muc_tieu: '', rows };
+    });
+  return groups;
+}
+
+/** Hợp ứng viên tra lại vào nhóm đang sửa (giữ lựa chọn tay, chỉ mặc định khi trống). Trả về số dòng được bổ sung. */
+function mergeStaffOptionsIntoEditGroups(
+  groups: EditHaoHutMayGroup[],
+  staffOpts: Map<string, string[]>
+): { groups: EditHaoHutMayGroup[]; matched: number } {
+  if (staffOpts.size === 0) return { groups, matched: 0 };
+  let matched = 0;
+  const next = groups.map(g => {
+    const mayKey = (str(g.ma_may) || str(g.ten_may)).toLowerCase();
+    return {
+      ...g,
+      rows: g.rows.map(r => {
+        const fresh = staffOpts.get(`${mayKey}|||${str(r.ca).toLowerCase()}`) ?? [];
+        if (fresh.length === 0) return r;
+        const before = r.truong_ca_options.length;
+        const options = unionTruongCaOptions(r.truong_ca_options, fresh);
+        if (options.length > before) matched += 1;
+        return {
+          ...r,
+          truong_ca_options: options,
+          truong_ca: str(r.truong_ca) || options[0] || ''
+        };
+      })
+    };
+  });
+  return { groups: next, matched };
+}
+
+function toEditHaoHut(groups: BaoCaoNgayHaoHutMayGroup[]): EditHaoHutMayGroup[] {  return groups.map(g => ({
+    key: uid(),
+    ma_may: g.ma_may || '',
+    ten_may: g.ten_may || '',
+    muc_tieu: g.muc_tieu || '',
+    rows: (g.rows || []).map(r => ({
+      key: uid(),
+      ca: r.ca || '',
+      truong_ca: r.truong_ca || '',
+      truong_ca_options: [...(r.truong_ca_options || [])],
+      hao_hut_am: r.hao_hut_am ?? '0',
+      tp_dat: r.tp_dat ?? '0',
+      phe_kg: r.phe_kg ?? '0',
+      ghi_chep: (r.ghi_chep || []).map(t => ({ key: uid(), text: t })),
+      danh_gia: normalizeDanhGia(r.danh_gia)
+    }))
+  }));
+}
+
+function fromEditHaoHut(groups: EditHaoHutMayGroup[]): BaoCaoNgayHaoHutMayGroup[] {
+  return groups
+    .map(g => ({
+      ma_may: str(g.ma_may),
+      ten_may: str(g.ten_may),
+      muc_tieu: str(g.muc_tieu),
+      rows: g.rows
+        .map(r => {
+          const truongCa = str(r.truong_ca);
+          const opts = r.truong_ca_options.map(o => str(o)).filter(o => o !== '');
+          if (truongCa && !opts.some(o => o.toLowerCase() === truongCa.toLowerCase())) opts.unshift(truongCa);
+          return {
+            ca: str(r.ca),
+            truong_ca: truongCa,
+            truong_ca_options: opts,
+            hao_hut_am: fmtInput(round2(parseNum(r.hao_hut_am))),
+            tp_dat: fmtInput(round2(parseNum(r.tp_dat))),
+            phe_kg: fmtInput(round2(parseNum(r.phe_kg))),
+            ghi_chep: r.ghi_chep.map(l => str(l.text)).filter(t => t !== ''),
+            danh_gia: normalizeDanhGia(r.danh_gia)
+          };
+        })
+        .filter(r => r.ca || r.truong_ca || r.ghi_chep.length > 0 || r.danh_gia || r.tp_dat !== '0' || r.phe_kg !== '0' || r.hao_hut_am !== '0')
+    }))
+    .filter(g => g.ma_may || g.ten_may || g.muc_tieu || g.rows.length > 0);
+}
+
 function toEditRows(report: BaoCaoNgaySavedReport | null): { tp: EditThanhPhamRow[]; phe: EditPheRow[]; vt: EditVatTuRow[] } {
   if (!report) return { tp: [], phe: [], vt: [] };
   return {
@@ -440,14 +979,12 @@ function ThanhPhamTable({
   rows,
   editable,
   onChange,
-  onAdd,
   onRemove,
   products = []
 }: {
   rows: EditThanhPhamRow[];
   editable: boolean;
   onChange?: (key: string, patch: Partial<EditThanhPhamRow>) => void;
-  onAdd?: () => void;
   onRemove?: (key: string) => void;
   /** Danh mục SP để search theo mã AMIS + ten_ghep (lưu đúng id) */
   products?: ProductRow[];
@@ -471,7 +1008,7 @@ function ThanhPhamTable({
             {rows.length === 0 && (
               <tr>
                 <td colSpan={editable ? 5 : 4} className="px-3 py-6 text-center font-semibold text-slate-400">
-                  Chưa có dòng nào. Chọn ngày để tự động fill từ sổ trộn hoặc bấm “Thêm dòng”.
+                  Chưa có dòng nào. Chọn ngày để tự động tổng hợp từ sổ trộn.
                 </td>
               </tr>
             )}
@@ -556,11 +1093,6 @@ function ThanhPhamTable({
           )}
         </table>
       </div>
-      {editable && (
-        <button type="button" onClick={onAdd} className="mt-2 inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-bold text-slate-600 hover:bg-slate-50">
-          <Plus className="h-3.5 w-3.5" /> Thêm dòng
-        </button>
-      )}
     </div>
   );
 }
@@ -569,13 +1101,11 @@ function PheHongTable({
   rows,
   editable,
   onChange,
-  onAdd,
   onRemove
 }: {
   rows: EditPheRow[];
   editable: boolean;
   onChange?: (key: string, patch: Partial<EditPheRow>) => void;
-  onAdd?: () => void;
   onRemove?: (key: string) => void;
 }) {
   const tong = rows.reduce((s, r) => s + parseNum(r.so_luong), 0);
@@ -596,7 +1126,7 @@ function PheHongTable({
             {rows.length === 0 && (
               <tr>
                 <td colSpan={editable ? 5 : 4} className="px-3 py-6 text-center font-semibold text-slate-400">
-                  Chưa có dòng nào. Chọn ngày để tự động fill từ sổ trộn hoặc bấm “Thêm dòng”.
+                  Chưa có dòng nào. Chọn ngày để tự động tổng hợp từ sổ trộn.
                 </td>
               </tr>
             )}
@@ -645,11 +1175,6 @@ function PheHongTable({
           )}
         </table>
       </div>
-      {editable && (
-        <button type="button" onClick={onAdd} className="mt-2 inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-bold text-slate-600 hover:bg-slate-50">
-          <Plus className="h-3.5 w-3.5" /> Thêm dòng
-        </button>
-      )}
     </div>
   );
 }
@@ -658,14 +1183,12 @@ function VatTuTable({
   rows,
   editable,
   onChange,
-  onAdd,
   onRemove,
   materials = []
 }: {
   rows: EditVatTuRow[];
   editable: boolean;
   onChange?: (key: string, patch: Partial<EditVatTuRow>) => void;
-  onAdd?: () => void;
   onRemove?: (key: string) => void;
   /** Danh mục kho NVL để search theo mã + tên SX/tên SP (lưu đúng id) */
   materials?: MaterialRow[];
@@ -695,7 +1218,7 @@ function VatTuTable({
             {rows.length === 0 && (
               <tr>
                 <td colSpan={editable ? 8 : 7} className="px-3 py-6 text-center font-semibold text-slate-400">
-                  Chưa có dòng nào. Chọn ngày để tự động fill từ sổ trộn hoặc bấm “Thêm dòng”.
+                  Chưa có dòng nào. Chọn ngày để tự động tổng hợp từ sổ trộn.
                 </td>
               </tr>
             )}
@@ -806,11 +1329,6 @@ function VatTuTable({
           )}
         </table>
       </div>
-      {editable && (
-        <button type="button" onClick={onAdd} className="mt-2 inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-bold text-slate-600 hover:bg-slate-50">
-          <Plus className="h-3.5 w-3.5" /> Thêm dòng
-        </button>
-      )}
     </div>
   );
 }
@@ -923,6 +1441,218 @@ export function BaoCaoNgayPreviewTable({ ngay, rows }: { ngay: string; rows: Bao
 }
 
 // ---------------------------------------------------------------------------
+// Hao hụt thống kê — bảng giống mẫu giấy (theo máy, theo ca)
+// ---------------------------------------------------------------------------
+
+function HaoHutMayLabel(g: { ma_may: string; ten_may: string }) {
+  const ten = str(g.ten_may);
+  const ma = str(g.ma_may);
+  if (ten && ma && ten.toLowerCase() !== ma.toLowerCase()) return `${ten} (${ma})`;
+  return ten || ma || '—';
+}
+
+export function BaoCaoNgayHaoHutPreview({ ngay, groups, ghiChu }: { ngay: string; groups: BaoCaoNgayHaoHutMayGroup[]; ghiChu?: string }) {
+  if (groups.length === 0) {
+    return <p className="py-6 text-center text-[12.5px] font-semibold text-slate-400">Chưa có dữ liệu hao hụt. Chọn ngày để tự động tổng hợp từ sổ trộn theo máy/ca.</p>;
+  }
+  return (
+    <div className="space-y-4">
+      {groups.map((g, gi) => (
+        <div key={gi} className="overflow-x-auto">
+          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 860, fontSize: 13, background: '#fff' }}>
+            <tbody>
+              <tr>
+                <td colSpan={4} style={{ ...previewBorder, fontWeight: 800, fontSize: 17, textAlign: 'center', padding: '6px' }}>
+                  Hao Hụt Thống Kê Ngày {formatNgayGachCheo(ngay)}
+                </td>
+              </tr>
+              <tr style={{ fontWeight: 700 }}>
+                <td style={{ ...previewBorder, padding: '4px 6px', width: 60 }} />
+                <td style={{ ...previewBorder, padding: '4px 6px', fontWeight: 800 }}>{HaoHutMayLabel(g)}</td>
+                <td style={{ ...previewBorder, padding: '4px 6px', color: '#e11d48', fontWeight: 800, width: 150 }}>SL Mục Tiêu</td>
+                <td style={{ ...previewBorder, padding: '4px 6px', color: '#e11d48', fontWeight: 800, width: 220 }}>{g.muc_tieu || ''}</td>
+              </tr>
+              <tr style={{ fontWeight: 700, textAlign: 'center' }}>
+                <td style={{ ...previewBorder, padding: '4px 6px', width: 60 }}>Ca SX</td>
+                <td style={{ ...previewBorder, padding: '4px 6px', width: 130 }}>Trưởng Ca</td>
+                <td style={{ ...previewBorder, padding: '4px 6px' }}>Ghi Chép Trong Ca SX</td>
+                <td style={{ ...previewBorder, padding: '4px 6px', width: 150 }}>Đánh Giá Sản Lượng</td>
+              </tr>
+              {g.rows.length === 0 && (
+                <tr>
+                  <td colSpan={4} style={{ ...previewBorder, padding: '10px', textAlign: 'center', color: '#94a3b8' }}>Chưa có ca nào.</td>
+                </tr>
+              )}
+              {g.rows.map((r, ri) => (
+                <tr key={ri}>
+                  <td style={{ ...previewBorder, padding: '4px 6px', textAlign: 'center', fontWeight: 800 }}>{r.ca || '—'}</td>
+                  <td style={{ ...previewBorder, padding: '4px 6px', textAlign: 'center', fontWeight: 800 }}>{r.truong_ca || '—'}</td>
+                  <td style={{ ...previewBorder, padding: '4px 6px', verticalAlign: 'top' }}>
+                    <div style={{ padding: '1px 0' }}>- Hao hụt âm {r.hao_hut_am || '0'}kg</div>
+                    <div style={{ padding: '1px 0' }}>- TP đạt {r.tp_dat || '0'}kg. Phế {r.phe_kg || '0'}kg</div>
+                    {r.ghi_chep.map((line, li) => (
+                      <div key={li} style={{ padding: '1px 0' }}>- {line}</div>
+                    ))}
+                  </td>
+                  <td style={{ ...previewBorder, padding: '4px 6px', textAlign: 'center', color: '#2563eb' }}>{r.danh_gia || ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+      {str(ghiChu) && (
+        <p className="text-[12.5px] text-slate-700"><span className="font-bold">Ghi chú chung:</span> {str(ghiChu)}</p>
+      )}
+    </div>
+  );
+}
+
+function HaoHutThongKeEditor({
+  groups,
+  onChangeMay,
+  onChangeCa,
+  onChangeLine,
+  onAddLine,
+  onRemoveLine
+}: {
+  groups: EditHaoHutMayGroup[];
+  onChangeMay: (mayKey: string, patch: Partial<EditHaoHutMayGroup>) => void;
+  onChangeCa: (mayKey: string, caKey: string, patch: Partial<EditHaoHutCaRow>) => void;
+  onChangeLine: (mayKey: string, caKey: string, lineKey: string, text: string) => void;
+  onAddLine: (mayKey: string, caKey: string) => void;
+  onRemoveLine: (mayKey: string, caKey: string, lineKey: string) => void;
+}) {
+  if (groups.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-8 text-center">
+        <p className="text-[12.5px] font-semibold text-slate-500">Chưa có dữ liệu hao hụt. Chọn ngày để tự động tổng hợp từ sổ trộn theo máy/ca.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      {groups.map(g => (
+        <div key={g.key} className="overflow-hidden rounded-lg border border-slate-300">
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
+            <span className="min-w-0 flex-1 text-[13px] font-extrabold text-slate-900">{HaoHutMayLabel(g)}</span>
+            <label className="flex items-center gap-1.5 text-[12px] font-bold text-rose-600">
+              SL Mục Tiêu
+              <input
+                value={g.muc_tieu}
+                onChange={e => onChangeMay(g.key, { muc_tieu: e.target.value })}
+                placeholder="VD: 2800kg/12h"
+                className="h-8 w-44 rounded-lg border border-rose-200 bg-white px-2 text-[12.5px] font-bold text-rose-700 outline-none focus:border-rose-400"
+              />
+            </label>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-[12.5px]">
+              <thead>
+                <tr className="border-b border-slate-200 bg-white text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  <th className="w-20 px-2 py-2 text-center">Ca SX</th>
+                  <th className="w-36 px-2 py-2 text-center">Trưởng Ca</th>
+                  <th className="px-2 py-2">Ghi Chép Trong Ca SX</th>
+                  <th className="w-40 px-2 py-2 text-center">Đánh Giá Sản Lượng</th>
+                </tr>
+              </thead>
+              <tbody>
+                {g.rows.map(r => (
+                  <tr key={r.key} className="border-b border-slate-100 align-top last:border-b-0">
+                    <td className="px-2 py-1.5 text-center font-extrabold text-slate-800">{r.ca || '—'}</td>
+                    <td className="px-2 py-1.5">
+                      {r.truong_ca_options.length > 0 ? (
+                        <select
+                          value={r.truong_ca_options.some(o => o.toLowerCase() === str(r.truong_ca).toLowerCase()) ? r.truong_ca : ''}
+                          onChange={e => onChangeCa(g.key, r.key, { truong_ca: e.target.value })}
+                          className={`${inputClass} text-center font-bold`}
+                        >
+                          <option value="">— Chọn —</option>
+                          {(r.truong_ca_options.some(o => o.toLowerCase() === str(r.truong_ca).toLowerCase())
+                            ? r.truong_ca_options
+                            : [...r.truong_ca_options, ...(str(r.truong_ca) ? [str(r.truong_ca)] : [])]
+                          ).map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input value={r.truong_ca} onChange={e => onChangeCa(g.key, r.key, { truong_ca: e.target.value })} placeholder="Trưởng ca" className={`${inputClass} text-center font-bold`} />
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1">
+                          <span className="shrink-0 font-bold text-slate-400">- Hao hụt âm</span>
+                          <input
+                            value={r.hao_hut_am}
+                            onChange={e => onChangeCa(g.key, r.key, { hao_hut_am: e.target.value })}
+                            inputMode="decimal"
+                            placeholder="0"
+                            className={`${numInputClass} max-w-[110px]`}
+                          />
+                          <span className="shrink-0 font-bold text-slate-500">kg</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span className="shrink-0 font-bold text-slate-400">- TP đạt</span>
+                          <input
+                            value={r.tp_dat}
+                            onChange={e => onChangeCa(g.key, r.key, { tp_dat: e.target.value })}
+                            inputMode="decimal"
+                            placeholder="0"
+                            className={`${numInputClass} max-w-[110px]`}
+                          />
+                          <span className="shrink-0 font-bold text-slate-500">kg. Phế</span>
+                          <input
+                            value={r.phe_kg}
+                            onChange={e => onChangeCa(g.key, r.key, { phe_kg: e.target.value })}
+                            inputMode="decimal"
+                            placeholder="0"
+                            className={`${numInputClass} max-w-[110px]`}
+                          />
+                          <span className="shrink-0 font-bold text-slate-500">kg</span>
+                        </div>
+                        {r.ghi_chep.map(line => (
+                          <div key={line.key} className="flex items-start gap-1">
+                            <span className="pt-2 font-bold text-slate-400">-</span>
+                            <input
+                              value={line.text}
+                              onChange={e => onChangeLine(g.key, r.key, line.key, e.target.value)}
+                              placeholder="Ghi chép trong ca"
+                              className={inputClass}
+                            />
+                            <button type="button" onClick={() => onRemoveLine(g.key, r.key, line.key)} className="mt-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-rose-400 hover:bg-rose-50" title="Xóa dòng">
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                        <button type="button" onClick={() => onAddLine(g.key, r.key)} className="inline-flex h-7 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-[11.5px] font-bold text-slate-600 hover:bg-slate-50">
+                          <Plus className="h-3 w-3" /> Thêm dòng ghi chép
+                        </button>
+                      </div>
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <select
+                        value={DANH_GIA_OPTIONS.includes(r.danh_gia as 'Đạt' | 'Không đạt') ? r.danh_gia : 'Đạt'}
+                        onChange={e => onChangeCa(g.key, r.key, { danh_gia: e.target.value })}
+                        className={`${inputClass} text-center font-bold text-blue-600`}
+                      >
+                        {DANH_GIA_OPTIONS.map(opt => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Panel nhập / sửa (chọn ngày → tự động tổng hợp từ sổ trộn)
 // ---------------------------------------------------------------------------
 
@@ -942,9 +1672,14 @@ export function BaoCaoNgayPanel({
   const [ngay, setNgay] = useState(editNgay);
   const [ghiChu, setGhiChu] = useState(editReport?.ghi_chu ?? '');
   const initial = useMemo(() => toEditRows(editReport ?? null), [editReport]);
+  const initialHaoHut = useMemo(() => toEditHaoHut(editReport?.hao_hut_thong_ke ?? []), [editReport]);
   const [tpRows, setTpRows] = useState<EditThanhPhamRow[]>(initial.tp);
   const [pheRows, setPheRows] = useState<EditPheRow[]>(initial.phe);
   const [vtRows, setVtRows] = useState<EditVatTuRow[]>(initial.vt);
+  const [haoHutGroups, setHaoHutGroups] = useState<EditHaoHutMayGroup[]>(initialHaoHut);
+  const [haoHutGhiChu, setHaoHutGhiChu] = useState(editReport?.hao_hut_ghi_chu ?? '');
+  /** Tab chính sau khi chọn ngày: Báo cáo ngày | Hao hụt thống kê */
+  const [mainTab, setMainTab] = useState<'bao-cao' | 'hao-hut'>('bao-cao');
   const [isLoadingSoTron, setIsLoadingSoTron] = useState(false);
   const [soTronInfo, setSoTronInfo] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -952,6 +1687,14 @@ export function BaoCaoNgayPanel({
   const [messageType, setMessageType] = useState<'error' | 'success' | 'info'>('info');
   const lastFetchedNgay = useRef('');
   const fetchedCatalogVersion = useRef(0);
+  /** Chống tra lại Trưởng ca trùng lặp cho cùng phiếu + ngày (chế độ sửa). */
+  const lastEnrichedStaffKey = useRef('');
+  /** Các ô Trưởng ca user đã chọn tay (key ngay|||máy|||ca) — fill lại vẫn giữ, còn lại lấy đúng trưởng ca lịch mới nhất. */
+  const truongCaTouchedRef = useRef<Set<string>>(new Set());
+  const haoHutGroupsRef = useRef<EditHaoHutMayGroup[]>(initialHaoHut);
+  useEffect(() => {
+    haoHutGroupsRef.current = haoHutGroups;
+  }, [haoHutGroups]);
   const [catalogVersion, setCatalogVersion] = useState(0);
   /** Danh mục SP (search theo mã AMIS + ten_ghep, lưu đúng id) */
   const [products, setProducts] = useState<ProductRow[]>([]);
@@ -1038,12 +1781,17 @@ export function BaoCaoNgayPanel({
     setTpRows(next.tp);
     setPheRows(next.phe);
     setVtRows(next.vt);
+    setHaoHutGroups(toEditHaoHut(editReport?.hao_hut_thong_ke ?? []));
+    setHaoHutGhiChu(editReport?.hao_hut_ghi_chu ?? '');
     setNgay(editReport?.ngay ?? '');
     setGhiChu(editReport?.ghi_chu ?? '');
+    setMainTab('bao-cao');
     lastFetchedNgay.current = editReport?.ngay ?? '';
+    lastEnrichedStaffKey.current = '';
+    truongCaTouchedRef.current = new Set();
   }, [editReport?.id]);
 
-  const applySoTronRecords = useCallback((records: SoTronDayRecord[], ngayValue: string) => {
+  const applySoTronRecords = useCallback((records: SoTronDayRecord[], ngayValue: string, staffOpts?: Map<string, string[]>) => {
     const built = buildBaoCaoNgayFromSoTron(records, { tenGhepByCode, productIdByCode, materialIdByCode });
     setTpRows(
       built.thanh_pham.map(l => ({
@@ -1076,13 +1824,72 @@ export function BaoCaoNgayPanel({
       }))
     );
     const tongTongNvl = records.reduce((s, r) => s + (Number(r.tong_nvl) || 0), 0);
+    // Fill lại từ sổ trộn nhưng giữ các ô nhập tay: SL mục tiêu theo máy,
+    // Đánh giá theo từng máy/ca; Trưởng ca chỉ giữ khi user đã chọn tay
+    // (còn lại lấy đúng trưởng ca của máy+ca+ngày từ lịch mới nhất).
+    const targetNgay = str(ngayValue).slice(0, 10);
+    const mucTieuByMay = new Map<string, string>();
+    const tayByMayCa = new Map<string, { truong_ca: string; danh_gia: string }>();
+    for (const g of haoHutGroupsRef.current) {
+      const mayKey = (str(g.ma_may) || str(g.ten_may)).toLowerCase();
+      if (str(g.muc_tieu)) mucTieuByMay.set(mayKey, str(g.muc_tieu));
+      for (const row of g.rows) {
+        const caKey = str(row.ca).toLowerCase();
+        if (!caKey) continue;
+        const touched = truongCaTouchedRef.current.has(`${targetNgay}|||${mayKey}|||${caKey}`);
+        tayByMayCa.set(`${mayKey}|||${caKey}`, {
+          truong_ca: touched ? str(row.truong_ca) : '',
+          danh_gia: str(row.danh_gia)
+        });
+      }
+    }
+    const haoBuilt = buildHaoHutThongKeFromSoTron(records, staffOpts).map(g => {
+      const mayKey = (str(g.ma_may) || str(g.ten_may)).toLowerCase();
+      const keptMucTieu = mucTieuByMay.get(mayKey) ?? '';
+      return {
+        ...g,
+        muc_tieu: keptMucTieu || g.muc_tieu,
+        rows: g.rows.map(row => {
+          const kept = tayByMayCa.get(`${mayKey}|||${str(row.ca).toLowerCase()}`);
+          if (!kept) return row;
+          const opts = [...row.truong_ca_options];
+          if (kept.truong_ca && !opts.some(o => o.toLowerCase() === kept.truong_ca.toLowerCase())) opts.unshift(kept.truong_ca);
+          return {
+            ...row,
+            truong_ca: kept.truong_ca || row.truong_ca,
+            truong_ca_options: opts,
+            danh_gia: kept.danh_gia || row.danh_gia
+          };
+        })
+      };
+    });
+    setHaoHutGroups(toEditHaoHut(haoBuilt));
     setSoTronInfo(
       `Đã fill ${records.length} phiếu sổ trộn ngày ${formatNgayVN(ngayValue)}` +
         (built.hasCaDau
           ? ` (Tồn đầu ngày = Σ tồn ca 12C1/HC1; đối chiếu Σ tong_nvl = ${fmtVN(round2(tongTongNvl))} kg).`
-          : ` (không thấy ca 12C1/HC1 nên Tồn đầu ngày = Σ tồn toàn ngày; đối chiếu Σ tong_nvl = ${fmtVN(round2(tongTongNvl))} kg).`)
+          : ` (không thấy ca 12C1/HC1 nên Tồn đầu ngày = Σ tồn toàn ngày; đối chiếu Σ tong_nvl = ${fmtVN(round2(tongTongNvl))} kg).`) +
+        (staffOpts && staffOpts.size > 0
+          ? ` Trưởng ca đã tra lại từ lịch phân công (${staffOpts.size} lượt máy-ca).`
+          : '')
     );
   }, [tenGhepByCode, productIdByCode, materialIdByCode]);
+
+  // Chế độ sửa (giữ dữ liệu phiếu): chỉ tra lại Trưởng ca từ lịch phân công
+  // để bổ sung dropdown, không đè số liệu đã lưu.
+  const enrichSavedTruongCa = useCallback(async (target: string, reportId: string) => {
+    const key = `${reportId}|||${target}`;
+    if (!target || !reportId || lastEnrichedStaffKey.current === key) return;
+    lastEnrichedStaffKey.current = key;
+    const saved = editReport?.hao_hut_thong_ke ?? [];
+    if (saved.length === 0) return;
+    const combos = saved.flatMap(g =>
+      (g.rows || []).map(r => ({ ma_may: str(g.ma_may), ten_may: str(g.ten_may), ca: str(r.ca) }))
+    );
+    const staffOpts = await fetchTruongCaOptions(target, combos);
+    if (staffOpts.size === 0) return;
+    setHaoHutGroups(prev => mergeStaffOptionsIntoEditGroups(prev, staffOpts).groups);
+  }, [editReport]);
 
   const fetchSoTronByNgay = useCallback(async (ngayValue: string) => {
     const target = str(ngayValue).slice(0, 10);
@@ -1103,10 +1910,17 @@ export function BaoCaoNgayPanel({
         setTpRows([]);
         setPheRows([]);
         setVtRows([]);
+        setHaoHutGroups([]);
         setSoTronInfo(`Ngày ${formatNgayVN(target)} chưa có sổ trộn nào.`);
         return;
       }
-      applySoTronRecords(records, target);
+      // Tra lại Trưởng ca từ lịch phân công theo ngày/máy/ca (phiếu sổ trộn
+      // cũ có thể chưa nhúng nhân sự nên dropdown mới trống).
+      const staffOpts = await fetchTruongCaOptions(
+        target,
+        records.map(r => ({ ma_may: str(r.ma_may), ten_may: str(r.ten_may), ca: str(r.ca) }))
+      );
+      applySoTronRecords(records, target, staffOpts);
       setMessage('');
     } catch {
       setSoTronInfo('Lỗi kết nối khi tải sổ trộn.');
@@ -1124,17 +1938,19 @@ export function BaoCaoNgayPanel({
       fetchedCatalogVersion.current = catalogVersion;
       return;
     }
-    // Chế độ sửa mà vẫn ở đúng ngày của phiếu → giữ dữ liệu phiếu, không đè bằng sổ trộn.
+    // Chế độ sửa mà vẫn ở đúng ngày của phiếu → giữ dữ liệu phiếu, không đè bằng sổ trộn
+    // (nhưng vẫn tra lại Trưởng ca từ lịch phân công để bổ sung dropdown).
     if (isEditing && target === str(editNgay).slice(0, 10)) {
       lastFetchedNgay.current = target;
       fetchedCatalogVersion.current = catalogVersion;
+      void enrichSavedTruongCa(target, editReport?.id ?? '');
       return;
     }
     if (target === lastFetchedNgay.current && fetchedCatalogVersion.current === catalogVersion) return;
     lastFetchedNgay.current = target;
     fetchedCatalogVersion.current = catalogVersion;
     void fetchSoTronByNgay(target);
-  }, [ngay, fetchSoTronByNgay, catalogVersion, isEditing, editNgay]);
+  }, [ngay, fetchSoTronByNgay, catalogVersion, isEditing, editNgay, enrichSavedTruongCa, editReport?.id]);
 
   const patchTp = (key: string, patch: Partial<EditThanhPhamRow>) =>
     setTpRows(prev => prev.map(r => (r.key === key ? { ...r, ...patch } : r)));
@@ -1152,6 +1968,54 @@ export function BaoCaoNgayPanel({
       })
     );
   };
+
+  const patchHaoHutMay = (mayKey: string, patch: Partial<EditHaoHutMayGroup>) =>
+    setHaoHutGroups(prev => prev.map(g => (g.key === mayKey ? { ...g, ...patch } : g)));
+  const patchHaoHutCa = (mayKey: string, caKey: string, patch: Partial<EditHaoHutCaRow>) =>
+    setHaoHutGroups(prev => prev.map(g => (g.key === mayKey
+      ? { ...g, rows: g.rows.map(r => (r.key === caKey ? { ...r, ...patch } : r)) }
+      : g)));
+  /** User chọn tay ô Trưởng ca → đánh dấu để fill lại không đè bằng lịch. */
+  const handleHaoHutCaChange = (mayKey: string, caKey: string, patch: Partial<EditHaoHutCaRow>) => {
+    if ('truong_ca' in patch) {
+      const g = haoHutGroupsRef.current.find(x => x.key === mayKey);
+      const row = g?.rows.find(x => x.key === caKey);
+      if (g && row) {
+        const mayId = (str(g.ma_may) || str(g.ten_may)).toLowerCase();
+        truongCaTouchedRef.current.add(
+          `${str(ngay).slice(0, 10)}|||${mayId}|||${str(row.ca).toLowerCase()}`
+        );
+      }
+    }
+    patchHaoHutCa(mayKey, caKey, patch);
+  };
+  const patchHaoHutLine = (mayKey: string, caKey: string, lineKey: string, text: string) =>
+    setHaoHutGroups(prev => prev.map(g => (g.key === mayKey
+      ? {
+          ...g,
+          rows: g.rows.map(r => (r.key === caKey
+            ? { ...r, ghi_chep: r.ghi_chep.map(l => (l.key === lineKey ? { ...l, text } : l)) }
+            : r))
+        }
+      : g)));
+  const addHaoHutLine = (mayKey: string, caKey: string) =>
+    setHaoHutGroups(prev => prev.map(g => (g.key === mayKey
+      ? {
+          ...g,
+          rows: g.rows.map(r => (r.key === caKey
+            ? { ...r, ghi_chep: [...r.ghi_chep, { key: uid(), text: '' }] }
+            : r))
+        }
+      : g)));
+  const removeHaoHutLine = (mayKey: string, caKey: string, lineKey: string) =>
+    setHaoHutGroups(prev => prev.map(g => (g.key === mayKey
+      ? {
+          ...g,
+          rows: g.rows.map(r => (r.key === caKey
+            ? { ...r, ghi_chep: r.ghi_chep.filter(l => l.key !== lineKey) }
+            : r))
+        }
+      : g)));
 
   const handleSave = async () => {
     if (!ngay) {
@@ -1196,6 +2060,7 @@ export function BaoCaoNgayPanel({
             su_dung: round2(Number(r.su_dung) || 0)
           };
         });
+      const hao_hut_thong_ke = fromEditHaoHut(haoHutGroups);
 
       const payload = {
         ngay,
@@ -1208,7 +2073,9 @@ export function BaoCaoNgayPanel({
         tong_nhap_vt: round2(vat_tu.reduce((s, r) => s + r.nhap_vt, 0)),
         tong_ton_trong_ngay: round2(vat_tu.reduce((s, r) => s + r.ton_trong_ngay, 0)),
         tong_hao_hut: round2(vat_tu.reduce((s, r) => s + r.hao_hut, 0)),
-        ghi_chu: str(ghiChu)
+        ghi_chu: str(ghiChu),
+        hao_hut_thong_ke,
+        hao_hut_ghi_chu: str(haoHutGhiChu)
       };
 
       const url = isEditing ? `/api/bao-cao-ngay/${encodeURIComponent(editReport!.id)}` : '/api/bao-cao-ngay';
@@ -1297,18 +2164,60 @@ export function BaoCaoNgayPanel({
     w.document.close();
   };
 
+  const haoHutPreviewGroups: BaoCaoNgayHaoHutMayGroup[] = useMemo(() => fromEditHaoHut(haoHutGroups), [haoHutGroups]);
+
+  const handlePrintHaoHut = () => {
+    const esc = (v: string) =>
+      String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const cell = 'border:1px solid #111;padding:4px 6px;font-size:13px;';
+    const groups = fromEditHaoHut(haoHutGroups);
+    const tables = groups.map(g => {
+      const mayLabel = esc(
+        g.ten_may && g.ma_may && g.ten_may.toLowerCase() !== g.ma_may.toLowerCase()
+          ? `${g.ten_may} (${g.ma_may})`
+          : (g.ten_may || g.ma_may || '')
+      );
+      const rowsHtml = g.rows.length === 0
+        ? `<tr><td colspan="4" style="${cell}text-align:center;color:#64748b;">Chưa có ca nào.</td></tr>`
+        : g.rows.map(r => {
+            const extra = r.ghi_chep.length === 0
+              ? ''
+              : r.ghi_chep.map(line => `<div style="padding:1px 0;">- ${esc(line)}</div>`).join('');
+            const lines = `<div style="padding:1px 0;">- Hao hụt âm ${esc(r.hao_hut_am || '0')}kg</div>`
+              + `<div style="padding:1px 0;">- TP đạt ${esc(r.tp_dat || '0')}kg. Phế ${esc(r.phe_kg || '0')}kg</div>`
+              + extra;
+            return `<tr><td style="${cell}text-align:center;font-weight:bold;">${esc(r.ca || '')}</td>`
+              + `<td style="${cell}text-align:center;font-weight:bold;">${esc(r.truong_ca || '')}</td>`
+              + `<td style="${cell}">${lines}</td>`
+              + `<td style="${cell}text-align:center;color:#1d4ed8;">${esc(r.danh_gia || '')}</td></tr>`;
+          }).join('');
+      return `<table style="margin-bottom:12px;"><tr><td colspan="4" style="${cell}font-weight:bold;font-size:17px;text-align:center;">Hao Hụt Thống Kê Ngày ${esc(formatNgayGachCheo(ngay))}</td></tr>`
+        + `<tr style="font-weight:bold;"><td style="${cell}width:60px;"></td><td style="${cell}font-weight:bold;">${mayLabel}</td>`
+        + `<td style="${cell}color:#e11d48;font-weight:bold;width:150px;">SL Mục Tiêu</td>`
+        + `<td style="${cell}color:#e11d48;font-weight:bold;width:220px;">${esc(g.muc_tieu || '')}</td></tr>`
+        + `<tr style="font-weight:bold;text-align:center;"><td style="${cell}">Ca SX</td><td style="${cell}">Trưởng Ca</td>`
+        + `<td style="${cell}">Ghi Chép Trong Ca SX</td><td style="${cell}">Đánh Giá Sản Lượng</td></tr>`
+        + rowsHtml + `</table>`;
+    }).join('');
+    const html = `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><title>Hao hụt thống kê ${esc(formatNgayVN(ngay))}</title>` +
+      `<style>@page{size:A4 portrait;margin:10mm;}body{font-family:Arial,Helvetica,sans-serif;color:#111;}table{width:100%;border-collapse:collapse;}p{font-size:13px;}</style></head><body>` +
+      (tables || '<p>Chưa có dữ liệu hao hụt.</p>') +
+      (str(haoHutGhiChu) ? `<p><b>Ghi chú chung:</b> ${esc(str(haoHutGhiChu))}</p>` : '') +
+      `<script>window.onload=function(){window.print();};</script></body></html>`;
+    const w = window.open('', '_blank', 'width:900,height=700');
+    if (!w) return;
+    w.document.write(html);
+    w.document.close();
+  };
+
   return (
     <div className="space-y-3">
       <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-card">
         <div className="flex flex-wrap items-center gap-2">
-          <BackButton onClick={onBack} />
           <div className="min-w-0 flex-1">
             <h2 className="font-display text-base font-semibold tracking-tight text-slate-900">
               {isEditing ? 'Sửa báo cáo ngày' : 'Thêm báo cáo ngày'}
             </h2>
-            <p className="mt-0.5 text-[11.5px] leading-snug text-slate-500">
-              Mỗi ngày chỉ có 1 báo cáo. Chọn ngày để tự động fill từ sổ trộn.
-            </p>
           </div>
           {onOpenList && (
             <button
@@ -1321,10 +2230,10 @@ export function BaoCaoNgayPanel({
           )}
           <button
             type="button"
-            onClick={handlePrint}
+            onClick={mainTab === 'hao-hut' ? handlePrintHaoHut : handlePrint}
             className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[12.5px] font-bold text-slate-600 transition hover:bg-slate-50"
           >
-            <Printer className="h-4 w-4" /> In
+            <Printer className="h-4 w-4" /> {mainTab === 'hao-hut' ? 'In hao hụt' : 'In'}
           </button>
           <button
             type="button"
@@ -1375,6 +2284,34 @@ export function BaoCaoNgayPanel({
         </div>
       </div>
 
+      {ngay ? (
+      <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1">
+        <button
+          type="button"
+          onClick={() => setMainTab('bao-cao')}
+          className={`h-9 flex-1 rounded-lg text-[13px] font-extrabold transition ${
+            mainTab === 'bao-cao' ? 'bg-white text-slate-900 shadow' : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          Báo cáo ngày
+        </button>
+        <button
+          type="button"
+          onClick={() => setMainTab('hao-hut')}
+          className={`h-9 flex-1 rounded-lg text-[13px] font-extrabold transition ${
+            mainTab === 'hao-hut' ? 'bg-white text-slate-900 shadow' : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          Hao hụt thống kê{haoHutGroups.length > 0 ? ` (${haoHutGroups.length} máy)` : ''}
+        </button>
+      </div>
+      ) : (
+      <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-[12.5px] font-semibold text-slate-500">
+        Chọn ngày báo cáo ở trên để tự động tổng hợp từ sổ trộn (Báo cáo ngày + Hao hụt thống kê theo máy/ca).
+      </div>
+      )}
+
+      {mainTab === 'bao-cao' && (
       <section className={`${cardClass} space-y-3 p-4`}>
         <SectionHeader
           index="1"
@@ -1385,12 +2322,13 @@ export function BaoCaoNgayPanel({
           rows={tpRows}
           editable
           onChange={patchTp}
-          onAdd={() => setTpRows(prev => [...prev, { key: uid(), san_pham_id: '', ma_hang: '', so_luong: '', trong_luong: '' }])}
           onRemove={key => setTpRows(prev => prev.filter(r => r.key !== key))}
           products={products}
         />
       </section>
+      )}
 
+      {mainTab === 'bao-cao' && (
       <section className={`${cardClass} space-y-3 p-4`}>
         <SectionHeader
           index="2"
@@ -1401,11 +2339,12 @@ export function BaoCaoNgayPanel({
           rows={pheRows}
           editable
           onChange={patchPhe}
-          onAdd={() => setPheRows(prev => [...prev, { key: uid(), loai_phe: '', so_luong: '', dot: '' }])}
           onRemove={key => setPheRows(prev => prev.filter(r => r.key !== key))}
         />
       </section>
+      )}
 
+      {mainTab === 'bao-cao' && (
       <section className={`${cardClass} space-y-3 p-4`}>
         <SectionHeader
           index="3"
@@ -1416,17 +2355,13 @@ export function BaoCaoNgayPanel({
           rows={vtRows}
           editable
           onChange={patchVt}
-          onAdd={() =>
-            setVtRows(prev => [
-              ...prev,
-              { key: uid(), material_id: '', ma_nvl: '', ten_nvl: '', ton_dau_ngay: '', nhap_vt: '', su_dung: 0, ton_trong_ngay: '', hao_hut: '' }
-            ])
-          }
           onRemove={key => setVtRows(prev => prev.filter(r => r.key !== key))}
           materials={materials}
         />
       </section>
+      )}
 
+      {mainTab === 'bao-cao' && (
       <section className={`${cardClass} space-y-3 p-4`}>
         <SectionHeader
           index="4"
@@ -1448,6 +2383,44 @@ export function BaoCaoNgayPanel({
           }}
         />
       </section>
+      )}
+      {mainTab === 'hao-hut' && (
+      <section className={`${cardClass} space-y-3 p-4`}>
+        <SectionHeader
+          index="5"
+          title={`Hao hụt thống kê ngày ${formatNgayGachCheo(ngay) || '…'}`}
+          desc="Thống kê từ sổ trộn theo máy, theo ca (không thêm/bớt máy, ca). Trưởng ca lấy đúng người của máy+ca+ngày từ lịch phân công, dropdown chỉ hiện vai trò Trưởng ca — chọn tay thì giữ, fill lại không đè. Hao hụt âm, TP đạt, Phế là ô số nhập tay. Đánh giá chỉ Đạt/Không đạt. SL Mục tiêu nhập tay."
+        />
+        <HaoHutThongKeEditor
+          groups={haoHutGroups}
+          onChangeMay={patchHaoHutMay}
+          onChangeCa={handleHaoHutCaChange}
+          onChangeLine={patchHaoHutLine}
+          onAddLine={addHaoHutLine}
+          onRemoveLine={removeHaoHutLine}
+        />
+        <label className="block">
+          <span className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Ghi chú chung (dưới bảng hao hụt)</span>
+          <textarea
+            value={haoHutGhiChu}
+            onChange={e => setHaoHutGhiChu(e.target.value)}
+            placeholder="Ghi chú chung cho hao hụt thống kê (không bắt buộc)"
+            rows={2}
+            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[13px] text-slate-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20"
+          />
+        </label>
+      </section>
+      )}
+      {mainTab === 'hao-hut' && (
+      <section className={`${cardClass} space-y-3 p-4`}>
+        <SectionHeader
+          index="6"
+          title="Xem trước hao hụt (giống mẫu giấy)"
+          desc="Tự động cập nhật theo bảng trên."
+        />
+        <BaoCaoNgayHaoHutPreview ngay={ngay} groups={haoHutPreviewGroups} ghiChu={haoHutGhiChu} />
+      </section>
+      )}
     </div>
   );
 }
@@ -1485,6 +2458,8 @@ function BaoCaoNgayViewModal({
       hao_hut: r.hao_hut
     }))
   }), [built]);
+  const [viewTab, setViewTab] = useState<'bao-cao' | 'hao-hut'>('bao-cao');
+  const haoHutGroups = useMemo(() => report.hao_hut_thong_ke ?? [], [report]);
 
   return (
     <div className="fixed inset-0 z-[90] flex items-end justify-center bg-zinc-950/45 p-0 sm:items-center sm:p-4">
@@ -1507,11 +2482,33 @@ function BaoCaoNgayViewModal({
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-4 py-4">
+          <div className="mb-3 flex gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1">
+            <button
+              type="button"
+              onClick={() => setViewTab('bao-cao')}
+              className={`h-8 flex-1 rounded-lg text-[12px] font-extrabold transition ${viewTab === 'bao-cao' ? 'bg-white text-slate-900 shadow' : 'text-slate-500'}`}
+            >
+              Báo cáo ngày
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewTab('hao-hut')}
+              className={`h-8 flex-1 rounded-lg text-[12px] font-extrabold transition ${viewTab === 'hao-hut' ? 'bg-white text-slate-900 shadow' : 'text-slate-500'}`}
+            >
+              Hao hụt thống kê{haoHutGroups.length > 0 ? ` (${haoHutGroups.length} máy)` : ''}
+            </button>
+          </div>
+          {viewTab === 'bao-cao' ? (
+          <>
           <BaoCaoNgayPreviewTable ngay={report.ngay} rows={previewRows} />
           {report.ghi_chu && (
             <p className="mt-2 text-[12.5px] text-slate-600">
               <span className="font-bold">Ghi chú:</span> {report.ghi_chu}
             </p>
+          )}
+          </>
+          ) : (
+          <BaoCaoNgayHaoHutPreview ngay={report.ngay} groups={haoHutGroups} ghiChu={report.hao_hut_ghi_chu} />
           )}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
@@ -1548,31 +2545,57 @@ export function BaoCaoNgayListView({
   onEdit: (report: BaoCaoNgaySavedReport) => void;
 }) {
   const [reports, setReports] = useState<BaoCaoNgaySavedReport[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [viewReport, setViewReport] = useState<BaoCaoNgaySavedReport | null>(null);
+  /** Lọc từ ngày => đến ngày (dùng lịch popup tiếng Việt, không dùng input date native). Trống = chưa xem. */
+  const [tuNgay, setTuNgay] = useState('');
+  const [denNgay, setDenNgay] = useState('');
+  /** Phân trang 50 bản ghi/trang. */
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
 
-  const load = async () => {
+  const load = async (tu?: string, den?: string) => {
+    const tuValue = str(tu ?? tuNgayRef.current.tu).slice(0, 10);
+    const denValue = str(den ?? tuNgayRef.current.den).slice(0, 10);
+    // Vào trang danh sách thì trống — chỉ hiển thị khi chọn ngày.
+    if (!tuValue && !denValue) {
+      setReports([]);
+      setMessage('');
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setMessage('');
     try {
-      const res = await fetch('/api/bao-cao-ngay?limit=500');
+      const params = new URLSearchParams({ limit: '1000' });
+      if (tuValue) params.set('tu_ngay', tuValue);
+      if (denValue) params.set('den_ngay', denValue);
+      const res = await fetch(`/api/bao-cao-ngay?${params.toString()}`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setMessage(str((data as Record<string, unknown>)?.error) || 'Không thể tải danh sách báo cáo ngày.');
         return;
       }
-      setReports(normalizeBaoCaoNgayReports(data));
+      const list = normalizeBaoCaoNgayReports(data);
+      setReports(list);
+      setPage(1);
+      if (list.length === 0) {
+        const range = tuValue && denValue
+          ? `từ ${formatNgayVN(tuValue)} đến ${formatNgayVN(denValue)}`
+          : `ngày ${formatNgayVN(tuValue || denValue)}`;
+        setMessage(`Không có báo cáo ngày nào ${range}.`);
+      }
     } catch {
       setMessage('Không thể tải danh sách báo cáo ngày.');
     } finally {
       setIsLoading(false);
     }
   };
-
+  const tuNgayRef = useRef({ tu: tuNgay, den: denNgay });
   useEffect(() => {
-    void load();
-  }, []);
+    tuNgayRef.current = { tu: tuNgay, den: denNgay };
+  }, [tuNgay, denNgay]);
 
   const handleDelete = async (report: BaoCaoNgaySavedReport) => {
     if (!window.confirm(`Xóa (ẩn) báo cáo ngày ${formatNgayVN(report.ngay)}? Dữ liệu vẫn giữ lại, có thể khôi phục.`)) return;
@@ -1584,6 +2607,12 @@ export function BaoCaoNgayListView({
     }
     setReports(prev => prev.filter(r => r.id !== report.id));
   };
+
+  const totalPages = Math.max(1, Math.ceil(reports.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagedReports = reports.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pageWindow: number[] = [];
+  for (let p = Math.max(1, safePage - 2); p <= Math.min(totalPages, safePage + 2); p += 1) pageWindow.push(p);
 
   return (
     <div className="space-y-3">
@@ -1610,10 +2639,62 @@ export function BaoCaoNgayListView({
         </div>
       )}
 
+      <div className="flex flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-card">
+        <label className="block min-w-[190px] flex-1 sm:max-w-[240px]">
+          <span className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Từ ngày</span>
+          <SoTronDatePicker
+            value={tuNgay}
+            onChange={v => {
+              setTuNgay(v);
+              setPage(1);
+              void load(v, denNgay);
+            }}
+            placeholder="Chọn từ ngày"
+            max={denNgay || undefined}
+          />
+        </label>
+        <label className="block min-w-[190px] flex-1 sm:max-w-[240px]">
+          <span className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Đến ngày</span>
+          <SoTronDatePicker
+            value={denNgay}
+            onChange={v => {
+              setDenNgay(v);
+              setPage(1);
+              void load(tuNgay, v);
+            }}
+            placeholder="Chọn đến ngày"
+            min={tuNgay || undefined}
+          />
+        </label>
+        {(tuNgay || denNgay) && (
+          <button
+            type="button"
+            onClick={() => {
+              setTuNgay('');
+              setDenNgay('');
+              setPage(1);
+              void load('', '');
+            }}
+            className="inline-flex h-[38px] items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 transition hover:bg-slate-50"
+          >
+            <X className="h-3.5 w-3.5" /> Xóa lọc
+          </button>
+        )}
+        <span className="pb-2 text-[12px] font-semibold text-slate-500">
+          {tuNgay || denNgay
+            ? `${tuNgay && denNgay ? `Từ ${formatNgayVN(tuNgay)} đến ${formatNgayVN(denNgay)}` : `Ngày ${formatNgayVN(tuNgay || denNgay)}`}: ${reports.length} báo cáo`
+            : 'Chọn ngày để xem danh sách báo cáo ngày'}
+        </span>
+      </div>
+
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
         {isLoading ? (
           <div className="flex items-center justify-center gap-2 py-16 text-sm font-semibold text-slate-500">
             <Loader2 className="h-5 w-5 animate-spin" /> Đang tải danh sách...
+          </div>
+        ) : !(tuNgay || denNgay) ? (
+          <div className="px-3 py-10 text-center text-[12.5px] font-semibold text-slate-400">
+            Chọn từ ngày / đến ngày ở trên để xem danh sách báo cáo ngày.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -1630,14 +2711,14 @@ export function BaoCaoNgayListView({
                 </tr>
               </thead>
               <tbody>
-                {reports.length === 0 && (
+                {pagedReports.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-3 py-6 text-center font-semibold text-slate-400">
-                      Chưa có báo cáo ngày nào. Bấm “Thêm báo cáo ngày” để tổng hợp từ sổ trộn.
+                      Không có báo cáo nào trong khoảng ngày đã chọn.
                     </td>
                   </tr>
                 )}
-                {reports.map(report => (
+                {pagedReports.map(report => (
                   <tr key={report.id} className="border-b border-slate-50 last:border-0">
                     <td className="px-3 py-2 font-bold tabular-nums">{formatNgayVN(report.ngay)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">
@@ -1682,6 +2763,66 @@ export function BaoCaoNgayListView({
           </div>
         )}
       </div>
+
+      {(tuNgay || denNgay) && !isLoading && totalPages > 1 && (
+        <div className="flex flex-wrap items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-card">
+          <button
+            type="button"
+            disabled={safePage <= 1}
+            onClick={() => setPage(safePage - 1)}
+            className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-2.5 text-[12px] font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+          >
+            ‹ Trước
+          </button>
+          {pageWindow[0] > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setPage(1)}
+                className="inline-flex h-8 min-w-8 items-center justify-center rounded-lg border border-slate-200 px-2 text-[12px] font-bold text-slate-600 transition hover:bg-slate-50"
+              >
+                1
+              </button>
+              {pageWindow[0] > 2 && <span className="px-1 text-slate-400">…</span>}
+            </>
+          )}
+          {pageWindow.map(p => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setPage(p)}
+              className={`inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-[12px] font-bold transition ${
+                p === safePage ? 'bg-slate-900 text-white' : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {p}
+            </button>
+          ))}
+          {pageWindow[pageWindow.length - 1] < totalPages && (
+            <>
+              {pageWindow[pageWindow.length - 1] < totalPages - 1 && <span className="px-1 text-slate-400">…</span>}
+              <button
+                type="button"
+                onClick={() => setPage(totalPages)}
+                className="inline-flex h-8 min-w-8 items-center justify-center rounded-lg border border-slate-200 px-2 text-[12px] font-bold text-slate-600 transition hover:bg-slate-50"
+              >
+                {totalPages}
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            disabled={safePage >= totalPages}
+            onClick={() => setPage(safePage + 1)}
+            className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-2.5 text-[12px] font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+          >
+            Sau ›
+          </button>
+          <span className="ml-1 text-[12px] font-semibold text-slate-500">
+            Trang {safePage}/{totalPages} · {reports.length} báo cáo
+          </span>
+        </div>
+      )}
 
       {viewReport && (
         <BaoCaoNgayViewModal report={viewReport} onClose={() => setViewReport(null)} onEdit={onEdit} />

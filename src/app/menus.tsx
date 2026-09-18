@@ -235,10 +235,10 @@ export const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
   },
   {
     title: 'Báo cáo ngày',
-    desc: 'Tổng hợp 1 ngày từ sổ trộn: thành phẩm, phế hồng, vật tư tồn/nhập/hao hụt.',
+    desc: 'Danh sách theo ngày, thêm/sửa báo cáo: thành phẩm, phế hồng, vật tư tồn/nhập/hao hụt.',
     icon: ClipboardList,
     icon3d: spiralNotepad3d,
-    tab: 'bao-cao-ngay'
+    tab: 'bao-cao-ngay-list'
   }
 ];
 

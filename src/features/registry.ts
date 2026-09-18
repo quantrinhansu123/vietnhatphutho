@@ -409,11 +409,11 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   bao_cao_ngay: {
     table: 'bao_cao_ngay',
     label: 'Báo cáo ngày (tổng hợp từ sổ trộn)',
-    sql: ['supabase-bao-cao-ngay.sql'],
+    sql: ['supabase-bao-cao-ngay.sql', 'supabase-bao-cao-ngay-hao-hut-thong-ke.sql', 'supabase-bao-cao-ngay-hao-hut-ghi-chu.sql'],
     apiPrefix: '/api/bao-cao-ngay',
-    serverLines: 'parseBaoCaoNgayBody + GET/POST/PUT/DELETE (soft delete deleted_at)/POST restore /api/bao-cao-ngay',
+    serverLines: 'parseBaoCaoNgayBody (+hao_hut_thong_ke +hao_hut_ghi_chu) + GET/POST/PUT/DELETE (soft delete deleted_at)/POST restore /api/bao-cao-ngay',
     appTab: 'bao-cao-ngay | bao-cao-ngay-list',
-    appLines: 'src/features/bao-cao-ngay/index.tsx (BaoCaoNgayPanel + BaoCaoNgayListView + BaoCaoNgayTable)',
+    appLines: 'src/features/bao-cao-ngay/index.tsx (BaoCaoNgayPanel 2 tab + BaoCaoNgayListView + HaoHutThongKeEditor + BaoCaoNgayHaoHutPreview)',
     components: [],
     utils: []
   },

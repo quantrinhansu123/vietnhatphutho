@@ -12016,7 +12016,7 @@ export function createApp() {
         supabase.from('danh_sach_may').select('*'),
         supabase.from('phan_cong_nhan_su_chi_tiet').select('*').eq('ngay_lam_viec', ngayLamViec).order('created_at', { ascending: true }),
         supabase.from('dieu_dong_nhan_su').select('*').eq('ngay_lam_viec', ngayLamViec),
-        supabase.from('nhan_su').select('ma_nhan_su, nhan_su')
+        supabase.from('nhan_su').select('ma_nhan_su, nhan_su').limit(5000)
       ]);
 
       let caList = (caRes.data || []) as any[];
@@ -12027,7 +12027,23 @@ export function createApp() {
         .filter(row => !isScheduleNoteRow(row) && !isGeneralScheduleNoteRow(row))
         .sort((a: any, b: any) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
       const dieuDongList = dieuDongRes.data || [];
-      const nhanSuMap = new Map((nhanSuRes.data || []).map(ns => [String(ns.ma_nhan_su), ns.nhan_su]));
+      // Map mã NV → tên (trim; bỏ tên rỗng để fallback về mã).
+      // Không lọc theo chức vụ (cong_viec/chuc_vu): NV chưa có chức vụ vẫn phải hiện tên khi in.
+      const nhanSuMap = new Map<string, string>();
+      for (const ns of ((nhanSuRes.data || []) as any[])) {
+        const code = String(ns.ma_nhan_su ?? '').trim();
+        const name = String(ns.nhan_su ?? '').trim();
+        if (!code || !name) continue;
+        if (!nhanSuMap.has(code)) nhanSuMap.set(code, name);
+      }
+      // Resolve tên hiển thị: ưu tiên tên trong bảng nhan_su, fallback về mã NV.
+      // Luôn trả non-empty khi có mã (kể cả khi chưa có chức vụ / tên rút gọn rỗng).
+      const resolveStaffDisplayName = (maNhanSu: unknown): { code: string; full: string; short: string } => {
+        const code = String(maNhanSu ?? '').trim();
+        const full = (code ? nhanSuMap.get(code) : '') || code;
+        const short = (full ? formatShortStaffName(full) : '') || code;
+        return { code, full, short };
+      };
       const ghiChuChiTiet = normalizeScheduleNotes(phanCongAllRows);
       const generalNoteRow = phanCongAllRows.find(isGeneralScheduleNoteRow) as Record<string, unknown> | undefined;
       const ghiChuChung = generalNoteRow
@@ -12154,7 +12170,8 @@ export function createApp() {
         // Structure: machineData[tenMay][tenCa] to separate by both machine and shift
         // Push theo created_at rồi sort ổn định theo vai trò khi trả về
         // (Trưởng ca → Trộn → Ra Tấm → khác) — xem sortNhanSuByRole bên dưới.
-        type MachineShiftData = Record<string, Record<string, Array<{ name: string; vaiTro?: string; batDau?: string; ketThuc?: string; dispatch?: string }>>>;
+        // Luôn giữ nhân sự kể cả khi vai_tro trống (chưa có chức vụ): chỉ lọc theo ma_may + ma_nhan_su.
+        type MachineShiftData = Record<string, Record<string, Array<{ name: string; maNhanSu?: string; vaiTro?: string; batDau?: string; ketThuc?: string; dispatch?: string }>>>;
         const machineData: MachineShiftData = {};
 
         for (const may of mayListHienThi) {
@@ -12166,13 +12183,15 @@ export function createApp() {
         const allMachinesForLookup: any[] = [...mayListHienThi, ...mayList];
 
         // Find employees assigned to machines in this time period
+        // (Không lọc theo vai_tro/cong_viec: NV chưa có chức vụ vẫn phải hiện tên.)
         for (const phanCong of phanCongList) {
           if (!phanCong.ma_may || !phanCong.ma_nhan_su) continue;
           if (!assignmentMatchesShift(phanCong as Record<string, unknown>, ca)) continue;
 
-          // Tên gọn khi in: viết tắt họ + tên (VD "Nguyễn Văn An" → "NVA An").
-          const fullName = nhanSuMap.get(phanCong.ma_nhan_su) || phanCong.ma_nhan_su;
-          const lastName = formatShortStaffName(fullName);
+          // Tên gọn khi in: viết tắt họ + tên (VD "Nguyễn Văn An" → "NV An").
+          // Fallback về mã NV khi chưa tra được tên (kể cả khi chưa có chức vụ).
+          const staffCode = String((phanCong as any).ma_nhan_su || '').trim();
+          const { short: lastName } = resolveStaffDisplayName(staffCode);
           const schedStart = String((phanCong as any).thoi_gian_bat_dau || '').trim().slice(0, 5);
           const schedEnd = String((phanCong as any).thoi_gian_ket_thuc || '').trim().slice(0, 5);
           const vaiTro = String((phanCong as any).vai_tro || '').trim();
@@ -12246,6 +12265,7 @@ export function createApp() {
 
             machineData[machineName][tenCa].push({
               name: lastName,
+              maNhanSu: staffCode,
               vaiTro,
               batDau: schedStart,
               ketThuc: schedEnd,
@@ -12255,6 +12275,7 @@ export function createApp() {
             // Employee stays in this machine (no dispatch from this machine)
             machineData[machineName][tenCa].push({
               name: lastName,
+              maNhanSu: staffCode,
               vaiTro,
               batDau: schedStart,
               ketThuc: schedEnd
@@ -12284,13 +12305,15 @@ export function createApp() {
             machineData[destMachineName][tenCa] = [];
           }
 
-          const fullName = nhanSuMap.get(dd.ma_nhan_su) || dd.ma_nhan_su;
-          const lastName = formatShortStaffName(String(fullName || ''));
+          const { code: ddCode, short: lastName } = resolveStaffDisplayName((dd as any).ma_nhan_su);
+          const displayName = lastName || ddCode || String((dd as any).ma_nhan_su || '').trim();
           const timePhrase = formatDispatchPrintTime(dd.thoi_gian_bat_dau, dd.thoi_gian_ket_thuc);
           const fromMachine = String(dd.may_goc || '').trim();
-          const alreadyListed = machineData[destMachineName][tenCa].some(
-            p => p.name === lastName && String(p.dispatch || '').includes(lastName)
-          );
+          const alreadyListed = displayName
+            ? machineData[destMachineName][tenCa].some(
+              p => (p.name || (p as { maNhanSu?: string }).maNhanSu) === displayName && String(p.dispatch || '').includes(displayName)
+            )
+            : false;
           if (alreadyListed) continue;
 
           const homeMachine = allMachinesForLookup.find(m => m.ma_may === fromMachine || m.ten_may === fromMachine);
@@ -12298,14 +12321,15 @@ export function createApp() {
           const sameMachine = homeMachineName === destMachineName;
           const arrivalNote = sameMachine
             ? timePhrase
-              ? `(${lastName} ${timePhrase} — từ ca ${homeCa || '—'})`
-              : `(${lastName} — từ ca ${homeCa || '—'})`
+              ? `(${displayName} ${timePhrase} — từ ca ${homeCa || '—'})`
+              : `(${displayName} — từ ca ${homeCa || '—'})`
             : timePhrase
-              ? `(${lastName} ${timePhrase} từ ${homeMachineName || 'máy khác'})`
-              : `(${lastName} từ ${homeMachineName || 'máy khác'})`;
+              ? `(${displayName} ${timePhrase} từ ${homeMachineName || 'máy khác'})`
+              : `(${displayName} từ ${homeMachineName || 'máy khác'})`;
 
           machineData[destMachineName][tenCa].push({
-            name: lastName,
+            name: displayName,
+            maNhanSu: ddCode,
             dispatch: arrivalNote
           });
         }
@@ -14536,6 +14560,18 @@ export function createApp() {
       return Number.isFinite(parsed) ? Math.round((parsed + Number.EPSILON) * 100) / 100 : 0;
     };
     const asJsonArray = (value: unknown) => (Array.isArray(value) ? value : []);
+    const asJsonArrayFlexible = (value: unknown) => {
+      if (Array.isArray(value)) return value;
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      }
+      return [];
+    };
     const ngay = asText(source.ngay).trim().slice(0, 10);
     if (!ngay || !/^\d{4}-\d{2}-\d{2}$/.test(ngay)) return { error: 'Thiếu ngày báo cáo (YYYY-MM-DD).' };
     return {
@@ -14552,7 +14588,11 @@ export function createApp() {
         tong_nhap_vt: asNum(source.tong_nhap_vt ?? source.tongNhapVt),
         tong_ton_trong_ngay: asNum(source.tong_ton_trong_ngay ?? source.tongTonTrongNgay),
         tong_hao_hut: asNum(source.tong_hao_hut ?? source.tongHaoHut),
-        ghi_chu: asText(source.ghi_chu ?? source.ghiChu).trim()
+        ghi_chu: asText(source.ghi_chu ?? source.ghiChu).trim(),
+        hao_hut_thong_ke: asJsonArrayFlexible(
+          source.hao_hut_thong_ke ?? source.haoHutThongKe ?? source.hao_hut ?? source.haoHut
+        ),
+        hao_hut_ghi_chu: asText(source.hao_hut_ghi_chu ?? source.haoHutGhiChu).trim()
       }
     };
   }
@@ -14638,6 +14678,21 @@ export function createApp() {
         .single();
 
       if (error) {
+        // DB chưa chạy migration hao_hut_thong_ke / hao_hut_ghi_chu → thử lại không kèm cột mới
+        if (/hao_hut_thong_ke|hao_hut_ghi_chu/i.test(String((error as { message?: string })?.message ?? ''))) {
+          const { hao_hut_thong_ke: _dropHaoHut, hao_hut_ghi_chu: _dropHaoHutNote, ...fallbackRecord } = parsed.record as Record<string, unknown>;
+          const retry = await supabase
+            .from(SUPABASE_BAO_CAO_NGAY_TABLE)
+            .insert(fallbackRecord)
+            .select('*')
+            .single();
+          if (retry.error) {
+            console.error('Supabase bao cao ngay insert error:', retry.error);
+            const status = retry.error?.code === '23505' ? 409 : 500;
+            return res.status(status).json({ error: baoCaoNgayWriteError(retry.error) });
+          }
+          return res.status(201).json({ success: true, report: retry.data });
+        }
         console.error('Supabase bao cao ngay insert error:', error);
         const status = error?.code === '23505' ? 409 : 500;
         return res.status(status).json({ error: baoCaoNgayWriteError(error) });
@@ -14671,6 +14726,23 @@ export function createApp() {
         .single();
 
       if (error) {
+        // DB chưa chạy migration hao_hut_thong_ke / hao_hut_ghi_chu → thử lại không kèm cột mới
+        if (/hao_hut_thong_ke|hao_hut_ghi_chu/i.test(String((error as { message?: string })?.message ?? ''))) {
+          const { hao_hut_thong_ke: _dropHaoHutUpdate, hao_hut_ghi_chu: _dropHaoHutNoteUpdate, ...fallbackRecord } = parsed.record as Record<string, unknown>;
+          const retry = await supabase
+            .from(SUPABASE_BAO_CAO_NGAY_TABLE)
+            .update(fallbackRecord)
+            .eq('id', id)
+            .select('*')
+            .single();
+          if (retry.error) {
+            console.error('Supabase bao cao ngay update error:', retry.error);
+            const status = retry.error?.code === '23505' ? 409 : 500;
+            return res.status(status).json({ error: baoCaoNgayWriteError(retry.error) });
+          }
+          if (!retry.data) return res.status(404).json({ error: 'Không tìm thấy báo cáo ngày.' });
+          return res.json({ success: true, report: retry.data });
+        }
         console.error('Supabase bao cao ngay update error:', error);
         const status = error?.code === '23505' ? 409 : 500;
         return res.status(status).json({ error: baoCaoNgayWriteError(error) });
