@@ -81,6 +81,7 @@ import { ControlBoardPanel } from './features/control-board';
 import { HumanResourcesPanel } from './features/nhan-su';
 import { ChiPhiNhanCongPanel } from './features/chi-phi-nhan-cong';
 import { ChiPhiDienPanel } from './features/chi-phi-dien';
+import { ChiPhiBaoDuongPanel } from './features/chi-phi-bao-duong';
 import { VehiclesPanel } from './features/danh-sach-xe';
 import { CanTuDongPanel } from './features/can-tu-dong';
 import { KiemKhoPanel } from './features/kiem-kho';
@@ -1530,6 +1531,16 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <ChiPhiDienPanel onBack={() => goBack('hcns')} currentUser={authUser} />
+              </motion.div>
+            ) : activeTab === 'chi-phi-bao-duong' ? (
+              <motion.div
+                key="chi-phi-bao-duong"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <ChiPhiBaoDuongPanel onBack={() => goBack('factory-qc')} currentUser={authUser} />
               </motion.div>
             ) : activeTab === 'vehicles' ? (
               <motion.div

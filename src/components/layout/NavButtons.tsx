@@ -109,6 +109,7 @@ export const BACK_TAB_MAP: Record<string, string> = {
   'so-test-mau-nhua': 'factory-qc',
   'hang-loi-khach-hang': 'business',
   'thong-ke-hang-loi': 'factory-qc',
+  'chi-phi-bao-duong': 'factory-qc',
   'damaged-goods-report': 'report-forms',
   'damaged-goods-report-list': 'factory-qc',
   'mixing-report': 'report-forms',

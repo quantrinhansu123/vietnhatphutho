@@ -142,6 +142,7 @@ const SUPABASE_BAO_CAO_THANG_TABLE = process.env.SUPABASE_BAO_CAO_THANG_TABLE ||
 const SUPABASE_CHI_PHI_NHAN_CONG_TABLE = process.env.SUPABASE_CHI_PHI_NHAN_CONG_TABLE || 'chi_phi_nhan_cong';
 const SUPABASE_DINH_GIA_NHAN_CONG_TABLE = process.env.SUPABASE_DINH_GIA_NHAN_CONG_TABLE || 'dinh_gia_nhan_cong';
 const SUPABASE_CHI_PHI_DIEN_TABLE = process.env.SUPABASE_CHI_PHI_DIEN_TABLE || 'chi_phi_dien';
+const SUPABASE_CHI_PHI_BAO_DUONG_TABLE = process.env.SUPABASE_CHI_PHI_BAO_DUONG_TABLE || 'chi_phi_bao_duong';
 const SUPABASE_STAFF_DEPARTMENT = process.env.SUPABASE_STAFF_DEPARTMENT || 'Sản xuất';
 const SUPABASE_STAFF_BRANCH = process.env.SUPABASE_STAFF_BRANCH || 'Phú Thọ';
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME?.trim();
@@ -18203,6 +18204,208 @@ export function createApp() {
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa chi phí điện.' });
+    }
+  });
+
+  // ============================================================
+  // CHI PHÍ BẢO DƯỠNG (/api/chi-phi-bao-duong) — QC, 1 dòng = 1 máy x 1 tháng
+  // ============================================================
+  function isValidNgayStr(value: unknown): boolean {
+    const m = /^(\d{1,4})-(\d{1,2})-(\d{1,2})$/.exec(String(value || '').trim());
+    if (!m) return false;
+    const nam = Number(m[1]);
+    const thang = Number(m[2]);
+    const ngay = Number(m[3]);
+    if (thang < 1 || thang > 12 || nam < 1 || nam > 2999) return false;
+    if (!Number.isInteger(ngay) || ngay < 1) return false;
+    const daysInMonth = new Date(nam, thang, 0).getDate();
+    return ngay <= daysInMonth;
+  }
+
+  function sanitizeCostItems(value: unknown): Array<{ noi_dung: string; gia: number }> {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map(item => {
+        const rec = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+        const gia = Number(rec.gia) || 0;
+        return { noi_dung: String(rec.noi_dung || '').trim(), gia: gia < 0 ? 0 : Math.round(gia) };
+      })
+      .filter(item => item.noi_dung || item.gia > 0);
+  }
+
+  function parseChiPhiBaoDuongBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
+    const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+    // Ngày phát sinh (ưu tiên); thiếu thì suy từ thang/nam cũ (= mùng 1).
+    let ngayStr = String(source.ngay || '').trim();
+    let thang = Number(source.thang);
+    let nam = Number(source.nam);
+    if (ngayStr) {
+      if (!isValidNgayStr(ngayStr)) return { error: 'Ngày không hợp lệ (YYYY-MM-DD).' };
+      const parts = ngayStr.split('-').map(Number);
+      nam = parts[0];
+      thang = parts[1];
+      ngayStr = `${parts[0]}-${String(parts[1]).padStart(2, '0')}-${String(parts[2]).padStart(2, '0')}`;
+    } else {
+      if (!Number.isFinite(thang) || thang < 1 || thang > 12) {
+        return { error: 'Vui lòng chọn ngày phát sinh.' };
+      }
+      if (!Number.isFinite(nam) || nam < 1 || nam > 2999) {
+        return { error: 'Năm không hợp lệ (1 - 2999).' };
+      }
+      ngayStr = `${nam}-${String(thang).padStart(2, '0')}-01`;
+    }
+    const maMay = String(source.ma_may || '').trim();
+    if (!maMay) return { error: 'Vui lòng chọn máy.' };
+    const tenMay = String(source.ten_may || maMay).trim();
+    const chiTietRaw =
+      source.chi_tiet && typeof source.chi_tiet === 'object'
+        ? (source.chi_tiet as Record<string, unknown>)
+        : {};
+    const suaItems = sanitizeCostItems(chiTietRaw.sua_chua_items);
+    const vatItems = sanitizeCostItems(chiTietRaw.vat_tu_items);
+    const hasItems = suaItems.length > 0 || vatItems.length > 0;
+    const fmtLine = (noiDung: string, gia: number) =>
+      `- ${noiDung || 'Chi phí'}: ${Number(gia).toLocaleString('vi-VN')}đ`;
+    const chiPhiSuaChua = hasItems
+      ? suaItems.reduce((s, it) => s + it.gia, 0)
+      : Number(source.chi_phi_sua_chua) || 0;
+    const chiPhiVatTu = hasItems
+      ? vatItems.reduce((s, it) => s + it.gia, 0)
+      : Number(source.chi_phi_vat_tu) || 0;
+    if (chiPhiSuaChua < 0 || chiPhiVatTu < 0) {
+      return { error: 'Chi phí không được âm.' };
+    }
+    const suaGhiChu = hasItems
+      ? suaItems.map(it => fmtLine(it.noi_dung, it.gia)).join('\n')
+      : String(source.sua_chua_ghi_chu || '');
+    const vatGhiChu = hasItems
+      ? vatItems.map(it => fmtLine(it.noi_dung, it.gia)).join('\n')
+      : String(source.vat_tu_ghi_chu || '');
+    return {
+      record: {
+        ngay: ngayStr,
+        thang,
+        nam,
+        ma_may: maMay,
+        ten_may: tenMay,
+        chi_phi_sua_chua: chiPhiSuaChua,
+        sua_chua_ghi_chu: suaGhiChu,
+        chi_phi_vat_tu: chiPhiVatTu,
+        vat_tu_ghi_chu: vatGhiChu,
+        chi_tiet: { sua_chua_items: suaItems, vat_tu_items: vatItems },
+        nguoi_lap: String(source.nguoi_lap || '').trim(),
+        updated_at: new Date().toISOString()
+      }
+    };
+  }
+
+  app.get('/api/chi-phi-bao-duong', async (req, res) => {
+    if (!supabase) return res.json({ items: [], total: 0, source: 'local' });
+    try {
+      const thang = Number(req.query.thang);
+      const nam = Number(req.query.nam);
+      const maMay = String(req.query.ma_may || '').trim();
+      const tuNgay = String(req.query.tu_ngay || '').trim();
+      const denNgay = String(req.query.den_ngay || '').trim();
+      let query = supabase
+        .from(SUPABASE_CHI_PHI_BAO_DUONG_TABLE)
+        .select('*')
+        .order('ngay', { ascending: false })
+        .order('ma_may', { ascending: true });
+      if (Number.isFinite(thang) && thang >= 1 && thang <= 12) query = query.eq('thang', thang);
+      if (Number.isFinite(nam) && nam > 0) query = query.eq('nam', nam);
+      if (maMay) query = query.eq('ma_may', maMay);
+      if (isValidNgayStr(tuNgay)) query = query.gte('ngay', tuNgay);
+      if (isValidNgayStr(denNgay)) query = query.lte('ngay', denNgay);
+      const { data, error } = await query;
+      if (error) {
+        console.error('Error fetching chi_phi_bao_duong:', error);
+        return res.json({ items: [], total: 0, error: error.message });
+      }
+      return res.json({ items: data || [], total: (data || []).length, source: 'supabase' });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải chi phí bảo dưỡng.' });
+    }
+  });
+
+  app.get('/api/chi-phi-bao-duong/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID chi phí bảo dưỡng.' });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_CHI_PHI_BAO_DUONG_TABLE)
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy bản ghi chi phí bảo dưỡng.' });
+      return res.json({ item: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải chi tiết chi phí bảo dưỡng.' });
+    }
+  });
+
+  app.post('/api/chi-phi-bao-duong', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const parsed = parseChiPhiBaoDuongBody(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    try {
+      // Mỗi lần Thêm mới luôn tạo 1 dòng mới (kể cả trùng Ngày + Máy).
+      // Sửa dòng cũ dùng PUT /:id.
+      const rec = parsed.record as Record<string, unknown>;
+      const { data, error } = await supabase
+        .from(SUPABASE_CHI_PHI_BAO_DUONG_TABLE)
+        .insert(rec)
+        .select('*')
+        .single();
+      if (error) {
+        console.error('Error inserting chi_phi_bao_duong:', error);
+        return res.status(500).json({ error: error.message });
+      }
+      return res.status(201).json({ success: true, item: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu chi phí bảo dưỡng.' });
+    }
+  });
+
+  app.put('/api/chi-phi-bao-duong/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID chi phí bảo dưỡng.' });
+    const parsed = parseChiPhiBaoDuongBody(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_CHI_PHI_BAO_DUONG_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy bản ghi chi phí bảo dưỡng.' });
+      return res.json({ success: true, item: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật chi phí bảo dưỡng.' });
+    }
+  });
+
+  app.delete('/api/chi-phi-bao-duong/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID chi phí bảo dưỡng.' });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_CHI_PHI_BAO_DUONG_TABLE)
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy bản ghi chi phí bảo dưỡng.' });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa chi phí bảo dưỡng.' });
     }
   });
 

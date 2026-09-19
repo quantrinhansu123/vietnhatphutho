@@ -70,6 +70,7 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
       { tab: 'acceptance-report-list', label: 'Kiểm tra kho thành phẩm' },
       { tab: 'so-test-mau-nhua', label: 'Sổ test mẫu nhựa' },
       { tab: 'thong-ke-hang-loi', label: 'Thống kê hàng lỗi hỏng' },
+      { tab: 'chi-phi-bao-duong', label: 'Chi phí bảo dưỡng' },
     ]
   },
   {

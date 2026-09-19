@@ -40,6 +40,7 @@ Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...
 | `nhan_su` | `/nhan-su` | [nhan_su.md](./nhan_su.md) |
 | `chi_phi_nhan_cong` | `/chi-phi-nhan-cong` | [chi_phi_nhan_cong.md](./chi_phi_nhan_cong.md) |
 | `chi_phi_dien` | `/chi-phi-dien` (card **Chi phí điện** trong `/hcns`) | [chi_phi_dien.md](./chi_phi_dien.md) |
+| `chi_phi_bao_duong` | `/chi-phi-bao-duong` (card **Chi phí bảo dưỡng** trong QC `/nha-may/qc`) | [chi_phi_bao_duong.md](./chi_phi_bao_duong.md) |
 | `danh_sach_xe` | `/danh-sach-xe` | [danh_sach_xe.md](./danh_sach_xe.md) |
 | `doi_chieu_lai_xe` | `/danh-sach-xe` | [danh_sach_xe.md](./danh_sach_xe.md) |
 | `chi_phi_xe` | `/danh-sach-xe` | [chi_phi_xe.md](./chi_phi_xe.md) |

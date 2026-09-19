@@ -706,6 +706,13 @@ export const FACTORY_QC_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'thong-ke-hang-loi'
   },
   {
+    title: 'Chi phí bảo dưỡng',
+    desc: 'Sửa chữa, bảo dưỡng và vật tư sử dụng theo tháng và máy.',
+    icon: BarChart3,
+    icon3d: toolbox3d,
+    tab: 'chi-phi-bao-duong'
+  },
+  {
     title: 'Báo cáo chất lượng',
     desc: 'Đối chiếu chất lượng theo lệnh SX và ca sản xuất.',
     icon: LayoutDashboard,
@@ -1036,6 +1043,7 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Kiểm tra kho thành phẩm', tab: 'acceptance-report-list' },
       { label: 'Sổ test mẫu nhựa', tab: 'so-test-mau-nhua' },
       { label: 'Thống kê hàng lỗi hỏng', tab: 'thong-ke-hang-loi' },
+      { label: 'Chi phí bảo dưỡng', tab: 'chi-phi-bao-duong' },
       { label: 'Báo cáo chất lượng', tab: 'factory-qc', disabled: true }
     ]
   },
@@ -1089,6 +1097,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'so-test-mau-nhua': { group: 'QC', sub: 'Sổ test mẫu nhựa' },
   'hang-loi-khach-hang': { group: 'Kinh doanh', sub: 'Báo cáo hàng lỗi hỏng' },
   'thong-ke-hang-loi': { group: 'QC', sub: 'Thống kê hàng lỗi hỏng' },
+  'chi-phi-bao-duong': { group: 'QC', sub: 'Chi phí bảo dưỡng' },
   'weighing-summary': { group: 'Sản xuất', sub: 'Phiếu cân' },
   'weighing-summary-list': { group: 'QC', sub: 'Phiếu cân ca' },
   'can-tu-dong': { group: 'QC', sub: 'Dữ liệu cân tự động' },

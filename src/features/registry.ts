@@ -46,6 +46,7 @@ export type TableId =
   | 'chi_phi_nhan_cong'
   | 'dinh_gia_nhan_cong'
   | 'chi_phi_dien'
+  | 'chi_phi_bao_duong'
   | 'control_board';
 
 export interface TableRegistryEntry {
@@ -583,6 +584,24 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
       'src/features/chi-phi-dien/index.tsx',
       'src/features/chi-phi-dien/ChiPhiDienList.tsx',
       'src/features/chi-phi-dien/ChiPhiDienForm.tsx'
+    ],
+    utils: ['src/features/chi-phi-nhan-cong/MonthYearPickerVi.tsx']
+  },
+  chi_phi_bao_duong: {
+    table: 'chi_phi_bao_duong',
+    label: 'Chi phí sửa chữa / bảo dưỡng & vật tư theo tháng và máy (QC)',
+    sql: ['supabase-chi-phi-bao-duong.sql'],
+    apiPrefix: '/api/chi-phi-bao-duong',
+    serverLines: 'parseChiPhiBaoDuongBody (ngay + chi_tiet items) + GET (?tu_ngay&den_ngay)/POST/PUT/DELETE /api/chi-phi-bao-duong (sau chi-phi-dien)',
+    appTab: 'chi-phi-bao-duong',
+    appLines: 'src/features/chi-phi-bao-duong/index.tsx',
+    components: [
+      'src/features/chi-phi-bao-duong/index.tsx',
+      'src/features/chi-phi-bao-duong/ChiPhiBaoDuongList.tsx',
+      'src/features/chi-phi-bao-duong/ChiPhiBaoDuongForm.tsx',
+      'src/features/chi-phi-bao-duong/ChiPhiBaoDuongSheet.tsx',
+      'src/features/chi-phi-bao-duong/ChiPhiBaoDuongSummaryModal.tsx',
+      'src/features/chi-phi-bao-duong/ChiPhiBaoDuongPrintSheet.tsx'
     ],
     utils: ['src/features/chi-phi-nhan-cong/MonthYearPickerVi.tsx']
   },
