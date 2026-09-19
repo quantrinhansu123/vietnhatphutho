@@ -37,10 +37,12 @@ export type TableId =
   | 'so_giao_ca_mmtb'
   | 'bao_cao_ngay'
   | 'so_che_do_may'
+  | 'bao_cao_thang'
   | 'phieu_bao_dung_may'
   | 'nhat_ky_chay_may'
   | 'dieu_dong_nhan_su'
   | 'phan_cong_nhan_su_chi_tiet'
+  | 'chi_phi_nhan_cong'
   | 'control_board';
 
 export interface TableRegistryEntry {
@@ -429,6 +431,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     components: [],
     utils: []
   },
+  bao_cao_thang: {
+    table: 'bao_cao_thang',
+    label: 'Báo cáo tháng (tổng hợp từ báo cáo từng đợt)',
+    sql: ['supabase-bao-cao-thang.sql'],
+    apiPrefix: '/api/bao-cao-thang',
+    serverLines: 'GET /api/bao-cao-thang/aggregate + GET/POST/PUT/DELETE /api/bao-cao-thang',
+    appTab: 'bao-cao-thang | bao-cao-thang-list',
+    appLines: 'src/features/bao-cao-thang/index.tsx (BaoCaoThangPanel + BaoCaoThangListView)',
+    components: ['src/features/bao-cao-thang/PrintPreviewModal.tsx'],
+    utils: ['src/features/so-che-do-may (toMonthStr, parseMonthStr)']
+  },
   so_test_mau_nhua: {
     table: 'so_test_mau_nhua',
     label: 'Sổ test mẫu nhựa (QC, theo ngày)',
@@ -515,6 +528,22 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appLines: 'src/features/sap-xep-lich-lam-viec/index.tsx',
     components: ['src/features/sap-xep-lich-lam-viec/index.tsx'],
     utils: []
+  },
+  chi_phi_nhan_cong: {
+    table: 'chi_phi_nhan_cong',
+    label: 'Chi phí nhân công theo tháng và máy',
+    sql: ['supabase-chi-phi-nhan-cong.sql'],
+    apiPrefix: '/api/chi-phi-nhan-cong',
+    serverLines: '17675–17835',
+    appTab: 'chi-phi-nhan-cong',
+    appLines: 'src/features/chi-phi-nhan-cong/index.tsx',
+    components: [
+      'src/features/chi-phi-nhan-cong/index.tsx',
+      'src/features/chi-phi-nhan-cong/ChiPhiNhanCongList.tsx',
+      'src/features/chi-phi-nhan-cong/ChiPhiNhanCongForm.tsx',
+      'src/features/chi-phi-nhan-cong/MonthYearPickerVi.tsx'
+    ],
+    utils: ['src/features/chi-phi-nhan-cong/calculateLabor.ts']
   },
   control_board: {
     table: 'control_board',

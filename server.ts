@@ -136,6 +136,8 @@ const SUPABASE_SO_GIAO_CA_MMTB_TABLE = process.env.SUPABASE_SO_GIAO_CA_MMTB_TABL
 const SUPABASE_SO_CHE_DO_MAY_TABLE = process.env.SUPABASE_SO_CHE_DO_MAY_TABLE || 'so_che_do_may';
 const SUPABASE_SO_TEST_MAU_NHUA_TABLE = process.env.SUPABASE_SO_TEST_MAU_NHUA_TABLE || 'so_test_mau_nhua';
 const SUPABASE_DOT_SAN_XUAT_TABLE = process.env.SUPABASE_DOT_SAN_XUAT_TABLE || 'dot_san_xuat';
+const SUPABASE_BAO_CAO_THANG_TABLE = process.env.SUPABASE_BAO_CAO_THANG_TABLE || 'bao_cao_thang';
+const SUPABASE_CHI_PHI_NHAN_CONG_TABLE = process.env.SUPABASE_CHI_PHI_NHAN_CONG_TABLE || 'chi_phi_nhan_cong';
 const SUPABASE_STAFF_DEPARTMENT = process.env.SUPABASE_STAFF_DEPARTMENT || 'Sản xuất';
 const SUPABASE_STAFF_BRANCH = process.env.SUPABASE_STAFF_BRANCH || 'Phú Thọ';
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME?.trim();
@@ -16861,10 +16863,67 @@ export function createApp() {
 
   function dotMayMatches(rowMay: unknown, filterMay: string): boolean {
     const filter = normalizeDotMayKey(filterMay);
-    if (!filter) return true;
+    if (!filter) return false;
     const row = normalizeDotMayKey(rowMay);
     if (!row || row === '-') return false;
     return row === filter || row.includes(filter) || filter.includes(row);
+  }
+
+  /** Khớp máy theo mã HOẶC tên (lệnh/phiếu có thể lưu 1 trong 2). */
+  function dotMayMatchesAny(rowMayValues: unknown[], maMay: string, tenMay: string): boolean {
+    const values = rowMayValues.map(v => String(v ?? '')).filter(v => v.trim() && v.trim() !== '-');
+    if (values.length === 0) return false;
+    const filters = [maMay, tenMay].map(v => String(v ?? '').trim()).filter(Boolean);
+    if (filters.length === 0) return false;
+    return values.some(row => filters.some(filter => dotMayMatches(row, filter)));
+  }
+
+  function dotDateInRange(value: unknown, tuNgay: string, denNgay: string): boolean {
+    const date = String(value ?? '').slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) && date >= tuNgay && date <= denNgay;
+  }
+
+  /** Lệnh SX thuộc đợt phải ở trạng thái hoàn thành. */
+  function isDotCompletedLenh(status: unknown): boolean {
+    const normalized = String(status ?? '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd');
+    return normalized === 'hoan thanh';
+  }
+
+  /** Đơn giá tổng hợp của một đợt đã lưu (phục vụ cột so sánh đợt trước). */
+  function computeDotDonGia(row: Record<string, unknown>): Record<string, number | null> {
+    const num = (v: unknown) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const tlChinh = num(row.tong_tl_nvl_chinh);
+    const tienChinh = num(row.tong_tien_nvl_chinh);
+    const tienPhu = num(row.tong_tien_nvl_phu);
+    const thuTl = num(row.thu_hoi_phe_tl);
+    const thuTien = num(row.thu_hoi_phe_tien);
+    const haoHut = num(row.hao_hut_kg);
+    const overrideRaw = row.tl_chinh_thuc_te_override;
+    const override = overrideRaw === null || overrideRaw === undefined || String(overrideRaw).trim() === '' ? 0 : num(overrideRaw);
+    const tlThucTe = override > 0 ? override : Math.max(0, tlChinh - thuTl - haoHut);
+    const tienThucTe = Math.max(0, tienChinh - thuTien);
+    const donGiaChinh = tlChinh > 0 ? tienChinh / tlChinh : 0;
+    const donGiaPhu = tlThucTe > 0 ? tienPhu / tlThucTe : 0;
+    const donGiaChinhThucTe = tlThucTe > 0 ? tienThucTe / tlThucTe : 0;
+    const donGiaTong = donGiaChinhThucTe + donGiaPhu;
+    const tongPhiNhanCong = num(row.tong_chi_phi_nhan_cong);
+    const donGiaNhanCong = tlThucTe > 0 ? tongPhiNhanCong / tlThucTe : 0;
+    return {
+      don_gia_chinh: Math.round(donGiaChinh * 100) / 100,
+      don_gia_phu: Math.round(donGiaPhu * 100) / 100,
+      don_gia_chinh_thuc_te: Math.round(donGiaChinhThucTe * 100) / 100,
+      don_gia_tong: Math.round(donGiaTong * 100) / 100,
+      don_gia_nhan_cong: Math.round(donGiaNhanCong * 100) / 100,
+      bq_vat_tu_nhan_cong: Math.round((donGiaTong + donGiaNhanCong) * 100) / 100
+    };
   }
 
   function parseDotNumber(value: unknown, fallback = 0): number {
@@ -16943,6 +17002,22 @@ export function createApp() {
         const n = parseDotNumber(raw);
         return n > 0 ? Math.round(n * 1000) / 1000 : null;
       })(),
+      // Ba dòng tổng hợp cho phép nhập tay (trống = tự tính theo công thức).
+      gia_vt_tt_hao_hut: (() => {
+        const raw = source.gia_vt_tt_hao_hut ?? source.don_gia_tong_override ?? source.donGiaTongOverride;
+        if (raw === null || raw === undefined || String(raw).trim() === '') return null;
+        return Math.round(parseDotNumber(raw) * 100) / 100;
+      })(),
+      chenh_lech_hao_hut: (() => {
+        const raw = source.chenh_lech_hao_hut ?? source.chenh_lech_override ?? source.chenhLechOverride;
+        if (raw === null || raw === undefined || String(raw).trim() === '') return null;
+        return Math.round(parseDotNumber(raw) * 100) / 100;
+      })(),
+      ti_le_hao_hut: (() => {
+        const raw = source.ti_le_hao_hut ?? source.ti_le_override ?? source.tiLeOverride;
+        if (raw === null || raw === undefined || String(raw).trim() === '') return null;
+        return Math.round(parseDotNumber(raw) * 10000) / 10000;
+      })(),
       so_cong_truc: parseDotNumber(source.so_cong_truc ?? source.soCongTruc),
       so_cong_dau_may: parseDotNumber(source.so_cong_dau_may ?? source.soCongDauMay),
       so_cong_cuoi_may: parseDotNumber(source.so_cong_cuoi_may ?? source.soCongCuoiMay),
@@ -16971,39 +17046,84 @@ export function createApp() {
       const tuNgay = parseDotSanXuatDate(req.query.tu_ngay ?? req.query.tuNgay);
       const denNgay = parseDotSanXuatDate(req.query.den_ngay ?? req.query.denNgay);
       const maMay = String(req.query.ma_may ?? req.query.maMay ?? '').trim();
+      const tenMay = String(req.query.ten_may ?? req.query.tenMay ?? '').trim();
       if (!tuNgay || !denNgay) return res.status(400).json({ error: 'Vui lòng chọn Từ ngày và Đến ngày.' });
       if (tuNgay > denNgay) return res.status(400).json({ error: 'Từ ngày phải nhỏ hơn hoặc bằng Đến ngày.' });
       if (!maMay) return res.status(400).json({ error: 'Vui lòng chọn máy.' });
 
-      // 1) Lệnh SX nằm trong khoảng ngày (so theo ngay_bat_dau / ngay_gio_bat_dau / created_at) và khớp máy.
+      // 1) Lệnh SX giao với khoảng ngày (ngày bắt đầu HOẶC ngày kết thúc nằm trong khoảng)
+      // và khớp máy (mã hoặc tên), MỌI trạng thái (kèm trang_thai để hiển thị).
+      // Đối chiếu thêm sổ trộn cùng phạm vi: lệnh nào có hoạt động SX thực tế thì đánh dấu
+      // (tránh lệch khi phiếu xuất đã có mà lệnh chưa kịp chuyển Hoàn thành).
       const { data: lenhRows, error: lenhError } = await supabase
         .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
         .select('id, ma_lenh_sx, ten_lenh_sx, ngay_bat_dau, ngay_ket_thuc, ngay_gio_bat_dau, ngay_gio_ket_thuc, may, vi_tri, ca, trang_thai, san_pham, created_at')
         .order('ngay_bat_dau', { ascending: true })
         .limit(2000);
       if (lenhError) return res.status(500).json({ error: `Không thể tải lệnh sản xuất. ${lenhError.message}` });
-      const lenhTrongDot = (lenhRows || []).filter((row: Record<string, unknown>) => {
-        const mayRef = String(row.may ?? row.vi_tri ?? '');
-        if (!dotMayMatches(mayRef, maMay) && !dotMayMatches(String(row.vi_tri ?? ''), maMay)) return false;
-        const dateKeys = [row.ngay_bat_dau, row.ngay_gio_bat_dau, row.created_at]
-          .map(v => String(v ?? '').slice(0, 10))
-          .filter(v => /^\d{4}-\d{2}-\d{2}$/.test(v));
-        const anchor = dateKeys[0] || '';
-        if (!anchor) return false;
-        return anchor >= tuNgay && anchor <= denNgay;
-      }).map((row: Record<string, unknown>) => ({
-        id: String(row.id ?? ''),
-        ma_lenh_sx: String(row.ma_lenh_sx ?? ''),
-        ten_lenh_sx: String(row.ten_lenh_sx ?? ''),
-        ngay_bat_dau: String(row.ngay_bat_dau ?? String(row.ngay_gio_bat_dau ?? '').slice(0, 10) ?? ''),
-        ngay_ket_thuc: String(row.ngay_ket_thuc ?? ''),
-        may: String(row.may ?? row.vi_tri ?? ''),
-        ca: String(row.ca ?? ''),
-        trang_thai: String(row.trang_thai ?? ''),
-        san_pham: row.san_pham ?? []
-      }));
+      const lenhTrongDot = (lenhRows || [])
+        .filter((row: Record<string, unknown>) => {
+          const start = String(row.ngay_bat_dau ?? String(row.ngay_gio_bat_dau ?? '').slice(0, 10) ?? '');
+          const end = String(row.ngay_ket_thuc ?? String(row.ngay_gio_ket_thuc ?? '').slice(0, 10) ?? '');
+          const inRange =
+            dotDateInRange(start, tuNgay, denNgay) ||
+            dotDateInRange(end, tuNgay, denNgay) ||
+            ((!/^\d{4}-\d{2}-\d{2}$/.test(start.slice(0, 10)) && !/^\d{4}-\d{2}-\d{2}$/.test(end.slice(0, 10))) &&
+              dotDateInRange(row.created_at, tuNgay, denNgay));
+          if (!inRange) return false;
+          const mayValues = [row.may, row.vi_tri].map(v => String(v ?? '')).filter(v => v.trim() && v.trim() !== '-');
+          return dotMayMatchesAny(mayValues, maMay, tenMay);
+        })
+        .map((row: Record<string, unknown>) => ({
+          id: String(row.id ?? ''),
+          ma_lenh_sx: String(row.ma_lenh_sx ?? ''),
+          ten_lenh_sx: String(row.ten_lenh_sx ?? ''),
+          ngay_bat_dau: String(row.ngay_bat_dau ?? String(row.ngay_gio_bat_dau ?? '').slice(0, 10) ?? ''),
+          ngay_ket_thuc: String(row.ngay_ket_thuc ?? ''),
+          may: String(row.may ?? row.vi_tri ?? ''),
+          ca: String(row.ca ?? ''),
+          trang_thai: String(row.trang_thai ?? ''),
+          hoan_thanh: isDotCompletedLenh(row.trang_thai),
+          san_pham: row.san_pham ?? [],
+          khop_may: true,
+          co_so_tron: false
+        }));
 
-      // 2) Phiếu xuất kho NVL trong khoảng ngày + máy → tổng TL/tiền chính/phụ.
+      // 1b) Sổ trộn cùng phạm vi ngày + máy → tập mã lệnh đã có SX thực tế.
+      // lenh_sx trong sổ trộn là JSON [{id, ma_lenh}, ...].
+      let soTronLenhCodes: string[] = [];
+      try {
+        const { data: soTronRows, error: soTronError } = await supabase
+          .from(SUPABASE_SO_TRON_TABLE)
+          .select('ngay, ma_may, ten_may, lenh_sx')
+          .gte('ngay', tuNgay)
+          .lte('ngay', denNgay)
+          .limit(1000);
+        if (!soTronError && Array.isArray(soTronRows)) {
+          const codes = new Set<string>();
+          for (const slip of soTronRows as Record<string, unknown>[]) {
+            if (!dotMayMatchesAny([slip.ma_may, slip.ten_may], maMay, tenMay)) continue;
+            const list = (slip as { lenh_sx?: unknown }).lenh_sx;
+            const arr = typeof list === 'string' ? (() => { try { return JSON.parse(list); } catch { return []; } })() : list;
+            if (!Array.isArray(arr)) continue;
+            for (const item of arr) {
+              if (!item || typeof item !== 'object') continue;
+              const record = item as Record<string, unknown>;
+              const code = String(record.ma_lenh ?? record.ma_lenh_sx ?? record.code ?? record.id ?? '').trim();
+              if (code) codes.add(code.toLowerCase());
+            }
+          }
+          soTronLenhCodes = [...codes];
+          const activeSet = new Set(soTronLenhCodes);
+          for (const lenh of lenhTrongDot) {
+            if (activeSet.has(String(lenh.ma_lenh_sx || '').trim().toLowerCase())) lenh.co_so_tron = true;
+          }
+        }
+      } catch {
+        /* thiếu bảng so_tron hoặc lỗi đọc → bỏ qua đối chiếu, không chặn preview */
+      }
+
+      // 2) Phiếu xuất kho NVL trong khoảng ngày và khớp máy (mã hoặc tên, xét theo từng dòng).
       let slipQuery = supabase
         .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
         .select('ma_phieu, ngay_phieu, ca, may, phan_loai_nvl, loai_kho, ma_npl, ten_npl, don_vi, so_luong, don_gia, thanh_tien, trong_luong_kg')
@@ -17017,14 +17137,10 @@ export function createApp() {
       const slipNvl = (slipRows || []).filter((row: Record<string, unknown>) => {
         const loaiKho = String(row.loai_kho ?? 'nvl');
         if (loaiKho && loaiKho !== 'nvl' && loaiKho !== '') return false;
-        return dotMayMatches(row.may, maMay);
+        return Boolean(String(row.ma_phieu ?? '').trim());
       });
 
-      const perSlip = new Map<string, { ma_phieu: string; ngay_phieu: string; tong_tl_chinh: number; tong_tien_chinh: number; tong_tl_phu: number; tong_tien_phu: number; tong_tl_chua_phan_loai: number; tong_tien_chua_phan_loai: number; so_dong: number }>();
-      let tongTlChinh = 0;
-      let tongTienChinh = 0;
-      let tongTlPhu = 0;
-      let tongTienPhu = 0;
+      const perSlip = new Map<string, { ma_phieu: string; ngay_phieu: string; may: string[]; khop_may: boolean; tong_tl_chinh: number; tong_tien_chinh: number; tong_tl_phu: number; tong_tien_phu: number; tong_tl_chua_phan_loai: number; tong_tien_chua_phan_loai: number; so_dong: number }>();
       for (const row of slipNvl as Record<string, unknown>[]) {
         const code = String(row.ma_phieu ?? '');
         if (!code) continue;
@@ -17032,42 +17148,55 @@ export function createApp() {
         const kg = resolveDotSlipWeightKg(row);
         const amount = resolveDotSlipAmount(row);
         if (!perSlip.has(code)) {
-          perSlip.set(code, { ma_phieu: code, ngay_phieu: String(row.ngay_phieu ?? ''), tong_tl_chinh: 0, tong_tien_chinh: 0, tong_tl_phu: 0, tong_tien_phu: 0, tong_tl_chua_phan_loai: 0, tong_tien_chua_phan_loai: 0, so_dong: 0 });
+          perSlip.set(code, { ma_phieu: code, ngay_phieu: String(row.ngay_phieu ?? ''), may: [], khop_may: false, tong_tl_chinh: 0, tong_tien_chinh: 0, tong_tl_phu: 0, tong_tien_phu: 0, tong_tl_chua_phan_loai: 0, tong_tien_chua_phan_loai: 0, so_dong: 0 });
         }
         const entry = perSlip.get(code)!;
         entry.so_dong += 1;
+        const mayVal = String(row.may ?? '').trim();
+        if (mayVal && mayVal !== '-' && !entry.may.includes(mayVal)) entry.may.push(mayVal);
+        if (dotMayMatchesAny([row.may], maMay, tenMay)) entry.khop_may = true;
         if (loai === 'nvl_chinh') {
           entry.tong_tl_chinh += kg;
           entry.tong_tien_chinh += amount;
-          tongTlChinh += kg;
-          tongTienChinh += amount;
         } else if (loai === 'nvl_phu') {
           entry.tong_tl_phu += kg;
           entry.tong_tien_phu += amount;
-          tongTlPhu += kg;
-          tongTienPhu += amount;
         } else {
           entry.tong_tl_chua_phan_loai += kg;
           entry.tong_tien_chua_phan_loai += amount;
         }
       }
+      // Chỉ giữ phiếu có ít nhất 1 dòng khớp máy; tổng = cộng các phiếu này.
+      const phieuList = [...perSlip.values()].filter(entry => entry.khop_may);
+      let tongTlChinh = 0;
+      let tongTienChinh = 0;
+      let tongTlPhu = 0;
+      let tongTienPhu = 0;
+      for (const entry of phieuList) {
+        tongTlChinh += entry.tong_tl_chinh;
+        tongTienChinh += entry.tong_tien_chinh;
+        tongTlPhu += entry.tong_tl_phu;
+        tongTienPhu += entry.tong_tien_phu;
+      }
 
       // 3) Đợt liền trước cùng máy (để so VND/kg với đợt 3 khi đang lập đợt 4).
       const { data: prevDots } = await supabase
         .from(SUPABASE_DOT_SAN_XUAT_TABLE)
-        .select('id, ten_dot, dot_so, thang, nam, ma_may, tong_tl_nvl_chinh, tong_tien_nvl_chinh, tong_tl_nvl_phu, tong_tien_nvl_phu')
+        .select('id, ten_dot, dot_so, thang, nam, ma_may, tong_tl_nvl_chinh, tong_tien_nvl_chinh, tong_tl_nvl_phu, tong_tien_nvl_phu, thu_hoi_phe_tl, thu_hoi_phe_tien, hao_hut_kg, tl_chinh_thuc_te_override, tong_chi_phi_nhan_cong')
         .eq('ma_may', maMay)
         .order('nam', { ascending: false })
         .order('thang', { ascending: false })
         .order('dot_so', { ascending: false })
         .limit(1);
+      const prevRow = (prevDots && prevDots[0] as Record<string, unknown> | undefined) || null;
 
       return res.json({
         tu_ngay: tuNgay,
         den_ngay: denNgay,
         ma_may: maMay,
         lenh_sx: lenhTrongDot,
-        phieu_xuat: [...perSlip.values()],
+        so_tron_lenh: soTronLenhCodes,
+        phieu_xuat: phieuList,
         tong: {
           tong_tl_nvl_chinh: Math.round(tongTlChinh * 1000) / 1000,
           tong_tien_nvl_chinh: Math.round(tongTienChinh),
@@ -17076,7 +17205,7 @@ export function createApp() {
           don_gia_chinh: tongTlChinh > 0 ? Math.round((tongTienChinh / tongTlChinh) * 100) / 100 : 0,
           don_gia_phu: tongTlPhu > 0 ? Math.round((tongTienPhu / tongTlPhu) * 100) / 100 : 0
         },
-        dot_truoc: (prevDots && prevDots[0]) || null
+        dot_truoc: prevRow ? { ...prevRow, ...computeDotDonGia(prevRow) } : null
       });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi truy xuất đợt sản xuất.' });
@@ -17164,6 +17293,543 @@ export function createApp() {
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa đợt sản xuất.' });
+    }
+  });
+
+  // ===== BÁO CÁO THÁNG: Tổng hợp định giá vật tư - nhân công theo tháng và máy từ các đợt sản xuất =====
+  function baoCaoThangWriteErrorMessage(error: { message?: string; code?: string }): string {
+    const message = String(error?.message || '');
+    if (/bao_cao_thang.*does not exist|could not find the table.*bao_cao_thang/i.test(message) || error?.code === 'PGRST205') {
+      return 'Bảng bao_cao_thang chưa tồn tại. Hãy chạy file supabase-bao-cao-thang.sql trong Supabase SQL Editor.';
+    }
+    if (/column/i.test(message) && /does not exist|could not find/i.test(message)) {
+      return `Bảng bao_cao_thang thiếu cột. Hãy chạy lại file supabase-bao-cao-thang.sql. ${message}`;
+    }
+    return message || 'Lỗi khi lưu báo cáo tháng.';
+  }
+
+  function parseBaoCaoThangBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
+    const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+    const thang = Number(source.thang);
+    const nam = Number(source.nam);
+    if (!Number.isFinite(thang) || thang < 1 || thang > 12) return { error: 'Tháng không hợp lệ (1-12).' };
+    if (!Number.isFinite(nam) || nam < 1 || nam > 2999) return { error: 'Năm không hợp lệ (1-2999).' };
+    const maMay = String(source.ma_may ?? source.maMay ?? '').trim();
+    if (!maMay) return { error: 'Vui lòng chọn máy.' };
+    const tenMay = String(source.ten_may ?? source.tenMay ?? maMay).trim() || maMay;
+    const defaultTen = `Báo cáo tháng ${thang}/${nam} - Máy ${tenMay}`;
+    const tenBaoCao = String(source.ten_bao_cao ?? source.tenBaoCao ?? '').trim() || defaultTen;
+    const asArray = (v: unknown) => (Array.isArray(v) ? v : []);
+
+    const parseNum = (val: unknown, fallback = 0) => {
+      const n = Number(String(val ?? '').replace(/,/g, ''));
+      return Number.isFinite(n) ? n : fallback;
+    };
+
+    const record: Record<string, unknown> = {
+      ten_bao_cao: tenBaoCao,
+      thang,
+      nam,
+      ma_may: maMay,
+      ten_may: tenMay,
+      dot_ids: asArray(source.dot_ids ?? source.dotIds),
+      dot_snapshot: asArray(source.dot_snapshot ?? source.dotSnapshot),
+      so_dot: Math.max(0, Math.round(Number(source.so_dot ?? source.soDot) || asArray(source.dot_ids).length)),
+      tong_tl_nvl_chinh: parseNum(source.tong_tl_nvl_chinh ?? source.tongTlNvlChinh),
+      tong_tien_nvl_chinh: Math.round(parseNum(source.tong_tien_nvl_chinh ?? source.tongTienNvlChinh)),
+      tong_tl_nvl_phu: parseNum(source.tong_tl_nvl_phu ?? source.tongTlNvlPhu),
+      tong_tien_nvl_phu: Math.round(parseNum(source.tong_tien_nvl_phu ?? source.tongTienNvlPhu)),
+      thu_hoi_phe_tl: parseNum(source.thu_hoi_phe_tl ?? source.thuHoiPheTl),
+      thu_hoi_phe_tien: Math.round(parseNum(source.thu_hoi_phe_tien ?? source.thuHoiPheTien)),
+      hao_hut_kg: parseNum(source.hao_hut_kg ?? source.haoHutKg),
+      tl_chinh_thuc_te: parseNum(source.tl_chinh_thuc_te ?? source.tlChinhThucTe),
+      gia_vt_tt_hao_hut: (() => {
+        const raw = source.gia_vt_tt_hao_hut ?? source.giaVtTtHaoHut ?? source.don_gia_tong_override;
+        if (raw === null || raw === undefined || String(raw).trim() === '') return null;
+        return Math.round(parseNum(raw) * 100) / 100;
+      })(),
+      chenh_lech_hao_hut: (() => {
+        const raw = source.chenh_lech_hao_hut ?? source.chenhLechHaoHut ?? source.chenh_lech_override;
+        if (raw === null || raw === undefined || String(raw).trim() === '') return null;
+        return Math.round(parseNum(raw) * 100) / 100;
+      })(),
+      ti_le_hao_hut: (() => {
+        const raw = source.ti_le_hao_hut ?? source.tiLeHaoHut ?? source.ti_le_override;
+        if (raw === null || raw === undefined || String(raw).trim() === '') return null;
+        return Math.round(parseNum(raw) * 10000) / 10000;
+      })(),
+      so_cong_truc: parseNum(source.so_cong_truc ?? source.soCongTruc),
+      so_cong_dau_may: parseNum(source.so_cong_dau_may ?? source.soCongDauMay),
+      so_cong_cuoi_may: parseNum(source.so_cong_cuoi_may ?? source.soCongCuoiMay),
+      tong_chi_phi_nhan_cong: Math.round(parseNum(source.tong_chi_phi_nhan_cong ?? source.tongChiPhiNhanCong)),
+      ghi_chu: String(source.ghi_chu ?? source.ghiChu ?? '').trim(),
+      nguoi_lap: String(source.nguoi_lap ?? source.nguoiLap ?? '').trim(),
+      updated_at: new Date().toISOString()
+    };
+    return { record };
+  }
+
+  // API tự động tổng hợp thông tin từ các đợt sản xuất theo tháng và máy
+  app.get('/api/bao-cao-thang/aggregate', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    try {
+      const thang = Number(req.query.thang);
+      const nam = Number(req.query.nam);
+      const maMay = String(req.query.ma_may ?? '').trim();
+      const tenMay = String(req.query.ten_may ?? maMay).trim() || maMay;
+
+      if (!Number.isFinite(thang) || thang < 1 || thang > 12) {
+        return res.status(400).json({ error: 'Vui lòng chọn tháng hợp lệ (1-12).' });
+      }
+      if (!Number.isFinite(nam) || nam < 1 || nam > 2999) {
+        return res.status(400).json({ error: 'Vui lòng chọn năm hợp lệ.' });
+      }
+      if (!maMay) {
+        return res.status(400).json({ error: 'Vui lòng chọn máy.' });
+      }
+
+      // 1. Lấy tất cả các đợt sản xuất trong tháng
+      const { data: rawDots, error: dotError } = await supabase
+        .from(SUPABASE_DOT_SAN_XUAT_TABLE)
+        .select('*')
+        .eq('thang', thang)
+        .eq('nam', nam)
+        .order('dot_so', { ascending: true });
+
+      if (dotError) return res.status(500).json({ error: dotSanXuatWriteErrorMessage(dotError) });
+
+      // Lọc chính xác theo máy (so khớp mã hoặc tên máy)
+      const matchingDots = (rawDots || []).filter(d =>
+        dotMayMatchesAny([d.ma_may, d.ten_may], maMay, tenMay)
+      );
+
+      const num = (v: unknown) => {
+        const n = Number(String(v ?? '').replace(/,/g, ''));
+        return Number.isFinite(n) ? n : 0;
+      };
+
+      // Từng đợt chi tiết
+      const dotSnapshot = matchingDots.map(d => {
+        const tlChinh = num(d.tong_tl_nvl_chinh);
+        const tienChinh = num(d.tong_tien_nvl_chinh);
+        const tlPhu = num(d.tong_tl_nvl_phu);
+        const tienPhu = num(d.tong_tien_nvl_phu);
+        const thuTl = num(d.thu_hoi_phe_tl);
+        const thuTien = num(d.thu_hoi_phe_tien);
+        const haoHut = num(d.hao_hut_kg);
+        const override = num(d.tl_chinh_thuc_te_override);
+        const tlThucTe = override > 0 ? override : Math.max(0, tlChinh - thuTl - haoHut);
+        const tienThucTe = Math.max(0, tienChinh - thuTien);
+        const donGiaChinh = tlChinh > 0 ? tienChinh / tlChinh : 0;
+        const donGiaPhu = tlThucTe > 0 ? tienPhu / tlThucTe : 0;
+        const donGiaChinhThucTe = tlThucTe > 0 ? tienThucTe / tlThucTe : 0;
+        const donGiaTong = num(d.gia_vt_tt_hao_hut) || (donGiaChinhThucTe + donGiaPhu);
+        const tongPhiNhanCong = num(d.tong_chi_phi_nhan_cong);
+        const donGiaNhanCong = tlThucTe > 0 ? tongPhiNhanCong / tlThucTe : 0;
+        return {
+          id: d.id,
+          ten_dot: d.ten_dot,
+          dot_so: d.dot_so,
+          tu_ngay: d.tu_ngay,
+          den_ngay: d.den_ngay,
+          ma_may: d.ma_may,
+          ten_may: d.ten_may,
+          tl_chinh: tlChinh,
+          tien_chinh: tienChinh,
+          tl_phu: tlPhu,
+          tien_phu: tienPhu,
+          thu_hoi_tl: thuTl,
+          thu_hoi_tien: thuTien,
+          hao_hut_kg: haoHut,
+          tl_thuc_te: tlThucTe,
+          so_cong: num(d.so_cong_truc) + num(d.so_cong_dau_may) + num(d.so_cong_cuoi_may),
+          tong_chi_phi_nhan_cong: tongPhiNhanCong,
+          don_gia_tong: donGiaTong,
+          bq_vt_nhan_cong: donGiaTong + donGiaNhanCong
+        };
+      });
+
+      // Tổng hợp các chỉ số
+      let tongTlChinh = 0;
+      let tongTienChinh = 0;
+      let tongTlPhu = 0;
+      let tongTienPhu = 0;
+      let thuHoiTl = 0;
+      let thuHoiTien = 0;
+      let haoHutKg = 0;
+      let tlThucTe = 0;
+      let soCongTruc = 0;
+      let soCongDauMay = 0;
+      let soCongCuoiMay = 0;
+      let tongChiPhiNhanCong = 0;
+
+      for (const d of matchingDots) {
+        const cTl = num(d.tong_tl_nvl_chinh);
+        const cTien = num(d.tong_tien_nvl_chinh);
+        const pTl = num(d.tong_tl_nvl_phu);
+        const pTien = num(d.tong_tien_nvl_phu);
+        const tTl = num(d.thu_hoi_phe_tl);
+        const tTien = num(d.thu_hoi_phe_tien);
+        const hKg = num(d.hao_hut_kg);
+        const override = num(d.tl_chinh_thuc_te_override);
+        const actualTl = override > 0 ? override : Math.max(0, cTl - tTl - hKg);
+
+        tongTlChinh += cTl;
+        tongTienChinh += cTien;
+        tongTlPhu += pTl;
+        tongTienPhu += pTien;
+        thuHoiTl += tTl;
+        thuHoiTien += tTien;
+        haoHutKg += hKg;
+        tlThucTe += actualTl;
+
+        soCongTruc += num(d.so_cong_truc);
+        soCongDauMay += num(d.so_cong_dau_may);
+        soCongCuoiMay += num(d.so_cong_cuoi_may);
+        tongChiPhiNhanCong += num(d.tong_chi_phi_nhan_cong);
+      }
+
+      // 2. Tìm số liệu so sánh tháng trước của máy
+      const prevThang = thang === 1 ? 12 : thang - 1;
+      const prevNam = thang === 1 ? nam - 1 : nam;
+      let prevData: Record<string, unknown> | null = null;
+
+      // Ưu tiên báo cáo tháng đã lưu của tháng trước
+      try {
+        const { data: savedPrevMonth } = await supabase
+          .from(SUPABASE_BAO_CAO_THANG_TABLE)
+          .select('*')
+          .eq('thang', prevThang)
+          .eq('nam', prevNam)
+          .limit(10);
+        const matchedSaved = (savedPrevMonth || []).find(b => dotMayMatchesAny([b.ma_may, b.ten_may], maMay, tenMay));
+        if (matchedSaved) {
+          const pTlC = num(matchedSaved.tong_tl_nvl_chinh);
+          const pTienC = num(matchedSaved.tong_tien_nvl_chinh);
+          const pTienP = num(matchedSaved.tong_tien_nvl_phu);
+          const pTienThuc = Math.max(0, pTienC - num(matchedSaved.thu_hoi_phe_tien));
+          const pTlThuc = num(matchedSaved.tl_chinh_thuc_te) || Math.max(0, pTlC - num(matchedSaved.thu_hoi_phe_tl) - num(matchedSaved.hao_hut_kg));
+          const pDgC = pTlC > 0 ? pTienC / pTlC : 0;
+          const pDgP = pTlThuc > 0 ? pTienP / pTlThuc : 0;
+          const pDgCtt = pTlThuc > 0 ? pTienThuc / pTlThuc : 0;
+          const pDgTong = num(matchedSaved.gia_vt_tt_hao_hut) || (pDgCtt + pDgP);
+          const pPhiNc = num(matchedSaved.tong_chi_phi_nhan_cong);
+          const pDgNc = pTlThuc > 0 ? pPhiNc / pTlThuc : 0;
+          prevData = {
+            ten: matchedSaved.ten_bao_cao || `Tháng ${prevThang}/${prevNam}`,
+            don_gia_chinh: Math.round(pDgC * 100) / 100,
+            don_gia_phu: Math.round(pDgP * 100) / 100,
+            don_gia_chinh_thuc_te: Math.round(pDgCtt * 100) / 100,
+            don_gia_tong: Math.round(pDgTong * 100) / 100,
+            don_gia_nhan_cong: Math.round(pDgNc * 100) / 100
+          };
+        }
+      } catch {
+        /* Bảng chưa tồn tại hoặc lỗi */
+      }
+
+      // Nếu chưa có báo cáo tháng đã lưu, tính từ các đợt của tháng trước
+      if (!prevData) {
+        const { data: prevDots } = await supabase
+          .from(SUPABASE_DOT_SAN_XUAT_TABLE)
+          .select('*')
+          .eq('thang', prevThang)
+          .eq('nam', prevNam);
+        const matchedPrevDots = (prevDots || []).filter(d => dotMayMatchesAny([d.ma_may, d.ten_may], maMay, tenMay));
+        if (matchedPrevDots.length > 0) {
+          let pTlC = 0, pTienC = 0, pTienP = 0, pThuTien = 0, pTlThuc = 0, pPhiNc = 0;
+          for (const pd of matchedPrevDots) {
+            const cTl = num(pd.tong_tl_nvl_chinh);
+            const cTien = num(pd.tong_tien_nvl_chinh);
+            const pTien = num(pd.tong_tien_nvl_phu);
+            const tTien = num(pd.thu_hoi_phe_tien);
+            const tTl = num(pd.thu_hoi_phe_tl);
+            const hKg = num(pd.hao_hut_kg);
+            const override = num(pd.tl_chinh_thuc_te_override);
+            pTlC += cTl;
+            pTienC += cTien;
+            pTienP += pTien;
+            pThuTien += tTien;
+            pTlThuc += override > 0 ? override : Math.max(0, cTl - tTl - hKg);
+            pPhiNc += num(pd.tong_chi_phi_nhan_cong);
+          }
+          const pTienThuc = Math.max(0, pTienC - pThuTien);
+          const pDgC = pTlC > 0 ? pTienC / pTlC : 0;
+          const pDgP = pTlThuc > 0 ? pTienP / pTlThuc : 0;
+          const pDgCtt = pTlThuc > 0 ? pTienThuc / pTlThuc : 0;
+          const pDgTong = pDgCtt + pDgP;
+          const pDgNc = pTlThuc > 0 ? pPhiNc / pTlThuc : 0;
+          prevData = {
+            ten: `Tháng ${prevThang}/${prevNam} (${matchedPrevDots.length} đợt)`,
+            don_gia_chinh: Math.round(pDgC * 100) / 100,
+            don_gia_phu: Math.round(pDgP * 100) / 100,
+            don_gia_chinh_thuc_te: Math.round(pDgCtt * 100) / 100,
+            don_gia_tong: Math.round(pDgTong * 100) / 100,
+            don_gia_nhan_cong: Math.round(pDgNc * 100) / 100
+          };
+        }
+      }
+
+      return res.json({
+        thang,
+        nam,
+        ma_may: maMay,
+        ten_may: tenMay,
+        so_dot: matchingDots.length,
+        dot_ids: matchingDots.map(d => d.id),
+        dot_snapshot: dotSnapshot,
+        tong: {
+          tong_tl_nvl_chinh: Math.round(tongTlChinh * 1000) / 1000,
+          tong_tien_nvl_chinh: Math.round(tongTienChinh),
+          tong_tl_nvl_phu: Math.round(tongTlPhu * 1000) / 1000,
+          tong_tien_nvl_phu: Math.round(tongTienPhu),
+          thu_hoi_phe_tl: Math.round(thuHoiTl * 1000) / 1000,
+          thu_hoi_phe_tien: Math.round(thuHoiTien),
+          hao_hut_kg: Math.round(haoHutKg * 1000) / 1000,
+          tl_chinh_thuc_te: Math.round(tlThucTe * 1000) / 1000,
+          so_cong_truc: Math.round(soCongTruc * 100) / 100,
+          so_cong_dau_may: Math.round(soCongDauMay * 100) / 100,
+          so_cong_cuoi_may: Math.round(soCongCuoiMay * 100) / 100,
+          tong_chi_phi_nhan_cong: Math.round(tongChiPhiNhanCong)
+        },
+        thang_truoc: prevData
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tổng hợp báo cáo tháng.' });
+    }
+  });
+
+  // Danh sách báo cáo tháng: chỉ trả về khi có đủ tháng & năm
+  app.get('/api/bao-cao-thang', async (req, res) => {
+    if (!supabase) return res.json({ reports: [], total: 0, source: 'local' });
+    try {
+      const thang = Number(req.query.thang);
+      const nam = Number(req.query.nam);
+      const maMay = String(req.query.ma_may ?? '').trim();
+
+      // Theo yêu cầu: khi chưa chọn tháng - năm thì danh sách chưa có
+      if (!Number.isFinite(thang) || thang < 1 || thang > 12 || !Number.isFinite(nam) || nam < 1) {
+        return res.json({ reports: [], total: 0, source: 'supabase' });
+      }
+
+      let query = supabase
+        .from(SUPABASE_BAO_CAO_THANG_TABLE)
+        .select('*')
+        .eq('nam', nam)
+        .eq('thang', thang)
+        .order('created_at', { ascending: false })
+        .limit(Math.min(Number(req.query.limit) || 200, 500));
+
+      if (maMay) query = query.eq('ma_may', maMay);
+
+      const { data, error } = await query;
+      if (error) return res.status(500).json({ error: baoCaoThangWriteErrorMessage(error) });
+      return res.json({ reports: data || [], total: (data || []).length, source: 'supabase' });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải danh sách báo cáo tháng.' });
+    }
+  });
+
+  app.post('/api/bao-cao-thang', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const parsed = parseBaoCaoThangBody(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    try {
+      const { data, error } = await supabase.from(SUPABASE_BAO_CAO_THANG_TABLE).insert(parsed.record).select('*').single();
+      if (error) return res.status(500).json({ error: baoCaoThangWriteErrorMessage(error) });
+      return res.status(201).json({ success: true, report: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu báo cáo tháng.' });
+    }
+  });
+
+  app.put('/api/bao-cao-thang/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID báo cáo tháng.' });
+    const parsed = parseBaoCaoThangBody(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    try {
+      const { data, error } = await supabase.from(SUPABASE_BAO_CAO_THANG_TABLE).update(parsed.record).eq('id', id).select('*').maybeSingle();
+      if (error) return res.status(500).json({ error: baoCaoThangWriteErrorMessage(error) });
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy báo cáo tháng.' });
+      return res.json({ success: true, report: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật báo cáo tháng.' });
+    }
+  });
+
+  app.delete('/api/bao-cao-thang/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID báo cáo tháng.' });
+    try {
+      const { data, error } = await supabase.from(SUPABASE_BAO_CAO_THANG_TABLE).delete().eq('id', id).select('id').maybeSingle();
+      if (error) return res.status(500).json({ error: baoCaoThangWriteErrorMessage(error) });
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy báo cáo tháng.' });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa báo cáo tháng.' });
+    }
+  });
+
+  // ============================================================
+  // CHI PHÍ NHÂN CÔNG (/api/chi-phi-nhan-cong)
+  // ============================================================
+  function parseChiPhiNhanCongBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
+    const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+    const thang = Number(source.thang);
+    const nam = Number(source.nam);
+    if (!Number.isFinite(thang) || thang < 1 || thang > 12) {
+      return { error: 'Tháng không hợp lệ (1 - 12).' };
+    }
+    if (!Number.isFinite(nam) || nam < 1 || nam > 2999) {
+      return { error: 'Năm không hợp lệ.' };
+    }
+
+    const tenBaoCao = String(source.ten_bao_cao || `Chi phí nhân công Tháng ${thang}/${nam}`).trim();
+    const maMayList = Array.isArray(source.ma_may_list) ? source.ma_may_list : [];
+    const tenMayList = Array.isArray(source.ten_may_list) ? source.ten_may_list : [];
+    const tongSoNguoi = Number(source.tong_so_nguoi) || 0;
+    const tongSoGio = Number(source.tong_so_gio) || 0;
+    const tongSoCong = Number(source.tong_so_cong) || 0;
+    const tongChiPhi = Number(source.tong_chi_phi) || 0;
+    const chiTiet = source.chi_tiet && typeof source.chi_tiet === 'object' ? source.chi_tiet : {};
+    const ghiChu = String(source.ghi_chu || '').trim();
+    const nguoiLap = String(source.nguoi_lap || '').trim();
+
+    return {
+      record: {
+        thang,
+        nam,
+        ten_bao_cao: tenBaoCao,
+        ma_may_list: maMayList,
+        ten_may_list: tenMayList,
+        tong_so_nguoi: tongSoNguoi,
+        tong_so_gio: tongSoGio,
+        tong_so_cong: tongSoCong,
+        tong_chi_phi: tongChiPhi,
+        chi_tiet: chiTiet,
+        ghi_chu: ghiChu,
+        nguoi_lap: nguoiLap,
+        updated_at: new Date().toISOString()
+      }
+    };
+  }
+
+  // Danh sách chi phí nhân công (có thể lọc theo thang, nam, ma_may)
+  app.get('/api/chi-phi-nhan-cong', async (req, res) => {
+    if (!supabase) return res.json({ items: [], total: 0, source: 'local' });
+    try {
+      const thang = Number(req.query.thang);
+      const nam = Number(req.query.nam);
+      const maMay = String(req.query.ma_may || '').trim();
+
+      let query = supabase
+        .from(SUPABASE_CHI_PHI_NHAN_CONG_TABLE)
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (Number.isFinite(nam) && nam > 0) {
+        query = query.eq('nam', nam);
+      }
+      if (Number.isFinite(thang) && thang >= 1 && thang <= 12) {
+        query = query.eq('thang', thang);
+      }
+      if (maMay) {
+        query = query.contains('ma_may_list', JSON.stringify([maMay]));
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('Error fetching chi_phi_nhan_cong:', error);
+        return res.json({ items: [], total: 0, error: error.message });
+      }
+      return res.json({ items: data || [], total: (data || []).length, source: 'supabase' });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải danh sách chi phí nhân công.' });
+    }
+  });
+
+  // Lấy chi tiết 1 bản ghi
+  app.get('/api/chi-phi-nhan-cong/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID chi phí nhân công.' });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_CHI_PHI_NHAN_CONG_TABLE)
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy bản ghi chi phí nhân công.' });
+      return res.json({ item: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải chi tiết chi phí nhân công.' });
+    }
+  });
+
+  // Tạo mới bản ghi
+  app.post('/api/chi-phi-nhan-cong', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const parsed = parseChiPhiNhanCongBody(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_CHI_PHI_NHAN_CONG_TABLE)
+        .insert(parsed.record)
+        .select('*')
+        .single();
+      if (error) {
+        console.error('Error inserting chi_phi_nhan_cong:', error);
+        return res.status(500).json({ error: error.message });
+      }
+      return res.status(201).json({ success: true, item: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu chi phí nhân công.' });
+    }
+  });
+
+  // Cập nhật bản ghi
+  app.put('/api/chi-phi-nhan-cong/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID chi phí nhân công.' });
+    const parsed = parseChiPhiNhanCongBody(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_CHI_PHI_NHAN_CONG_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy bản ghi chi phí nhân công.' });
+      return res.json({ success: true, item: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật chi phí nhân công.' });
+    }
+  });
+
+  // Xóa bản ghi
+  app.delete('/api/chi-phi-nhan-cong/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID chi phí nhân công.' });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_CHI_PHI_NHAN_CONG_TABLE)
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy bản ghi chi phí nhân công.' });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa chi phí nhân công.' });
     }
   });
 

@@ -56,7 +56,7 @@ import {
   FilePlus2, Layers, History, UsersRound, Building2, BriefcaseBusiness, Package, Cpu, Boxes,
   ClipboardList, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, Scale, Settings,
   CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity, Truck,
-  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, AlertTriangle
+  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, AlertTriangle, Coins
 } from 'lucide-react';
 import type { AppTab } from '../routes';
 import { hubHasAllowedChild, resolveAccessTab } from './tabAccess';
@@ -234,6 +234,13 @@ export const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'bao-cao-tuan'
   },
   {
+    title: 'Báo cáo tháng',
+    desc: 'Tổng hợp kết quả định giá vật tư - nhân công theo tháng và máy từ các báo cáo từng đợt.',
+    icon: ClipboardList,
+    icon3d: calendarPlain3d,
+    tab: 'bao-cao-thang-list'
+  },
+  {
     title: 'Báo cáo ngày',
     desc: 'Danh sách theo ngày, thêm/sửa báo cáo: thành phẩm, phế hồng, vật tư tồn/nhập/hao hụt.',
     icon: ClipboardList,
@@ -339,6 +346,13 @@ export const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
     icon: History,
     icon3d: spiralCalendar3d,
     tab: 'bao-cao-ngay-list'
+  },
+  {
+    title: 'Danh sách báo cáo tháng',
+    desc: 'Xem, sửa, in và xóa báo cáo tháng tổng hợp từ các đợt sản xuất.',
+    icon: History,
+    icon3d: calendarPlain3d,
+    tab: 'bao-cao-thang-list'
   },
   {
     title: 'Danh sách báo cáo tồn',
@@ -451,6 +465,13 @@ export const HCNS_MENU_ITEMS: MenuCardConfig[] = [
     icon: UsersRound,
     icon3d: bustSingle3d,
     tab: 'hr'
+  },
+  {
+    title: 'Chi phí nhân công',
+    desc: 'Tổng hợp và tính toán chi phí nhân công theo tháng và máy.',
+    icon: Coins,
+    icon3d: moneyBag3d,
+    tab: 'chi-phi-nhan-cong'
   },
   {
     title: 'Cơ cấu tổ chức',
@@ -1064,6 +1085,8 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'machine-run-log': { group: 'Sản xuất', sub: 'Nhật ký chạy máy' },
   'machine-run-log-list': { group: 'Quản Đốc', sub: 'DS nhật ký chạy máy' },
   'bao-cao-tuan': { group: 'Sản xuất', sub: 'Báo cáo tuần' },
+  'bao-cao-thang': { group: 'Sản xuất', sub: 'Báo cáo tháng' },
+  'bao-cao-thang-list': { group: 'Sản xuất', sub: 'Danh sách báo cáo tháng' },
   'bao-cao-ngay': { group: 'Sản xuất', sub: 'Báo cáo ngày' },
   'bao-cao-ngay-list': { group: 'Sản xuất', sub: 'Danh sách báo cáo ngày' },
   'production-plan-history': { group: 'Quản Đốc', sub: 'Kế hoạch sản xuất' },
@@ -1079,6 +1102,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'warehouse-history': { group: 'Kho', sub: 'Lịch sử xuất nhập' },
   'settings': { group: 'Quản trị', sub: 'Người dùng và phân quyền / Cấu hình hệ thống' },
   'hr': { group: 'HCNS', sub: 'Hồ sơ nhân sự' },
+  'chi-phi-nhan-cong': { group: 'HCNS', sub: 'Chi phí nhân công' },
   'vehicles': { group: 'Trang chủ', sub: 'Lái xe' },
   'orders': { group: 'Kinh doanh', sub: 'Đơn đặt hàng' },
   'customers': { group: 'Kinh doanh', sub: 'Khách hàng' },

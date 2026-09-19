@@ -79,6 +79,7 @@ import { SettingsPanel } from './features/cai-dat-thoi-gian';
 import { DashboardWindow } from './features/dashboard';
 import { ControlBoardPanel } from './features/control-board';
 import { HumanResourcesPanel } from './features/nhan-su';
+import { ChiPhiNhanCongPanel } from './features/chi-phi-nhan-cong';
 import { VehiclesPanel } from './features/danh-sach-xe';
 import { CanTuDongPanel } from './features/can-tu-dong';
 import { KiemKhoPanel } from './features/kiem-kho';
@@ -90,6 +91,7 @@ import { SoCheDoMayWorkspace } from './features/so-che-do-may';
 import { SoTestMauNhuaWorkspace } from './features/so-test-mau-nhua';
 import { BaoCaoTuanPanel } from './features/bao-cao-tuan';
 import { BaoCaoNgayListView, BaoCaoNgayPanel, type BaoCaoNgaySavedReport } from './features/bao-cao-ngay';
+import { BaoCaoThangListView, BaoCaoThangPanel, type BaoCaoThangRow } from './features/bao-cao-thang';
 import { InventoryAlertPanel } from './features/canh-bao-ton-kho';
 
 const DEFAULT_REPORT: Omit<ProductionReport, 'id' | 'createdAt'> = {
@@ -220,6 +222,7 @@ export default function App() {
   const [machineNvlEditReport, setMachineNvlEditReport] = useState<MachineNvlSavedReport | null>(null);
   const [soTronEditReport, setSoTronEditReport] = useState<SoTronSavedReport | null>(null);
   const [baoCaoNgayEditReport, setBaoCaoNgayEditReport] = useState<BaoCaoNgaySavedReport | null>(null);
+  const [baoCaoThangEditReport, setBaoCaoThangEditReport] = useState<BaoCaoThangRow | null>(null);
   const [soGiaoCaMmtbEditRecord, setSoGiaoCaMmtbEditRecord] = useState<SoGiaoCaMmtbRecord | null>(null);
   const [weighingPendingAdd, setWeighingPendingAdd] = useState<WeighingPendingAdd | null>(null);
   const navigateToTab = (tab: AppTab, options?: { replace?: boolean }) => {
@@ -1405,6 +1408,41 @@ export default function App() {
               >
                 <BaoCaoTuanPanel onBack={() => goBack('report-forms')} />
               </motion.div>
+            ) : activeTab === 'bao-cao-thang' ? (
+              <motion.div
+                key="bao-cao-thang"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <BaoCaoThangPanel
+                  onBack={() => goBack('report-forms')}
+                  onOpenList={() => navigateToTab('bao-cao-thang-list')}
+                  editReport={baoCaoThangEditReport}
+                  onEditConsumed={() => setBaoCaoThangEditReport(null)}
+                />
+              </motion.div>
+            ) : activeTab === 'bao-cao-thang-list' ? (
+              <motion.div
+                key="bao-cao-thang-list"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <BaoCaoThangListView
+                  onBack={() => goBack('report-forms')}
+                  onCreate={() => {
+                    setBaoCaoThangEditReport(null);
+                    navigateToTab('bao-cao-thang');
+                  }}
+                  onEdit={report => {
+                    setBaoCaoThangEditReport(report);
+                    navigateToTab('bao-cao-thang');
+                  }}
+                />
+              </motion.div>
             ) : activeTab === 'bao-cao-ngay' ? (
               <motion.div
                 key="bao-cao-ngay"
@@ -1449,6 +1487,16 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <HumanResourcesPanel onBack={() => goBack('hcns')} />
+              </motion.div>
+            ) : activeTab === 'chi-phi-nhan-cong' ? (
+              <motion.div
+                key="chi-phi-nhan-cong"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <ChiPhiNhanCongPanel onBack={() => goBack('hcns')} currentUser={authUser} />
               </motion.div>
             ) : activeTab === 'vehicles' ? (
               <motion.div
