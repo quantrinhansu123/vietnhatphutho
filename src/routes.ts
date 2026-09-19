@@ -1,4 +1,4 @@
-export type AppTab = 'menu' | 'quan-tri' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'factory-quan-doc' | 'factory-qc' | 'so-test-mau-nhua' | 'factory-cong-nhan' | 'factory-kho' | 'control-board' | 'form' | 'weighing-summary' | 'weighing-summary-list' | 'can-tu-dong' | 'kiem-kho' | 'quan-ly-kho' | 'damaged-goods-report' | 'damaged-goods-report-list' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-nvl-report-list' | 'so-tron' | 'so-tron-list' | 'so-giao-ca-mmtb' | 'so-giao-ca-mmtb-list' | 'so-che-do-may' | 'so-che-do-may-list' | 'machine-downtime-report' | 'machine-downtime-list' | 'machine-run-log' | 'machine-run-log-list' | 'bao-cao-tuan' | 'bao-cao-thang' | 'bao-cao-thang-list' | 'bao-cao-ngay' | 'bao-cao-ngay-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'chi-phi-nhan-cong' | 'vehicles' | 'products' | 'inventory-limits' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'shipping-orders' | 'production-orders' | 'production-plan-history' | 'dot-san-xuat' | 'dieu-dong-nhan-su' | 'sap-xep-lich-lam-viec' | 'settings' | 'dashboard' | 'canh-bao-ton-kho';
+export type AppTab = 'menu' | 'quan-tri' | 'production-reports' | 'report-forms' | 'report-lists' | 'facility-management' | 'hcns' | 'business' | 'factory' | 'factory-quan-doc' | 'factory-qc' | 'so-test-mau-nhua' | 'hang-loi-khach-hang' | 'thong-ke-hang-loi' | 'factory-cong-nhan' | 'factory-kho' | 'control-board' | 'form' | 'weighing-summary' | 'weighing-summary-list' | 'can-tu-dong' | 'kiem-kho' | 'quan-ly-kho' | 'damaged-goods-report' | 'damaged-goods-report-list' | 'mixing-report' | 'mixing-report-list' | 'machine-nvl-report' | 'machine-nvl-report-list' | 'so-tron' | 'so-tron-list' | 'so-giao-ca-mmtb' | 'so-giao-ca-mmtb-list' | 'so-che-do-may' | 'so-che-do-may-list' | 'machine-downtime-report' | 'machine-downtime-list' | 'machine-run-log' | 'machine-run-log-list' | 'bao-cao-tuan' | 'bao-cao-thang' | 'bao-cao-thang-list' | 'bao-cao-ngay' | 'bao-cao-ngay-list' | 'acceptance-report' | 'acceptance-report-list' | 'hr' | 'chi-phi-nhan-cong' | 'chi-phi-dien' | 'vehicles' | 'products' | 'inventory-limits' | 'machines' | 'materials' | 'warehouse-slip' | 'warehouse-history' | 'orders' | 'customers' | 'shipping-orders' | 'production-orders' | 'production-plan-history' | 'dot-san-xuat' | 'dieu-dong-nhan-su' | 'sap-xep-lich-lam-viec' | 'settings' | 'dashboard' | 'canh-bao-ton-kho';
 
 export const TAB_ROUTES: Record<AppTab, string> = {
   menu: '/',
@@ -13,6 +13,8 @@ export const TAB_ROUTES: Record<AppTab, string> = {
   'factory-quan-doc': '/nha-may/quan-doc',
   'factory-qc': '/nha-may/qc',
   'so-test-mau-nhua': '/so-test-mau-nhua',
+  'hang-loi-khach-hang': '/bao-cao-hang-loi-khach-hang',
+  'thong-ke-hang-loi': '/thong-ke-hang-loi-khach-hang',
   'factory-cong-nhan': '/nha-may/cong-nhan',
   'factory-kho': '/nha-may/kho',
   'control-board': '/bang-dieu-khien',
@@ -47,6 +49,7 @@ export const TAB_ROUTES: Record<AppTab, string> = {
   'acceptance-report-list': '/danh-sach-bao-cao-san-luong',
   hr: '/nhan-su',
   'chi-phi-nhan-cong': '/chi-phi-nhan-cong',
+  'chi-phi-dien': '/chi-phi-dien',
   vehicles: '/danh-sach-xe',
   products: '/san-pham',
   'inventory-limits': '/ton-kho-toi-thieu-toi-da',

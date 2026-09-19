@@ -474,6 +474,13 @@ export const HCNS_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'chi-phi-nhan-cong'
   },
   {
+    title: 'Chi phí điện',
+    desc: 'Tổng hợp tiền điện và thành phẩm từ sổ trộn theo năm và loại/nhóm máy.',
+    icon: BarChart3,
+    icon3d: moneyBag3d,
+    tab: 'chi-phi-dien'
+  },
+  {
     title: 'Cơ cấu tổ chức',
     desc: 'Chi nhánh, bộ phận và vị trí công việc.',
     icon: Building2,
@@ -534,6 +541,13 @@ export const BUSINESS_MENU_ITEMS: MenuCardConfig[] = [
     icon: Boxes,
     icon3d: bentoBox3d,
     tab: 'inventory-limits'
+  },
+  {
+    title: 'Báo cáo hàng lỗi hỏng',
+    desc: 'Nhập phiếu hàng lỗi hỏng phát sinh ở khách hàng theo Nhóm VTHH.',
+    icon: PackageX,
+    icon3d: noEntry3d,
+    tab: 'hang-loi-khach-hang'
   },
   {
     title: 'Báo cáo kinh doanh',
@@ -683,6 +697,13 @@ export const FACTORY_QC_MENU_ITEMS: MenuCardConfig[] = [
     icon: ClipboardCheck,
     icon3d: checkMarkButton3d,
     tab: 'acceptance-report-list'
+  },
+  {
+    title: 'Thống kê hàng lỗi hỏng',
+    desc: 'Tổng hợp phiếu lỗi hỏng phát sinh ở khách hàng theo Nhóm VTHH.',
+    icon: BarChart3,
+    icon3d: barChart3d,
+    tab: 'thong-ke-hang-loi'
   },
   {
     title: 'Báo cáo chất lượng',
@@ -968,6 +989,8 @@ export const PRIMARY_NAV_GROUPS: {
     tab: 'hcns',
     children: [
       { label: 'Hồ sơ nhân sự', tab: 'hr' },
+      { label: 'Chi phí nhân công', tab: 'chi-phi-nhan-cong' },
+      { label: 'Chi phí điện', tab: 'chi-phi-dien' },
       { label: 'Cơ cấu tổ chức', tab: 'hcns', disabled: true },
       { label: 'Ca làm việc', tab: 'hcns', disabled: true },
       { label: 'Báo cáo nhân sự', tab: 'hcns', disabled: true }
@@ -983,6 +1006,7 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Đơn đặt hàng', tab: 'orders' },
       { label: 'Lệnh giao / xuất hàng', tab: 'shipping-orders' },
       { label: 'Tồn kho tối thiểu - Tồn kho tối đa', tab: 'inventory-limits' },
+      { label: 'Báo cáo hàng lỗi hỏng', tab: 'hang-loi-khach-hang' },
       { label: 'Báo cáo kinh doanh', tab: 'business', disabled: true }
     ]
   },
@@ -1011,6 +1035,7 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Dữ liệu cân tự động', tab: 'can-tu-dong' },
       { label: 'Kiểm tra kho thành phẩm', tab: 'acceptance-report-list' },
       { label: 'Sổ test mẫu nhựa', tab: 'so-test-mau-nhua' },
+      { label: 'Thống kê hàng lỗi hỏng', tab: 'thong-ke-hang-loi' },
       { label: 'Báo cáo chất lượng', tab: 'factory-qc', disabled: true }
     ]
   },
@@ -1062,6 +1087,8 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'report-lists': { group: 'Sản xuất', sub: 'Lịch sử công việc' },
   'acceptance-report-list': { group: 'QC', sub: 'Kiểm tra kho thành phẩm' },
   'so-test-mau-nhua': { group: 'QC', sub: 'Sổ test mẫu nhựa' },
+  'hang-loi-khach-hang': { group: 'Kinh doanh', sub: 'Báo cáo hàng lỗi hỏng' },
+  'thong-ke-hang-loi': { group: 'QC', sub: 'Thống kê hàng lỗi hỏng' },
   'weighing-summary': { group: 'Sản xuất', sub: 'Phiếu cân' },
   'weighing-summary-list': { group: 'QC', sub: 'Phiếu cân ca' },
   'can-tu-dong': { group: 'QC', sub: 'Dữ liệu cân tự động' },
@@ -1103,6 +1130,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'settings': { group: 'Quản trị', sub: 'Người dùng và phân quyền / Cấu hình hệ thống' },
   'hr': { group: 'HCNS', sub: 'Hồ sơ nhân sự' },
   'chi-phi-nhan-cong': { group: 'HCNS', sub: 'Chi phí nhân công' },
+  'chi-phi-dien': { group: 'HCNS', sub: 'Chi phí điện' },
   'vehicles': { group: 'Trang chủ', sub: 'Lái xe' },
   'orders': { group: 'Kinh doanh', sub: 'Đơn đặt hàng' },
   'customers': { group: 'Kinh doanh', sub: 'Khách hàng' },

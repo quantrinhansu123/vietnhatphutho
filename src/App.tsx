@@ -80,6 +80,7 @@ import { DashboardWindow } from './features/dashboard';
 import { ControlBoardPanel } from './features/control-board';
 import { HumanResourcesPanel } from './features/nhan-su';
 import { ChiPhiNhanCongPanel } from './features/chi-phi-nhan-cong';
+import { ChiPhiDienPanel } from './features/chi-phi-dien';
 import { VehiclesPanel } from './features/danh-sach-xe';
 import { CanTuDongPanel } from './features/can-tu-dong';
 import { KiemKhoPanel } from './features/kiem-kho';
@@ -89,6 +90,8 @@ import { SoTronPanel, SoTronListView, type SoTronSavedReport } from './features/
 import { SoGiaoCaMmtbPanel, SoGiaoCaMmtbListView, type SoGiaoCaMmtbRecord } from './features/so-giao-ca-mmtb';
 import { SoCheDoMayWorkspace } from './features/so-che-do-may';
 import { SoTestMauNhuaWorkspace } from './features/so-test-mau-nhua';
+import { HangLoiKhachHangPanel } from './features/bao-cao-hang-loi-khach-hang';
+import { ThongKeHangLoiPanel } from './features/bao-cao-hang-loi-khach-hang/thong-ke';
 import { BaoCaoTuanPanel } from './features/bao-cao-tuan';
 import { BaoCaoNgayListView, BaoCaoNgayPanel, type BaoCaoNgaySavedReport } from './features/bao-cao-ngay';
 import { BaoCaoThangListView, BaoCaoThangPanel, type BaoCaoThangRow } from './features/bao-cao-thang';
@@ -1318,6 +1321,26 @@ export default function App() {
               </motion.div>
             ) : activeTab === 'so-test-mau-nhua' ? (
               <SoTestMauNhuaWorkspace onBack={() => goBack('factory-qc')} />
+            ) : activeTab === 'hang-loi-khach-hang' ? (
+              <motion.div
+                key="hang-loi-khach-hang"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <HangLoiKhachHangPanel onBack={() => goBack('business')} />
+              </motion.div>
+            ) : activeTab === 'thong-ke-hang-loi' ? (
+              <motion.div
+                key="thong-ke-hang-loi"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <ThongKeHangLoiPanel onBack={() => goBack('factory-qc')} />
+              </motion.div>
             ) : activeTab === 'so-che-do-may' ? (
               <motion.div
                 key="so-che-do-may"
@@ -1497,6 +1520,16 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <ChiPhiNhanCongPanel onBack={() => goBack('hcns')} currentUser={authUser} />
+              </motion.div>
+            ) : activeTab === 'chi-phi-dien' ? (
+              <motion.div
+                key="chi-phi-dien"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <ChiPhiDienPanel onBack={() => goBack('hcns')} currentUser={authUser} />
               </motion.div>
             ) : activeTab === 'vehicles' ? (
               <motion.div

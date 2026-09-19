@@ -73,6 +73,39 @@ export interface ChiPhiNhanCongCalculationResult {
   grandTotal: GrandLaborSummary;
 }
 
+export interface DinhGiaNhanCongSavedRow {
+  code: string;
+  name: string;
+  costCur: number;
+  costPrev: number;
+  qtyCur: number;
+  qtyPrev: number;
+  donGiaCur: number;
+  donGiaPrev: number;
+  diff: number;
+  impact: number;
+}
+
+export interface DinhGiaNhanCongReport {
+  id: string;
+  loai: 'thang' | 'nam';
+  thang: number | null;
+  nam: number;
+  thang_so_sanh: number | null;
+  nam_so_sanh: number | null;
+  che_do_nam: 'cung-thang' | 'cong-don' | null;
+  tu_thang: number | null;
+  den_thang: number | null;
+  ten_bao_cao: string;
+  ma_may_list: string[];
+  ten_may_list: string[];
+  chi_tiet: { rows?: DinhGiaNhanCongSavedRow[] };
+  ghi_chu: string;
+  nguoi_lap: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface ChiPhiNhanCongRecord {
   id: string;
   thang: number;

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { BackButton } from '../../components/layout/NavButtons';
 import { ChiPhiNhanCongList } from './ChiPhiNhanCongList';
 import { ChiPhiNhanCongForm } from './ChiPhiNhanCongForm';
+import { DinhGiaNhanCongModal } from './DinhGiaNhanCongModal';
 import type { ChiPhiNhanCongRecord, MachineInfo } from './types';
 import { normalizeShiftSettings } from '../../utils/shiftSettings';
 
@@ -27,6 +28,19 @@ export function ChiPhiNhanCongPanel({ onBack, currentUser }: ChiPhiNhanCongPanel
   // Records state
   const [records, setRecords] = useState<ChiPhiNhanCongRecord[]>([]);
   const [loadingRecords, setLoadingRecords] = useState(false);
+  const [showDinhGia, setShowDinhGia] = useState(false);
+  const [dinhGiaInit, setDinhGiaInit] = useState<{ thang: number; nam: number } | null>(null);
+  const [dinhGiaTab, setDinhGiaTab] = useState<'thang' | 'nam'>('thang');
+
+  const handleOpenDinhGia = (record?: ChiPhiNhanCongRecord, tab?: 'thang' | 'nam') => {
+    if (record) {
+      setDinhGiaInit({ thang: record.thang, nam: record.nam });
+    } else {
+      setDinhGiaInit({ thang: filterThang, nam: filterNam });
+    }
+    setDinhGiaTab(tab ?? 'thang');
+    setShowDinhGia(true);
+  };
 
   // 1. Tải danh mục dùng chung (máy, nhân sự, ca)
   useEffect(() => {
@@ -214,6 +228,7 @@ export function ChiPhiNhanCongPanel({ onBack, currentUser }: ChiPhiNhanCongPanel
           onEdit={handleEdit}
           onView={handleView}
           onDelete={handleDelete}
+          onOpenDinhGia={handleOpenDinhGia}
         />
       ) : (
         <ChiPhiNhanCongForm
@@ -224,6 +239,19 @@ export function ChiPhiNhanCongPanel({ onBack, currentUser }: ChiPhiNhanCongPanel
           currentUser={currentUser}
           onSave={handleSaveRecord}
           onCancel={() => setViewMode('list')}
+        />
+      )}
+
+      {/* Modal định giá định mức nhân công tháng này vs tháng trước (kèm nút In) */}
+      {viewMode === 'list' && (
+        <DinhGiaNhanCongModal
+          open={showDinhGia}
+          onClose={() => setShowDinhGia(false)}
+          machines={machines}
+          defaultThang={dinhGiaInit?.thang ?? filterThang}
+          defaultNam={dinhGiaInit?.nam ?? filterNam}
+          defaultTab={dinhGiaTab}
+          currentUser={currentUser}
         />
       )}
     </div>
