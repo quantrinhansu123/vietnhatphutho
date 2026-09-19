@@ -34,6 +34,7 @@ export type TableId =
   | 'bao_cao_may_nvl_ton'
   | 'so_tron'
   | 'so_test_mau_nhua'
+  | 'bao_cao_hang_loi_khach_hang'
   | 'so_giao_ca_mmtb'
   | 'bao_cao_ngay'
   | 'so_che_do_may'
@@ -43,6 +44,9 @@ export type TableId =
   | 'dieu_dong_nhan_su'
   | 'phan_cong_nhan_su_chi_tiet'
   | 'chi_phi_nhan_cong'
+  | 'dinh_gia_nhan_cong'
+  | 'chi_phi_dien'
+  | 'chi_phi_bao_duong'
   | 'control_board';
 
 export interface TableRegistryEntry {
@@ -453,6 +457,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     components: [],
     utils: ['src/features/so-test-mau-nhua/model.ts', 'src/features/so-test-mau-nhua/print.ts']
   },
+  bao_cao_hang_loi_khach_hang: {
+    table: 'bao_cao_hang_loi_khach_hang',
+    label: 'Báo cáo hàng lỗi hỏng phát sinh ở khách hàng',
+    sql: ['supabase-bao-cao-hang-loi-khach-hang.sql'],
+    apiPrefix: '/api/bao-cao-hang-loi-khach-hang',
+    serverLines: 'parseHangLoiKhachHangBody + GET/POST/PUT/DELETE /api/bao-cao-hang-loi-khach-hang (sau so-test-mau-nhua)',
+    appTab: 'hang-loi-khach-hang | thong-ke-hang-loi',
+    appLines: 'src/features/bao-cao-hang-loi-khach-hang/index.tsx (HangLoiKhachHangPanel) + thong-ke.tsx (ThongKeHangLoiPanel)',
+    components: [],
+    utils: ['src/features/bao-cao-hang-loi-khach-hang/model.ts']
+  },
   so_giao_ca_mmtb: {
     table: 'so_giao_ca_mmtb',
     label: 'Sổ giao ca MMTB (Bảng theo dõi chế độ chạy máy & chất lượng)',
@@ -529,10 +544,21 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     components: ['src/features/sap-xep-lich-lam-viec/index.tsx'],
     utils: []
   },
+  dinh_gia_nhan_cong: {
+    table: 'dinh_gia_nhan_cong',
+    label: 'Báo cáo định giá định mức nhân công (tháng/năm)',
+    sql: ['supabase-dinh-gia-nhan-cong.sql'],
+    apiPrefix: '/api/dinh-gia-nhan-cong',
+    serverLines: 'GET/POST/PUT/DELETE /api/dinh-gia-nhan-cong',
+    appTab: 'chi-phi-nhan-cong',
+    appLines: 'src/features/chi-phi-nhan-cong/DinhGiaNhanCongModal.tsx',
+    components: ['src/features/chi-phi-nhan-cong/DinhGiaNhanCongModal.tsx'],
+    utils: []
+  },
   chi_phi_nhan_cong: {
     table: 'chi_phi_nhan_cong',
     label: 'Chi phí nhân công theo tháng và máy',
-    sql: ['supabase-chi-phi-nhan-cong.sql'],
+    sql: ['supabase-chi-phi-nhan-cong.sql', 'supabase-dinh-gia-nhan-cong.sql'],
     apiPrefix: '/api/chi-phi-nhan-cong',
     serverLines: '17675–17835',
     appTab: 'chi-phi-nhan-cong',
@@ -541,9 +567,43 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
       'src/features/chi-phi-nhan-cong/index.tsx',
       'src/features/chi-phi-nhan-cong/ChiPhiNhanCongList.tsx',
       'src/features/chi-phi-nhan-cong/ChiPhiNhanCongForm.tsx',
-      'src/features/chi-phi-nhan-cong/MonthYearPickerVi.tsx'
+      'src/features/chi-phi-nhan-cong/MonthYearPickerVi.tsx',
+      'src/features/chi-phi-nhan-cong/DinhGiaNhanCongModal.tsx'
     ],
     utils: ['src/features/chi-phi-nhan-cong/calculateLabor.ts']
+  },
+  chi_phi_dien: {
+    table: 'chi_phi_dien',
+    label: 'Chi phí điện theo năm và loại/nhóm máy',
+    sql: ['supabase-chi-phi-dien.sql'],
+    apiPrefix: '/api/chi-phi-dien',
+    serverLines: 'parseChiPhiDienBody + GET/POST/PUT/DELETE /api/chi-phi-dien (sau chi-phi-nhan-cong)',
+    appTab: 'chi-phi-dien',
+    appLines: 'src/features/chi-phi-dien/index.tsx',
+    components: [
+      'src/features/chi-phi-dien/index.tsx',
+      'src/features/chi-phi-dien/ChiPhiDienList.tsx',
+      'src/features/chi-phi-dien/ChiPhiDienForm.tsx'
+    ],
+    utils: ['src/features/chi-phi-nhan-cong/MonthYearPickerVi.tsx']
+  },
+  chi_phi_bao_duong: {
+    table: 'chi_phi_bao_duong',
+    label: 'Chi phí sửa chữa / bảo dưỡng & vật tư theo tháng và máy (QC)',
+    sql: ['supabase-chi-phi-bao-duong.sql'],
+    apiPrefix: '/api/chi-phi-bao-duong',
+    serverLines: 'parseChiPhiBaoDuongBody (ngay + chi_tiet items) + GET (?tu_ngay&den_ngay)/POST/PUT/DELETE /api/chi-phi-bao-duong (sau chi-phi-dien)',
+    appTab: 'chi-phi-bao-duong',
+    appLines: 'src/features/chi-phi-bao-duong/index.tsx',
+    components: [
+      'src/features/chi-phi-bao-duong/index.tsx',
+      'src/features/chi-phi-bao-duong/ChiPhiBaoDuongList.tsx',
+      'src/features/chi-phi-bao-duong/ChiPhiBaoDuongForm.tsx',
+      'src/features/chi-phi-bao-duong/ChiPhiBaoDuongSheet.tsx',
+      'src/features/chi-phi-bao-duong/ChiPhiBaoDuongSummaryModal.tsx',
+      'src/features/chi-phi-bao-duong/ChiPhiBaoDuongPrintSheet.tsx'
+    ],
+    utils: ['src/features/chi-phi-nhan-cong/MonthYearPickerVi.tsx']
   },
   control_board: {
     table: 'control_board',

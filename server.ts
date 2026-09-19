@@ -135,9 +135,14 @@ const SUPABASE_BAO_CAO_NGAY_TABLE = process.env.SUPABASE_BAO_CAO_NGAY_TABLE || '
 const SUPABASE_SO_GIAO_CA_MMTB_TABLE = process.env.SUPABASE_SO_GIAO_CA_MMTB_TABLE || 'so_giao_ca_mmtb';
 const SUPABASE_SO_CHE_DO_MAY_TABLE = process.env.SUPABASE_SO_CHE_DO_MAY_TABLE || 'so_che_do_may';
 const SUPABASE_SO_TEST_MAU_NHUA_TABLE = process.env.SUPABASE_SO_TEST_MAU_NHUA_TABLE || 'so_test_mau_nhua';
+const SUPABASE_HANG_LOI_KHACH_HANG_TABLE =
+  process.env.SUPABASE_HANG_LOI_KHACH_HANG_TABLE || 'bao_cao_hang_loi_khach_hang';
 const SUPABASE_DOT_SAN_XUAT_TABLE = process.env.SUPABASE_DOT_SAN_XUAT_TABLE || 'dot_san_xuat';
 const SUPABASE_BAO_CAO_THANG_TABLE = process.env.SUPABASE_BAO_CAO_THANG_TABLE || 'bao_cao_thang';
 const SUPABASE_CHI_PHI_NHAN_CONG_TABLE = process.env.SUPABASE_CHI_PHI_NHAN_CONG_TABLE || 'chi_phi_nhan_cong';
+const SUPABASE_DINH_GIA_NHAN_CONG_TABLE = process.env.SUPABASE_DINH_GIA_NHAN_CONG_TABLE || 'dinh_gia_nhan_cong';
+const SUPABASE_CHI_PHI_DIEN_TABLE = process.env.SUPABASE_CHI_PHI_DIEN_TABLE || 'chi_phi_dien';
+const SUPABASE_CHI_PHI_BAO_DUONG_TABLE = process.env.SUPABASE_CHI_PHI_BAO_DUONG_TABLE || 'chi_phi_bao_duong';
 const SUPABASE_STAFF_DEPARTMENT = process.env.SUPABASE_STAFF_DEPARTMENT || 'Sản xuất';
 const SUPABASE_STAFF_BRANCH = process.env.SUPABASE_STAFF_BRANCH || 'Phú Thọ';
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME?.trim();
@@ -15585,6 +15590,214 @@ export function createApp() {
     }
   });
 
+  // ---- Báo cáo hàng lỗi hỏng phát sinh ở khách hàng (Kinh doanh nhập, QC thống kê) ----
+  function parseHangLoiKhachHangNgay(value: unknown): string | null {
+    const text = String(value ?? '').trim().slice(0, 10);
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+    if (!m) return null;
+    const nam = Number(m[1]);
+    const thang = Number(m[2]);
+    const ngayNum = Number(m[3]);
+    if (!Number.isInteger(nam) || !Number.isInteger(thang) || !Number.isInteger(ngayNum)) return null;
+    if (nam < 1 || nam > 2999 || thang < 1 || thang > 12) return null;
+    const leap = (nam % 4 === 0 && nam % 100 !== 0) || nam % 400 === 0;
+    const daysInMonth = thang === 2 ? (leap ? 29 : 28) : [4, 6, 9, 11].includes(thang) ? 30 : 31;
+    if (ngayNum < 1 || ngayNum > daysInMonth) return null;
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    return `${nam}-${pad2(thang)}-${pad2(ngayNum)}`;
+  }
+
+  // Text tự do (không CHECK constraint): chuẩn hóa nhẹ để báo cáo QC gom nhóm ổn định.
+  function normalizeHangLoiNhomVthh(value: unknown): string | null {
+    const raw = String(value ?? '').trim().slice(0, 200);
+    if (!raw) return null;
+    const text = raw.toLocaleLowerCase('vi');
+    if (text.includes('đặc') || text.includes('dac')) return 'TP; PX Đặc';
+    if (text.includes('rỗng') || text.includes('rong')) return 'TP; PX Rỗng';
+    if (text.includes('sóng') || text.includes('song')) return 'TP; PX Sóng';
+    return raw;
+  }
+
+  function normalizeHangLoiKhuVuc(value: unknown): string | null {
+    const raw = String(value ?? '').trim().slice(0, 50);
+    if (!raw) return null;
+    const lower = raw.toLocaleLowerCase('vi');
+    if (lower === 'bac') return 'Bắc';
+    if (lower === 'trung') return 'Trung';
+    if (lower === 'nam') return 'Nam';
+    return raw;
+  }
+
+  // Lưu đúng option Hàng phế đã chọn (dùng chung WASTE_GRADE_OPTIONS với form sản phẩm), cho phép rỗng.
+  function normalizeHangLoiPhanLoai(value: unknown): string {
+    return String(value ?? '').trim().slice(0, 200);
+  }
+
+  function parseHangLoiXuLy(value: unknown): string {
+    return String(value ?? '').trim().slice(0, 500);
+  }
+
+  function parseHangLoiKhachHangBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
+    const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+    const asText = (v: unknown) => (v === null || v === undefined ? '' : String(v));
+    const ngay = parseHangLoiKhachHangNgay(source.ngay);
+    if (!ngay) return { error: 'Ngày không hợp lệ (YYYY-MM-DD, năm 1–2999).' };
+    const nhomVthh = normalizeHangLoiNhomVthh(source.nhom_vthh ?? source.nhomVthh);
+    if (!nhomVthh) return { error: 'Vui lòng chọn Loại sản phẩm (Nhóm VTHH).' };
+    const noiDung = asText(source.noi_dung ?? source.noiDung).trim().slice(0, 500);
+    if (!noiDung) return { error: 'Vui lòng nhập nội dung lỗi hỏng.' };
+    const khuVuc = normalizeHangLoiKhuVuc(source.khu_vuc ?? source.khuVuc);
+    if (!khuVuc) return { error: 'Vui lòng nhập khu vực phát sinh.' };
+    return {
+      record: {
+        ngay,
+        nhom_vthh: nhomVthh,
+        noi_dung: noiDung,
+        khu_vuc: khuVuc,
+        phan_loai_hang: normalizeHangLoiPhanLoai(source.phan_loai_hang ?? source.phanLoaiHang),
+        xu_ly_cong_ty: parseHangLoiXuLy(source.xu_ly_cong_ty ?? source.xuLyCongTy),
+        xu_ly_khac: parseHangLoiXuLy(source.xu_ly_khac ?? source.xuLyKhac),
+        ghi_chu: asText(source.ghi_chu ?? source.ghiChu).trim().slice(0, 2000) || null
+      }
+    };
+  }
+
+  function hangLoiKhachHangWriteError(error: { message?: string; code?: string }) {
+    const message = String(error?.message ?? '');
+    if (error?.code === '42P01' || /does not exist|not exist|Could not find the table/i.test(message)) {
+      return 'Bảng bao_cao_hang_loi_khach_hang chưa tồn tại trên Supabase. Hãy chạy file supabase-bao-cao-hang-loi-khach-hang.sql trong Supabase SQL Editor.';
+    }
+    return message ? `Không thể lưu báo cáo hàng lỗi hỏng. ${message}` : 'Không thể lưu báo cáo hàng lỗi hỏng.';
+  }
+
+  app.get('/api/bao-cao-hang-loi-khach-hang', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const tuNgayRaw = typeof req.query.tu_ngay === 'string' ? req.query.tu_ngay.trim().slice(0, 10) : '';
+      const denNgayRaw = typeof req.query.den_ngay === 'string' ? req.query.den_ngay.trim().slice(0, 10) : '';
+      const nhomRaw = typeof req.query.nhom_vthh === 'string' ? req.query.nhom_vthh : '';
+      const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : 500;
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 1000) : 500;
+
+      let query = supabase
+        .from(SUPABASE_HANG_LOI_KHACH_HANG_TABLE)
+        .select('*')
+        .order('ngay', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (tuNgayRaw && parseHangLoiKhachHangNgay(tuNgayRaw)) query = query.gte('ngay', tuNgayRaw);
+      if (denNgayRaw && parseHangLoiKhachHangNgay(denNgayRaw)) query = query.lte('ngay', denNgayRaw);
+      const nhomList = nhomRaw
+        .split(',')
+        .map(v => normalizeHangLoiNhomVthh(v))
+        .filter((v): v is string => Boolean(v));
+      if (nhomList.length > 0) query = query.in('nhom_vthh', [...new Set(nhomList)]);
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('Supabase hang loi khach hang query error:', error);
+        return res.status(500).json({ error: hangLoiKhachHangWriteError(error) });
+      }
+
+      return res.json({ records: data || [], total: data?.length || 0 });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải báo cáo hàng lỗi hỏng.' });
+    }
+  });
+
+  app.post('/api/bao-cao-hang-loi-khach-hang', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const parsed = parseHangLoiKhachHangBody(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_HANG_LOI_KHACH_HANG_TABLE)
+        .insert(parsed.record)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase hang loi khach hang insert error:', error);
+        return res.status(500).json({ error: hangLoiKhachHangWriteError(error) });
+      }
+
+      return res.status(201).json({ success: true, record: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu báo cáo hàng lỗi hỏng.' });
+    }
+  });
+
+  app.put('/api/bao-cao-hang-loi-khach-hang/:id', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID phiếu lỗi hỏng.' });
+
+      const parsed = parseHangLoiKhachHangBody(req.body);
+      if ('error' in parsed) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_HANG_LOI_KHACH_HANG_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Supabase hang loi khach hang update error:', error);
+        return res.status(500).json({ error: hangLoiKhachHangWriteError(error) });
+      }
+
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy phiếu lỗi hỏng.' });
+      return res.json({ success: true, record: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật phiếu lỗi hỏng.' });
+    }
+  });
+
+  app.delete('/api/bao-cao-hang-loi-khach-hang/:id', async (req, res) => {
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    }
+
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(400).json({ error: 'Thiếu ID phiếu lỗi hỏng.' });
+
+      const { data, error } = await supabase
+        .from(SUPABASE_HANG_LOI_KHACH_HANG_TABLE)
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Supabase hang loi khach hang delete error:', error);
+        return res.status(500).json({ error: hangLoiKhachHangWriteError(error) });
+      }
+
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy phiếu lỗi hỏng.' });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa phiếu lỗi hỏng.' });
+    }
+  });
+
   app.get('/api/phieu-bao-dung-may', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
@@ -17830,6 +18043,533 @@ export function createApp() {
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa chi phí nhân công.' });
+    }
+  });
+
+  // CHI PHÍ ĐIỆN (/api/chi-phi-dien)
+  // Thành phẩm tổng hợp ở frontend từ sổ trộn theo Loại/Nhóm máy,
+  // backend chỉ lưu kết quả + tiền điện người dùng nhập.
+  // ============================================================
+  function parseChiPhiDienBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
+    const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+    // Định giá theo năm: thang = 0 (cả năm), không dùng tháng.
+    const thang = Number(source.thang ?? 0);
+    const nam = Number(source.nam);
+    if (!Number.isFinite(thang) || thang < 0 || thang > 12) {
+      return { error: 'Tháng không hợp lệ (0 = cả năm, 1 - 12).' };
+    }
+    if (!Number.isFinite(nam) || nam < 1 || nam > 2999) {
+      return { error: 'Năm không hợp lệ.' };
+    }
+
+    const tenBaoCao = String(source.ten_bao_cao || `Chi phí điện Năm ${nam}`).trim();
+    const loaiMayList = Array.isArray(source.loai_may_list) ? source.loai_may_list : [];
+    if (loaiMayList.length === 0) {
+      return { error: 'Vui lòng chọn ít nhất một loại/nhóm máy.' };
+    }
+    const tongTienDien = Number(source.tong_tien_dien) || 0;
+    const tongThanhPham = Number(source.tong_thanh_pham) || 0;
+    const tbDongKg = Number(source.tb_dong_kg) || 0;
+    const chiTiet = source.chi_tiet && typeof source.chi_tiet === 'object' ? source.chi_tiet : {};
+    const ghiChu = String(source.ghi_chu || '').trim();
+    const nguoiLap = String(source.nguoi_lap || '').trim();
+
+    return {
+      record: {
+        thang,
+        nam,
+        ten_bao_cao: tenBaoCao,
+        loai_may_list: loaiMayList,
+        tong_tien_dien: tongTienDien,
+        tong_thanh_pham: tongThanhPham,
+        tb_dong_kg: tbDongKg,
+        chi_tiet: chiTiet,
+        ghi_chu: ghiChu,
+        nguoi_lap: nguoiLap,
+        updated_at: new Date().toISOString()
+      }
+    };
+  }
+
+  // Danh sách chi phí điện (có thể lọc theo thang, nam, loai_may)
+  app.get('/api/chi-phi-dien', async (req, res) => {
+    if (!supabase) return res.json({ items: [], total: 0, source: 'local' });
+    try {
+      const thang = Number(req.query.thang);
+      const nam = Number(req.query.nam);
+      const loaiMay = String(req.query.loai_may || '').trim();
+
+      let query = supabase
+        .from(SUPABASE_CHI_PHI_DIEN_TABLE)
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (Number.isFinite(nam) && nam > 0) {
+        query = query.eq('nam', nam);
+      }
+      if (Number.isFinite(thang) && thang >= 1 && thang <= 12) {
+        query = query.eq('thang', thang);
+      }
+      if (loaiMay) {
+        query = query.contains('loai_may_list', JSON.stringify([loaiMay]));
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('Error fetching chi_phi_dien:', error);
+        return res.json({ items: [], total: 0, error: error.message });
+      }
+      return res.json({ items: data || [], total: (data || []).length, source: 'supabase' });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải danh sách chi phí điện.' });
+    }
+  });
+
+  // Lấy chi tiết 1 bản ghi
+  app.get('/api/chi-phi-dien/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID chi phí điện.' });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_CHI_PHI_DIEN_TABLE)
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy bản ghi chi phí điện.' });
+      return res.json({ item: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải chi tiết chi phí điện.' });
+    }
+  });
+
+  // Tạo mới bản ghi
+  app.post('/api/chi-phi-dien', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const parsed = parseChiPhiDienBody(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_CHI_PHI_DIEN_TABLE)
+        .insert(parsed.record)
+        .select('*')
+        .single();
+      if (error) {
+        console.error('Error inserting chi_phi_dien:', error);
+        return res.status(500).json({ error: error.message });
+      }
+      return res.status(201).json({ success: true, item: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu chi phí điện.' });
+    }
+  });
+
+  // Cập nhật bản ghi
+  app.put('/api/chi-phi-dien/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID chi phí điện.' });
+    const parsed = parseChiPhiDienBody(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_CHI_PHI_DIEN_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy bản ghi chi phí điện.' });
+      return res.json({ success: true, item: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật chi phí điện.' });
+    }
+  });
+
+  // Xóa bản ghi
+  app.delete('/api/chi-phi-dien/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID chi phí điện.' });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_CHI_PHI_DIEN_TABLE)
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy bản ghi chi phí điện.' });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa chi phí điện.' });
+    }
+  });
+
+  // ============================================================
+  // CHI PHÍ BẢO DƯỠNG (/api/chi-phi-bao-duong) — QC, 1 dòng = 1 máy x 1 tháng
+  // ============================================================
+  function isValidNgayStr(value: unknown): boolean {
+    const m = /^(\d{1,4})-(\d{1,2})-(\d{1,2})$/.exec(String(value || '').trim());
+    if (!m) return false;
+    const nam = Number(m[1]);
+    const thang = Number(m[2]);
+    const ngay = Number(m[3]);
+    if (thang < 1 || thang > 12 || nam < 1 || nam > 2999) return false;
+    if (!Number.isInteger(ngay) || ngay < 1) return false;
+    const daysInMonth = new Date(nam, thang, 0).getDate();
+    return ngay <= daysInMonth;
+  }
+
+  function sanitizeCostItems(value: unknown): Array<{ noi_dung: string; gia: number }> {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map(item => {
+        const rec = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+        const gia = Number(rec.gia) || 0;
+        return { noi_dung: String(rec.noi_dung || '').trim(), gia: gia < 0 ? 0 : Math.round(gia) };
+      })
+      .filter(item => item.noi_dung || item.gia > 0);
+  }
+
+  function parseChiPhiBaoDuongBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
+    const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+    // Ngày phát sinh (ưu tiên); thiếu thì suy từ thang/nam cũ (= mùng 1).
+    let ngayStr = String(source.ngay || '').trim();
+    let thang = Number(source.thang);
+    let nam = Number(source.nam);
+    if (ngayStr) {
+      if (!isValidNgayStr(ngayStr)) return { error: 'Ngày không hợp lệ (YYYY-MM-DD).' };
+      const parts = ngayStr.split('-').map(Number);
+      nam = parts[0];
+      thang = parts[1];
+      ngayStr = `${parts[0]}-${String(parts[1]).padStart(2, '0')}-${String(parts[2]).padStart(2, '0')}`;
+    } else {
+      if (!Number.isFinite(thang) || thang < 1 || thang > 12) {
+        return { error: 'Vui lòng chọn ngày phát sinh.' };
+      }
+      if (!Number.isFinite(nam) || nam < 1 || nam > 2999) {
+        return { error: 'Năm không hợp lệ (1 - 2999).' };
+      }
+      ngayStr = `${nam}-${String(thang).padStart(2, '0')}-01`;
+    }
+    const maMay = String(source.ma_may || '').trim();
+    if (!maMay) return { error: 'Vui lòng chọn máy.' };
+    const tenMay = String(source.ten_may || maMay).trim();
+    const chiTietRaw =
+      source.chi_tiet && typeof source.chi_tiet === 'object'
+        ? (source.chi_tiet as Record<string, unknown>)
+        : {};
+    const suaItems = sanitizeCostItems(chiTietRaw.sua_chua_items);
+    const vatItems = sanitizeCostItems(chiTietRaw.vat_tu_items);
+    const hasItems = suaItems.length > 0 || vatItems.length > 0;
+    const fmtLine = (noiDung: string, gia: number) =>
+      `- ${noiDung || 'Chi phí'}: ${Number(gia).toLocaleString('vi-VN')}đ`;
+    const chiPhiSuaChua = hasItems
+      ? suaItems.reduce((s, it) => s + it.gia, 0)
+      : Number(source.chi_phi_sua_chua) || 0;
+    const chiPhiVatTu = hasItems
+      ? vatItems.reduce((s, it) => s + it.gia, 0)
+      : Number(source.chi_phi_vat_tu) || 0;
+    if (chiPhiSuaChua < 0 || chiPhiVatTu < 0) {
+      return { error: 'Chi phí không được âm.' };
+    }
+    const suaGhiChu = hasItems
+      ? suaItems.map(it => fmtLine(it.noi_dung, it.gia)).join('\n')
+      : String(source.sua_chua_ghi_chu || '');
+    const vatGhiChu = hasItems
+      ? vatItems.map(it => fmtLine(it.noi_dung, it.gia)).join('\n')
+      : String(source.vat_tu_ghi_chu || '');
+    return {
+      record: {
+        ngay: ngayStr,
+        thang,
+        nam,
+        ma_may: maMay,
+        ten_may: tenMay,
+        chi_phi_sua_chua: chiPhiSuaChua,
+        sua_chua_ghi_chu: suaGhiChu,
+        chi_phi_vat_tu: chiPhiVatTu,
+        vat_tu_ghi_chu: vatGhiChu,
+        chi_tiet: { sua_chua_items: suaItems, vat_tu_items: vatItems },
+        nguoi_lap: String(source.nguoi_lap || '').trim(),
+        updated_at: new Date().toISOString()
+      }
+    };
+  }
+
+  app.get('/api/chi-phi-bao-duong', async (req, res) => {
+    if (!supabase) return res.json({ items: [], total: 0, source: 'local' });
+    try {
+      const thang = Number(req.query.thang);
+      const nam = Number(req.query.nam);
+      const maMay = String(req.query.ma_may || '').trim();
+      const tuNgay = String(req.query.tu_ngay || '').trim();
+      const denNgay = String(req.query.den_ngay || '').trim();
+      let query = supabase
+        .from(SUPABASE_CHI_PHI_BAO_DUONG_TABLE)
+        .select('*')
+        .order('ngay', { ascending: false })
+        .order('ma_may', { ascending: true });
+      if (Number.isFinite(thang) && thang >= 1 && thang <= 12) query = query.eq('thang', thang);
+      if (Number.isFinite(nam) && nam > 0) query = query.eq('nam', nam);
+      if (maMay) query = query.eq('ma_may', maMay);
+      if (isValidNgayStr(tuNgay)) query = query.gte('ngay', tuNgay);
+      if (isValidNgayStr(denNgay)) query = query.lte('ngay', denNgay);
+      const { data, error } = await query;
+      if (error) {
+        console.error('Error fetching chi_phi_bao_duong:', error);
+        return res.json({ items: [], total: 0, error: error.message });
+      }
+      return res.json({ items: data || [], total: (data || []).length, source: 'supabase' });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải chi phí bảo dưỡng.' });
+    }
+  });
+
+  app.get('/api/chi-phi-bao-duong/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID chi phí bảo dưỡng.' });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_CHI_PHI_BAO_DUONG_TABLE)
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy bản ghi chi phí bảo dưỡng.' });
+      return res.json({ item: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải chi tiết chi phí bảo dưỡng.' });
+    }
+  });
+
+  app.post('/api/chi-phi-bao-duong', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const parsed = parseChiPhiBaoDuongBody(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    try {
+      // Mỗi lần Thêm mới luôn tạo 1 dòng mới (kể cả trùng Ngày + Máy).
+      // Sửa dòng cũ dùng PUT /:id.
+      const rec = parsed.record as Record<string, unknown>;
+      const { data, error } = await supabase
+        .from(SUPABASE_CHI_PHI_BAO_DUONG_TABLE)
+        .insert(rec)
+        .select('*')
+        .single();
+      if (error) {
+        console.error('Error inserting chi_phi_bao_duong:', error);
+        return res.status(500).json({ error: error.message });
+      }
+      return res.status(201).json({ success: true, item: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu chi phí bảo dưỡng.' });
+    }
+  });
+
+  app.put('/api/chi-phi-bao-duong/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID chi phí bảo dưỡng.' });
+    const parsed = parseChiPhiBaoDuongBody(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_CHI_PHI_BAO_DUONG_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy bản ghi chi phí bảo dưỡng.' });
+      return res.json({ success: true, item: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật chi phí bảo dưỡng.' });
+    }
+  });
+
+  app.delete('/api/chi-phi-bao-duong/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID chi phí bảo dưỡng.' });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_CHI_PHI_BAO_DUONG_TABLE)
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy bản ghi chi phí bảo dưỡng.' });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa chi phí bảo dưỡng.' });
+    }
+  });
+
+  // ============================================================
+  // ĐỊNH GIÁ NHÂN CÔNG (/api/dinh-gia-nhan-cong) — lưu báo cáo định mức (đồng/kg)
+  // ============================================================
+  function parseDinhGiaNhanCongBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
+    const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+    const loai = String(source.loai || 'thang').trim() === 'nam' ? 'nam' : 'thang';
+    const nam = Number(source.nam);
+    if (!Number.isFinite(nam) || nam < 1 || nam > 2999) {
+      return { error: 'Năm không hợp lệ (1 - 2999).' };
+    }
+    const numOrNull = (v: unknown): number | null => {
+      if (v === null || v === undefined || String(v).trim() === '') return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    const thang = numOrNull(source.thang);
+    if (thang !== null && (thang < 1 || thang > 12)) {
+      return { error: 'Tháng không hợp lệ (1 - 12).' };
+    }
+    const namSoSanh = numOrNull(source.nam_so_sanh ?? source.namSoSanh);
+    if (namSoSanh !== null && (namSoSanh < 1 || namSoSanh > 2999)) {
+      return { error: 'Năm so sánh không hợp lệ.' };
+    }
+    const thangSoSanh = numOrNull(source.thang_so_sanh ?? source.thangSoSanh);
+    const cheDoNamRaw = String(source.che_do_nam ?? source.cheDoNam ?? '').trim();
+    const cheDoNam = cheDoNamRaw === 'cong-don' ? 'cong-don' : cheDoNamRaw === 'cung-thang' ? 'cung-thang' : null;
+    const tuThang = numOrNull(source.tu_thang ?? source.tuThang);
+    const denThang = numOrNull(source.den_thang ?? source.denThang);
+
+    const asStrArray = (v: unknown): string[] => (Array.isArray(v) ? v.map(x => String(x)) : []);
+    const chiTiet = source.chi_tiet && typeof source.chi_tiet === 'object' ? source.chi_tiet : {};
+
+    return {
+      record: {
+        loai,
+        thang,
+        nam,
+        thang_so_sanh: thangSoSanh,
+        nam_so_sanh: namSoSanh,
+        che_do_nam: cheDoNam,
+        tu_thang: tuThang,
+        den_thang: denThang,
+        ten_bao_cao: String(source.ten_bao_cao ?? source.tenBaoCao ?? '').trim() || `Định giá nhân công ${loai === 'nam' ? `năm ${nam}` : `T${thang}/${nam}`}`,
+        ma_may_list: asStrArray(source.ma_may_list ?? source.maMayList),
+        ten_may_list: asStrArray(source.ten_may_list ?? source.tenMayList),
+        chi_tiet: chiTiet,
+        ghi_chu: String(source.ghi_chu ?? source.ghiChu ?? '').trim(),
+        nguoi_lap: String(source.nguoi_lap ?? source.nguoiLap ?? '').trim(),
+        updated_at: new Date().toISOString()
+      }
+    };
+  }
+
+  // Danh sách báo cáo định giá (lọc theo loai, nam, thang)
+  app.get('/api/dinh-gia-nhan-cong', async (req, res) => {
+    if (!supabase) return res.json({ items: [], total: 0, source: 'local' });
+    try {
+      const loai = String(req.query.loai || '').trim();
+      const nam = Number(req.query.nam);
+      const thang = Number(req.query.thang);
+
+      let query = supabase
+        .from(SUPABASE_DINH_GIA_NHAN_CONG_TABLE)
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(Math.min(Number(req.query.limit) || 200, 500));
+
+      if (loai === 'thang' || loai === 'nam') query = query.eq('loai', loai);
+      if (Number.isFinite(nam) && nam > 0) query = query.eq('nam', nam);
+      if (Number.isFinite(thang) && thang >= 1 && thang <= 12) query = query.eq('thang', thang);
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('Error fetching dinh_gia_nhan_cong:', error);
+        return res.json({ items: [], total: 0, error: error.message });
+      }
+      return res.json({ items: data || [], total: (data || []).length, source: 'supabase' });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải báo cáo định giá nhân công.' });
+    }
+  });
+
+  // Chi tiết 1 báo cáo
+  app.get('/api/dinh-gia-nhan-cong/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID báo cáo định giá.' });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_DINH_GIA_NHAN_CONG_TABLE)
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy báo cáo định giá.' });
+      return res.json({ item: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải báo cáo định giá.' });
+    }
+  });
+
+  // Lưu báo cáo mới
+  app.post('/api/dinh-gia-nhan-cong', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const parsed = parseDinhGiaNhanCongBody(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_DINH_GIA_NHAN_CONG_TABLE)
+        .insert(parsed.record)
+        .select('*')
+        .single();
+      if (error) {
+        console.error('Error inserting dinh_gia_nhan_cong:', error);
+        return res.status(500).json({ error: error.message });
+      }
+      return res.status(201).json({ success: true, item: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu báo cáo định giá.' });
+    }
+  });
+
+  // Cập nhật báo cáo
+  app.put('/api/dinh-gia-nhan-cong/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID báo cáo định giá.' });
+    const parsed = parseDinhGiaNhanCongBody(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_DINH_GIA_NHAN_CONG_TABLE)
+        .update(parsed.record)
+        .eq('id', id)
+        .select('*')
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy báo cáo định giá.' });
+      return res.json({ success: true, item: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật báo cáo định giá.' });
+    }
+  });
+
+  // Xóa báo cáo
+  app.delete('/api/dinh-gia-nhan-cong/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID báo cáo định giá.' });
+    try {
+      const { data, error } = await supabase
+        .from(SUPABASE_DINH_GIA_NHAN_CONG_TABLE)
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'Không tìm thấy báo cáo định giá.' });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa báo cáo định giá.' });
     }
   });
 
