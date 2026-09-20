@@ -50,6 +50,8 @@ export type MixingProductionOrderProductLine = {
 export type MixingProductionOrder = {
   id: string;
   orderCode: string;
+  /** Tên lệnh SX (ten_lenh_sx) — dùng ghép tên PTĐM. */
+  orderName?: string;
   /** Mã đơn hàng (nếu lệnh SX gắn ĐH). */
   salesOrderCode?: string;
   shift: string;
@@ -418,6 +420,7 @@ export function normalizeMixingProductionOrders(data: unknown): MixingProduction
       return {
         id: String(record.id ?? '').trim() || orderCode,
         orderCode,
+        orderName: pickText(record, ['ten_lenh_sx', 'ten', 'name', 'tieu_de'], ''),
         salesOrderCode: pickText(record, ['ma_don_hang', 'don_hang', 'order_ref', 'orderRef'], ''),
         shift: pickText(record, ['ca', 'shift'], ''),
         machine: pickText(record, ['may', 'ma_may', 'ten_may', 'machine'], ''),

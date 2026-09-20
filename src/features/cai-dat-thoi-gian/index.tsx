@@ -589,6 +589,59 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
     [timeShiftGroups, otherSettingRows]
   );
 
+  /**
+   * Ca truoc / ca sau theo vong lap loai ca (dung full danh sach, khong theo bo loc):
+   * - Ca giua/cuoi loai: ca truoc cung ngay, ca sau cung ngay.
+   * - Ca dau loai: ca truoc la ca cuoi loai (hom truoc — ca dem tinh theo ngay bat dau).
+   * - Ca cuoi loai: ca sau la ca dau loai (hom sau).
+   * Ca chua xep loai ca => khong co ca truoc/sau.
+   */
+  const chainNeighborsById = useMemo(() => {
+    const map = new Map<string, { prev: SettingRow; next: SettingRow; wrapPrev: boolean; wrapNext: boolean }>();
+    const byLoai = new Map<string, SettingRow[]>();
+    for (const row of settings) {
+      if (row.loaiCaiDat !== 'Thời gian' || !row.loaiCa) continue;
+      const list = byLoai.get(row.loaiCa) || [];
+      list.push(row);
+      byLoai.set(row.loaiCa, list);
+    }
+    for (const list of byLoai.values()) {
+      list.sort(
+        (a, b) =>
+          (a.thuTu ?? Number.MAX_SAFE_INTEGER) - (b.thuTu ?? Number.MAX_SAFE_INTEGER) ||
+          (a.name || '').localeCompare(b.name || '', 'vi')
+      );
+      for (let i = 0; i < list.length; i += 1) {
+        const prev = list[(i - 1 + list.length) % list.length];
+        const next = list[(i + 1) % list.length];
+        map.set(list[i].id, { prev, next, wrapPrev: i === 0, wrapNext: i === list.length - 1 });
+      }
+    }
+    return map;
+  }, [settings]);
+
+  /** Chuoi hien thi theo tung loai ca: "HC1 → HC2 → HC3 ↺" (dung full danh sach). */
+  const chainTextByLoai = useMemo(() => {
+    const map = new Map<string, string>();
+    const byLoai = new Map<string, SettingRow[]>();
+    for (const row of settings) {
+      if (row.loaiCaiDat !== 'Thời gian' || !row.loaiCa) continue;
+      const list = byLoai.get(row.loaiCa) || [];
+      list.push(row);
+      byLoai.set(row.loaiCa, list);
+    }
+    for (const [loai, list] of byLoai) {
+      list.sort(
+        (a, b) =>
+          (a.thuTu ?? Number.MAX_SAFE_INTEGER) - (b.thuTu ?? Number.MAX_SAFE_INTEGER) ||
+          (a.name || '').localeCompare(b.name || '', 'vi')
+      );
+      const names = list.map(r => r.name || r.code).filter(Boolean);
+      if (names.length > 0) map.set(loai, names.join(' → ') + (names.length > 1 ? ' ↺' : ''));
+    }
+    return map;
+  }, [settings]);
+
   const permissionSettings = useMemo(
     () =>
       parsePermissionSettings(
@@ -1021,23 +1074,41 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
               </button>
             </div>
             <div className="space-y-3 p-4 text-sm">
-              {[
-                ['Mã cài đặt', viewingSetting.code],
-                ['Hạng mục', viewingSetting.name],
-                ['Loại cài đặt', viewingSetting.loaiCaiDat],
-                ['Khung giờ', viewingSetting.timeFrame !== '-' ? viewingSetting.timeFrame : `${viewingSetting.startTime} - ${viewingSetting.endTime}`],
-                ['Giờ bắt đầu', viewingSetting.startTime],
-                ['Giờ kết thúc', viewingSetting.endTime],
-                ['Nhóm', viewingSetting.group],
-                ['Loại ca', viewingSetting.loaiCaiDat === 'Thời gian' ? (viewingSetting.loaiCa || 'Chưa xếp') : '-'],
-                ['Thứ tự trong loại ca', viewingSetting.loaiCaiDat === 'Thời gian' ? (viewingSetting.thuTu ?? '—') : '-'],
-                ['Ghi chú', viewingSetting.note || '-']
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">{label}</p>
-                  <p className="mt-1 font-bold text-zinc-900">{value || '-'}</p>
-                </div>
-              ))}
+              {(() => {
+                const nb =
+                  viewingSetting.loaiCaiDat === 'Thời gian'
+                    ? chainNeighborsById.get(viewingSetting.id)
+                    : undefined;
+                const prevText = !nb
+                  ? viewingSetting.loaiCaiDat === 'Thời gian'
+                    ? 'Chưa xếp loại ca'
+                    : '-'
+                  : `${nb.prev.name || nb.prev.code}${nb.wrapPrev ? ' (hôm trước)' : ' (cùng ngày)'}`;
+                const nextText = !nb
+                  ? viewingSetting.loaiCaiDat === 'Thời gian'
+                    ? 'Chưa xếp loại ca'
+                    : '-'
+                  : `${nb.next.name || nb.next.code}${nb.wrapNext ? ' (hôm sau)' : ' (cùng ngày)'}`;
+                return [
+                  ['Mã cài đặt', viewingSetting.code],
+                  ['Hạng mục', viewingSetting.name],
+                  ['Loại cài đặt', viewingSetting.loaiCaiDat],
+                  ['Khung giờ', viewingSetting.timeFrame !== '-' ? viewingSetting.timeFrame : `${viewingSetting.startTime} - ${viewingSetting.endTime}`],
+                  ['Giờ bắt đầu', viewingSetting.startTime],
+                  ['Giờ kết thúc', viewingSetting.endTime],
+                  ['Nhóm', viewingSetting.group],
+                  ['Loại ca', viewingSetting.loaiCaiDat === 'Thời gian' ? (viewingSetting.loaiCa || 'Chưa xếp') : '-'],
+                  ['Thứ tự trong loại ca', viewingSetting.loaiCaiDat === 'Thời gian' ? (viewingSetting.thuTu ?? '—') : '-'],
+                  ['Ca trước (logic vòng lặp)', prevText],
+                  ['Ca sau (logic vòng lặp)', nextText],
+                  ['Ghi chú', viewingSetting.note || '-']
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">{label}</p>
+                    <p className="mt-1 font-bold text-zinc-900">{value || '-'}</p>
+                  </div>
+                ));
+              })()}
             </div>
             <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
               {canEdit ? (
@@ -1237,7 +1308,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
         )}
       </section>
 
-      <TableShell minWidthClassName="min-w-[1240px]">
+      <TableShell minWidthClassName="min-w-[1520px]">
         <TableHead>
           <TableHeadCell>Mã</TableHeadCell>
           <TableHeadCell>Tên cài đặt</TableHeadCell>
@@ -1247,6 +1318,8 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
           <TableHeadCell>Giờ kết thúc</TableHeadCell>
           <TableHeadCell>Nhóm</TableHeadCell>
           <TableHeadCell>Thứ tự</TableHeadCell>
+          <TableHeadCell>Ca trước</TableHeadCell>
+          <TableHeadCell>Ca sau</TableHeadCell>
           <TableHeadCell>Ghi chú</TableHeadCell>
           <TableHeadCell align="center">Thao tác</TableHeadCell>
         </TableHead>
@@ -1267,8 +1340,13 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
             <React.Fragment key={setting.id}>
               {showShiftGroupHeader ? (
                 <tr className="bg-zinc-950/[0.04]">
-                  <td colSpan={10} className="px-4 py-2 text-xs font-black uppercase tracking-wider text-zinc-600">
+                  <td colSpan={12} className="px-4 py-2 text-xs font-black uppercase tracking-wider text-zinc-600">
                     {shiftGroupKey ? `Loại ca ${shiftGroupKey}` : 'Chưa xếp loại ca'}
+                    {shiftGroupKey && chainTextByLoai.get(shiftGroupKey) ? (
+                      <span className="ml-2 font-bold normal-case text-sky-700">
+                        {chainTextByLoai.get(shiftGroupKey)}
+                      </span>
+                    ) : null}
                     {shiftGroupKey && canEdit ? (
                       <span className="ml-2 font-semibold normal-case text-zinc-400">
                         Kéo thả dòng để sắp xếp (hoặc dùng nút ↑↓)
@@ -1279,7 +1357,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
               ) : null}
               {showOtherGroupHeader ? (
                 <tr className="bg-zinc-950/[0.04]">
-                  <td colSpan={10} className="px-4 py-2 text-xs font-black uppercase tracking-wider text-zinc-600">
+                  <td colSpan={12} className="px-4 py-2 text-xs font-black uppercase tracking-wider text-zinc-600">
                     Cài đặt khác
                   </td>
                 </tr>
@@ -1349,6 +1427,61 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                 <td className="px-4 py-3 text-center font-black tabular-nums text-zinc-800">
                   {setting.loaiCaiDat === 'Thời gian' ? (setting.thuTu ?? '—') : '—'}
                 </td>
+                {(() => {
+                  if (setting.loaiCaiDat !== 'Thời gian') {
+                    return (
+                      <>
+                        <td className="px-4 py-3 text-center font-semibold text-zinc-300">—</td>
+                        <td className="px-4 py-3 text-center font-semibold text-zinc-300">—</td>
+                      </>
+                    );
+                  }
+                  const nb = chainNeighborsById.get(setting.id);
+                  if (!nb) {
+                    return (
+                      <>
+                        <td className="px-4 py-3 text-center">
+                          <span className="text-xs font-bold text-amber-600">Chưa xếp</span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="text-xs font-bold text-amber-600">Chưa xếp</span>
+                        </td>
+                      </>
+                    );
+                  }
+                  const prevLabel = nb.prev.name || nb.prev.code;
+                  const nextLabel = nb.next.name || nb.next.code;
+                  return (
+                    <>
+                      <td
+                        className="px-4 py-3"
+                        title={
+                          nb.wrapPrev
+                            ? `Ca trước của ${setting.name} là ${prevLabel} (hôm trước — ca đêm tính theo ngày bắt đầu)`
+                            : `Ca trước của ${setting.name} là ${prevLabel} (cùng ngày)`
+                        }
+                      >
+                        <span className="font-bold text-zinc-800">{prevLabel}</span>{' '}
+                        <span className="text-[11px] font-semibold text-zinc-400">
+                          {nb.wrapPrev ? '(hôm trước)' : '(cùng ngày)'}
+                        </span>
+                      </td>
+                      <td
+                        className="px-4 py-3"
+                        title={
+                          nb.wrapNext
+                            ? `Ca sau của ${setting.name} là ${nextLabel} (hôm sau — ca đêm tính theo ngày bắt đầu)`
+                            : `Ca sau của ${setting.name} là ${nextLabel} (cùng ngày)`
+                        }
+                      >
+                        <span className="font-bold text-zinc-800">{nextLabel}</span>{' '}
+                        <span className="text-[11px] font-semibold text-zinc-400">
+                          {nb.wrapNext ? '(hôm sau)' : '(cùng ngày)'}
+                        </span>
+                      </td>
+                    </>
+                  );
+                })()}
                 <td className="px-4 py-3 font-semibold text-zinc-500">{setting.note || '-'}</td>
                 <td className="px-4 py-3">
                   <RowActionsMenu label={`Thao tác ${setting.name}`}>
@@ -1425,7 +1558,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
           })}
 
           {!isLoadingSettings && filteredSettings.length === 0 && (
-            <TableEmptyRow colSpan={10}>
+            <TableEmptyRow colSpan={12}>
               Bảng cai_dat_thoi_gian chưa có dữ liệu hoặc không có mục phù hợp bộ lọc.
             </TableEmptyRow>
           )}

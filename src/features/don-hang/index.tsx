@@ -1828,8 +1828,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             value={line.productionName}
                             onChange={productionName => pickProductionName(line.key, productionName)}
                             options={getProductionNameOptions(line.productCode, line.productName)}
-                            placeholder="Chọn hoặc nhập tên sản xuất"
-                            allowCustomValue
+                            placeholder={line.productCode.trim() ? 'Chọn tên sản xuất' : 'Chọn mã AMIS trước'}
+                            isLoading={isLoadingLookups}
+                            disabled={!line.productCode.trim()}
                             skipUnchangedBlurCommit
                             inputClassName={orderFieldClass}
                             getLabel={item => String(item)}
@@ -2061,8 +2062,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           value={line.productionName}
                           onChange={productionName => pickProductionName(line.key, productionName)}
                           options={getProductionNameOptions(line.productCode, line.productName)}
-                          placeholder="Chọn hoặc nhập tên sản xuất"
-                          allowCustomValue
+                          placeholder={line.productCode.trim() ? 'Chọn tên sản xuất' : 'Chọn mã AMIS trước'}
+                          isLoading={isLoadingLookups}
+                          disabled={!line.productCode.trim()}
                           skipUnchangedBlurCommit
                           inputClassName={orderFieldClass}
                           getLabel={item => String(item)}
@@ -2256,8 +2258,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <span className="mr-2 font-black tabular-nums text-zinc-400">{line.stt || index + 1}.</span>
                         {line.productCode || '-'} · {line.productName || '-'}
                       </p>
-                      <p className="mt-0.5 text-xs font-semibold text-zinc-500">Tên sản xuất: {line.productionName || findOrderProductByCode(productOptions, line.productCode)?.productionName || '-'}</p>
-                      <p className="mt-0.5 text-xs font-bold text-zinc-700">Tên ghép: {formatProductionNameWithLength(line.productionName || line.productName || '', line.quyCachMDai, { tenGhep: line.tenGhep }) || '-'}</p>
+                      <p className="mt-0.5 text-xs font-semibold text-zinc-500">Tên sản xuất: {formatProductionNameWithLength(line.productionName || findOrderProductByCode(productOptions, line.productCode)?.productionName || line.productName || '', line.quyCachMDai, { tenGhep: line.tenGhep }) || '-'}</p>
                       {(line.tem || line.mauTem || line.danTem2Dau) ? (
                         <p className="mt-0.5 text-xs font-bold text-purple-700">
                           {line.tem ? `(Dán Tem ${line.tem})` : ''}{line.mauTem ? ` Màu ${line.mauTem} ${southMvByMauTem(line.mauTem)}` : line.tem ? ` Màu ${SOUTH_TEM_COLOR_DEFAULT} ${southMvByMauTem(SOUTH_TEM_COLOR_DEFAULT)}` : ''}{line.danTem2Dau ? ' Dán Tem 2 Đầu' : ''}

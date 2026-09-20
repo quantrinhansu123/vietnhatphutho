@@ -60,22 +60,26 @@ test('calcAuxiliaryWeight tinh dung cho TP; PX Song', () => {
 
 test('formatMixingNormSlipName ghep ten phieu ban dau', () => {
   assert.equal(
-    formatMixingNormSlipName('2026-09-08', 'Máy Đặc 1', 'LSX-001/DH-01'),
-    'PTĐM - 2026-09-08 - Máy Đặc 1 - LSX-001/DH-01'
+    formatMixingNormSlipName('Máy Đặc 1', 'LSX-001'),
+    'PTĐM - Máy Đặc 1 - LSX-001'
   );
   assert.equal(
-    formatMixingNormSlipName('2026-09-08', 'Máy 2', 'LSX-002'),
-    'PTĐM - 2026-09-08 - Máy 2 - LSX-002'
+    formatMixingNormSlipName('Máy 2', 'LSX-002'),
+    'PTĐM - Máy 2 - LSX-002'
   );
   assert.equal(
-    formatMixingNormSlipName('2026-09-08', '', 'LSX-002'),
-    'PTĐM - 2026-09-08 - LSX-002'
+    formatMixingNormSlipName('', 'LSX-002'),
+    'PTĐM - LSX-002'
   );
-  assert.equal(formatMixingNormSlipName('', '', ''), 'PTĐM');
+  assert.equal(
+    formatMixingNormSlipName('Máy 2', 'LSX-001, LSX-002'),
+    'PTĐM - Máy 2 - LSX-001 - LSX-002'
+  );
+  assert.equal(formatMixingNormSlipName('', ''), 'PTĐM');
 });
 
 test('ten lich su dinh muc luon dung ten goc va so lan thay doi', () => {
-  const baseName = 'PTĐM - 2026-09-08 - Máy 2 - LSX-002';
+  const baseName = 'PTĐM - Máy 2 - LSX-002';
   assert.equal(buildMixingNormRevisionName(baseName, 1), `${baseName} - tỷ lệ 1`);
   assert.equal(buildMixingNormRevisionName(`${baseName} - tỷ lệ 1`, 2), `${baseName} - tỷ lệ 2`);
   assert.equal(stripMixingNormRevisionSuffix(`${baseName} - tỷ lệ 12`), baseName);

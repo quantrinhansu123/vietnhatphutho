@@ -106,17 +106,23 @@ export function filterSecondaryMaterialOptions<T extends { id?: string; code: st
   });
 }
 
-/** Ghép tên phiếu trộn định mức ban đầu. */
+/** Chuẩn hóa chuỗi mã lệnh SX cho tên phiếu: các mã cách nhau bằng ` - `. */
+export function normalizeMixingSlipOrderCodes(value?: string | null): string {
+  const codes = String(value ?? '')
+    .split(/[,;|/]+/)
+    .map(part => part.trim())
+    .filter(Boolean);
+  return codes.join(' - ');
+}
+
+/** Ghép tên phiếu trộn định mức: `PTĐM - <tên máy> - <mã lệnh SX>` (không ghép ngày, nhiều mã nối bằng ` - `). */
 export function formatMixingNormSlipName(
-  ngay?: string | null,
-  mayOrCa?: string | null,
-  lsxOrDh?: string | null
+  tenMay?: string | null,
+  maLenhSx?: string | null
 ): string {
   const parts: string[] = ['PTĐM'];
-  const n = String(ngay ?? '').trim();
-  const may = String(mayOrCa ?? '').trim();
-  const ref = String(lsxOrDh ?? '').trim();
-  if (n) parts.push(n);
+  const may = String(tenMay ?? '').trim();
+  const ref = normalizeMixingSlipOrderCodes(maLenhSx);
   if (may) parts.push(may);
   if (ref) parts.push(ref);
   return parts.join(' - ');

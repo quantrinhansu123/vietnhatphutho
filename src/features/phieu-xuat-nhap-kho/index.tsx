@@ -1273,11 +1273,8 @@ export function WarehouseSlipPanel({
   const [mixingNormRecords, setMixingNormRecords] = useState<Record<string, unknown>[]>([]);
   const [isLoadingMixingNorms, setIsLoadingMixingNorms] = useState(true);
   const [normLoadMessage, setNormLoadMessage] = useState('');
-  // Tập id phiếu trộn định mức đã có phiếu xuất kho khác — dùng để ẩn khỏi picker.
-  const [exportedLenhSxKeys, setExportedLenhSxKeys] = useState<Set<string>>(new Set());
-  const [isLoadingExportedLenhSx, setIsLoadingExportedLenhSx] = useState(true);
-  // Phiếu trộn định mức mà CHÍNH phiếu đang sửa đã chọn — không bị ẩn dù đã "đã xuất".
-  const [ownInstanceKeys, setOwnInstanceKeys] = useState<Set<string>>(new Set());
+  // Phiếu trộn định mức mà CHÍNH phiếu đang sửa đã chọn (giữ để tương thích draft cũ).
+  const [, setOwnInstanceKeys] = useState<Set<string>>(new Set());
 
   const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
 
@@ -1317,23 +1314,6 @@ export function WarehouseSlipPanel({
       }
     };
     void loadMixingNorms();
-  }, []);
-
-  useEffect(() => {
-    const loadExportedLenhSx = async () => {
-      setIsLoadingExportedLenhSx(true);
-      try {
-        const res = await fetch('/api/phieu-xuat-nhap-kho/dinh-muc-da-xuat');
-        const data = await res.json().catch(() => ({}));
-        const exportedItems: WarehouseLenhSxRef[] = Array.isArray(data.items) ? data.items : [];
-        setExportedLenhSxKeys(new Set(exportedItems.map(lenhSxInstanceKey)));
-      } catch {
-        setExportedLenhSxKeys(new Set());
-      } finally {
-        setIsLoadingExportedLenhSx(false);
-      }
-    };
-    void loadExportedLenhSx();
   }, []);
 
   useEffect(() => {
@@ -1635,8 +1615,10 @@ export function WarehouseSlipPanel({
     normRecord?: Record<string, unknown>;
   };
 
-  // Xuất kho NVL chọn trực tiếp từng phiếu trộn định mức. ID phiếu là khóa duy nhất,
-  // nên nhiều phiếu cùng lệnh SX/ngày/ca vẫn được phân biệt chính xác.
+  // Xuất kho NVL chọn trực tiếp từng phiếu trộn định mức (hiển thị tên PTĐM).
+  // ID phiếu là khóa duy nhất nên nhiều phiếu cùng lệnh SX vẫn phân biệt chính xác.
+  // Cho phép tạo nhiều phiếu xuất từ cùng 1 PTĐM — chỉ ẩn PTĐM khi TẤT CẢ
+  // lệnh SX trong PTĐM đã hoàn thành/Hủy.
   const nvlExportInstances = useMemo((): PickerOption[] => {
     const productionOrderByCode = new Map(
       productionOrders.map(order => [normalizeMaterialKey(order.orderCode), order] as const)
@@ -1664,27 +1646,27 @@ export function WarehouseSlipPanel({
           return null;
         }
         const productionOrder = productionOrderByCode.get(normalizeMaterialKey(orderCode));
+        const mayRaw = String(record.may ?? (record as Record<string, unknown>).ma_may ?? (record as Record<string, unknown>).ten_may ?? productionOrder?.machine ?? '').trim();
         return {
           key: lenhSxInstanceKey({ dinh_muc_id: normId, ma_lenh_sx: orderCode, ngay, ca }),
           normId,
           normName:
             String(record.ten_phieu ?? '').trim() ||
-            formatMixingNormSlipName(ngay, String(record.may ?? record.machine ?? '').trim() || ca, orderCode),
+            formatMixingNormSlipName(mayRaw || ca, orderCode),
           orderCode,
           ngay,
           ca,
-          machine: String(productionOrder?.machine ?? record.may ?? record.machine ?? '').trim(),
+          machine: String(productionOrder?.machine ?? mayRaw ?? '').trim(),
           normRecord: record
         };
       })
       .filter((item): item is PickerOption => Boolean(item))
-      .filter(item => !exportedLenhSxKeys.has(item.key) || ownInstanceKeys.has(item.key))
       .sort(
         (a, b) =>
           b.ngay.localeCompare(a.ngay) ||
           String(a.normName || '').localeCompare(String(b.normName || ''), 'vi')
       );
-  }, [mixingNormRecords, productionOrders, exportedLenhSxKeys, ownInstanceKeys]);
+  }, [mixingNormRecords, productionOrders]);
 
   const pickerOptions = useMemo((): PickerOption[] => {
     if (isNvlExport) return nvlExportInstances;
@@ -2065,17 +2047,8 @@ export function WarehouseSlipPanel({
       setActionMessage(okMsg);
       showAppToast(okMsg);
       if (isNvlExport) {
-        const savedKeys = new Set(lenhSxDaChon.map(lenhSxInstanceKey));
-        setExportedLenhSxKeys(prev => {
-          const next = new Set(prev);
-          // Phiếu định mức trước đây thuộc chính phiếu đang sửa nhưng vừa bị bỏ chọn → trả lại picker.
-          ownInstanceKeys.forEach(key => {
-            if (!savedKeys.has(key)) next.delete(key);
-          });
-          savedKeys.forEach(key => next.add(key));
-          return next;
-        });
-        // Đã lưu xong: bỏ lựa chọn để không thể vô tình tạo thêm phiếu xuất cho cùng định mức.
+        // Cho phép tạo nhiều phiếu xuất từ cùng 1 PTĐM: giữ PTĐM trong picker,
+        // chỉ reset lựa chọn hiện tại để chuẩn bị phiếu tiếp theo.
         setProductionOrderCodes([]);
         setOwnInstanceKeys(new Set());
       }
@@ -2396,15 +2369,15 @@ export function WarehouseSlipPanel({
                         placeholder={isNvlExport ? 'Gõ để lọc tên phiếu trộn...' : 'Gõ để lọc mã lệnh SX...'}
                       />
                     </div>
-                    {(isNvlExport ? isLoadingMixingNorms || isLoadingExportedLenhSx : isLoadingProductionOrders) ? (
+                    {(isNvlExport ? isLoadingMixingNorms : isLoadingProductionOrders) ? (
                       <p className="flex items-center gap-1.5 text-xs font-semibold text-zinc-400">
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        {isNvlExport ? 'Đang tải phiếu trộn định mức...' : 'Đang tải lệnh SX...'}
+                        {isNvlExport ? 'Đang tải phiếu trộn định mức (tên PTĐM)...' : 'Đang tải lệnh SX...'}
                       </p>
                     ) : filteredProductionOrders.length === 0 ? (
                       <p className="text-xs font-semibold text-zinc-400">
                         {pickerOptions.length === 0
-                          ? isNvlExport ? 'Chưa có phiếu trộn định mức chưa xuất.' : 'Chưa có lệnh SX.'
+                          ? isNvlExport ? 'Chưa có phiếu trộn định mức (hoặc các PTĐM đều thuộc lệnh đã hoàn thành).' : 'Chưa có lệnh SX.'
                           : 'Không khớp bộ lọc.'}
                       </p>
                     ) : (

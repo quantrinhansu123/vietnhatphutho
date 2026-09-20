@@ -31,6 +31,7 @@ import {
   getAllowedSecondaryGroups,
   filterSecondaryMaterialOptions,
   formatMixingNormSlipName,
+  normalizeMixingSlipOrderCodes,
   hasMixingNormMaterialWeightChanges
 } from '../utils/mixingNormAuxiliary';
 
@@ -41,16 +42,26 @@ function buildMixingNormLsxDhRef(orderCode?: string | null, salesOrderCode?: str
   return lsx || dh || '';
 }
 
+/** Tên lệnh SX hiển thị trong tên PTĐM: ưu tiên ten_lenh_sx, fallback mã lệnh. */
+export function resolveMixingOrderDisplayName(order: { orderCode?: string | null; orderName?: string | null }): string {
+  const name = String(order.orderName ?? '').trim();
+  if (name) return name;
+  return String(order.orderCode ?? '').trim();
+}
+
 function buildMixingNormSlipNameFromContext(params: {
-  ngay?: string | null;
+  machineName?: string | null;
   machine?: string | null;
-  ca?: string | null;
+  orderNames?: string | null;
   maLenhSx?: string | null;
   salesOrderCode?: string | null;
+  ngay?: string | null;
+  ca?: string | null;
 }) {
-  const may = String(params.machine ?? '').trim() || String(params.ca ?? '').trim();
-  const ref = buildMixingNormLsxDhRef(params.maLenhSx, params.salesOrderCode);
-  return formatMixingNormSlipName(params.ngay, may, ref);
+  const tenMay = String(params.machineName ?? params.machine ?? '').trim();
+  const tenLenh = String(params.orderNames ?? '').trim()
+    || buildMixingNormLsxDhRef(params.maLenhSx, params.salesOrderCode);
+  return formatMixingNormSlipName(tenMay, tenLenh);
 }
 
 export {
@@ -1003,7 +1014,7 @@ function normalizeRows(data: unknown): MixingNormRow[] {
         id,
         id_phieu_tron_dm_ban_dau: String(row.id_phieu_tron_dm_ban_dau ?? '').trim() || undefined,
         ten_phieu: String(row.ten_phieu ?? '').trim() ||
-          formatMixingNormSlipName(String(row.ngay ?? ''), String(row.may ?? row.ca ?? ''), String(row.ma_lenh_sx ?? '')),
+          formatMixingNormSlipName(String(row.may ?? row.ma_may ?? row.ten_may ?? ''), String(row.ma_lenh_sx ?? '')),
         ngay: String(row.ngay ?? '').trim(),
         ca: String(row.ca ?? '').trim(),
         ma_lenh_sx: String(row.ma_lenh_sx ?? '').trim(),
@@ -1267,6 +1278,26 @@ export default function MixingNormMaterialsTab() {
     return found?.type.trim() || '—';
   };
 
+  const machineDisplayNameByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    const register = (key: string, display: string) => {
+      if (key && display && !map.has(key)) map.set(key, display);
+    };
+    for (const machine of machines) {
+      const display = String(machine.name || machine.code || '').trim();
+      if (!display) continue;
+      register(normalizeMachineKey(machine.code), display);
+      register(normalizeMachineKey(machine.name), display);
+    }
+    return map;
+  }, [machines]);
+
+  const getMachineDisplayName = (value: string): string => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '';
+    return machineDisplayNameByKey.get(normalizeMachineKey(raw)) || raw;
+  };
+
   /** Mã lệnh trong form nhưng không khớp danh sách tải về — hiện chip cảnh báo
    * để không "mất" lựa chọn, cho phép bỏ mã lẻ. */
   const unresolvedOrderCodes = orderSelection.unresolved;
@@ -1313,6 +1344,7 @@ export default function MixingNormMaterialsTab() {
     return {
       id: selectedOrders.map(order => order.id).join(','),
       orderCode: selectedOrders.map(order => order.orderCode).join(', '),
+      orderName: selectedOrders.map(order => resolveMixingOrderDisplayName(order)).filter(Boolean).join(', '),
       salesOrderCode: [...new Set(selectedOrders.map(order => (order.salesOrderCode || '').trim()).filter(Boolean))].join(', '),
       shift: [...new Set(selectedOrders.map(order => order.shift.trim()).filter(Boolean))].join(', '),
       machine: selectedOrdersCommonMachine,
@@ -1323,15 +1355,27 @@ export default function MixingNormMaterialsTab() {
     };
   }, [selectedOrders, selectedOrdersCommonMachine]);
 
+  /** Tên máy dùng ghép tên PTĐM: luôn là tên máy (không phải mã máy). */
+  const currentSlipMachineName = useMemo(
+    () => getMachineDisplayName(form.may.trim() || selectedOrdersCommonMachine),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [form.may, selectedOrdersCommonMachine, machineDisplayNameByKey]
+  );
+
+  /** Mã các lệnh SX dùng ghép tên PTĐM: các mã cách nhau bằng ` - `. */
+  const currentSlipOrderNames = useMemo(
+    () => selectedOrders.map(order => String(order.orderCode ?? '').trim()).filter(Boolean).join(' - ')
+      || normalizeMixingSlipOrderCodes(form.maLenhSx),
+    [selectedOrders, form.maLenhSx]
+  );
+
   const currentSlipName = useMemo(
     () =>
       buildMixingNormSlipNameFromContext({
-        ngay: form.ngay,
-        machine: form.may.trim() || selectedOrdersCommonMachine,
-        maLenhSx: form.maLenhSx,
-        salesOrderCode: selectedOrder?.salesOrderCode
+        machineName: currentSlipMachineName,
+        orderNames: currentSlipOrderNames
       }),
-    [form.ngay, form.may, form.maLenhSx, selectedOrder, selectedOrdersCommonMachine]
+    [currentSlipMachineName, currentSlipOrderNames]
   );
 
   const productOptions = useMemo((): ProductOption[] => {
@@ -1598,9 +1642,10 @@ export default function MixingNormMaterialsTab() {
       const spText = row.products
         .map(p => `${p.ma_sp} ${p.ten_sp} ${p.tong_trong_luong ?? ''} ${p.ghi_chu} ${summarizeLines(p.chi_tiet)}`)
         .join(' ');
-      return `${row.ten_phieu ?? ''} ${row.ngay} ${row.may} ${row.ma_lenh_sx} ${row.ghi_chu} ${spText}`.toLowerCase().includes(q);
+      const machineName = machineDisplayNameByKey.get(normalizeMachineKey(row.may)) || row.may;
+      return `${row.ten_phieu ?? ''} ${row.ngay} ${row.may} ${machineName} ${row.ma_lenh_sx} ${row.ghi_chu} ${spText}`.toLowerCase().includes(q);
     });
-  }, [query, rows]);
+  }, [query, rows, machineDisplayNameByKey]);
 
   const openCreate = () => {
     if (!canCreate) return;
@@ -1640,7 +1685,7 @@ export default function MixingNormMaterialsTab() {
     if (!canCreate) return;
     setEditingId('');
     setCopySourceTitle(
-      `Nhân bản phiếu trộn định mức · Máy ${row.may || '—'} · Lệnh SX ${row.ma_lenh_sx || '—'}`
+      `Nhân bản phiếu trộn định mức · Máy ${getMachineDisplayName(row.may) || '—'} · Lệnh SX ${row.ma_lenh_sx || '—'}`
     );
     const formulaProducts = row.products.filter(isFormulaNormProduct);
     setForm({
@@ -2010,14 +2055,19 @@ export default function MixingNormMaterialsTab() {
     };
   };
 
-  /** Nhãn 1 lệnh SX trong ô chọn nhiều lệnh: `<mã lệnh> - <máy>`. */
+  /** Nhãn 1 lệnh SX trong ô chọn nhiều lệnh: `<mã lệnh> - <tên lệnh> - <tên máy>`. */
   const orderOptionLabel = (order: MixingProductionOrder) => {
-    const machine = order.machine.trim();
-    return machine ? `${order.orderCode} - ${machine}` : order.orderCode;
+    const machineName = getMachineDisplayName(order.machine);
+    const orderName = resolveMixingOrderDisplayName(order);
+    const code = order.orderCode.trim();
+    const parts = [code];
+    if (orderName && orderName !== code) parts.push(orderName);
+    if (machineName) parts.push(machineName);
+    return parts.filter(Boolean).join(' - ');
   };
 
   const orderOptionSearchText = (order: MixingProductionOrder) =>
-    `${order.orderCode} ${order.machine} ${order.productLines.map(l => `${l.productCode} ${l.productName}`).join(' ')}`;
+    `${order.orderCode} ${order.orderName || ''} ${order.machine} ${getMachineDisplayName(order.machine)} ${order.productLines.map(l => `${l.productCode} ${l.productName}`).join(' ')}`;
 
   /**
    * Chọn nhiều lệnh SX (select2) — các lệnh phải cùng máy, bỏ qua lệnh đã xong.
@@ -2876,12 +2926,12 @@ export default function MixingNormMaterialsTab() {
               {filtered.map(row => (
                 <tr key={row.id} className="hover:bg-red-50/40">
                   <td className="max-w-[180px] break-words px-3 py-2.5 font-mono text-xs font-bold text-zinc-900">
-                    {row.ten_phieu || formatMixingNormSlipName(row.ngay, row.may || row.ca, row.ma_lenh_sx)}
+                    {row.ten_phieu || formatMixingNormSlipName(getMachineDisplayName(row.may || row.ca), row.ma_lenh_sx)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-zinc-800">
                     {row.ngay || '—'}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 font-black text-zinc-800">{row.may || '—'}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 font-black text-zinc-800">{getMachineDisplayName(row.may) || '—'}</td>
                   <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs font-bold text-zinc-700">
                     {row.ma_lenh_sx || '—'}
                   </td>
@@ -3091,7 +3141,7 @@ export default function MixingNormMaterialsTab() {
                     readOnly
                     disabled
                     className={`${inputClass} bg-zinc-100 font-mono text-xs text-zinc-700 select-all cursor-default`}
-                    title="Tên phiếu tự động: PTĐM - ngày - Máy - LSX/ĐH"
+                    title="Tên phiếu tự động: PTĐM - Tên máy - Mã lệnh SX (nhiều mã nối bằng -)"
                   />
                 </label>
                 <label className="space-y-1.5 sm:col-span-2">
