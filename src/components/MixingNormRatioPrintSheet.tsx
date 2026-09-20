@@ -194,7 +194,7 @@ export function toPrintDoc(
   resolveProductName?: (code: string) => string
 ): MixingNormRatioPrintDoc {
   return {
-    tenPhieu: row.ten_phieu || formatMixingNormSlipName(row.ngay, row.may || row.ca, row.ma_lenh_sx),
+    tenPhieu: row.ten_phieu || formatMixingNormSlipName(row.may || row.ca, row.ma_lenh_sx),
     maLenhSx: row.ma_lenh_sx.trim(),
     may: row.may?.trim(),
     ngay: row.ngay || new Date().toISOString().slice(0, 10),

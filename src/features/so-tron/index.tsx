@@ -19,7 +19,7 @@ import { SoTronDatePicker, formatNgayVN } from './SoTronDatePicker';
 import { printPhieuGiaoCaSlip } from './printPhieuGiaoCa';
 import { normalizeProductionOrders, type ProductionOrderRow } from '../ke-hoach-san-xuat';
 import type { OrderProductLine } from '../_shared/productionProductHelpers';
-import { findShiftChainMeta, getProductionShiftOptions, normalizeShiftSettings, resolveLogicalPreviousShiftSlot, resolveShiftName, type ShiftSetting } from '../../utils/shiftSettings';
+import { findShiftChainMeta, getProductionShiftOptions, normalizeShiftSettings, resolveLogicalNextShiftSlot, resolveLogicalPreviousShiftSlot, resolveShiftName, type ShiftSetting } from '../../utils/shiftSettings';
 import { STANDARD_SHIFTS } from '../../types';
 import { normalizeWarehouseMovements } from '../phieu-xuat-nhap-kho';
 
@@ -612,10 +612,6 @@ export function SoTronPanel({
     if (hasPrevReport === true && prevTonMap.size > 0) return true;
     return false;
   }, [hasPrevReport, prevTonMap, banGiaoRows]);
-  /** Tooltip (!) cột Nhập Ca Trước: ngày + ca của phiếu đã lấy tồn. */
-  const prevSourceText = prevSource
-    ? `Tồn ca trước lấy từ ca ${prevSource.ca || '—'} ngày ${formatNgayVN(prevSource.ngay) || prevSource.ngay}`
-    : 'Chưa có bàn giao ca trước';
   // Tổng xuất kho NVL theo ngày-máy-ca (Nhập Trong Ngày trong bảng Bàn Giao Ca Sau)
   const [nhapTrongNgayMap, setNhapTrongNgayMap] = useState<Map<string, number>>(new Map());
 
@@ -626,6 +622,57 @@ export function SoTronPanel({
 
   // Combo Máy-Ca rút từ các lệnh đã chọn
   const orderCombos = useMemo(() => combosFromOrders(selectedOrders), [selectedOrders]);
+
+  /**
+   * Combo Máy-Ca sẽ LƯU phiếu: khi đã chọn Ca ở mục 1 (Lọc theo ca) thì CHỈ giữ
+   * combo khớp ca đó — tránh tạo phiếu cho tất cả các ca trong lệnh
+   * (vd lệnh ghi "HC1,HC2" mà lọc HC1 thì chỉ lưu HC1). Chưa chọn ca = giữ tất cả.
+   */
+  const saveCombos = useMemo(() => {
+    const caVal = selectedCa.trim();
+    if (!caVal) return orderCombos;
+    return orderCombos.filter(c => shiftMatchesSingle(c.ca, caVal));
+  }, [orderCombos, selectedCa]);
+
+  // Ca hien tai de xac dinh ca truoc / ca sau logic (uu tien ca da chon o muc 1).
+  const currentCaForChain = (selectedCa.trim() || orderCombos[0]?.ca || '').trim();
+  /** O ca truoc LOGIC theo vong lap loai ca (Ca8H: HC1→HC2→HC3, Ca12H: 12C1→12C2; ca dem tinh theo ngay bat dau). */
+  const prevSlotLogic = useMemo(() => {
+    if (!ngay || !currentCaForChain || shiftOptions.length === 0) return null;
+    try {
+      return resolveLogicalPreviousShiftSlot(ngay, currentCaForChain, shiftOptions, shiftSettingsRaw);
+    } catch {
+      return null;
+    }
+  }, [ngay, currentCaForChain, shiftOptions, shiftSettingsRaw]);
+  /** O ca sau LOGIC (doi xung ca truoc) — ton cuoi ca nay se la Nhap Ca Truoc cua ca sau. */
+  const nextSlotLogic = useMemo(() => {
+    if (!ngay || !currentCaForChain || shiftOptions.length === 0) return null;
+    try {
+      return resolveLogicalNextShiftSlot(ngay, currentCaForChain, shiftOptions, shiftSettingsRaw);
+    } catch {
+      return null;
+    }
+  }, [ngay, currentCaForChain, shiftOptions, shiftSettingsRaw]);
+  /** Ca hien tai co thuoc chuoi loai ca nao khong (da xep loai ca + thu tu o /cai-dat). */
+  const inChainForDisplay = useMemo(() => {
+    if (!currentCaForChain || shiftOptions.length === 0) return null;
+    try {
+      return findShiftChainMeta(currentCaForChain, shiftOptions, shiftSettingsRaw);
+    } catch {
+      return null;
+    }
+  }, [currentCaForChain, shiftOptions, shiftSettingsRaw]);
+  /**
+   * Tooltip (!) cot Nhap Ca Truoc:
+   * - Co phieu ca truoc: ton cuoi ca truoc (o ngay + ca nguon) = Nhap Ca Truoc.
+   * - Chua co phieu: hien ro o ca truoc logic dang cho (de biet vi sao trong).
+   */
+  const prevSourceText = prevSource
+    ? `Tồn cuối ca ${prevSource.ca || '—'} ngày ${formatNgayVN(prevSource.ngay) || prevSource.ngay} = Nhập Ca Trước ca hiện tại`
+    : prevSlotLogic
+      ? `Ca trước logic: ca ${prevSlotLogic.shift} ngày ${formatNgayVN(prevSlotLogic.ngay) || prevSlotLogic.ngay} — chưa có phiếu (Nhập Ca Trước đang trống)`
+      : 'Chưa có bàn giao ca trước';
 
   // ---- Resolve máy theo danh mục (phục vụ nhân sự / tồn / lưu phiếu) ----
   const resolveComboMachine = (machineRaw: string) => {
@@ -641,6 +688,55 @@ export function SoTronPanel({
     const resolved = resolveComboMachine(combo.machine);
     return { ma_may: resolved.code, ten_may: resolved.name, ca: combo.ca };
   };
+
+  /** Chuẩn hoá tên ca về key so sánh (khớp cả phiếu ghi tay). */
+  const canonCaKey = (value: string) => {
+    const v = str(value);
+    if (!v) return '';
+    if (shiftOptions.length > 0) {
+      try {
+        return resolveShiftName(v, shiftOptions).trim().toLowerCase();
+      } catch {
+        return v.toLowerCase();
+      }
+    }
+    return v.toLowerCase();
+  };
+
+  /**
+   * Ca đã có sổ trộn theo Ngày + Máy đang chọn ở mục 1 (trừ phiếu đang sửa).
+   * Ô Ca ở Thêm mới chỉ hiện ca chưa tạo.
+   */
+  const usedCaKeysForDateMachine = useMemo(() => {
+    const set = new Set<string>();
+    const machineRaw = machineRef.trim();
+    if (!ngay || !machineRaw) return set;
+    const resolved = resolveComboMachine(machineRaw);
+    for (const r of savedReports) {
+      if (r.id === editingId) continue;
+      if (r.ngay !== ngay) continue;
+      if (!machineMatches(r.ma_may || r.ten_may, resolved.code, resolved.name)) continue;
+      const key = canonCaKey(r.ca || '');
+      if (key) set.add(key);
+    }
+    return set;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedReports, ngay, machineRef, machines, shiftOptions, editingId]);
+
+  /** Option Ca ở Thêm mới: loại ca đã có sổ trộn của ngày + máy đang chọn. */
+  const caCreateOptions = useMemo(() => {
+    if (usedCaKeysForDateMachine.size === 0) return shiftOptions;
+    return shiftOptions.filter(o => !usedCaKeysForDateMachine.has(canonCaKey(o.value)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shiftOptions, usedCaKeysForDateMachine]);
+
+  /** Ca đang chọn đã có sổ trộn của ngày + máy này (lưu sẽ cập nhật phiếu cũ). */
+  const selectedCaAlreadyCreated = useMemo(() => {
+    const caVal = selectedCa.trim();
+    if (!caVal || usedCaKeysForDateMachine.size === 0) return false;
+    return usedCaKeysForDateMachine.has(canonCaKey(caVal));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCa, usedCaKeysForDateMachine, shiftOptions]);
 
   // Danh mục kho NVL: tra id + tên sản xuất theo id/mã (gộp NVL theo id)
   const materialById = useMemo(() => new Map(materials.map(m => [m.id, m])), [materials]);
@@ -1482,10 +1578,10 @@ export function SoTronPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedOrders, mangByCode]);
 
-  // Các combo của lệnh đã chọn mà ngày này đã có sổ trộn (trừ phiếu đang sửa)
+  // Các combo sẽ lưu mà ngày này đã có sổ trộn (trừ phiếu đang sửa) — theo ca đã lọc
   const existingForCombos = useMemo(() => {
-    if (!ngay || orderCombos.length === 0) return [];
-    return orderCombos
+    if (!ngay || saveCombos.length === 0) return [];
+    return saveCombos
       .map(combo => {
         const id = resolveComboIdentity(combo);
         const hit = savedReports.find(
@@ -1495,7 +1591,7 @@ export function SoTronPanel({
       })
       .filter((x): x is { combo: MayCaCombo; report: SoTronSavedReport } => Boolean(x));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedReports, ngay, orderCombos, machines, editingId]);
+  }, [savedReports, ngay, saveCombos, machines, editingId]);
 
   const resizeLan = (next: number) => {
     const clamped = Math.max(1, Math.min(SO_LAN_TRON_TOI_DA, next));
@@ -1639,10 +1735,19 @@ export function SoTronPanel({
       setMessage({ text: 'Lệnh đã chọn chưa có thông tin máy-ca.', type: 'error' });
       return;
     }
-    const identities = orderCombos
+    // Chi tao phieu cho ca da chon o muc 1 (Loc theo ca) — saveCombos da loc san.
+    const caLoc = selectedCa.trim();
+    if (caLoc && saveCombos.length === 0) {
+      setMessage({
+        text: `Ca đã chọn (${caLoc}) không khớp với ca của lệnh đã chọn (${orderCombos.map(c => c.ca || '—').join(', ')}). Phiếu chỉ được tạo cho ca ${caLoc} — kiểm tra lại lệnh SX hoặc chọn ca khác.`,
+        type: 'error'
+      });
+      return;
+    }
+    const identities = saveCombos
       .map(resolveComboIdentity)
       .filter(id => id.ma_may && id.ma_may !== '-' && id.ca && id.ca !== '-');
-    const skipped = orderCombos.length - identities.length;
+    const skipped = saveCombos.length - identities.length;
     if (identities.length === 0) {
       setMessage({ text: 'Lệnh đã chọn thiếu máy hoặc ca. Bổ sung máy/ca cho lệnh SX rồi thử lại.', type: 'error' });
       return;
@@ -1748,11 +1853,15 @@ export function SoTronPanel({
           .map(r => `${r.idn.ten_may || r.idn.ma_may} - ${r.idn.ca}`)
           .join('; ');
         const skipNote = skipped > 0 ? ` (bỏ qua ${skipped} combo thiếu máy/ca)` : '';
+        const caNote =
+          caLoc && orderCombos.length > saveCombos.length
+            ? ` (chỉ tạo cho ca ${caLoc}; bỏ qua ${orderCombos.length - saveCombos.length} combo ca khác trong lệnh)`
+            : '';
         setMessage({
           text:
             results.length > 1
-              ? `Đã lưu ${results.length} sổ trộn (${label})${skipNote}.`
-              : `${results[0].updated ? 'Đã cập nhật sổ trộn.' : 'Đã lưu sổ trộn.'}${skipNote}`,
+              ? `Đã lưu ${results.length} sổ trộn (${label})${skipNote}${caNote}.`
+              : `${results[0].updated ? 'Đã cập nhật sổ trộn.' : 'Đã lưu sổ trộn.'}${skipNote}${caNote}`,
           type: 'success'
         });
         if (results.length === 1 && results[0].id) setEditingId(results[0].id);
@@ -1852,15 +1961,6 @@ export function SoTronPanel({
           >
             <ClipboardList className="h-4 w-4" />
             Danh sách
-            {savedReports.length > 0 && (
-              <span
-                className={`ml-1 px-1.5 py-0.5 text-[11px] rounded-full font-semibold ${
-                  activeTab === 'list' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'
-                }`}
-              >
-                {savedReports.length}
-              </span>
-            )}
           </button>
 
           <button
@@ -1960,7 +2060,7 @@ export function SoTronPanel({
               <p className="text-[11.5px] font-semibold text-slate-500">
                 {!listFilterDate
                   ? 'Chọn ngày để xem danh sách sổ trộn'
-                  : `Ngày ${formatNgayVN(listFilterDate)}: ${filteredSavedReports.length} phiếu`}
+                  : `Ngày ${formatNgayVN(listFilterDate)}`}
               </p>
             </div>
           </div>
@@ -2049,7 +2149,7 @@ export function SoTronPanel({
             <SectionHeader
               index="1"
               title="Ngày — Máy — Ca"
-              desc="Chọn ngày + máy + 1 ca. Lệnh SX bên dưới lọc theo máy + ngày trong khoảng ngay_bat_dau → ngay_ket_thuc + ca."
+              desc="Chọn ngày + máy + 1 ca. Lệnh SX bên dưới lọc theo máy + ngày trong khoảng ngay_bat_dau → ngay_ket_thuc + ca. Khi lưu, chỉ tạo phiếu cho ca đã chọn ở đây (không tạo cho các ca khác trong lệnh)."
             />
             <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
               <div>
@@ -2089,7 +2189,7 @@ export function SoTronPanel({
                 <SearchableSelect
                   value={selectedCa}
                   onChange={setSelectedCa}
-                  options={shiftOptions as unknown[]}
+                  options={caCreateOptions as unknown[]}
                   placeholder="Tất cả ca..."
                   inputClassName={inputClass}
                   getLabel={item => (item as { label: string }).label || (item as { value: string }).value}
@@ -2098,6 +2198,18 @@ export function SoTronPanel({
                     `${(item as { value: string }).value} ${(item as { label: string }).label}`
                   }
                 />
+                {ngay && machineRef.trim() ? (
+                  <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                    {shiftOptions.length > 0 && caCreateOptions.length === 0
+                      ? 'Máy này ngày này đã tạo đủ các ca — chọn ngày/máy khác hoặc sửa phiếu cũ.'
+                      : 'Chỉ hiện ca chưa tạo sổ trộn cho máy này ngày này.'}
+                  </p>
+                ) : null}
+                {selectedCaAlreadyCreated ? (
+                  <p className="mt-1 text-[11px] font-bold text-amber-700">
+                    Ca {selectedCa.trim()} ngày {formatNgayVN(ngay) || ngay} của máy này đã có sổ trộn — lưu sẽ cập nhật phiếu cũ.
+                  </p>
+                ) : null}
               </div>
             </div>
             <div>
@@ -2685,13 +2797,13 @@ export function SoTronPanel({
             </button>
           </section>
 
-          {/* 3.4 Bàn giao ca sau */}
+          {/* 3.4 Bàn giao ca sau — Nhập Ca Trước = tồn cuối ca trước logic */}
           <section className={`${cardClass} space-y-3 p-4`}>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <SectionHeader
                 index="3.4"
                 title="Nhựa bàn giao ca sau"
-                desc="Loại nhựa tự fill theo phiếu trộn. Nhập Trong Ngày = tự lấy từ phiếu xuất kho NVL theo ngày-máy-ca. Nhập Ca Trước = tồn cuối ô ca trước theo vòng lặp nhóm (Loại ca 8H/12H, ca đêm tính ngày bắt đầu), thiếu phiếu thì lùi về quá khứ. Tồn cuối = Nhập Trong Ngày + Nhập Ca Trước − tổng sử dụng."
+                desc="Loại nhựa tự fill theo phiếu trộn. Nhập Trong Ngày = tự lấy từ phiếu xuất kho NVL theo ngày-máy-ca. Nhập Ca Trước = tồn cuối ca trước logic theo vòng lặp Loại ca (Ca8H: HC1→HC2→HC3, Ca12H: 12C1→12C2 — xem /cai-dat, ca đêm tính theo ngày bắt đầu), thiếu phiếu thì lùi tiếp về quá khứ. Tồn cuối = Nhập Trong Ngày + Nhập Ca Trước − tổng sử dụng."
               />
               {!hasPrevTon && (
                 <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600">
@@ -2706,6 +2818,40 @@ export function SoTronPanel({
               >
                 <RefreshCw className="h-3.5 w-3.5" /> Đồng bộ xuất kho & tồn ca trước
               </button>
+            </div>
+            {/* Xac dinh ca truoc / ca sau logic (lay tu /cai-dat) + nguon ton dang dung */}
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-semibold leading-5 text-slate-600">
+              {currentCaForChain ? (
+                inChainForDisplay ? (
+                  <>
+                    <span>
+                      Ca trước logic:{' '}
+                      <span className="font-bold text-slate-800">
+                        {prevSlotLogic ? `${prevSlotLogic.shift} · ${formatNgayVN(prevSlotLogic.ngay) || prevSlotLogic.ngay}` : '—'}
+                      </span>
+                      {' '}· Ca sau logic:{' '}
+                      <span className="font-bold text-slate-800">
+                        {nextSlotLogic ? `${nextSlotLogic.shift} · ${formatNgayVN(nextSlotLogic.ngay) || nextSlotLogic.ngay}` : '—'}
+                      </span>
+                      <span className="text-slate-400"> (chuỗi {inChainForDisplay.meta.group}: {inChainForDisplay.list.map(m => m.value).join(' → ')} ↺)</span>
+                    </span>
+                    <br />
+                    <span title={prevSourceText}>
+                      {prevSource
+                        ? `Tồn cuối ca ${prevSource.ca} ngày ${formatNgayVN(prevSource.ngay) || prevSource.ngay} = Nhập Ca Trước ca hiện tại.`
+                        : `Ô ca trước logic${prevSlotLogic ? ` (${prevSlotLogic.shift} · ${formatNgayVN(prevSlotLogic.ngay) || prevSlotLogic.ngay})` : ''} chưa có phiếu — Nhập Ca Trước đang trống.`}
+                      {' '}Tồn cuối ca này sẽ là Nhập Ca Trước của ca sau{nextSlotLogic ? ` (${nextSlotLogic.shift} · ${formatNgayVN(nextSlotLogic.ngay) || nextSlotLogic.ngay})` : ''}.
+                    </span>
+                  </>
+                ) : (
+                  <span title={prevSourceText}>
+                    Ca {currentCaForChain} chưa xếp Loại ca / thứ tự ở /cai-dat nên dùng phiếu gần nhất cùng máy làm ca trước
+                    {prevSource ? `: đang lấy tồn cuối ca ${prevSource.ca} ngày ${formatNgayVN(prevSource.ngay) || prevSource.ngay} = Nhập Ca Trước.` : ': chưa có phiếu phù hợp.'}
+                  </span>
+                )
+              ) : (
+                <span>Chọn ca ở mục 1 để xác định ca trước / ca sau logic.</span>
+              )}
             </div>
             <div className="overflow-x-auto rounded-lg border border-slate-200">
               <table className="w-full min-w-[680px] text-left text-[12.5px]">
@@ -2811,7 +2957,7 @@ export function SoTronPanel({
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-300 px-3 py-1.5 text-[11.5px] font-semibold text-slate-600">
                   <span className="min-w-0">
-                    Máy-Ca: <span className="font-bold text-slate-800">{orderCombos.map(c => formatMayCa(c.machine, c.ca)).join(' · ') || '...'}</span>
+                    Máy-Ca sẽ lưu: <span className="font-bold text-slate-800" title={selectedCa.trim() ? `Chỉ tạo phiếu cho ca ${selectedCa.trim()} (Lọc theo ca ở mục 1)` : 'Chưa lọc ca — sẽ tạo cho tất cả combo máy-ca của lệnh'}>{saveCombos.map(c => formatMayCa(c.machine, c.ca)).join(' · ') || '...'}</span>
                     {' '}· Lệnh: <span className="font-bold text-slate-800">{selectedLenh.join(', ')}</span>
                   </span>
                   <span className="flex items-center gap-1.5">
@@ -3218,11 +3364,43 @@ export function SoTronPanel({
                     </div>
                   </div>
 
-                  {/* Nhựa bàn giao ca sau */}
+                  {/* Nhựa bàn giao ca sau — Nhập Ca Trước = tồn cuối ca trước logic */}
                   <div className="w-[360px] shrink-0 flex flex-col justify-between">
                     <div>
                       <p className="border-b border-slate-800 bg-slate-100 py-1 text-center text-[12px] font-bold uppercase tracking-wide">
                         Nhựa Bàn Giao Ca Sau
+                      </p>
+                      <p
+                        className="border-b border-slate-300 bg-slate-50 px-2 py-1 text-left text-[11px] font-semibold leading-4 text-slate-600"
+                        title={prevSourceText}
+                      >
+                        {currentCaForChain ? (
+                          inChainForDisplay ? (
+                            <>
+                              Ca trước:{' '}
+                              <span className="font-bold text-slate-800">
+                                {prevSlotLogic ? `${prevSlotLogic.shift} · ${formatNgayVN(prevSlotLogic.ngay) || prevSlotLogic.ngay}` : '—'}
+                              </span>
+                              {' '}· Ca sau:{' '}
+                              <span className="font-bold text-slate-800">
+                                {nextSlotLogic ? `${nextSlotLogic.shift} · ${formatNgayVN(nextSlotLogic.ngay) || nextSlotLogic.ngay}` : '—'}
+                              </span>
+                              <br />
+                              {prevSource
+                                ? `Tồn cuối ${prevSource.ca} (${formatNgayVN(prevSource.ngay) || prevSource.ngay}) = Nhập Ca Trước.`
+                                : 'Ô ca trước chưa có phiếu — Nhập Ca Trước đang trống.'}
+                            </>
+                          ) : (
+                            <>
+                              Ca {currentCaForChain} chưa xếp chuỗi ở /cai-dat (lấy phiếu gần nhất cùng máy).
+                              {prevSource
+                                ? ` Đang lấy tồn cuối ${prevSource.ca} (${formatNgayVN(prevSource.ngay) || prevSource.ngay}).`
+                                : ' Chưa có phiếu phù hợp.'}
+                            </>
+                          )
+                        ) : (
+                          'Chọn ca ở mục 1 để xác định ca trước / ca sau.'
+                        )}
                       </p>
                       {!hasPrevTon && (
                         <p className="border-b border-slate-800 bg-red-50 py-1 text-center text-[11.5px] font-bold text-red-600">

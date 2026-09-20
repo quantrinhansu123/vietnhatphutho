@@ -3231,7 +3231,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
   const caRaw = String(source.ca ?? source.shift ?? '').trim();
   const ca = !caRaw || caRaw === '-' || caRaw === '—' ? null : caRaw;
   const ten_phieu = String(source.ten_phieu ?? source.tenPhieu ?? '').trim() ||
-    formatMixingNormSlipName(ngay, may || ca, ma_lenh_sx);
+    formatMixingNormSlipName(may || ca, ma_lenh_sx);
 
   const parseNvlLines = (raw: unknown, label: string, required = true) => {
     const linesRaw = Array.isArray(raw) ? raw : [];
@@ -13880,7 +13880,10 @@ export function createApp() {
       records = records.map(row => {
         const r = row as Record<string, unknown>;
         const ten_phieu = String(r.ten_phieu ?? '').trim() ||
-          formatMixingNormSlipName(String(r.ngay ?? ''), String(r.ca ?? ''), String(r.ma_lenh_sx ?? ''));
+          formatMixingNormSlipName(
+            String(r.may ?? r.ma_may ?? r.ten_may ?? r.ca ?? ''),
+            String(r.ma_lenh_sx ?? '')
+          );
         return { ...r, ten_phieu };
       });
 

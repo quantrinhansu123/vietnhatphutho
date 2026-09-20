@@ -146,18 +146,37 @@ export function shiftNamesMatch(left: string, right: string) {
   return a === b || a.includes(b) || b.includes(a);
 }
 
+/** Chuan hoa khoa so sanh ten ca (khong phan biet hoa thuong / gach noi / khoang trang). */
+function normShiftKey(value: string) {
+  return String(value || '').trim().toLowerCase().replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 export function resolveShiftName(rawName: string, options: ShiftOption[]): string {
   const trimmed = rawName.trim();
   if (!trimmed || options.length === 0) return trimmed;
+  const target = normShiftKey(trimmed);
 
+  // 1) Khop CHINH XAC theo value/label truoc — tranh ca "HC" (chua xep loai ca,
+  // dung truoc trong danh sach) nuot "HC1/HC2/HC3" qua `includes`.
   for (const option of options) {
-    if (trimmed === option.value || shiftNamesMatch(trimmed, option.value)) {
-      return option.value;
-    }
-    if (shiftNamesMatch(trimmed, option.label)) {
+    if (normShiftKey(option.value) === target || normShiftKey(option.label) === target) {
       return option.value;
     }
   }
+
+  // 2) Fallback khop chuoi-con cho ten ca ghi tay — chon option cu the nhat (dai nhat).
+  let best: ShiftOption | null = null;
+  let bestLen = -1;
+  for (const option of options) {
+    if (shiftNamesMatch(trimmed, option.value) || shiftNamesMatch(trimmed, option.label)) {
+      const len = Math.max(normShiftKey(option.value).length, normShiftKey(option.label).length);
+      if (len > bestLen) {
+        best = option;
+        bestLen = len;
+      }
+    }
+  }
+  if (best) return best.value;
 
   const lower = trimmed.toLowerCase();
   const legacyIndex =
@@ -291,16 +310,38 @@ export interface ShiftChainMeta {
   order: number;
 }
 
-function findSettingForOptionValue(value: string, settings: ShiftSetting[]): ShiftSetting | null {
-  const target = value.trim().toLowerCase();
+/** Tim setting khop CHINH XAC theo ten/ma (khong chuoi-con). */
+function findSettingExact(value: string, settings: ShiftSetting[]): ShiftSetting | null {
+  const target = normShiftKey(value);
   if (!target) return null;
   for (const setting of settings) {
-    const name = (setting.name || '').trim().toLowerCase();
-    const code = (setting.code || '').trim().toLowerCase();
-    if (name && (name === target || target.includes(name) || name.includes(target))) return setting;
-    if (code && (code === target || target.includes(code) || code.includes(target))) return setting;
+    if (normShiftKey(setting.name) === target || normShiftKey(setting.code) === target) return setting;
   }
   return null;
+}
+
+function findSettingForOptionValue(value: string, settings: ShiftSetting[]): ShiftSetting | null {
+  // Uu tien khop chinh xac — tranh option "HC" (chua xep loai ca) bi gan nham
+  // vao setting "HC1" roi chen phantom {HC} vao dau chuoi Ca8H.
+  const exact = findSettingExact(value, settings);
+  if (exact) return exact;
+  // Fallback khop chuoi-con cho du lieu cu ghi tay — chon setting cu the nhat (key dai nhat).
+  const target = normShiftKey(value);
+  if (!target) return null;
+  let best: ShiftSetting | null = null;
+  let bestLen = -1;
+  for (const setting of settings) {
+    for (const key of [normShiftKey(setting.name), normShiftKey(setting.code)]) {
+      if (!key) continue;
+      if (key === target || target.includes(key) || key.includes(target)) {
+        if (key.length > bestLen) {
+          best = setting;
+          bestLen = key.length;
+        }
+      }
+    }
+  }
+  return best;
 }
 
 /**
@@ -341,11 +382,28 @@ export function findShiftChainMeta(
   const trimmed = String(rawShift || '').trim();
   if (!trimmed || options.length === 0) return null;
   const canonical = resolveShiftName(trimmed, options);
+  // Ca xac dinh chinh xac duoc nhung CHUA xep Loai ca (vd "HC") => khong thuoc chuoi nao.
+  // Tra null de so-tron dung fallback phieu gan nhat (tranh "HC" rot vao chuoi Ca8H cua HC1).
+  const owned = findSettingExact(canonical, settings) ?? findSettingExact(trimmed, settings);
+  if (owned && !normShiftKey(owned.loaiCa)) return null;
   const chains = buildShiftChains(options, settings);
+  const canonKey = normShiftKey(canonical);
+  const rawKey = normShiftKey(trimmed);
+  // Pass 1: khop chinh xac trong chuoi.
   for (const list of chains.values()) {
     const index = list.findIndex(
       item =>
-        item.value === canonical ||
+        normShiftKey(item.value) === canonKey ||
+        normShiftKey(item.label) === canonKey ||
+        normShiftKey(item.value) === rawKey ||
+        normShiftKey(item.label) === rawKey
+    );
+    if (index >= 0) return { meta: list[index], list, index };
+  }
+  // Pass 2: khop chuoi-con (du lieu cu ghi tay, vd "Ca HC2").
+  for (const list of chains.values()) {
+    const index = list.findIndex(
+      item =>
         shiftNamesMatch(trimmed, item.value) ||
         shiftNamesMatch(trimmed, item.label)
     );
@@ -382,4 +440,56 @@ export function resolveLogicalPreviousShiftSlot(
   const prevDate = shiftIsoDateByDays(date, -1);
   if (!prevDate) return null;
   return { ngay: prevDate, shift: list[list.length - 1].value };
+}
+
+/**
+ * O ca sau ve mat LOGIC theo vong lap loai ca (doi xung voi ca truoc):
+ * - Ca dau/giua loai (N) -> ca thu_tu + 1 cung ngay N.
+ * - Ca cuoi loai (N) -> ca dau tien loai ngay N+1 (ca dem tinh theo NGAY BAT DAU).
+ * Tra null khi ca hien tai khong thuoc chuoi nao (chua xep Loai ca / thu tu).
+ */
+export function resolveLogicalNextShiftSlot(
+  ngay: string,
+  shift: string,
+  options: ShiftOption[],
+  settings: ShiftSetting[]
+): ShiftChainSlot | null {
+  const date = String(ngay || '').trim();
+  if (!date) return null;
+  const found = findShiftChainMeta(shift, options, settings);
+  if (!found) return null;
+  const { list, index } = found;
+  if (index < list.length - 1) {
+    return { ngay: date, shift: list[index + 1].value };
+  }
+  const nextDate = shiftIsoDateByDays(date, 1);
+  if (!nextDate) return null;
+  return { ngay: nextDate, shift: list[0].value };
+}
+
+/**
+ * Ca truoc / ca sau cua 1 ca trong chuoi (khong can ngay — dung cho man hinh cai-dat):
+ * tra ve ten ca truoc/sau + co qua ngay hay khong (wrap dau/cuoi chuoi).
+ * - index > 0: ca truoc cung ngay; index == 0: ca truoc la ca cuoi loai (hom truoc).
+ * - index < len-1: ca sau cung ngay; index == len-1: ca sau la ca dau loai (hom sau).
+ */
+export function getChainPrevNextForValue(
+  rawShift: string,
+  options: ShiftOption[],
+  settings: ShiftSetting[]
+): { prev: ShiftChainMeta; next: ShiftChainMeta; list: ShiftChainMeta[]; index: number; wrapPrev: boolean; wrapNext: boolean } | null {
+  const found = findShiftChainMeta(rawShift, options, settings);
+  if (!found) return null;
+  const { list, index } = found;
+  if (list.length === 0) return null;
+  const prevIndex = (index - 1 + list.length) % list.length;
+  const nextIndex = (index + 1) % list.length;
+  return {
+    prev: list[prevIndex],
+    next: list[nextIndex],
+    list,
+    index,
+    wrapPrev: index === 0,
+    wrapNext: index === list.length - 1
+  };
 }

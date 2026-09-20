@@ -79,6 +79,7 @@ type RelatedMixingSlip = {
   title: string;
   detail: string;
   meta: string;
+  machine?: string;
 };
 
 function inFilterDateRange(ngay: string, tuNgay: string, denNgay: string) {
@@ -311,14 +312,25 @@ export default function MixingReportListView({
     const rows = [...reportRows, ...normSlips, ...actualSlips].filter(row => {
       if (!inFilterDateRange(row.ngay, filters.tuNgay, filters.denNgay)) return false;
       if (filters.ca && !shiftNamesMatch(row.ca, filters.ca) && row.ca !== filters.ca) return false;
-      // Lọc máy chỉ áp dụng phiếu phối trộn (định mức/thực tế không gắn máy).
-      if (machine && row.kind === 'report') {
-        const report = reports.find(item => item.id === row.id);
-        if (!report) return false;
-        if (report.ma_may && machine.code && report.ma_may !== machine.code) return false;
+      if (machine) {
+        if (row.kind === 'report') {
+          const report = reports.find(item => item.id === row.id);
+          if (!report) return false;
+          if (report.ma_may && machine.code && report.ma_may !== machine.code) return false;
+          if (!report.ma_may && machine.name && report.ten_may !== machine.name) return false;
+        } else if (row.kind === 'norm') {
+          const needleKeys = [machine.code, machine.name].map(v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ')).filter(Boolean);
+          const rowMachineKey = String(row.machine || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          if (needleKeys.length > 0 && rowMachineKey && !needleKeys.includes(rowMachineKey)) {
+            // So sánh cả mã và tên máy (danh mục có thể lưu mã, phiếu lưu tên và ngược lại).
+            const rowLower = rowMachineKey;
+            const matches = needleKeys.some(k => k === rowLower || k.includes(rowLower) || rowLower.includes(k));
+            if (!matches) return false;
+          }
+        }
       }
       if (!query) return true;
-      return `${row.title} ${row.detail} ${row.meta} ${row.ca} ${row.ngay} ${relatedKindLabel(row.kind)}`
+      return `${row.title} ${row.detail} ${row.meta} ${row.machine || ''} ${row.ca} ${row.ngay} ${relatedKindLabel(row.kind)}`
         .toLowerCase()
         .includes(query);
     });
@@ -382,6 +394,21 @@ export default function MixingReportListView({
     setReports(list.map((item: Record<string, unknown>) => normalizeMixingReport(item)));
 
     const norms = Array.isArray(normData.records) ? normData.records : [];
+    const machineNameByCode = new Map<string, string>();
+    for (const m of machineList) {
+      const display = String(m.name || m.code || '').trim();
+      if (!display) continue;
+      const codeKey = String(m.code || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const nameKey = String(m.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      if (codeKey && !machineNameByCode.has(codeKey)) machineNameByCode.set(codeKey, display);
+      if (nameKey && !machineNameByCode.has(nameKey)) machineNameByCode.set(nameKey, display);
+    }
+    const resolveNormMachineName = (value: unknown) => {
+      const raw = String(value ?? '').trim();
+      if (!raw) return '';
+      const key = raw.toLowerCase().replace(/\s+/g, ' ');
+      return machineNameByCode.get(key) || raw;
+    };
     setNormSlips(
       norms
         .map((row: Record<string, unknown>): RelatedMixingSlip | null => {
@@ -389,14 +416,18 @@ export default function MixingReportListView({
           if (!id) return null;
           const chiTiet = Array.isArray(row.chi_tiet) ? row.chi_tiet : [];
           const maLenh = String(row.ma_lenh_sx ?? '').trim();
+          const mayRaw = String(row.may ?? row.ma_may ?? row.ten_may ?? '').trim();
+          const mayName = resolveNormMachineName(mayRaw);
+          const tenPhieu = String(row.ten_phieu ?? '').trim();
           return {
             kind: 'norm',
             id,
             ngay: String(row.ngay ?? '').slice(0, 10) || '-',
             ca: String(row.ca ?? '').trim() || '-',
-            title: maLenh || 'Phiếu định mức',
-            detail: `${chiTiet.length} SP`,
-            meta: String(row.ghi_chu ?? '').trim() || 'Định mức QC'
+            title: tenPhieu || maLenh || 'Phiếu định mức',
+            detail: mayName ? `Máy ${mayName} · ${chiTiet.length} SP` : `${chiTiet.length} SP`,
+            meta: maLenh ? (String(row.ghi_chu ?? '').trim() ? `${maLenh} · ${String(row.ghi_chu).trim()}` : `${maLenh} · Định mức QC`) : (String(row.ghi_chu ?? '').trim() || 'Định mức QC'),
+            machine: mayName || mayRaw
           };
         })
         .filter((row): row is RelatedMixingSlip => Boolean(row))

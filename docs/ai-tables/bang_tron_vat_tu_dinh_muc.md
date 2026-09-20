@@ -12,13 +12,14 @@ Gợi ý sang form phối trộn: `MixingReportForm.tsx` + `utils/mixingNormSugg
 **Nghiệp vụ hiện tại:**
 - **Nhiều lệnh SX / 1 phiếu:** ô Lệnh SX là select2 chọn nhiều (`SearchableMultiSelect`); các lệnh phải **cùng máy/nhóm máy** — trùng tên máy chuẩn hóa hoặc cùng `loai_may` trong danh mục máy (lọc options + validate khi chọn/đổi máy/lưu, thông báo ghi rõ nhóm máy). `ma_lenh_sx` lưu text nối bằng dấu phẩy (vd `"LSX-001, LSX-002"`); API khớp token khi lọc nên tương thích ngược.
 - **Bỏ ô Ca / Ngày / Ghi chú chung:** ngày phiếu tự điền (hôm nay khi tạo, giữ ngày cũ khi sửa); `ca` lưu `null`; ghi chú chung giữ lại khi sửa, phiếu mới để trống. Server không còn bắt buộc `ca`.
-- **Máy phiếu:** ô Máy (select2, bắt buộc) mặc định theo máy chung các lệnh; tên máy in cạnh tiêu đề (`Máy: X` sau Tên phiếu) và có trong `ten_phieu` (`PTĐM - ngày - Máy - LSX`). Cột `may` (migration `...-may.sql`).
-- **Trạng thái theo lệnh SX:** cột Trạng thái trên list suy từ lệnh liên quan (tất cả xong → Hoàn thành; có Đang sx → Đang sx; còn lại Chờ sx). Lệnh `Hoàn thành`/`Hủy` ẩn khỏi ô chọn lệnh, **chặn tạo PTĐM mới** (client + `POST` server tra `lenh_sx.trang_thai`), và phiếu của lệnh đã xong ẩn khỏi picker xuất kho NVL. Nhãn option lệnh SX: `<mã lệnh> - <máy>`. Options ẩn lệnh đã xong, lọc cùng máy và sắp xếp lệnh tạo mới → cũ (`created_at`); dropdown giữ nguyên thứ tự này (`keepOptionsOrder`, hiện tối đa 200). Mã lệnh trong form nhưng không còn trong danh sách tải về hiện chip vàng cảnh báo (cho phép bỏ mã lẻ) thay vì biến mất.
+- **Máy phiếu:** ô Máy (select2, bắt buộc, lưu mã máy) mặc định theo máy chung các lệnh; danh sách hiển thị **tên máy** (tra `danh-sach-may` theo mã/tên). Tên máy in cạnh tiêu đề và có trong `ten_phieu`. Cột `may` (migration `...-may.sql`).
+- **Tên phiếu PTĐM:** `PTĐM - <tên máy> - <mã lệnh SX>` (không ghép ngày; dùng **tên máy** không phải mã máy; nhiều mã nối bằng ` - `, vd `PTĐM - Máy Thổi 1 - LSX-001 - LSX-002`). List gộp `/danh-sach-bao-cao-phoi-tron` hiển thị tên này + `Máy <tên máy> · N SP`.
+- **Trạng thái theo lệnh SX:** cột Trạng thái trên list suy từ lệnh liên quan (tất cả xong → Hoàn thành; có Đang sx → Đang sx; còn lại Chờ sx). Lệnh `Hoàn thành`/`Hủy` ẩn khỏi ô chọn lệnh, **chặn tạo PTĐM mới** (client + `POST` server tra `lenh_sx.trang_thai`), và phiếu của lệnh đã xong ẩn khỏi picker xuất kho NVL. Nhãn option lệnh SX: `<mã lệnh> - <tên lệnh> - <tên máy>`. Options ẩn lệnh đã xong, lọc cùng máy và sắp xếp lệnh tạo mới → cũ (`created_at`); dropdown giữ nguyên thứ tự này (`keepOptionsOrder`, hiện tối đa 200). Mã lệnh trong form nhưng không còn trong danh sách tải về hiện chip vàng cảnh báo (cho phép bỏ mã lẻ) thay vì biến mất.
 - Một `ma_lenh_sx` có thể có nhiều phiếu trộn định mức; không chặn trùng theo mã lệnh.
 - Khi sửa làm thay đổi trọng lượng NVL chính/phụ, FE gửi `tao_lich_su: true`; API tạo dòng mới, giữ dòng cũ và gán `id_phieu_tron_dm_ban_dau` thẳng về phiếu gốc. Tên bản mới có hậu tố ` - tỷ lệ N`. Sửa metadata khác cập nhật tại chỗ.
 - `ngay` là ô nhập bắt buộc trên form và cột `bang_tron_vat_tu_dinh_muc.ngay` là `NOT NULL`.
 - Nhân bản phiếu giữ lại `ma_lenh_sx`, người dùng chọn ngày cho phiếu mới.
-- Phiếu xuất kho NVL tra định mức theo từng phiếu (`dinh_muc_id`), ẩn phiếu đã xuất và phiếu của lệnh đã xong.
+- Phiếu xuất kho NVL tra định mức theo từng phiếu (`dinh_muc_id`), hiển thị tên PTĐM; cho phép tạo nhiều phiếu xuất từ cùng 1 PTĐM, chỉ ẩn PTĐM khi tất cả lệnh SX trong đó đã xong.
 - Picker phiếu trộn thực tế hiển thị cả mã lệnh, ngày định mức và ca để phân biệt các phiếu.
 
 ## Mô hình
