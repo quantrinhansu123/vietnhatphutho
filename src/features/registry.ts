@@ -18,6 +18,7 @@ export type TableId =
   | 'lenh_xuat_hang'
   | 'lenh_sx'
   | 'ke_hoach_san_xuat'
+  | 'dot_san_xuat'
   | 'nhan_su'
   | 'danh_sach_xe'
   | 'doi_chieu_lai_xe'
@@ -31,10 +32,20 @@ export type TableId =
   | 'bao_cao_nghiem_thu'
   | 'bao_cao_may_nvl_ton'
   | 'so_tron'
+  | 'so_test_mau_nhua'
+  | 'bao_cao_hang_loi_khach_hang'
+  | 'so_giao_ca_mmtb'
+  | 'bao_cao_ngay'
+  | 'so_che_do_may'
+  | 'bao_cao_thang'
   | 'phieu_bao_dung_may'
   | 'nhat_ky_chay_may'
   | 'dieu_dong_nhan_su'
   | 'phan_cong_nhan_su_chi_tiet'
+  | 'chi_phi_nhan_cong'
+  | 'dinh_gia_nhan_cong'
+  | 'chi_phi_dien'
+  | 'chi_phi_bao_duong'
   | 'control_board';
 
 export interface TableRegistryEntry {
@@ -219,6 +230,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     components: ['src/components/ProductionPlanNvlPrintSheet.tsx', 'src/components/ControlBoardShiftSummaryTable.tsx'],
     utils: ['src/utils/controlBoardShiftSummary.ts', 'src/utils/controlBoardShiftSummaryDetails.ts']
   },
+  dot_san_xuat: {
+    table: 'dot_san_xuat',
+    label: 'Đợt sản xuất (Quản đốc)',
+    sql: ['supabase-dot-san-xuat.sql'],
+    apiPrefix: '/api/dot-san-xuat',
+    serverLines: 'dot-san-xuat routes (preview/next-so/CRUD)',
+    appTab: 'dot-san-xuat',
+    appLines: 'src/features/dot-san-xuat/index.tsx',
+    components: [],
+    utils: ['src/features/so-che-do-may (VnCalendarPicker, parseDateStr, formatDateVN)']
+  },
   nhan_su: {
     table: 'nhan_su',
     label: 'Nhân sự',
@@ -297,7 +319,7 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   cai_dat_thoi_gian: {
     table: 'cai_dat_thoi_gian',
     label: 'Cài đặt ca / thời gian',
-    sql: ['supabase-cai-dat-thoi-gian.sql'],
+    sql: ['supabase-cai-dat-thoi-gian.sql', 'supabase-cai-dat-thoi-gian-thu-tu.sql (cột loai_ca: Ca8H/Ca12H + thu_tu: thứ tự ca trong loại)'],
     apiPrefix: '/api/cai-dat',
     serverLines: '4481–4603',
     appTab: 'settings',
@@ -382,11 +404,77 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   so_tron: {
     table: 'so_tron',
     label: 'Sổ trộn ca (công nhân cuối ngày)',
-    sql: ['supabase-so-tron.sql'],
+    sql: ['supabase-so-tron.sql', 'supabase-so-tron-tong-hop.sql', 'supabase-so-tron-tong-nhap.sql'],
     apiPrefix: '/api/so-tron',
     serverLines: 'parseSoTronBody + GET/POST/PUT/DELETE /api/so-tron (sau bulk-delete bao-cao-may-nvl-ton)',
     appTab: 'so-tron | so-tron-list',
     appLines: 'src/features/so-tron/index.tsx (SoTronPanel + SoTronListView)',
+    components: [],
+    utils: []
+  },
+  bao_cao_ngay: {
+    table: 'bao_cao_ngay',
+    label: 'Báo cáo ngày (tổng hợp từ sổ trộn)',
+    sql: ['supabase-bao-cao-ngay.sql', 'supabase-bao-cao-ngay-hao-hut-thong-ke.sql', 'supabase-bao-cao-ngay-hao-hut-ghi-chu.sql'],
+    apiPrefix: '/api/bao-cao-ngay',
+    serverLines: 'parseBaoCaoNgayBody (+hao_hut_thong_ke +hao_hut_ghi_chu) + GET/POST/PUT/DELETE (soft delete deleted_at)/POST restore /api/bao-cao-ngay',
+    appTab: 'bao-cao-ngay | bao-cao-ngay-list',
+    appLines: 'src/features/bao-cao-ngay/index.tsx (BaoCaoNgayPanel 2 tab + BaoCaoNgayListView + HaoHutThongKeEditor + BaoCaoNgayHaoHutPreview)',
+    components: [],
+    utils: []
+  },
+  bao_cao_thang: {
+    table: 'bao_cao_thang',
+    label: 'Báo cáo tháng (tổng hợp từ báo cáo từng đợt)',
+    sql: ['supabase-bao-cao-thang.sql'],
+    apiPrefix: '/api/bao-cao-thang',
+    serverLines: 'GET /api/bao-cao-thang/aggregate + GET/POST/PUT/DELETE /api/bao-cao-thang',
+    appTab: 'bao-cao-thang | bao-cao-thang-list',
+    appLines: 'src/features/bao-cao-thang/index.tsx (BaoCaoThangPanel + BaoCaoThangListView)',
+    components: ['src/features/bao-cao-thang/PrintPreviewModal.tsx'],
+    utils: ['src/features/so-che-do-may (toMonthStr, parseMonthStr)']
+  },
+  so_test_mau_nhua: {
+    table: 'so_test_mau_nhua',
+    label: 'Sổ test mẫu nhựa (QC, theo ngày)',
+    sql: ['supabase-so-test-mau-nhua.sql'],
+    apiPrefix: '/api/so-test-mau-nhua',
+    serverLines: 'parseSoTestMauNhuaBody + GET/POST/PUT/DELETE /api/so-test-mau-nhua (sau so-che-do-may)',
+    appTab: 'so-test-mau-nhua',
+    appLines: 'src/features/so-test-mau-nhua/index.tsx (SoTestMauNhuaWorkspace)',
+    components: [],
+    utils: ['src/features/so-test-mau-nhua/model.ts', 'src/features/so-test-mau-nhua/print.ts']
+  },
+  bao_cao_hang_loi_khach_hang: {
+    table: 'bao_cao_hang_loi_khach_hang',
+    label: 'Báo cáo hàng lỗi hỏng phát sinh ở khách hàng',
+    sql: ['supabase-bao-cao-hang-loi-khach-hang.sql'],
+    apiPrefix: '/api/bao-cao-hang-loi-khach-hang',
+    serverLines: 'parseHangLoiKhachHangBody + GET/POST/PUT/DELETE /api/bao-cao-hang-loi-khach-hang (sau so-test-mau-nhua)',
+    appTab: 'hang-loi-khach-hang | thong-ke-hang-loi',
+    appLines: 'src/features/bao-cao-hang-loi-khach-hang/index.tsx (HangLoiKhachHangPanel) + thong-ke.tsx (ThongKeHangLoiPanel)',
+    components: [],
+    utils: ['src/features/bao-cao-hang-loi-khach-hang/model.ts']
+  },
+  so_giao_ca_mmtb: {
+    table: 'so_giao_ca_mmtb',
+    label: 'Sổ giao ca MMTB (Bảng theo dõi chế độ chạy máy & chất lượng)',
+    sql: ['supabase-so-giao-ca-mmtb.sql'],
+    apiPrefix: '/api/so-giao-ca-mmtb',
+    serverLines: 'parseSoGiaoCaMmtbBody + GET/POST/PUT/DELETE /api/so-giao-ca-mmtb',
+    appTab: 'so-giao-ca-mmtb | so-giao-ca-mmtb-list',
+    appLines: 'src/features/so-giao-ca-mmtb/index.tsx (SoGiaoCaMmtbPanel + SoGiaoCaMmtbListView)',
+    components: ['src/features/so-giao-ca-mmtb/SoGiaoCaMmtbPreviewModal.tsx'],
+    utils: ['src/features/so-giao-ca-mmtb/print.ts']
+  },
+  so_che_do_may: {
+    table: 'so_che_do_may',
+    label: 'Sổ chế độ máy theo tháng (MÁY ĐẶC)',
+    sql: ['supabase-so-che-do-may.sql', 'supabase-so-che-do-may-ma-may.sql'],
+    apiPrefix: '/api/so-che-do-may',
+    serverLines: 'parseSoCheDoMayBody + GET/POST/PUT/DELETE /api/so-che-do-may (sau so-giao-ca-mmtb)',
+    appTab: 'so-che-do-may | so-che-do-may-list',
+    appLines: 'src/features/so-che-do-may/index.tsx (SoCheDoMayPanel + SoCheDoMayListView + SoCheDoMayGrid)',
     components: [],
     utils: []
   },
@@ -443,6 +531,67 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appLines: 'src/features/sap-xep-lich-lam-viec/index.tsx',
     components: ['src/features/sap-xep-lich-lam-viec/index.tsx'],
     utils: []
+  },
+  dinh_gia_nhan_cong: {
+    table: 'dinh_gia_nhan_cong',
+    label: 'Báo cáo định giá định mức nhân công (tháng/năm)',
+    sql: ['supabase-dinh-gia-nhan-cong.sql'],
+    apiPrefix: '/api/dinh-gia-nhan-cong',
+    serverLines: 'GET/POST/PUT/DELETE /api/dinh-gia-nhan-cong',
+    appTab: 'chi-phi-nhan-cong',
+    appLines: 'src/features/chi-phi-nhan-cong/DinhGiaNhanCongModal.tsx',
+    components: ['src/features/chi-phi-nhan-cong/DinhGiaNhanCongModal.tsx'],
+    utils: []
+  },
+  chi_phi_nhan_cong: {
+    table: 'chi_phi_nhan_cong',
+    label: 'Chi phí nhân công theo tháng và máy',
+    sql: ['supabase-chi-phi-nhan-cong.sql', 'supabase-dinh-gia-nhan-cong.sql'],
+    apiPrefix: '/api/chi-phi-nhan-cong',
+    serverLines: '17675–17835',
+    appTab: 'chi-phi-nhan-cong',
+    appLines: 'src/features/chi-phi-nhan-cong/index.tsx',
+    components: [
+      'src/features/chi-phi-nhan-cong/index.tsx',
+      'src/features/chi-phi-nhan-cong/ChiPhiNhanCongList.tsx',
+      'src/features/chi-phi-nhan-cong/ChiPhiNhanCongForm.tsx',
+      'src/features/chi-phi-nhan-cong/MonthYearPickerVi.tsx',
+      'src/features/chi-phi-nhan-cong/DinhGiaNhanCongModal.tsx'
+    ],
+    utils: ['src/features/chi-phi-nhan-cong/calculateLabor.ts']
+  },
+  chi_phi_dien: {
+    table: 'chi_phi_dien',
+    label: 'Chi phí điện theo năm và loại/nhóm máy',
+    sql: ['supabase-chi-phi-dien.sql'],
+    apiPrefix: '/api/chi-phi-dien',
+    serverLines: 'parseChiPhiDienBody + GET/POST/PUT/DELETE /api/chi-phi-dien (sau chi-phi-nhan-cong)',
+    appTab: 'chi-phi-dien',
+    appLines: 'src/features/chi-phi-dien/index.tsx',
+    components: [
+      'src/features/chi-phi-dien/index.tsx',
+      'src/features/chi-phi-dien/ChiPhiDienList.tsx',
+      'src/features/chi-phi-dien/ChiPhiDienForm.tsx'
+    ],
+    utils: ['src/features/chi-phi-nhan-cong/MonthYearPickerVi.tsx']
+  },
+  chi_phi_bao_duong: {
+    table: 'chi_phi_bao_duong',
+    label: 'Chi phí sửa chữa / bảo dưỡng & vật tư theo tháng và máy (QC)',
+    sql: ['supabase-chi-phi-bao-duong.sql'],
+    apiPrefix: '/api/chi-phi-bao-duong',
+    serverLines: 'parseChiPhiBaoDuongBody (ngay + chi_tiet items) + GET (?tu_ngay&den_ngay)/POST/PUT/DELETE /api/chi-phi-bao-duong (sau chi-phi-dien)',
+    appTab: 'chi-phi-bao-duong',
+    appLines: 'src/features/chi-phi-bao-duong/index.tsx',
+    components: [
+      'src/features/chi-phi-bao-duong/index.tsx',
+      'src/features/chi-phi-bao-duong/ChiPhiBaoDuongList.tsx',
+      'src/features/chi-phi-bao-duong/ChiPhiBaoDuongForm.tsx',
+      'src/features/chi-phi-bao-duong/ChiPhiBaoDuongSheet.tsx',
+      'src/features/chi-phi-bao-duong/ChiPhiBaoDuongSummaryModal.tsx',
+      'src/features/chi-phi-bao-duong/ChiPhiBaoDuongPrintSheet.tsx'
+    ],
+    utils: ['src/features/chi-phi-nhan-cong/MonthYearPickerVi.tsx']
   },
   control_board: {
     table: 'control_board',

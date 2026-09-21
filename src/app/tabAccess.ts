@@ -9,9 +9,14 @@ export const TAB_ACCESS_ALIASES: Record<string, string> = {
   'damaged-goods-report': 'damaged-goods-report-list',
   'mixing-report': 'mixing-report-list',
   'machine-nvl-report': 'machine-nvl-report-list',
+  'so-tron': 'so-tron-list',
+  'so-giao-ca-mmtb': 'so-giao-ca-mmtb-list',
+  'so-che-do-may': 'so-che-do-may-list',
   'machine-downtime-report': 'machine-downtime-list',
   'shift-handover-report': 'shift-handover-list',
   'acceptance-report': 'acceptance-report-list',
+  'bao-cao-thang': 'bao-cao-thang-list',
+  'bao-cao-ngay': 'bao-cao-ngay-list',
   'machine-run-log': 'machine-run-log-list',
   'damaged-goods-warehouse': 'warehouse-history',
   /** Trang chi tiết phiếu (mở tab mới) dùng chung quyền với lịch sử xuất nhập kho. */
@@ -30,6 +35,9 @@ export const TAB_ACCESS_ALIASES: Record<string, string> = {
  */
 export const HUB_IMPLIED_TABS: Record<string, readonly string[]> = {
   'report-forms': [
+    'so-giao-ca-mmtb',
+    'so-tron',
+    'so-che-do-may',
     'machine-nvl-report',
     'mixing-report',
     'can-tu-dong',
@@ -37,21 +45,34 @@ export const HUB_IMPLIED_TABS: Record<string, readonly string[]> = {
     'machine-downtime-report',
     'shift-handover-report',
     'machine-run-log',
+    'bao-cao-tuan',
+    'bao-cao-thang',
+    'bao-cao-ngay',
     'damaged-goods-report',
     'acceptance-report',
     'kiem-kho',
     'doi-soat',
     // form ↔ list (nút Danh sách / Sửa)
+    'so-giao-ca-mmtb-list',
+    'so-tron-list',
+    'so-che-do-may-list',
     'machine-nvl-report-list',
     'mixing-report-list',
     'weighing-summary-list',
     'machine-downtime-list',
     'shift-handover-list',
     'machine-run-log-list',
+    'bao-cao-thang-list',
+    'bao-cao-ngay-list',
     'damaged-goods-report-list',
     'acceptance-report-list'
   ],
   'report-lists': [
+    'so-giao-ca-mmtb-list',
+    'so-tron-list',
+    'so-che-do-may-list',
+    'bao-cao-thang-list',
+    'bao-cao-ngay-list',
     'machine-nvl-report-list',
     'mixing-report-list',
     'weighing-summary-list',
@@ -145,6 +166,7 @@ export function hubHasAllowedChild(hubTab: string, allowed: Set<string>): boolea
       'production-reports',
       'production-orders',
       'production-plan-history',
+      'dot-san-xuat',
       'control-board'
     ].some(tab => allowed.has(tab) || hubHasAllowedChild(tab, allowed));
   }

@@ -2,6 +2,7 @@ import type { ProductionOrderRow } from '../features/ke-hoach-san-xuat';
 import { getProductionOrderProductLines, parseProductionOrderQuantity } from '../features/ke-hoach-san-xuat';
 import { normalizeProductCodeKey } from '../features/san-pham/types';
 import { parseProductionOrderFilterDate } from '../features/cai-dat-thoi-gian';
+import { resolveActualProductCode } from '../features/_shared/productionProductHelpers';
 import { shiftNamesMatch } from './shiftSettings';
 import { machineValueMatchesFilter } from './controlBoardShiftSummary';
 
@@ -17,6 +18,7 @@ export type AcceptanceReportLike = {
 export type ProductionProgressStatus = 'chua_sx' | 'dang_sx' | 'da_sx';
 
 export type ProductionProgressLine = {
+  productId?: string;
   productCode: string;
   productName: string;
   productionName?: string;
@@ -149,7 +151,8 @@ export function buildProductionProgressForOrder(
     ProductionOrderRow,
     'products' | 'productCode' | 'productName' | 'quantity' | 'unit' | 'startDate' | 'shift' | 'machine'
   >,
-  reports: AcceptanceReportLike[]
+  reports: AcceptanceReportLike[],
+  catalogProducts?: Array<{ id: string; code?: string; ma_sp?: string }>
 ): ProductionProgressLine[] {
   const ngay = parseProductionOrderFilterDate(order.startDate) || String(order.startDate || '').slice(0, 10);
   const bucket: ProductionProgressBucket = {
@@ -161,7 +164,8 @@ export function buildProductionProgressForOrder(
   const merged = new Map<string, ProductionProgressLine>();
 
   getProductionOrderProductLines(order).forEach(line => {
-    const productCode = String(line.productCode || '').trim();
+    const rawProductCode = String(line.productCode || '').trim();
+    const productCode = resolveActualProductCode(rawProductCode, line.productId, catalogProducts) || rawProductCode;
     const productName = String(line.productName || '').trim();
     const productionName = String(line.productionName || '').trim();
     const codeKey = normalizeProductCodeKey(productCode || productName || productionName);
@@ -185,6 +189,7 @@ export function buildProductionProgressForOrder(
     }
 
     merged.set(key, {
+      productId: line.productId,
       productCode: productCode || productName || productionName,
       productName,
       productionName: productionName || undefined,

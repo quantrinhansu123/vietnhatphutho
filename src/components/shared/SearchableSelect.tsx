@@ -41,7 +41,8 @@ export function SearchableSelect({
   comboboxMode = false,
   comboboxSearchable = true,
   matchDropdownWidth = false,
-  searchPlaceholder
+  searchPlaceholder,
+  skipUnchangedBlurCommit: _skipUnchangedBlurCommit
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -73,6 +74,8 @@ export function SearchableSelect({
   matchDropdownWidth?: boolean;
   /** Placeholder riêng cho ô tìm kiếm trong menu combobox. */
   searchPlaceholder?: string;
+  /** Tương thích prop main — hiện chưa đổi hành vi blur. */
+  skipUnchangedBlurCommit?: boolean;
 }) {
   const fieldClass = inputClassName || orderFieldClass;
   const anchorRef = useRef<HTMLDivElement>(null);

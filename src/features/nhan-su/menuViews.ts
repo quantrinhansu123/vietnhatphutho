@@ -30,7 +30,11 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
   {
     menu: 'hcns',
     label: 'HCNS',
-    children: [{ tab: 'hr', label: 'Hồ sơ nhân sự' }]
+    children: [
+      { tab: 'hr', label: 'Hồ sơ nhân sự' },
+      { tab: 'chi-phi-nhan-cong', label: 'Chi phí nhân công' },
+      { tab: 'chi-phi-dien', label: 'Chi phí điện' }
+    ]
   },
   {
     menu: 'business',
@@ -38,7 +42,9 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
     children: [
       { tab: 'customers', label: 'Khách hàng' },
       { tab: 'orders', label: 'Đơn đặt hàng' },
-      { tab: 'shipping-orders', label: 'Lệnh giao / xuất hàng' }
+      { tab: 'shipping-orders', label: 'Lệnh giao / xuất hàng' },
+      { tab: 'inventory-limits', label: 'Tồn kho tối thiểu - Tồn kho tối đa' },
+      { tab: 'hang-loi-khach-hang', label: 'Báo cáo hàng lỗi hỏng' }
     ]
   },
   {
@@ -46,6 +52,7 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
     label: 'Quản Đốc',
     children: [
       { tab: 'production-plan-history', label: 'Kế hoạch sản xuất' },
+      { tab: 'dot-san-xuat', label: 'Đợt sản xuất' },
       { tab: 'production-orders', label: 'Lệnh sản xuất' },
       { tab: 'control-board', label: 'Theo dõi sản xuất' },
       { tab: 'production-reports', label: 'Báo cáo sản xuất' }
@@ -62,7 +69,10 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
       { tab: 'can-tu-dong', label: 'Danh sách cân' },
       { tab: 'can-tu-dong-pilot', label: 'Trạm cân QR' },
       { tab: 'can-kiem-kho', label: 'Cân kiểm kho' },
-      { tab: 'acceptance-report-list', label: 'Kiểm tra kho thành phẩm' }
+      { tab: 'acceptance-report-list', label: 'Kiểm tra kho thành phẩm' },
+      { tab: 'so-test-mau-nhua', label: 'Sổ test mẫu nhựa' },
+      { tab: 'thong-ke-hang-loi', label: 'Thống kê hàng lỗi hỏng' },
+      { tab: 'chi-phi-bao-duong', label: 'Chi phí bảo dưỡng' }
     ]
   },
   {

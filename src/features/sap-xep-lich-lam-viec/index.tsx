@@ -18,7 +18,8 @@ const EXTRA_MACHINE_OPTS = [
 ] as const;
 
 /** Vai trò cố định theo nhóm máy (thêm form lịch). */
-const ROLES_DAC_SONG_RONG = ['Trưởng ca', 'Trộn', 'Ra Tấm'] as const;
+const ROLES_DAC_SONG_4 = ['Trưởng ca', 'Trộn', 'Ra Tấm', 'Ra Tấm'] as const;
+const ROLES_RONG_3 = ['Trưởng ca', 'Trộn', 'Ra Tấm'] as const;
 const ROLES_BAM_NEP = ['Trưởng ca', 'Thợ'] as const;
 
 /** Tên phòng ban được lọc — chỉ load nhân sự thuộc phòng ban này. */
@@ -53,10 +54,13 @@ function resolveFixedRolesForMachine(machineName: string, machineCode = ''): str
   ) {
     return [...ROLES_BAM_NEP];
   }
-  if (text.includes('dac') || text.includes('song') || text.includes('rong')) {
-    return [...ROLES_DAC_SONG_RONG];
+  if (text.includes('dac') || text.includes('song')) {
+    return [...ROLES_DAC_SONG_4];
   }
-  return [...ROLES_DAC_SONG_RONG];
+  if (text.includes('rong')) {
+    return [...ROLES_RONG_3];
+  }
+  return [...ROLES_RONG_3];
 }
 
 // ── Kiểu dữ liệu ─────────────────────────────────────────────────────────────
@@ -87,8 +91,22 @@ type SchedGroup = {
 };
 
 type MachineOpt = { code: string; name: string };
-type StaffOpt = { code: string; name: string; department: string };
+type StaffOpt = { code: string; name: string; department: string; status: string };
 type ShiftOpt = { value: string; label: string };
+
+/** Chỉ nhân sự trạng thái "Đang làm" mới được chọn mới. */
+function isActiveStaffStatus(status: unknown): boolean {
+  const text = String(status ?? '')
+    .toLowerCase()
+    .replace(/đ/g, 'd')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // Trống (dữ liệu cũ thiếu trạng thái) coi như đang làm để tương thích ngược.
+  if (!text) return true;
+  return text === 'dang lam';
+}
 
 /**
  * Mỗi dòng vai trò — mỗi ô chỉ chọn 1 người + giờ từ → đến.
@@ -252,7 +270,7 @@ function normalizeMachines(data: unknown): MachineOpt[] {
   return [...byCode.values()].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
 }
 
-/** Chỉ lấy nhân sự thuộc phòng ban PHÂN XƯỞNG SẢN XUẤT. */
+/** Lấy nhân sự thuộc phòng ban PHÂN XƯỞNG SẢN XUẤT (giữ cả người đã nghỉ để hiển thị lịch cũ). */
 function normalizeStaff(data: unknown): StaffOpt[] {
   const branches = data && typeof data === 'object' && Array.isArray((data as { branches?: unknown }).branches)
     ? (data as { branches: unknown[] }).branches
@@ -275,7 +293,8 @@ function normalizeStaff(data: unknown): StaffOpt[] {
         const code = str(mr.code ?? mr.ma_nhan_su ?? mr.id);
         const name = str(mr.name);
         if (!code || !name) continue;
-        if (!byCode.has(code)) byCode.set(code, { code, name, department: deptName });
+        const status = str((mr as { status?: unknown }).status ?? (mr as { trang_thai?: unknown }).trang_thai) || 'Đang làm';
+        if (!byCode.has(code)) byCode.set(code, { code, name, department: deptName, status });
       }
     }
   }
@@ -312,6 +331,39 @@ function sortRowsByRole(rows: SchedRow[]): SchedRow[] {
     .map((row, index) => ({ row, index, priority: rolePriority(row.vai_tro) }))
     .sort((a, b) => a.priority - b.priority || a.index - b.index)
     .map(item => item.row);
+}
+
+/**
+ * Chia nhân sự 1 ca thành từng ô theo vai trò để hiển thị panel scroll ngang:
+ * ô đầu chỉ Trưởng ca, ô tiếp chỉ Trộn, ô tiếp là Ra Tấm, vai trò khác xếp sau.
+ * Kể cả khi vai trò bị đổi tên, ô Trưởng ca vẫn luôn đứng đầu.
+ */
+function groupRolePanels(rows: SchedRow[]): Array<{ label: string; rows: SchedRow[] }> {
+  const bucketKeyFor = (role: string): string => {
+    const key = normalizeMachineText(role);
+    if (key.includes('truong ca')) return 'truong ca';
+    if (key.includes('tron')) return 'tron';
+    if (key.includes('ra tam')) return 'ra tam';
+    return key || '(khac)';
+  };
+  const buckets = new Map<string, { label: string; priority: number; firstIndex: number; rows: SchedRow[] }>();
+  rows.forEach((row, index) => {
+    const bucketKey = bucketKeyFor(row.vai_tro || '');
+    let bucket = buckets.get(bucketKey);
+    if (!bucket) {
+      bucket = {
+        label: row.vai_tro || '—',
+        priority: rolePriority(row.vai_tro),
+        firstIndex: index,
+        rows: []
+      };
+      buckets.set(bucketKey, bucket);
+    }
+    bucket.rows.push(row);
+  });
+  return [...buckets.values()]
+    .sort((a, b) => a.priority - b.priority || a.firstIndex - b.firstIndex)
+    .map(bucket => ({ label: bucket.label, rows: sortRowsByRole(bucket.rows) }));
 }
 
 /**
@@ -420,10 +472,13 @@ function groupToBlock(group: SchedGroup): ScheduleBlock {
 interface SingleStaffSelectProps {
   value: string;
   onChange: (value: string) => void;
+  /** Danh sách chọn mới: chỉ nhân sự đang làm. */
   staff: StaffOpt[];
+  /** Tra cứu tên cho người đã xếp trước đó (kể cả đã nghỉ). */
+  directory?: Map<string, StaffOpt>;
 }
 
-function SingleStaffSelect({ value, onChange, staff }: SingleStaffSelectProps) {
+function SingleStaffSelect({ value, onChange, staff, directory }: SingleStaffSelectProps) {
   return (
     <SearchableSelect
       value={value}
@@ -434,6 +489,11 @@ function SingleStaffSelect({ value, onChange, staff }: SingleStaffSelectProps) {
       getLabel={item => (item as StaffOpt).name || (item as StaffOpt).code}
       getSearchText={item => `${(item as StaffOpt).name} ${(item as StaffOpt).code}`}
       maxResults={80}
+      resolveSelectedItem={(options, val) => {
+        const found = (options as StaffOpt[]).find(o => o.code === val);
+        if (found) return found;
+        return directory?.get(val) ?? null;
+      }}
     />
   );
 }
@@ -514,6 +574,9 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
     for (const s of staff) map.set(s.code, s);
     return map;
   }, [staff]);
+
+  /** Dropdown chọn mới chỉ hiện người đang làm; lịch cũ vẫn tra tên qua staffByCode. */
+  const activeStaff = useMemo(() => staff.filter(s => isActiveStaffStatus(s.status)), [staff]);
 
   const machineByCode = useMemo(() => {
     const map = new Map<string, string>();
@@ -1373,7 +1436,35 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
             </div>
           ) : (
             filteredGroups.map(group => {
-              const filledRows = sortRowsByRole(group.rows.filter(r => r.ma_nhan_su));
+              const crewRows = group.rows.filter(r => r.ma_nhan_su);
+              const filledRows = sortRowsByRole(crewRows);
+              // Danh sách luôn chia ô theo vai trò: Trưởng ca | Trộn | Ra Tấm | ... (scroll ngang).
+              const rolePanels = groupRolePanels(crewRows);
+              const renderCrewRow = (row: SchedRow) => (
+                <div
+                  key={row.id}
+                  className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-lg border border-zinc-100 bg-zinc-50 px-2.5 py-1.5 text-xs"
+                >
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
+                    <span className="min-w-[80px] font-bold text-zinc-500">{row.vai_tro || '—'}</span>
+                    <span className="font-black text-zinc-800">{staffName(row.ma_nhan_su)}</span>
+                    {(row.thoi_gian_bat_dau || row.thoi_gian_ket_thuc) ? (
+                      <span className="font-bold text-zinc-500">
+                        {row.thoi_gian_bat_dau || '--:--'} → {row.thoi_gian_ket_thuc || '--:--'}
+                      </span>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleNavigateToDispatch(group, row)}
+                    className="inline-flex items-center gap-1 rounded bg-[#ef1b2d] px-2 py-0.5 text-[11px] font-extrabold text-white shadow-xs transition hover:bg-[#b30d1c] shrink-0"
+                    title={`Điều động nhân sự ${staffName(row.ma_nhan_su)}`}
+                  >
+                    <ArrowRightLeft className="h-3 w-3" />
+                    Điều động
+                  </button>
+                </div>
+              );
               return (
                 <div key={group.key} className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1436,30 +1527,16 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                     </div>
                   </div>
 
-                  <div className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                    {filledRows.map(row => (
+                  <div className="hover-scrollbar mt-3 flex gap-2 overflow-x-auto pb-1">
+                    {rolePanels.map(panel => (
                       <div
-                        key={row.id}
-                        className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-lg border border-zinc-100 bg-zinc-50 px-2.5 py-1.5 text-xs"
+                        key={`${group.key}-${panel.label}`}
+                        className="w-[320px] min-w-[300px] max-w-[360px] shrink-0 space-y-1.5 rounded-xl border border-zinc-200 bg-zinc-50/60 p-2"
                       >
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
-                          <span className="min-w-[80px] font-bold text-zinc-500">{row.vai_tro || '—'}</span>
-                          <span className="font-black text-zinc-800">{staffName(row.ma_nhan_su)}</span>
-                          {(row.thoi_gian_bat_dau || row.thoi_gian_ket_thuc) ? (
-                            <span className="font-bold text-zinc-500">
-                              {row.thoi_gian_bat_dau || '--:--'} → {row.thoi_gian_ket_thuc || '--:--'}
-                            </span>
-                          ) : null}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleNavigateToDispatch(group, row)}
-                          className="inline-flex items-center gap-1 rounded bg-[#ef1b2d] px-2 py-0.5 text-[11px] font-extrabold text-white shadow-xs transition hover:bg-[#b30d1c] shrink-0"
-                          title={`Điều động nhân sự ${staffName(row.ma_nhan_su)}`}
-                        >
-                          <ArrowRightLeft className="h-3 w-3" />
-                          Điều động
-                        </button>
+                        <p className="px-1 text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                          {panel.label} · {panel.rows.length} người
+                        </p>
+                        {panel.rows.map(row => renderCrewRow(row))}
                       </div>
                     ))}
                   </div>
@@ -1642,7 +1719,8 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                             <SingleStaffSelect
                               value={person.maNhanSu}
                               onChange={val => updatePerson(block.key, person.key, { maNhanSu: val })}
-                              staff={staff}
+                              staff={activeStaff}
+                              directory={staffByCode}
                             />
                           </div>
                           <div className="flex items-center gap-1 whitespace-nowrap">
@@ -2025,7 +2103,8 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                           <SingleStaffSelect
                             value={person.maNhanSu}
                             onChange={val => updateBatchPerson(person.key, { maNhanSu: val })}
-                            staff={staff}
+                            staff={activeStaff}
+                            directory={staffByCode}
                           />
                         </div>
                         <div className="flex items-center gap-1 whitespace-nowrap">

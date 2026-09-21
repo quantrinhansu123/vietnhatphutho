@@ -2,7 +2,9 @@
 
 | **Bảng** | `cai_dat_thoi_gian` |
 | **Tab** | `settings` → `/cai-dat` |
-| **SQL** | `supabase-cai-dat-thoi-gian.sql` |
+| **SQL** | `supabase-cai-dat-thoi-gian.sql` + `supabase-cai-dat-thoi-gian-thu-tu.sql` (cột `loai_ca` + `thu_tu`) |
+
+**Chuỗi ca sản xuất (sổ trộn):** ca (`loai_cai_dat = 'Thời gian'`, giữ nguyên để dropdown toàn app không gãy) xếp vào **Loại ca = cột `loai_ca` riêng**: `Ca8H` (HC1→HC2→HC3), `Ca12H` (12C1→12C2) + **Thứ tự trong loại = cột `thu_tu`** (1,2,3…; trống = cuối loại). Ca đêm tính theo NGÀY BẮT ĐẦU. Danh sách gộp theo Loại ca, đổi thứ tự bằng **kéo-thả dòng** (desktop) hoặc nút ↑↓ (mobile) — đánh số lại 1..n cả loại, tính theo full danh sách (không theo bộ lọc). Bảng hiện thêm 2 cột **Ca trước / Ca sau** theo vòng lặp loại ca (ca đầu loại ← ca cuối loại hôm trước, ca cuối loại → ca đầu loại hôm sau; header nhóm hiện chuỗi `HC1 → HC2 → HC3 ↺`; popup Chi tiết + form Thêm/Sửa cũng hiện ca trước/sau). Resolver: `resolveLogicalPreviousShiftSlot` + `resolveLogicalNextShiftSlot` + `getChainPrevNextForValue` (`src/utils/shiftSettings.ts`) — ca đầu loại (N) ← ca cuối cùng loại (N-1), ca cuối loại (N) → ca đầu loại (N+1). Matching tên ca ƯU TIÊN khớp chính xác (không phân biệt hoa thường): ca `HC` (chưa xếp loại) không được nuốt `HC1/HC2/HC3` qua `includes`, fallback chuỗi-con chỉ chọn khớp cụ thể nhất; ca chưa xếp loại → `findShiftChainMeta` trả null (sổ trộn dùng fallback phiếu gần nhất).
 
 **API:** `server.ts` — `/api/cai-dat` (xem `registry.ts` / grep route)  
 **UI:** `src/features/cai-dat-thoi-gian/index.tsx` — `SettingsPanel`  

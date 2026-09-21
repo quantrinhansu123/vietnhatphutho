@@ -18,6 +18,8 @@ export interface OrderProductLine {
   stt?: number;
   /** Chỉ dùng cho đơn "Đơn theo quy cách của khách đặt" (đơn cắt lẻ). */
   doLi?: string;
+  /** Chỉ dùng cho "Đơn miền nam": định mức thực tế, dạng `(đm n li)` / `(đm n kg)`. */
+  doLiDm?: string;
   kho?: string;
   daiM?: string;
   note?: string;
@@ -25,6 +27,10 @@ export interface OrderProductLine {
   quyCachMDai?: number | string;
   /** Tên ghép (đơn cắt lẻ) — hiển thị thay ten_san_xuat khi in đơn / lệnh SX. */
   tenGhep?: string;
+  /** Chỉ dùng cho "Đơn miền nam": loại tem (vd 5li) + màu tem (Hồng/Vàng) + checkbox Dán Tem 2 Đầu. */
+  tem?: string;
+  mauTem?: string;
+  danTem2Dau?: boolean;
   tlCuon?: string;
   tlTam?: string;
   m2?: string;
@@ -33,6 +39,33 @@ export interface OrderProductLine {
   soLuongBac?: string;
   soLuongTrung?: string;
   soLuongNam?: string;
+}
+
+export function isUuidLike(val?: string | null): boolean {
+  if (!val) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
+}
+
+export function resolveActualProductCode(
+  productCode: string | undefined | null,
+  productId: string | undefined | null,
+  catalogProducts?: Array<{ id: string; code?: string; ma_sp?: string }>
+): string {
+  const code = (productCode || '').trim();
+  if (code && !isUuidLike(code) && code !== '-') {
+    return code;
+  }
+  const idToFind = (productId && isUuidLike(productId))
+    ? productId.trim()
+    : (isUuidLike(code) ? code : '');
+  if (idToFind && catalogProducts?.length) {
+    const catalogItem = catalogProducts.find(p => p.id === idToFind);
+    const resolvedCode = catalogItem?.code || (catalogItem as any)?.ma_sp;
+    if (resolvedCode && !isUuidLike(resolvedCode)) {
+      return resolvedCode;
+    }
+  }
+  return code && !isUuidLike(code) ? code : (code === '-' ? '-' : '');
 }
 
 export function splitProductionProductCodes(raw: string): string[] {

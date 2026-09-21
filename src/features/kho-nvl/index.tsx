@@ -34,6 +34,7 @@ import { showAppToast } from '../../lib/appToast';
 import ProductQrPrintModal, {
   type ProductQrPrintLabel as WarehouseProductQrPrintLabel
 } from '../../components/ProductQrPrintModal';
+import type { WeighingPreviewImage } from '../../components/WeighingImagePreviewModal';
 import { productFieldClass } from '../san-pham/productFieldClass';
 import { readUnitSuggestions, saveUnitSuggestion } from '../_shared/orderHelpers';
 import { matchesWarehouseFilter, type InventoryBalanceRow } from '../kho-hang';
@@ -53,6 +54,7 @@ export interface MaterialRow {
   id: string;
   code: string;
   name: string;
+  productionName?: string;
   unit: string;
   warehouse: string;
   totalWeight: string;
@@ -64,6 +66,8 @@ export interface MaterialRow {
   openingStock: string;
   inbound: string;
   outbound: string;
+  phanLoai?: string;
+  auxiliaryMaterialGroup?: string;
   /** Dòng tồn phát sinh từ phiếu kho nhưng chưa có bản ghi riêng trong danh mục kho_nvl. */
   inventoryBalanceOnly?: boolean;
 }

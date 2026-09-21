@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { Icon as IconifyIcon } from '@iconify/react';
 import type { IconifyIcon as IconifyIconData } from '@iconify/types';
 import gear3d from '@iconify-icons/fluent-emoji/gear';
@@ -56,7 +56,7 @@ import {
   FilePlus2, Layers, History, UsersRound, Building2, BriefcaseBusiness, Package, Cpu, Boxes,
   ClipboardList, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, ArrowLeftRight, Scale, Settings,
   CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity, Truck,
-  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, AlertTriangle
+  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, AlertTriangle, Coins
 } from 'lucide-react';
 import type { AppTab } from '../routes';
 import { hubHasAllowedChild, resolveAccessTab } from './tabAccess';
@@ -150,11 +150,25 @@ export function MenuPageHeader({ title, desc }: { title: string; desc: string })
 
 export const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
   {
+    title: 'Sổ giao ca MMTB',
+    desc: 'Bảng theo dõi chế độ chạy máy và chất lượng hàng ngày (Trưởng ca/Công nhân).',
+    icon: ClipboardList,
+    icon3d: notebook3d,
+    tab: 'so-giao-ca-mmtb'
+  },
+  {
     title: 'Sổ trộn',
     desc: 'Báo cáo cuối ngày của công nhân: ngày + máy/ca, lệnh SX, NVL thực tế, sản phẩm, hàng lỗi và nhựa bàn giao.',
     icon: ClipboardList,
     icon3d: spiralNotepad3d,
     tab: 'so-tron'
+  },
+  {
+    title: 'Sổ chế độ máy',
+    desc: 'Theo dõi chế độ chạy máy theo tháng: 8 khu vực x 3 ca, v/x từng ngày, bàn giao và ghi chú gộp ô.',
+    icon: ClipboardList,
+    icon3d: ledger3d,
+    tab: 'so-che-do-may'
   },
   {
     title: 'Báo cáo tồn',
@@ -205,6 +219,34 @@ export const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
     icon3d: chartIncreasing3d,
     tab: 'acceptance-report'
   },
+  {
+    title: 'Báo cáo kiểm kho',
+    desc: 'Quét mã SP bằng máy BT-A700 / camera và lưu vào bảng kiểm kho.',
+    icon: ClipboardList,
+    icon3d: reportList3d,
+    tab: 'kiem-kho'
+  },
+  {
+    title: 'Báo cáo tuần',
+    desc: 'Mẫu BC01-V3: chọn tuần (từ ngày → đến ngày) và máy, nhập các mục I→VI.',
+    icon: ClipboardList,
+    icon3d: spiralCalendar3d,
+    tab: 'bao-cao-tuan'
+  },
+  {
+    title: 'Báo cáo tháng',
+    desc: 'Tổng hợp kết quả định giá vật tư - nhân công theo tháng và máy từ các báo cáo từng đợt.',
+    icon: ClipboardList,
+    icon3d: calendarPlain3d,
+    tab: 'bao-cao-thang-list'
+  },
+  {
+    title: 'Báo cáo ngày',
+    desc: 'Danh sách theo ngày, thêm/sửa báo cáo: thành phẩm, phế hồng, vật tư tồn/nhập/hao hụt.',
+    icon: ClipboardList,
+    icon3d: spiralNotepad3d,
+    tab: 'bao-cao-ngay-list'
+  }
 ];
 
 export const PRODUCTION_REPORT_MENU_ITEMS: MenuCardConfig[] = [
@@ -250,11 +292,39 @@ export const FACILITY_MENU_ITEMS: MenuCardConfig[] = [
 
 export const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
   {
+    title: 'Danh sách sổ giao ca MMTB',
+    desc: 'Xem, sửa và in sổ giao ca máy móc thiết bị theo ngày, máy và ca.',
+    icon: History,
+    icon3d: notebookCover3d,
+    tab: 'so-giao-ca-mmtb-list'
+  },
+  {
     title: 'Danh sách sổ trộn',
     desc: 'Xem, sửa và xóa các sổ trộn đã lưu theo ngày, máy và ca.',
     icon: History,
     icon3d: spiralNotepad3d,
     tab: 'so-tron-list'
+  },
+  {
+    title: 'Danh sách sổ chế độ máy',
+    desc: 'Chọn tháng, năm để xem sổ chế độ máy đã lưu (chỉ xem).',
+    icon: History,
+    icon3d: ledger3d,
+    tab: 'so-che-do-may-list'
+  },
+  {
+    title: 'Danh sách báo cáo ngày',
+    desc: 'Xem, sửa và xóa mềm báo cáo ngày tổng hợp từ sổ trộn.',
+    icon: History,
+    icon3d: spiralCalendar3d,
+    tab: 'bao-cao-ngay-list'
+  },
+  {
+    title: 'Danh sách báo cáo tháng',
+    desc: 'Xem, sửa, in và xóa báo cáo tháng tổng hợp từ các đợt sản xuất.',
+    icon: History,
+    icon3d: calendarPlain3d,
+    tab: 'bao-cao-thang-list'
   },
   {
     title: 'Danh sách báo cáo tồn',
@@ -355,6 +425,20 @@ export const HCNS_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'hr'
   },
   {
+    title: 'Chi phí nhân công',
+    desc: 'Tổng hợp và tính toán chi phí nhân công theo tháng và máy.',
+    icon: Coins,
+    icon3d: moneyBag3d,
+    tab: 'chi-phi-nhan-cong'
+  },
+  {
+    title: 'Chi phí điện',
+    desc: 'Tổng hợp tiền điện và thành phẩm từ sổ trộn theo năm và loại/nhóm máy.',
+    icon: BarChart3,
+    icon3d: moneyBag3d,
+    tab: 'chi-phi-dien'
+  },
+  {
     title: 'Cơ cấu tổ chức',
     desc: 'Chi nhánh, bộ phận và vị trí công việc.',
     icon: Building2,
@@ -408,6 +492,20 @@ export const BUSINESS_MENU_ITEMS: MenuCardConfig[] = [
     icon: Truck,
     icon3d: articulatedLorry3d,
     tab: 'shipping-orders'
+  },
+  {
+    title: 'Tồn kho tối thiểu - Tồn kho tối đa',
+    desc: 'Thiết lập ngưỡng tồn kho theo sản phẩm và tháng/năm.',
+    icon: Boxes,
+    icon3d: bentoBox3d,
+    tab: 'inventory-limits'
+  },
+  {
+    title: 'Báo cáo hàng lỗi hỏng',
+    desc: 'Nhập phiếu hàng lỗi hỏng phát sinh ở khách hàng theo Nhóm VTHH.',
+    icon: PackageX,
+    icon3d: noEntry3d,
+    tab: 'hang-loi-khach-hang'
   },
   {
     title: 'Báo cáo kinh doanh',
@@ -466,6 +564,13 @@ export const FACTORY_QUAN_DOC_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'production-plan-history'
   },
   {
+    title: 'Đợt sản xuất',
+    desc: 'Gom lệnh SX theo máy + Từ ngày → Đến ngày, truy xuất phiếu xuất NVL và chốt tổng vật tư chính/phụ.',
+    icon: CalendarDays,
+    icon3d: spiralNotepad3d,
+    tab: 'dot-san-xuat'
+  },
+  {
     title: 'Lệnh sản xuất',
     desc: 'Xem danh sách lệnh SX, mã hàng, trạng thái và kế hoạch sản xuất.',
     icon: Factory,
@@ -504,6 +609,12 @@ export const FACTORY_QUAN_DOC_MENU_ITEMS: MenuCardConfig[] = [
 
 export const FACTORY_QC_MENU_ITEMS: MenuCardConfig[] = [
   {
+    title: 'Sổ test mẫu nhựa',
+    desc: 'Nhập, sửa kết quả test nguyên vật liệu theo ngày và in sổ.',
+    icon: ClipboardCheck,
+    tab: 'so-test-mau-nhua'
+  },
+  {
     title: 'BOM và tỷ lệ phối trộn',
     desc: 'Tỷ lệ trộn theo mặt hàng, theo lệnh và theo mẻ.',
     icon: Layers,
@@ -539,6 +650,20 @@ export const FACTORY_QC_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'acceptance-report-list'
   },
   {
+    title: 'Thống kê hàng lỗi hỏng',
+    desc: 'Tổng hợp phiếu lỗi hỏng phát sinh ở khách hàng theo Nhóm VTHH.',
+    icon: BarChart3,
+    icon3d: barChart3d,
+    tab: 'thong-ke-hang-loi'
+  },
+  {
+    title: 'Chi phí bảo dưỡng',
+    desc: 'Sửa chữa, bảo dưỡng và vật tư sử dụng theo tháng và máy.',
+    icon: BarChart3,
+    icon3d: toolbox3d,
+    tab: 'chi-phi-bao-duong'
+  },
+  {
     title: 'Báo cáo chất lượng',
     desc: 'Đối chiếu chất lượng theo lệnh SX và ca sản xuất.',
     icon: LayoutDashboard,
@@ -572,7 +697,51 @@ export const FACTORY_CONG_NHAN_MENU_ITEMS: MenuCardConfig[] = [
   }
 ];
 
-export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [];
+export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
+  {
+    title: 'Danh mục kho',
+    desc: 'Tên kho, vị trí kho và người phụ trách.',
+    icon: Warehouse,
+    icon3d: pushpin3d,
+    tab: 'quan-ly-kho'
+  },
+  {
+    title: 'Kho nguyên vật liệu',
+    desc: 'Quản lý nguyên phụ liệu, trọng lượng, khổ cuộn và tồn nhập xuất.',
+    icon: Boxes,
+    icon3d: inventory3d,
+    tab: 'materials'
+  },
+  {
+    title: 'Phiếu xuất nhập kho',
+    desc: 'Lập phiếu nhập hoặc xuất NVL theo từng mã NPL.',
+    icon: ArrowDownToLine,
+    icon3d: warehouseSlip3d,
+    tab: 'warehouse-slip'
+  },
+  {
+    title: 'Kiểm kho',
+    desc: 'Tạo đợt kiểm kho, quét mã SP và xử lý chênh lệch tồn kho.',
+    icon: ClipboardList,
+    icon3d: reportList3d,
+    tab: 'kiem-kho'
+  },
+  {
+    title: 'Lịch sử xuất nhập',
+    desc: 'Tra cứu phiếu đã lưu, lọc theo loại và ngày.',
+    icon: History,
+    icon3d: warehouseHistory3d,
+    tab: 'warehouse-history'
+  },
+  {
+    title: 'Chuẩn bị xuất hàng',
+    desc: 'Danh sách lệnh giao hàng, xác nhận đủ hàng và bàn giao cho lái xe.',
+    icon: Truck,
+    icon3d: handshake3d,
+    tab: 'factory-kho',
+    disabled: true
+  }
+];
 
 export function MenuCardGrid({
   items,
@@ -664,7 +833,7 @@ function MainMenuFlowCard({
               className={largeIcon ? 'h-[52px] w-[52px] drop-shadow-md' : 'h-9 w-9 drop-shadow-sm'}
             />
           ) : (
-            <Icon className={largeIcon ? 'h-8 w-8' : 'h-5 w-5'} strokeWidth={largeIcon ? 1.8 : 2} />
+            <Icon className={largeIcon ? 'h-8 w-8' : 'h-5 w-5'} />
           )}
         </span>
         <span className="min-w-0 flex-1">
@@ -778,6 +947,8 @@ export const PRIMARY_NAV_GROUPS: {
     tab: 'hcns',
     children: [
       { label: 'Hồ sơ nhân sự', tab: 'hr' },
+      { label: 'Chi phí nhân công', tab: 'chi-phi-nhan-cong' },
+      { label: 'Chi phí điện', tab: 'chi-phi-dien' },
       { label: 'Cơ cấu tổ chức', tab: 'hcns', disabled: true },
       { label: 'Ca làm việc', tab: 'hcns', disabled: true },
       { label: 'Báo cáo nhân sự', tab: 'hcns', disabled: true }
@@ -792,6 +963,8 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Khách hàng', tab: 'customers' },
       { label: 'Đơn đặt hàng', tab: 'orders' },
       { label: 'Lệnh giao / xuất hàng', tab: 'shipping-orders' },
+      { label: 'Tồn kho tối thiểu - Tồn kho tối đa', tab: 'inventory-limits' },
+      { label: 'Báo cáo hàng lỗi hỏng', tab: 'hang-loi-khach-hang' },
       { label: 'Báo cáo kinh doanh', tab: 'business', disabled: true }
     ]
   },
@@ -801,6 +974,7 @@ export const PRIMARY_NAV_GROUPS: {
     tab: 'factory-quan-doc',
     children: [
       { label: 'Kế hoạch sản xuất', tab: 'production-plan-history' },
+      { label: 'Đợt sản xuất', tab: 'dot-san-xuat' },
       { label: 'Lệnh sản xuất', tab: 'production-orders' },
       { label: 'Theo dõi sản xuất', tab: 'control-board' },
       { label: 'Báo cáo sản xuất', tab: 'production-reports' },
@@ -818,6 +992,9 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Phiếu cân ca', tab: 'weighing-summary-list' },
       { label: 'Dữ liệu cân tự động', tab: 'can-tu-dong' },
       { label: 'Kiểm tra kho thành phẩm', tab: 'acceptance-report-list' },
+      { label: 'Sổ test mẫu nhựa', tab: 'so-test-mau-nhua' },
+      { label: 'Thống kê hàng lỗi hỏng', tab: 'thong-ke-hang-loi' },
+      { label: 'Chi phí bảo dưỡng', tab: 'chi-phi-bao-duong' },
       { label: 'Báo cáo chất lượng', tab: 'factory-qc', disabled: true }
     ]
   },
@@ -835,7 +1012,14 @@ export const PRIMARY_NAV_GROUPS: {
     title: 'Kho',
     icon: Warehouse,
     tab: 'factory-kho',
-    children: []
+    children: [
+      { label: 'Danh mục kho', tab: 'quan-ly-kho' },
+      { label: 'Kho nguyên vật liệu', tab: 'materials' },
+      { label: 'Phiếu xuất nhập kho', tab: 'warehouse-slip' },
+      { label: 'Kiểm kho', tab: 'kiem-kho' },
+      { label: 'Lịch sử xuất nhập', tab: 'warehouse-history' },
+      { label: 'Chuẩn bị xuất hàng', tab: 'factory-kho', disabled: true }
+    ]
   },
   {
     title: 'Quản lý máy',
@@ -861,6 +1045,10 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'form': { group: 'Sản xuất', sub: 'Nhập báo cáo ca' },
   'report-lists': { group: 'Sản xuất', sub: 'Lịch sử công việc' },
   'acceptance-report-list': { group: 'QC', sub: 'Kiểm tra kho thành phẩm' },
+  'so-test-mau-nhua': { group: 'QC', sub: 'Sổ test mẫu nhựa' },
+  'hang-loi-khach-hang': { group: 'Kinh doanh', sub: 'Báo cáo hàng lỗi hỏng' },
+  'thong-ke-hang-loi': { group: 'QC', sub: 'Thống kê hàng lỗi hỏng' },
+  'chi-phi-bao-duong': { group: 'QC', sub: 'Chi phí bảo dưỡng' },
   'weighing-summary': { group: 'Sản xuất', sub: 'Phiếu cân' },
   'weighing-summary-list': { group: 'QC', sub: 'Phiếu cân ca' },
   'can-tu-dong': { group: 'Sản xuất', sub: 'Danh sách cân' },
@@ -874,13 +1062,23 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'machine-nvl-report': { group: 'Sản xuất', sub: 'Báo cáo máy-NVL' },
   'so-tron': { group: 'Sản xuất', sub: 'Sổ trộn' },
   'so-tron-list': { group: 'Sản xuất', sub: 'Danh sách sổ trộn' },
+  'so-giao-ca-mmtb': { group: 'Sản xuất', sub: 'Sổ giao ca MMTB' },
+  'so-giao-ca-mmtb-list': { group: 'Sản xuất', sub: 'Danh sách sổ giao ca MMTB' },
+  'so-che-do-may': { group: 'Sản xuất', sub: 'Sổ chế độ máy' },
+  'so-che-do-may-list': { group: 'Sản xuất', sub: 'Danh sách sổ chế độ máy' },
   'machine-nvl-report-list': { group: 'Kho', sub: 'Báo cáo tồn máy' },
   'acceptance-report': { group: 'Sản xuất', sub: 'Phiếu nghiệm thu' },
   'machine-downtime-report': { group: 'Sản xuất', sub: 'Báo cáo máy dừng' },
   'machine-downtime-list': { group: 'Quản Đốc', sub: 'DS máy dừng' },
   'machine-run-log': { group: 'Sản xuất', sub: 'Nhật ký chạy máy' },
   'machine-run-log-list': { group: 'Quản Đốc', sub: 'DS nhật ký chạy máy' },
+  'bao-cao-tuan': { group: 'Sản xuất', sub: 'Báo cáo tuần' },
+  'bao-cao-thang': { group: 'Sản xuất', sub: 'Báo cáo tháng' },
+  'bao-cao-thang-list': { group: 'Sản xuất', sub: 'Danh sách báo cáo tháng' },
+  'bao-cao-ngay': { group: 'Sản xuất', sub: 'Báo cáo ngày' },
+  'bao-cao-ngay-list': { group: 'Sản xuất', sub: 'Danh sách báo cáo ngày' },
   'production-plan-history': { group: 'Quản Đốc', sub: 'Kế hoạch sản xuất' },
+  'dot-san-xuat': { group: 'Quản Đốc', sub: 'Đợt sản xuất' },
   'facility-management': { group: 'Kho', sub: 'Quản lý CSVC' },
   'factory': { group: 'Trang chủ', sub: 'Chọn vai trò' },
   'materials': { group: 'Kho', sub: 'Kho nguyên vật liệu' },
@@ -894,6 +1092,8 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'ton-kho': { group: 'Kho', sub: 'Tồn kho' },
   'settings': { group: 'Quản trị', sub: 'Người dùng và phân quyền / Cấu hình hệ thống' },
   'hr': { group: 'HCNS', sub: 'Hồ sơ nhân sự' },
+  'chi-phi-nhan-cong': { group: 'HCNS', sub: 'Chi phí nhân công' },
+  'chi-phi-dien': { group: 'HCNS', sub: 'Chi phí điện' },
   'vehicles': { group: 'Trang chủ', sub: 'Lái xe' },
   'orders': { group: 'Kinh doanh', sub: 'Đơn đặt hàng' },
   'customers': { group: 'Kinh doanh', sub: 'Khách hàng' },

@@ -63,22 +63,41 @@ import {
   getActivePageMeta
 } from './app/menus';
 import { ProductsPanel } from './features/san-pham';
+import { InventoryLimitsPanel } from './features/ton-kho-toi-thieu-toi-da';
 import { MachinesPanel } from './features/danh-sach-may';
+import { MaterialsInventoryPanel } from './features/kho-nvl';
+import { WarehouseSlipPanel, WarehouseHistoryPanel } from './features/phieu-xuat-nhap-kho';
 import { CustomersPanel } from './features/khach-hang';
 import { ShippingOrdersPanel } from './features/lenh-xuat-hang';
 import { OrdersPanel } from './features/don-hang';
 import { ProductionOrdersPanel } from './features/lenh-sx';
 import { ProductionPlanHistoryPanel } from './features/ke-hoach-san-xuat';
+import { DotSanXuatPanel } from './features/dot-san-xuat';
 import { DieuDongNhanSuPanel } from './features/dieu-dong-nhan-su';
 import SapXepLichLamViecPanel from './features/sap-xep-lich-lam-viec';
 import { SettingsPanel } from './features/cai-dat-thoi-gian';
 import { DashboardWindow } from './features/dashboard';
 import { ControlBoardPanel } from './features/control-board';
 import { HumanResourcesPanel } from './features/nhan-su';
+import { ChiPhiNhanCongPanel } from './features/chi-phi-nhan-cong';
+import { ChiPhiDienPanel } from './features/chi-phi-dien';
+import { ChiPhiBaoDuongPanel } from './features/chi-phi-bao-duong';
 import { VehiclesPanel } from './features/danh-sach-xe';
 import { CanTuDongPanel } from './features/can-tu-dong';
+import { KiemKhoPanel } from './features/kiem-kho';
+import { QuanLyKhoPanel } from './features/quan-ly-kho';
 import { MachineNvlReportPanel } from './features/bao-cao-may-nvl-ton';
 import { SoTronPanel, SoTronListView, type SoTronSavedReport } from './features/so-tron';
+import { SoGiaoCaMmtbPanel, SoGiaoCaMmtbListView, type SoGiaoCaMmtbRecord } from './features/so-giao-ca-mmtb';
+import { SoCheDoMayWorkspace } from './features/so-che-do-may';
+import { SoTestMauNhuaWorkspace } from './features/so-test-mau-nhua';
+import { HangLoiKhachHangPanel } from './features/bao-cao-hang-loi-khach-hang';
+import { ThongKeHangLoiPanel } from './features/bao-cao-hang-loi-khach-hang/thong-ke';
+import { BaoCaoTuanPanel } from './features/bao-cao-tuan';
+import { BaoCaoNgayListView, BaoCaoNgayPanel, type BaoCaoNgaySavedReport } from './features/bao-cao-ngay';
+import { BaoCaoThangListView, BaoCaoThangPanel } from './features/bao-cao-thang';
+import type { BaoCaoThangRow } from './features/bao-cao-thang/types';
+import { InventoryAlertPanel } from './features/canh-bao-ton-kho';
 
 const DEFAULT_REPORT: Omit<ProductionReport, 'id' | 'createdAt'> = {
   date: new Date().toISOString().split('T')[0],
@@ -207,6 +226,9 @@ export default function App() {
   } | null>(null);
   const [machineNvlEditReport, setMachineNvlEditReport] = useState<MachineNvlSavedReport | null>(null);
   const [soTronEditReport, setSoTronEditReport] = useState<SoTronSavedReport | null>(null);
+  const [baoCaoNgayEditReport, setBaoCaoNgayEditReport] = useState<BaoCaoNgaySavedReport | null>(null);
+  const [baoCaoThangEditReport, setBaoCaoThangEditReport] = useState<BaoCaoThangRow | null>(null);
+  const [soGiaoCaMmtbEditRecord, setSoGiaoCaMmtbEditRecord] = useState<SoGiaoCaMmtbRecord | null>(null);
   const [weighingPendingAdd, setWeighingPendingAdd] = useState<WeighingPendingAdd | null>(null);
   const navigateToTab = (tab: AppTab, options?: { replace?: boolean }) => {
     let nextTab = tab;
@@ -1100,6 +1122,26 @@ export default function App() {
               >
                 <CanTuDongPanel onBack={() => goBack('report-lists')} />
               </motion.div>
+            ) : resolvedTab === 'kiem-kho' ? (
+              <motion.div
+                key="kiem-kho"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <KiemKhoPanel onBack={() => goBack('factory-kho')} currentUser={authUser} />
+              </motion.div>
+            ) : resolvedTab === 'quan-ly-kho' ? (
+              <motion.div
+                key="quan-ly-kho"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <QuanLyKhoPanel onBack={() => goBack('factory-kho')} />
+              </motion.div>
             ) : resolvedTab === 'weighing-summary' ? (
               <motion.div
                 key="weighing-summary"
@@ -1244,6 +1286,83 @@ export default function App() {
                   }}
                 />
               </motion.div>
+            ) : activeTab === 'so-giao-ca-mmtb' ? (
+              <motion.div
+                key="so-giao-ca-mmtb"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <SoGiaoCaMmtbPanel
+                  onBack={() => goBack('report-forms')}
+                  onOpenList={() => navigateToTab('so-giao-ca-mmtb-list')}
+                  editRecord={soGiaoCaMmtbEditRecord}
+                  onEditConsumed={() => setSoGiaoCaMmtbEditRecord(null)}
+                />
+              </motion.div>
+            ) : activeTab === 'so-giao-ca-mmtb-list' ? (
+              <motion.div
+                key="so-giao-ca-mmtb-list"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <SoGiaoCaMmtbListView
+                  onBack={() => goBack('report-lists')}
+                  onCreate={() => {
+                    setSoGiaoCaMmtbEditRecord(null);
+                    navigateToTab('so-giao-ca-mmtb');
+                  }}
+                  onEdit={rec => {
+                    setSoGiaoCaMmtbEditRecord(rec);
+                    navigateToTab('so-giao-ca-mmtb');
+                  }}
+                />
+              </motion.div>
+            ) : activeTab === 'so-test-mau-nhua' ? (
+              <SoTestMauNhuaWorkspace onBack={() => goBack('factory-qc')} />
+            ) : activeTab === 'hang-loi-khach-hang' ? (
+              <motion.div
+                key="hang-loi-khach-hang"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <HangLoiKhachHangPanel onBack={() => goBack('business')} />
+              </motion.div>
+            ) : activeTab === 'thong-ke-hang-loi' ? (
+              <motion.div
+                key="thong-ke-hang-loi"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <ThongKeHangLoiPanel onBack={() => goBack('factory-qc')} />
+              </motion.div>
+            ) : activeTab === 'so-che-do-may' ? (
+              <motion.div
+                key="so-che-do-may"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <SoCheDoMayWorkspace onBack={() => goBack('report-forms')} />
+              </motion.div>
+            ) : activeTab === 'so-che-do-may-list' ? (
+              <motion.div
+                key="so-che-do-may-list"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <SoCheDoMayWorkspace onBack={() => goBack('report-lists')} />
+              </motion.div>
             ) : activeTab === 'acceptance-report' ? (
               <motion.div
                 key="acceptance-report"
@@ -1304,6 +1423,86 @@ export default function App() {
               >
                 <MachineRunLogPanel onBack={() => goBack('report-lists')} />
               </motion.div>
+            ) : activeTab === 'bao-cao-tuan' ? (
+              <motion.div
+                key="bao-cao-tuan"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <BaoCaoTuanPanel onBack={() => goBack('report-forms')} />
+              </motion.div>
+            ) : activeTab === 'bao-cao-thang' ? (
+              <motion.div
+                key="bao-cao-thang"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <BaoCaoThangPanel
+                  onBack={() => goBack('report-forms')}
+                  onOpenList={() => navigateToTab('bao-cao-thang-list')}
+                  editReport={baoCaoThangEditReport}
+                  onEditConsumed={() => setBaoCaoThangEditReport(null)}
+                />
+              </motion.div>
+            ) : activeTab === 'bao-cao-thang-list' ? (
+              <motion.div
+                key="bao-cao-thang-list"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <BaoCaoThangListView
+                  onBack={() => goBack('report-forms')}
+                  onCreate={() => {
+                    setBaoCaoThangEditReport(null);
+                    navigateToTab('bao-cao-thang');
+                  }}
+                  onEdit={report => {
+                    setBaoCaoThangEditReport(report);
+                    navigateToTab('bao-cao-thang');
+                  }}
+                />
+              </motion.div>
+            ) : activeTab === 'bao-cao-ngay' ? (
+              <motion.div
+                key="bao-cao-ngay"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <BaoCaoNgayPanel
+                  onBack={() => goBack('report-forms')}
+                  onOpenList={() => navigateToTab('bao-cao-ngay-list')}
+                  editReport={baoCaoNgayEditReport}
+                  onEditConsumed={() => setBaoCaoNgayEditReport(null)}
+                />
+              </motion.div>
+            ) : activeTab === 'bao-cao-ngay-list' ? (
+              <motion.div
+                key="bao-cao-ngay-list"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <BaoCaoNgayListView
+                  onBack={() => goBack('report-lists')}
+                  onCreate={() => {
+                    setBaoCaoNgayEditReport(null);
+                    navigateToTab('bao-cao-ngay');
+                  }}
+                  onEdit={report => {
+                    setBaoCaoNgayEditReport(report);
+                    navigateToTab('bao-cao-ngay');
+                  }}
+                />
+              </motion.div>
             ) : activeTab === 'hr' ? (
               <motion.div
                 key="human-resources"
@@ -1313,6 +1512,36 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <HumanResourcesPanel onBack={() => goBack('hcns')} />
+              </motion.div>
+            ) : activeTab === 'chi-phi-nhan-cong' ? (
+              <motion.div
+                key="chi-phi-nhan-cong"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <ChiPhiNhanCongPanel onBack={() => goBack('hcns')} currentUser={authUser} />
+              </motion.div>
+            ) : activeTab === 'chi-phi-dien' ? (
+              <motion.div
+                key="chi-phi-dien"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <ChiPhiDienPanel onBack={() => goBack('hcns')} currentUser={authUser} />
+              </motion.div>
+            ) : activeTab === 'chi-phi-bao-duong' ? (
+              <motion.div
+                key="chi-phi-bao-duong"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <ChiPhiBaoDuongPanel onBack={() => goBack('factory-qc')} currentUser={authUser} />
               </motion.div>
             ) : activeTab === 'vehicles' ? (
               <motion.div
@@ -1334,6 +1563,17 @@ export default function App() {
               >
                 <ProductsPanel onBack={() => goBack('business')} />
               </motion.div>
+            ) : activeTab === 'inventory-limits' ? (
+              <motion.div
+                key="inventory-limits"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="flex h-full min-h-0 flex-col"
+              >
+                <InventoryLimitsPanel onBack={() => goBack('business')} />
+              </motion.div>
             ) : activeTab === 'machines' ? (
               <motion.div
                 key="machines"
@@ -1343,6 +1583,42 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <MachinesPanel onBack={() => goBack('menu')} />
+              </motion.div>
+            ) : activeTab === 'materials' ? (
+              <motion.div
+                key="materials"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <MaterialsInventoryPanel onBack={() => goBack('factory-kho')} />
+              </motion.div>
+            ) : activeTab === 'warehouse-slip' ? (
+              <motion.div
+                key="warehouse-slip"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <WarehouseSlipPanel
+                  onBack={() => goBack('factory-kho')}
+                  onOpenHistory={() => navigateToTab('warehouse-history')}
+                />
+              </motion.div>
+            ) : activeTab === 'warehouse-history' ? (
+              <motion.div
+                key="warehouse-history"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <WarehouseHistoryPanel
+                  onBack={() => goBack('factory-kho')}
+                  onOpenSlip={() => navigateToTab('warehouse-slip')}
+                />
               </motion.div>
             ) : activeTab === 'orders' ? (
               <motion.div
@@ -1400,6 +1676,16 @@ export default function App() {
               >
                 <ProductionPlanHistoryPanel onBack={() => goBack('production-reports')} />
               </motion.div>
+            ) : activeTab === 'dot-san-xuat' ? (
+              <motion.div
+                key="dot-san-xuat"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <DotSanXuatPanel onBack={() => goBack('factory-quan-doc')} />
+              </motion.div>
             ) : activeTab === 'dieu-dong-nhan-su' ? (
               <motion.div
                 key="dieu-dong-nhan-su"
@@ -1424,6 +1710,16 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <SapXepLichLamViecPanel onBack={() => goBack('factory-quan-doc')} />
+              </motion.div>
+            ) : activeTab === 'canh-bao-ton-kho' ? (
+              <motion.div
+                key="canh-bao-ton-kho"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <InventoryAlertPanel onBack={() => goBack('factory-quan-doc')} />
               </motion.div>
             ) : activeTab === 'settings' ? (
               <motion.div

@@ -9,18 +9,20 @@ import type { ReactNode } from 'react';
 export function TableShell({
   children,
   footer,
+  className,
   minWidthClassName = 'min-w-[1024px]',
   maxHeightClassName = 'max-h-[70vh]'
 }: {
   children: ReactNode;
   /** Phân trang/chân bảng nằm chung trong khung bo tròn, bên ngoài vùng cuộn. */
   footer?: ReactNode;
+  className?: string;
   /** vd. 'min-w-[1540px]' nếu bảng có nhiều cột */
   minWidthClassName?: string;
   maxHeightClassName?: string;
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
+    <section className={`overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm ${className || ''}`.trim()}>
       <div className={`hover-scrollbar ${maxHeightClassName} overflow-auto`}>
         <table className={`${minWidthClassName} w-full text-left text-sm`}>
           {children}

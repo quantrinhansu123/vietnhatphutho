@@ -25,6 +25,7 @@ import {
 import { Loader2, Save, FlaskConical, Download, Upload, Plus, Eye, Pencil, Trash2, QrCode, X, Warehouse, ClipboardList, RefreshCw } from 'lucide-react';
 import { productFieldClass } from './productFieldClass';
 import type { ProductRow, ProductNplItem, MaterialOption, ProductNplAmountType } from './types';
+export type { ProductRow };
 import { downloadBulkProductNplComponentsTemplate, downloadProductNplComponentsTemplate, parseThanhPhanLongFormatExcel, parseBulkProductNplComponentsExcel, parseImportSpExcelRows } from '../../utils/productNplComponentsExcel';
 import type { ImportSpExcelRow } from '../../utils/productNplComponentsExcel';
 import { parseProductNplItems, productNplItemsToJson, formatProductNplSummary, findMaterialOptionByCode, formatProductNplAmount, roundNplNumber, formatNplDecimal, formatNplWeightKg, bulkExcelRowsToProductMap } from './types';
@@ -601,6 +602,11 @@ export function normalizeProductCodeKey(code: string) {
 }
 
 export function findProductByCode(products: ProductRow[], code: string) {
+  const trimmed = code.trim();
+  if (!trimmed) return undefined;
+  const byId = products.find(product => product.id === trimmed);
+  if (byId) return byId;
+
   const key = normalizeProductCodeKey(code);
   if (!key) return undefined;
   return products.find(

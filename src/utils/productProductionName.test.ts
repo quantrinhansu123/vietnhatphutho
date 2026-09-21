@@ -13,6 +13,9 @@ import {
   seedProductionSpecs,
   buildOrderTenGhep,
   replaceCutLengthMeters,
+  replaceDoLiDmInTenGhep,
+  normalizeDoLiDm,
+  extractDoLiDmNumber,
   stripDuplicateLiFromTenGoc,
   parseDoDaiMLength
 } from './productProductionName.ts';
@@ -458,4 +461,53 @@ test('sóng đm-kg cuối tên được lưu doLiDm + tên ghép', () => {
   assert.equal(seeded.doLiDm, '(đm 7,8 kg)');
   assert.equal(seeded.doDaiM, '6m');
   assert.equal(seeded.tenGhep, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG - 1li - (đm 7,8 kg) - 6m');
+});
+
+test('normalizeDoLiDm: nhận số trần hoặc chuỗi đm', () => {
+  assert.equal(normalizeDoLiDm('0.75'), '(đm 0.75 li)');
+  assert.equal(normalizeDoLiDm('7,8 kg'), '(đm 7.8 kg)');
+  assert.equal(normalizeDoLiDm('(đm 0.9 li)'), '(đm 0.9 li)');
+  assert.equal(normalizeDoLiDm('8', 'kg'), '(đm 8 kg)');
+  assert.equal(normalizeDoLiDm(''), '');
+  assert.equal(normalizeDoLiDm('2.5li'), '');
+});
+
+test('extractDoLiDmNumber: form đơn miền nam chỉ hiện số', () => {
+  assert.equal(extractDoLiDmNumber('(đm 0.75 li)'), '0.75');
+  assert.equal(extractDoLiDmNumber('(đm 7,8 kg)'), '7.8');
+  assert.equal(extractDoLiDmNumber('0.9'), '0.9');
+  assert.equal(extractDoLiDmNumber(''), '');
+});
+
+test('replaceDoLiDmInTenGhep: chỉ thay (đm …), giữ token do_li', () => {
+  assert.equal(
+    replaceDoLiDmInTenGhep(
+      'Tấm nhựa đặc - STD - 0.8li - (đm 0.75 li) - 1.22m - 30m',
+      '0.9'
+    ),
+    'Tấm nhựa đặc - STD - 0.8li - (đm 0.9 li) - 1.22m - 30m'
+  );
+  assert.equal(
+    replaceDoLiDmInTenGhep(
+      'NHỰA SÓNG - 1li - (đm 7,8 kg) - 6m (Dán Tem 5li)',
+      '8 kg'
+    ),
+    'NHỰA SÓNG - 1li - (đm 8 kg) - 6m (Dán Tem 5li)'
+  );
+  assert.equal(
+    replaceDoLiDmInTenGhep('Tấm nhựa - ECO - 0.8li - 1.22m - 30m', '0.7'),
+    'Tấm nhựa - ECO - 0.8li - (đm 0.7 li) - 1.22m - 30m'
+  );
+});
+
+test('buildOrderTenGhep: ghi đè do_li_dm, không đổi do_li', () => {
+  const name = buildOrderTenGhep('Tấm nhựa đặc màu TRẮNG 8ZEM - hàng tiêu chuẩn - STD - 0.8li - 1.22m - 30m', {
+    nhomVthh: 'TP; PX Đặc',
+    cutLengthM: 15,
+    doLiDm: '0.9'
+  });
+  assert.match(name, /0\.8li/);
+  assert.match(name, /\(đm 0\.9 li\)/);
+  assert.match(name, /15m/);
+  assert.doesNotMatch(name, /\(đm 0\.75 li\)/);
 });

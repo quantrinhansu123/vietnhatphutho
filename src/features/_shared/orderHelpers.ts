@@ -4,8 +4,97 @@ import { normalizeProducts } from '../san-pham';
 import { availableConvertedUnits, convertProductQuantity, type ProductConvertedUnit } from '../../utils/productUnitConversion';
 import { parsePercentInput } from '../../utils';
 
-export const ORDER_TYPE_OPTIONS = ['Đơn bán', 'Đơn sản xuất', 'Đơn theo quy cách của khách đặt'] as const;
+export const ORDER_TYPE_OPTIONS = ['Đơn bán', 'Đơn sản xuất', 'Đơn theo quy cách của khách đặt', 'Đơn miền nam'] as const;
 export const CUT_ORDER_TYPE = 'Đơn theo quy cách của khách đặt';
+export const SOUTH_ORDER_TYPE = 'Đơn miền nam';
+/** Đơn cắt lẻ + Đơn miền nam dùng chung form quy cách (Mã AMIS / Dài m / Bắc-Trung-Nam / KG). */
+export function isCutLikeOrderType(orderType?: string | null) {
+  const value = String(orderType || '').trim();
+  return value === CUT_ORDER_TYPE || value === SOUTH_ORDER_TYPE;
+}
+/** 11 loại Tem phân tích từ .ai/sp_mien_nam.xlsx (MVCC + Dán Tem). */
+export const SOUTH_TEM_OPTIONS = [
+  '1.2li',
+  '1.5li',
+  '1.6li',
+  '1.8li',
+  '1.9li',
+  '2li',
+  '2.2li',
+  '2.5li',
+  '2.6li',
+  '3li',
+  '5li'
+] as const;
+/** Màu tem: MVCC 100% Hồng; thêm Vàng (12 SP MVKH Dán Tem 1.5li) để đủ dropdown. */
+export const SOUTH_TEM_COLOR_OPTIONS = ['Hồng', 'Vàng'] as const;
+export const SOUTH_TEM_COLOR_DEFAULT = 'Hồng';
+/** Mã đuôi theo màu tem (khớp Excel sp_mien_nam.xlsx): Hồng→MVCC, Vàng→MVKH. */
+export function southMvByMauTem(mauTem?: string | null) {
+  return String(mauTem || '').trim().toLowerCase() === 'vàng' || String(mauTem || '').trim().toLowerCase() === 'vang'
+    ? 'MVKH'
+    : 'MVCC';
+}
+/**
+ * Hậu tố Full Excel cho Đơn miền nam (màng đã có trong tên gốc nên KHÔNG nối thêm):
+ * " (Dán Tem 5li) Màu Hồng MVCC" + optional " Dán Tem 2 Đầu".
+ */
+export function buildSouthTemSuffix(tem?: string | null, mauTem?: string | null, danTem2Dau?: boolean | null) {
+  const temText = String(tem || '').trim();
+  const mauText = String(mauTem || '').trim();
+  if (!temText && !mauText && !danTem2Dau) return '';
+  const parts: string[] = [];
+  if (temText) parts.push(`(Dán Tem ${temText})`);
+  if (mauText) parts.push(`Màu ${mauText} ${southMvByMauTem(mauText)}`);
+  else if (temText) parts.push(`Màu ${SOUTH_TEM_COLOR_DEFAULT} ${southMvByMauTem(SOUTH_TEM_COLOR_DEFAULT)}`);
+  let suffix = parts.length > 0 ? ` ${parts.join(' ')}` : '';
+  if (danTem2Dau) suffix = `${suffix} Dán Tem 2 Đầu`.trimStart();
+  return suffix ? ` ${suffix.trim()}`.replace(/\s+/g, ' ') : '';
+}
+/**
+ * Xóa hậu tố tem (mới "(Dán Tem X) Màu Y MV..." lẫn cũ "- (Tem X - Y)") trước khi gắn mới —
+ * tránh nhân đôi khi sửa đơn. Bóc TOÀN CỤC (kể cả suffix kẹt giữa do bug triple cũ),
+ * lặp tới ổn định. Tên gốc danh mục không bao giờ chứa "Dán Tem" nên an toàn.
+ */
+export function stripSouthTemSuffix(tenGhep?: string | null) {
+  let text = String(tenGhep || '').trim();
+  if (!text) return '';
+  for (let i = 0; i < 10; i += 1) {
+    const next = text
+      .replace(/\s*\(Dán Tem\s*[^)]*\)(\s*Màu\s*\S+(\s*M\w+)?)?(\s*Dán Tem 2 Đầu)?/gu, '')
+      .replace(/\s*-\s*\(Tem\s*[^)]*\)/gu, '')
+      .replace(/\s*\(Tem\s*[^)]*\)/gu, '')
+      .replace(/\s*Dán Tem 2 Đầu/gu, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    if (next === text) break;
+    text = next;
+  }
+  return text.replace(/\s*-\s*$/u, '').trim();
+}
+/** ten_ghep cho Đơn miền nam = ten_ghep gốc (đã có màng) + hậu tố tem/màu/MV (+2 Đầu). */
+export function appendSouthTemToTenGhep(
+  baseTenGhep?: string | null,
+  tem?: string | null,
+  mauTem?: string | null,
+  danTem2Dau?: boolean | null
+) {
+  const base = stripSouthTemSuffix(baseTenGhep);
+  const suffix = buildSouthTemSuffix(tem, mauTem, danTem2Dau);
+  if (!suffix) return base;
+  if (!base) return suffix.trim();
+  return `${base}${suffix}`;
+}
+/** Tách tem/màu/2 Đầu từ ten_ghep đã lưu (fallback khi JSON cũ chưa có cột tem riêng; hiểu cả format cũ). */
+export function parseSouthTemFromTenGhep(tenGhep?: string | null): { tem: string; mauTem: string; danTem2Dau: boolean } {
+  const text = String(tenGhep || '');
+  const danTem2Dau = /Dán Tem 2 Đầu\s*$/u.test(text);
+  const full = text.match(/\(Dán Tem\s*([^)]*?)\)(?:\s*Màu\s*(\S+))?(?:\s*(MV\w+))?/u);
+  if (full) return { tem: String(full[1] || '').trim(), mauTem: String(full[2] || '').trim(), danTem2Dau };
+  const legacy = text.match(/\(Tem\s*([^)\-]*?)(?:\s*-\s*([^)]*?))?\)\s*$/u);
+  if (legacy) return { tem: String(legacy[1] || '').trim(), mauTem: String(legacy[2] || '').trim(), danTem2Dau };
+  return { tem: '', mauTem: '', danTem2Dau };
+}
 export const ORDER_STATUS_DEFAULT = 'Chờ sx';
 export const ORDER_STATUS_OPTIONS = ['Chờ sx', 'Đang sx', 'Hoàn thành', 'Hủy'] as const;
 export const STORAGE_ORDER_UNIT_KEY = 'order_unit_suggestions_v1';
@@ -36,6 +125,8 @@ export interface OrderProductOption {
   tenGhep: string;
   /** Mét dài chuẩn trên danh mục SP — đơn cắt lẻ dùng làm "m dài chính" để thay đúng token. */
   doDaiM: string;
+  /** Định mức thực tế trên danh mục SP (`do_li_dm`) — đơn miền nam prefills ô Độ li ĐM. */
+  doLiDm: string;
 }
 
 export function normalizeLookupText(value: string) {
@@ -128,7 +219,8 @@ export function normalizeOrderProducts(data: unknown): OrderProductOption[] {
     unit: product.unit === '-' ? '' : product.unit,
     newCode: product.newCode,
     tenGhep: product.tenGhep || '',
-    doDaiM: product.doDaiM || ''
+    doDaiM: product.doDaiM || '',
+    doLiDm: product.doLiDm || ''
   })).filter(product => product.code);
 }
 
@@ -196,6 +288,10 @@ export type OrderProductConversion = {
   dienTichM2: number | null; trongLuongKgMDai: number | null;
   trongLuongKgM2: number | null; trongLuongKgTam: number | null;
   trongLuongKgCuon: number | null;
+  /** Alias / field mở rộng dùng ở cảnh báo tồn kho (main). */
+  dienTichM2Tam?: number | null;
+  dienTichM2Cuon?: number | null;
+  chieuDaiMCuon?: number | null;
 };
 
 export type CutOrderWeightResult = {

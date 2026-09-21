@@ -35,7 +35,11 @@ Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...
 | `lenh_xuat_hang` | `/lenh-xuat-hang` | [lenh_xuat_hang.md](./lenh_xuat_hang.md) |
 | `lenh_sx` | `/lenh-san-xuat` | [lenh_sx.md](./lenh_sx.md) |
 | `ke_hoach_san_xuat` | `/ke-hoach-san-xuat` | [ke_hoach_san_xuat.md](./ke_hoach_san_xuat.md) |
+| `dot_san_xuat` | `/dot-san-xuat` | [dot_san_xuat.md](./dot_san_xuat.md) |
 | `nhan_su` | `/nhan-su` | [nhan_su.md](./nhan_su.md) |
+| `chi_phi_nhan_cong` | `/chi-phi-nhan-cong` | [chi_phi_nhan_cong.md](./chi_phi_nhan_cong.md) |
+| `chi_phi_dien` | `/chi-phi-dien` (card **Chi phí điện** trong `/hcns`) | [chi_phi_dien.md](./chi_phi_dien.md) |
+| `chi_phi_bao_duong` | `/chi-phi-bao-duong` (card **Chi phí bảo dưỡng** trong QC `/nha-may/qc`) | [chi_phi_bao_duong.md](./chi_phi_bao_duong.md) |
 | `danh_sach_xe` | `/danh-sach-xe` | [danh_sach_xe.md](./danh_sach_xe.md) |
 | `doi_chieu_lai_xe` | `/danh-sach-xe` | [danh_sach_xe.md](./danh_sach_xe.md) |
 | `chi_phi_xe` | `/danh-sach-xe` | [chi_phi_xe.md](./chi_phi_xe.md) |
@@ -49,7 +53,14 @@ Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...
 | `bao_cao_nghiem_thu` | `/bao-cao-san-luong` | [bao_cao_nghiem_thu.md](./bao_cao_nghiem_thu.md) |
 | `bao_cao_may_nvl_ton` | `/bao-cao-may-nvl-ton` | [bao_cao_may_nvl_ton.md](./bao_cao_may_nvl_ton.md) |
 | `so_tron` | `/so-tron` (card Sổ trộn trong `/phieu-bao-cao`, vào từ `/nha-may/cong-nhan`) | [so_tron.md](./so_tron.md) |
+| `bao_cao_ngay` | `/bao-cao-ngay` (card Báo cáo ngày trong `/phieu-bao-cao`) + `/danh-sach-bao-cao-ngay` | [bao_cao_ngay.md](./bao_cao_ngay.md) |
+| `so_giao_ca_mmtb` | `/so-giao-ca-mmtb` (card Sổ giao ca MMTB trong `/phieu-bao-cao`) | [so_giao_ca_mmtb.md](./so_giao_ca_mmtb.md) |
+| `so_test_mau_nhua` | `/so-test-mau-nhua` (card Sổ test mẫu nhựa trong QC `/nha-may/qc`) | [so_test_mau_nhua.md](./so_test_mau_nhua.md) |
+| `bao_cao_hang_loi_khach_hang` | `/bao-cao-hang-loi-khach-hang` (card Báo cáo hàng lỗi hỏng trong `/kinh-doanh`) + `/thong-ke-hang-loi-khach-hang` (card Thống kê hàng lỗi hỏng trong QC `/nha-may/qc`) | [bao_cao_hang_loi_khach_hang.md](./bao_cao_hang_loi_khach_hang.md) |
+| `so_che_do_may` | `/so-che-do-may` (card Sổ chế độ máy trong `/phieu-bao-cao`) + `/danh-sach-so-che-do-may` | [so_che_do_may.md](./so_che_do_may.md) |
 | `phieu_bao_dung_may` | `/phieu-bao-dung-may` | [phieu_bao_dung_may.md](./phieu_bao_dung_may.md) |
+| *(chưa có bảng)* | `/bao-cao-tuan` (card Báo cáo tuần trong `/phieu-bao-cao`) | [bao_cao_tuan.md](./bao_cao_tuan.md) |
+| `bao_cao_thang` | `/bao-cao-thang` (card Báo cáo tháng trong `/phieu-bao-cao`) + `/danh-sach-bao-cao-thang` | [bao_cao_thang.md](./bao_cao_thang.md) |
 | *(tổng hợp)* | `/bang-dieu-khien` | [control_board.md](./control_board.md) |
 
 ## File dùng chung (chỉ khi cần)

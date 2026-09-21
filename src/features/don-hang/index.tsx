@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowDown, ArrowUp, Eye, GripVertical, Loader2, Pencil, Plus, Printer, Save, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Archive, Eye, GripVertical, Loader2, Pencil, Plus, Printer, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { useTabAccess } from '../../app/useTabAccess';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { convertProductQuantity } from '../../utils/productUnitConversion';
@@ -16,10 +16,15 @@ import {
   ORDER_STATUS_OPTIONS,
   ORDER_STATUS_DEFAULT,
   CUT_ORDER_TYPE,
+  SOUTH_ORDER_TYPE,
+  SOUTH_TEM_OPTIONS,
+  SOUTH_TEM_COLOR_OPTIONS,
+  SOUTH_TEM_COLOR_DEFAULT,
+  appendSouthTemToTenGhep,
+  parseSouthTemFromTenGhep,
   orderFieldClass,
   normalizeOrderProducts,
   findOrderProductById,
-  findOrderProductByCode,
   resolveOrderProductFields,
   readUnitSuggestions,
   saveUnitSuggestion,
@@ -35,8 +40,7 @@ import {
   type StaffOption,
   type CustomerOption
 } from '../_shared/orderHelpers';
-import { buildOrderTenGhep, classifyProductPxGroup, replaceCutLengthMeters } from '../../utils/productProductionName';
-import { formatProductionNameWithLength } from '../_shared/productionProductHelpers';
+import { extractDoLiDmNumber, buildOrderTenGhep, classifyProductPxGroup, replaceCutLengthMeters, replaceDoLiDmInTenGhep, normalizeDoLiDm } from '../../utils/productProductionName';
 import {
   parseOrderProductsFromRecord,
   summarizeOrderProducts,
@@ -72,6 +76,7 @@ interface OrderRowExt extends OrderRow {
 const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1180px]';
 const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1420px]';
 const ORDER_CUT_TABLE_MIN_WIDTH = 'min-w-[1480px]';
+const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2060px]';
 export const PRODUCTION_ORDER_TYPE = 'Đơn sản xuất';
 const orderProductGridClass =
   'grid-cols-[2.25rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(12rem,1.35fr)_minmax(7rem,0.9fr)_5.5rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
@@ -79,6 +84,8 @@ const orderProductionProductGridClass =
   'grid-cols-[2.25rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(11rem,1.25fr)_minmax(6.5rem,0.85fr)_5rem_4.5rem_4.5rem_4.5rem_5rem_5rem_5rem_5rem_6.5rem]';
 const orderCutProductGridClass =
   'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_6rem_minmax(8rem,1fr)_6.5rem]';
+const orderSouthProductGridClass =
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_8.5rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
 const CUSTOMER_ENTERED_KG_SOURCE = 'khach_hang_nhap_kg';
 /** Ô Tìm Mã AMIS: hiện tối đa 400 kết quả đã lọc. Các Select khác vẫn mặc định 50. */
@@ -128,6 +135,8 @@ export function normalizeOrders(data: unknown): OrderRow[] {
       const record = item as Record<string, unknown>;
       const orderCode = pickText(record, ['ma_don_hang', 'order_code', 'code'], '');
       const updatedRaw = record.updated_at ?? record.updatedAt;
+      const deletedRaw = record.deleted_at ?? record.deletedAt;
+      const deletedAt = deletedRaw ? formatCell(deletedRaw) : null;
       const products = parseOrderProductsFromRecord(record, { includeSourceProduct: true });
       const summary = summarizeOrderProducts(products);
       if (!orderCode && products.length === 0) return null;
@@ -159,7 +168,9 @@ export function normalizeOrders(data: unknown): OrderRow[] {
           return '';
         })(),
         createdAt: formatCell(record.created_at),
-        updatedAt: updatedRaw ? formatCell(updatedRaw) : ''
+        updatedAt: updatedRaw ? formatCell(updatedRaw) : '',
+        deletedAt,
+        isDeleted: Boolean(deletedAt)
       };
     })
     .filter((order): order is OrderRow => Boolean(order))
@@ -185,14 +196,20 @@ export type OrderProductFormLine = {
   productionName: string;
   unit: string;
   quantity: string;
-  /** SL theo miền — dùng cho "Đơn sản xuất" và "Đơn theo quy cách của khách đặt". SL tổng = Bắc + Trung + Nam. */
+  /** SL theo miền — dùng cho "Đơn sản xuất", "Đơn theo quy cách của khách đặt" và "Đơn miền nam". SL tổng = Bắc + Trung + Nam. */
   slBac?: string;
   slTrung?: string;
   slNam?: string;
-  /** Chỉ dùng cho đơn "Đơn theo quy cách của khách đặt" (đơn cắt lẻ). */
+  /** Chỉ dùng cho đơn "Đơn theo quy cách của khách đặt" và "Đơn miền nam" (đơn cắt lẻ). */
   doLi?: string;
+  /** Chỉ dùng cho "Đơn miền nam": định mức thực tế `do_li_dm`, dạng `(đm n li)` / `(đm n kg)`. */
+  doLiDm?: string;
   kho?: string;
   daiM: string;
+  /** Chỉ dùng cho "Đơn miền nam": loại tem + màu tem (dropdown từ phân tích sp_mien_nam.xlsx) + 2 Đầu. */
+  tem?: string;
+  mauTem?: string;
+  danTem2Dau?: boolean;
   kg1Sp?: string;
   tongKg?: string;
   /** Tổng KG do khách hàng/người lập đơn nhập trực tiếp, được ưu tiên hơn định mức quy đổi. */
@@ -517,6 +534,8 @@ export function orderProductLinesToPayload(
   productConversions: OrderProductConversion[] = []
 ) {
   const isCutOrder = orderType === CUT_ORDER_TYPE;
+  const isSouthOrder = orderType === SOUTH_ORDER_TYPE;
+  const isCutLikeOrder = isCutOrder || isSouthOrder;
   const isProductionOrder = orderType === PRODUCTION_ORDER_TYPE;
   return lines
     .filter(line => line.productCode.trim() || line.productName.trim())
@@ -529,7 +548,7 @@ export function orderProductLinesToPayload(
       const productCode = line.productCode.trim();
       const productName = selectedProduct?.name || resolved.productName || line.productName.trim();
       const allowedUnits = selectedProduct ? allowedOrderUnits(selectedProduct) : [];
-      const unit = isCutOrder
+      const unit = isCutLikeOrder
         ? 'Tấm'
         : selectedProduct
           ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
@@ -537,7 +556,7 @@ export function orderProductLinesToPayload(
       const bacVal = parsePercentInput(String(line.slBac ?? ''));
       const trungVal = parsePercentInput(String(line.slTrung ?? ''));
       const namVal = parsePercentInput(String(line.slNam ?? ''));
-      const isRegionOrder = isProductionOrder || isCutOrder;
+      const isRegionOrder = isProductionOrder || isCutLikeOrder;
       const hasRegionInput = isRegionOrder &&
         ((Number.isFinite(bacVal) && String(line.slBac ?? '').trim() !== '') ||
           (Number.isFinite(trungVal) && String(line.slTrung ?? '').trim() !== '') ||
@@ -546,10 +565,24 @@ export function orderProductLinesToPayload(
         (Number.isFinite(trungVal) ? Math.max(0, trungVal) : 0) +
         (Number.isFinite(namVal) ? Math.max(0, namVal) : 0);
       const typedQuantity = parsePercentInput(line.quantity);
-      // Đơn sản xuất + Đơn theo quy cách: SL tổng = Bắc + Trung + Nam (tự động khi có nhập miền).
+      // Đơn sản xuất + Đơn theo quy cách + Đơn miền nam: SL tổng = Bắc + Trung + Nam (tự động khi có nhập miền).
       const quantity = isRegionOrder && hasRegionInput ? regionTotal : typedQuantity;
       const daiM = parsePercentInput(line.daiM);
       const note = line.note.trim();
+      const temValue = String(line.tem || '').trim();
+      const mauTemValue = String(line.mauTem || '').trim() || (temValue && isSouthOrder ? SOUTH_TEM_COLOR_DEFAULT : '');
+      const danTem2DauValue = Boolean(line.danTem2Dau);
+      // Form chỉ nhập số; khi lưu/ghép tên luôn hiểu là (đm n li).
+      const doLiDmValue = isSouthOrder ? normalizeDoLiDm(line.doLiDm, 'li') : '';
+      // Ghi đè stale trong sourceProduct khi user xóa tem/màu/bỏ tick 2 Đầu (undefined bị JSON.stringify loại bỏ).
+      const southExtraFields = isSouthOrder
+        ? {
+            tem: temValue || undefined,
+            mau_tem: mauTemValue || undefined,
+            dan_tem_2_dau: danTem2DauValue ? 1 : undefined,
+            do_li_dm: doLiDmValue || undefined
+          }
+        : {};
       const shouldRecalculateConversion = line.shouldRecalculateConversion !== false;
       const regionFields = isRegionOrder
         ? {
@@ -573,19 +606,26 @@ export function orderProductLinesToPayload(
           : undefined;
       const resolveTenGhep = (tenSanXuat: string, cutLength?: number) => {
         // Ưu tiên tên ghép đã lưu trên danh mục SP (đúng tuyệt đối).
-        // Đơn cắt lẻ: thay đúng token m dài chính thành mét cắt
+        // Đơn cắt lẻ / miền nam: thay đúng token m dài chính thành mét cắt
         // (tránh "...6m - 8m" khi m dài không đứng cuối).
+        // Đơn miền nam: thay segment (đm n li|kg) theo định mức thực tế, giữ nguyên token do_li.
         if (catalogTenGhep && (!tenSanXuat || tenSanXuat === catalogProductionName)) {
-          return cutLength != null
+          let base = cutLength != null
             ? replaceCutLengthMeters(catalogTenGhep, cutLength, mainForCut)
             : catalogTenGhep;
+          if (doLiDmValue) {
+            base = replaceDoLiDmInTenGhep(base, doLiDmValue, 'li');
+          }
+          return isSouthOrder ? appendSouthTemToTenGhep(base, temValue, mauTemValue, danTem2DauValue) : base;
         }
         const tenGhep = buildOrderTenGhep(tenSanXuat, {
           nhomVthh: selectedProduct?.group,
           maAmis: selectedProduct?.newCode,
-          cutLengthM: cutLength
+          cutLengthM: cutLength,
+          doLiDm: doLiDmValue || undefined
         });
-        return tenGhep || undefined;
+        if (!tenGhep) return undefined;
+        return isSouthOrder ? appendSouthTemToTenGhep(tenGhep, temValue, mauTemValue, danTem2DauValue) : tenGhep;
       };
 
       if (!shouldRecalculateConversion) {
@@ -613,6 +653,7 @@ export function orderProductLinesToPayload(
           stt: index + 1,
           recalculate_conversion: false,
           ...regionFields,
+          ...southExtraFields,
           ...(!line.sourceProduct && line.kg1Sp ? { kg_1_sp: parsePercentInput(line.kg1Sp) } : {}),
           ...(!line.sourceProduct && line.tongKg ? { tong_kg: parsePercentInput(line.tongKg) } : {}),
           ...(!line.sourceProduct && line.m2 ? { m2: parsePercentInput(line.m2) } : {}),
@@ -623,8 +664,8 @@ export function orderProductLinesToPayload(
           ...(!line.sourceProduct && storedConversionResults?.length
             ? { ket_qua_quy_doi: storedConversionResults }
             : {}),
-          ...(isCutOrder && Number.isFinite(daiM) && daiM > 0 ? { dai_m: daiM } : {}),
-          ...(isCutOrder && line.quyCachMDai ? { quy_cach_m_dai: parsePercentInput(String(line.quyCachMDai)) } : {})
+          ...(isCutLikeOrder && Number.isFinite(daiM) && daiM > 0 ? { dai_m: daiM } : {}),
+          ...(isCutLikeOrder && line.quyCachMDai ? { quy_cach_m_dai: parsePercentInput(String(line.quyCachMDai)) } : {})
         };
       }
 
@@ -635,7 +676,7 @@ export function orderProductLinesToPayload(
       const manualTotalKg = Number.isFinite(parsedManualKg) && parsedManualKg > 0
         ? roundConversionValue(parsedManualKg)
         : null;
-      const cutWeight = isCutOrder
+      const cutWeight = isCutLikeOrder
         ? calculateCutOrderWeight(line.daiM, String(quantity), conversion, unit, productCode, productName)
         : null;
 
@@ -645,7 +686,7 @@ export function orderProductLinesToPayload(
       let cutTlCuon: number | undefined;
       let cutTlTam: number | undefined;
 
-      if (isCutOrder) {
+      if (isCutLikeOrder) {
         if (Number.isFinite(daiM) && daiM > 0 && Number.isFinite(quantity) && quantity > 0) {
           cutMDai = roundConversionValue(daiM * quantity);
           const width = extractProductWidth(productCode, productName, conversion);
@@ -705,7 +746,8 @@ export function orderProductLinesToPayload(
         stt: index + 1,
         recalculate_conversion: true,
         ...regionFields,
-        ...(isCutOrder
+        ...southExtraFields,
+        ...(isCutLikeOrder
           ? {
               ...(quyCachMDai !== undefined ? { quy_cach_m_dai: quyCachMDai } : {}),
               dai_m: Number.isFinite(daiM) && daiM > 0 ? daiM : undefined,
@@ -745,7 +787,9 @@ export function orderToForm(order: OrderRow): OrderFormState {
     ? order.orderType
     : ORDER_TYPE_OPTIONS[0];
 
-  const productLines = getOrderProductLines(order).map(line => ({
+  const productLines = getOrderProductLines(order).map(line => {
+    const fallbackTem = line.tem || line.mauTem || line.danTem2Dau ? null : parseSouthTemFromTenGhep(line.tenGhep);
+    return {
     key: `order-product-${line.productCode}-${Math.random().toString(36).slice(2, 7)}`,
     sourceProduct: line.sourceProduct ? { ...line.sourceProduct } : undefined,
     shouldRecalculateConversion: false,
@@ -759,6 +803,11 @@ export function orderToForm(order: OrderRow): OrderFormState {
     slTrung: line.soLuongTrung || '',
     slNam: line.soLuongNam || '',
     daiM: line.daiM || '',
+    doLi: line.doLi || '',
+    doLiDm: extractDoLiDmNumber(line.doLiDm || ''),
+    tem: orderCellToInput(line.tem || fallbackTem?.tem || ''),
+    mauTem: orderCellToInput(line.mauTem || fallbackTem?.mauTem || ''),
+    danTem2Dau: Boolean(line.danTem2Dau ?? fallbackTem?.danTem2Dau ?? false),
     kg1Sp: line.kg1Sp || '',
     tongKg: line.tongKg || '',
     manualTongKg: line.conversionSource === CUSTOMER_ENTERED_KG_SOURCE,
@@ -771,7 +820,8 @@ export function orderToForm(order: OrderRow): OrderFormState {
     m2: line.m2 || '',
     mDai: line.mDai || '',
     conversionResults: line.conversionResults?.map(result => ({ ...result }))
-  }));
+    };
+  });
 
   return {
     orderCode: orderCellToInput(order.orderCode),
@@ -804,6 +854,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const [printOrder, setPrintOrder] = useState<OrderRow | null>(null);
   const [pendingPrint, setPendingPrint] = useState(false);
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
+  const [restoringOrderId, setRestoringOrderId] = useState<string | null>(null);
+  const [showDeleted, setShowDeleted] = useState(false);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [formError, setFormError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
@@ -818,12 +870,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const [selectedProductLineKey, setSelectedProductLineKey] = useState<string | null>(null);
   const [dragProductIndex, setDragProductIndex] = useState<number | null>(null);
 
-  const loadOrders = async () => {
+  const loadOrders = async (includeDeleted = showDeleted) => {
     setIsLoadingOrders(true);
     setOrdersError('');
 
     try {
-      const res = await fetch('/api/don-hang');
+      const res = await fetch(`/api/don-hang${includeDeleted ? '?includeDeleted=1' : ''}`);
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
@@ -838,6 +890,20 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       setIsLoadingOrders(false);
     }
   };
+
+  const toggleShowDeleted = () => {
+    const next = !showDeleted;
+    setShowDeleted(next);
+    setSearchText('');
+    setSelectedType('all');
+    void loadOrders(next);
+  };
+
+  /** Danh sách theo chế độ xem: mặc định ẩn đơn đã xóa mềm; thùng rác chỉ hiện đơn đã xóa. */
+  const visibleOrders = useMemo(
+    () => (showDeleted ? orders.filter(order => order.isDeleted) : orders.filter(order => !order.isDeleted)),
+    [orders, showDeleted]
+  );
 
   useEffect(() => {
     loadOrders();
@@ -1128,6 +1194,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       productName: match?.name || '',
       productionName: match?.productionName || '',
       unit: 'Tấm',
+      doLiDm: extractDoLiDmNumber(match?.doLiDm || ''),
       tongKg: '',
       manualTongKg: false
     });
@@ -1148,6 +1215,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     }
 
     const isCutOrder = orderForm.orderType === CUT_ORDER_TYPE;
+    const isSouthOrder = orderForm.orderType === SOUTH_ORDER_TYPE;
+    const isCutLikeOrder = isCutOrder || isSouthOrder;
     const activeProductLines = orderForm.productLines.filter(line => line.productCode.trim() || line.productName.trim());
     for (const line of activeProductLines) {
       if (!line.manualTongKg) continue;
@@ -1168,7 +1237,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         setFormError('Mỗi dòng sản phẩm cần có mã SP hoặc tên SP.');
         return;
       }
-      if (isCutOrder && (!product.dai_m || product.dai_m <= 0)) {
+      if (isCutLikeOrder && (!product.dai_m || product.dai_m <= 0)) {
         setFormError(`Dài (m) phải lớn hơn 0 cho sản phẩm ${product.ma_sp || product.ten_sp}.`);
         return;
       }
@@ -1179,7 +1248,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     }
 
     const productsWithConversion: any[] = [];
-    if (isCutOrder) {
+    if (isCutLikeOrder) {
       productsWithConversion.push(...products);
     } else {
       for (const [productIndex, product] of products.entries()) {
@@ -1345,27 +1414,30 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     }
   };
 
-  const handleDeleteOrder = async (order: OrderRow) => {
+  const handleDeleteOrder = async (order: OrderRow, hard = false) => {
     if (!order.id) {
       setOrdersError('Không tìm thấy ID để xóa.');
       return;
     }
 
-    if (!window.confirm(`Bạn có chắc muốn xóa đơn "${order.orderCode || order.productCode}"?`)) return;
+    if (hard) {
+      if (!window.confirm(`Xóa VĨNH VIỄN đơn "${order.orderCode || order.productCode}"? Dữ liệu sẽ mất hoàn toàn, không thể khôi phục.`)) return;
+    } else if (!window.confirm(`Bạn có chắc muốn xóa đơn "${order.orderCode || order.productCode}"?\n\nDữ liệu được giữ lại (xóa mềm) và có thể khôi phục từ mục "Đơn đã xóa".`)) return;
 
     setDeletingOrderId(order.id);
     setActionMessage('');
 
     try {
-      const res = await fetch(`/api/don-hang/${order.id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/don-hang/${order.id}${hard ? '?hard=1' : ''}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(data.error || 'Không thể xóa đơn hàng.');
+        throw new Error(data.error || (hard ? 'Không thể xóa vĩnh viễn đơn hàng.' : 'Không thể xóa đơn hàng.'));
       }
 
       if (viewingOrder?.id === order.id) setViewingOrder(null);
-      setActionMessage('Đã xóa đơn hàng.');
+      setActionMessage(hard ? 'Đã xóa vĩnh viễn đơn hàng.' : 'Đã xóa đơn hàng (có thể khôi phục).');
+      showAppToast(hard ? 'Đã xóa vĩnh viễn đơn hàng.' : 'Đã xóa đơn hàng (có thể khôi phục).');
       await loadOrders();
     } catch (error: any) {
       setOrdersError(error.message || 'Không thể xóa đơn hàng.');
@@ -1374,15 +1446,42 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const handleRestoreOrder = async (order: OrderRow) => {
+    if (!order.id) {
+      setOrdersError('Không tìm thấy ID để khôi phục.');
+      return;
+    }
+
+    setRestoringOrderId(order.id);
+    setActionMessage('');
+
+    try {
+      const res = await fetch(`/api/don-hang/${order.id}/restore`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể khôi phục đơn hàng.');
+      }
+
+      setActionMessage(`Đã khôi phục đơn ${order.orderCode || order.productCode}.`);
+      showAppToast(`Đã khôi phục đơn ${order.orderCode || order.productCode}.`);
+      await loadOrders();
+    } catch (error: any) {
+      setOrdersError(error.message || 'Không thể khôi phục đơn hàng.');
+    } finally {
+      setRestoringOrderId(null);
+    }
+  };
+
   const orderTypeOptions = useMemo(() => {
-    const types = orders
+    const types = visibleOrders
       .map(order => order.orderType)
       .filter((type): type is string => type !== '-' && type.length > 0);
     return [...new Set(types)].sort((a, b) => String(a).localeCompare(String(b), 'vi'));
-  }, [orders]);
+  }, [visibleOrders]);
   const normalizedSearch = searchText.trim().toLowerCase();
   const filteredOrders = useMemo(() => {
-    return orders.filter(order => {
+    return visibleOrders.filter(order => {
       const matchesType = selectedType === 'all' || order.orderType === selectedType;
       const matchesSearch =
         !normalizedSearch ||
@@ -1391,7 +1490,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
           .includes(normalizedSearch);
       return matchesType && matchesSearch;
     });
-  }, [orders, normalizedSearch, selectedType]);
+  }, [visibleOrders, normalizedSearch, selectedType]);
 
   const hasActiveFilters = selectedType !== 'all' || Boolean(searchText);
 
@@ -1400,19 +1499,23 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     setSearchText('');
   };
 
-  const customerCount = new Set(orders.map(order => order.customer).filter(customer => customer && customer !== '-')).size;
-  const totalQuantity = orders.reduce((sum, order) => {
+  const customerCount = new Set(visibleOrders.map(order => order.customer).filter(customer => customer && customer !== '-')).size;
+  const totalQuantity = visibleOrders.reduce((sum, order) => {
     const value = Number(order.quantity);
     return Number.isFinite(value) ? sum + value : sum;
   }, 0);
 
   const isFormCutOrder = orderForm.orderType === CUT_ORDER_TYPE;
+  const isFormSouthOrder = orderForm.orderType === SOUTH_ORDER_TYPE;
+  const isFormCutLikeOrder = isFormCutOrder || isFormSouthOrder;
   const isFormProductionOrder = orderForm.orderType === PRODUCTION_ORDER_TYPE;
-  const productGridClass = isFormCutOrder
-    ? orderCutProductGridClass
-    : isFormProductionOrder
-      ? orderProductionProductGridClass
-      : orderProductGridClass;
+  const productGridClass = isFormSouthOrder
+    ? orderSouthProductGridClass
+    : isFormCutOrder
+      ? orderCutProductGridClass
+      : isFormProductionOrder
+        ? orderProductionProductGridClass
+        : orderProductGridClass;
   const customerSelect2Options = useMemo(
     () => ({
       allowClear: true,
@@ -1447,7 +1550,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       onMoveUp={() => moveProductLine(index, index - 1)}
       onMoveDown={() => moveProductLine(index, index + 1)}
       onDuplicate={() => duplicateProductLineBelow(index)}
-      moveButtonsInStt={isFormCutOrder}
+      moveButtonsInStt={isFormCutLikeOrder}
       onDragStart={event => handleProductDragStart(event, index)}
       onDragOver={handleProductDragOver}
       onDrop={() => handleProductDrop(index)}
@@ -1595,7 +1698,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
               <div className="col-span-1 min-w-0 sm:col-span-2 xl:col-span-4">
               <div className="overflow-x-auto">
-              <div className={isFormProductionOrder ? ORDER_PRODUCTION_TABLE_MIN_WIDTH : isFormCutOrder ? ORDER_CUT_TABLE_MIN_WIDTH : ORDER_PRODUCT_TABLE_MIN_WIDTH}>
+              <div className={isFormProductionOrder ? ORDER_PRODUCTION_TABLE_MIN_WIDTH : isFormSouthOrder ? ORDER_SOUTH_TABLE_MIN_WIDTH : isFormCutOrder ? ORDER_CUT_TABLE_MIN_WIDTH : ORDER_PRODUCT_TABLE_MIN_WIDTH}>
               <RepeatableLinesBlock
                 title="Sản phẩm"
                 required
@@ -1611,7 +1714,26 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 }
                 addButtonClassName="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
                 columns={
-                  isFormCutOrder
+                  isFormSouthOrder
+                    ? [
+                        { key: 'stt', label: 'STT' },
+                        { key: 'code', label: 'Mã AMIS', required: true },
+                        { key: 'productionName', label: 'Tên sản xuất' },
+                        { key: 'unit', label: 'ĐVT' },
+                        { key: 'daiM', label: 'Dài (m)', required: true },
+                        { key: 'doLi', label: 'Độ li ĐM' },
+                        { key: 'bac', label: 'Bắc' },
+                        { key: 'trung', label: 'Trung' },
+                        { key: 'nam', label: 'Nam' },
+                        { key: 'qty', label: 'SL (tổng)', required: true },
+                        { key: 'tongKg', label: 'Tổng KG (nhập)' },
+                        { key: 'tem', label: 'Tem' },
+                        { key: 'mauTem', label: 'Màu tem' },
+                        { key: 'haiDau', label: '2 Đầu' },
+                        { key: 'note', label: 'Ghi chú' },
+                        { key: 'actions', label: '' }
+                      ]
+                    : isFormCutOrder
                     ? [
                         { key: 'stt', label: 'STT' },
                         { key: 'code', label: 'Mã AMIS', required: true },
@@ -1658,12 +1780,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       ]
                 }
               >
-                {isFormCutOrder
+                {isFormCutLikeOrder
                   ? orderForm.productLines.map((line, index) => {
                       const matchedLineProduct = resolveOrderLineProduct(productOptions, line);
                       const lineSanPhamId = String(matchedLineProduct?.id || line.productId || '').trim();
                       const matchedConversion = lineSanPhamId ? productConversions.find(item => item.sanPhamId === lineSanPhamId) : undefined;
-                      // Đơn theo quy cách: SL tổng = Bắc + Trung + Nam (tự động khi có nhập miền).
+                      // Đơn theo quy cách / Đơn miền nam: SL tổng = Bắc + Trung + Nam (tự động khi có nhập miền).
                       const cutBacNum = parsePercentInput(String(line.slBac ?? ''));
                       const cutTrungNum = parsePercentInput(String(line.slTrung ?? ''));
                       const cutNamNum = parsePercentInput(String(line.slNam ?? ''));
@@ -1684,7 +1806,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       return renderProductLineShell(
                         line,
                         index,
-                        orderCutProductGridClass,
+                        isFormSouthOrder ? orderSouthProductGridClass : orderCutProductGridClass,
                         <>
                         <div className="min-w-0">
                           <SearchableSelect
@@ -1717,8 +1839,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             value={line.productionName}
                             onChange={productionName => pickProductionName(line.key, productionName)}
                             options={getProductionNameOptions(line.productCode, line.productName)}
-                            placeholder="Chọn hoặc nhập tên sản xuất"
-                            allowCustomValue
+                            placeholder={line.productCode.trim() ? 'Chọn tên sản xuất' : 'Chọn mã AMIS trước'}
+                            isLoading={isLoadingLookups}
+                            disabled={!line.productCode.trim()}
                             skipUnchangedBlurCommit
                             inputClassName={orderFieldClass}
                             getLabel={item => String(item)}
@@ -1743,6 +1866,20 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             placeholder="2.8"
                           />
                         </div>
+                        {isFormSouthOrder ? (
+                          <div className="col-span-1 min-w-0">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={line.doLiDm || ''}
+                              onChange={e => updateConversionProductLine(line.key, { doLiDm: e.target.value })}
+                              className={orderFieldClass}
+                              placeholder="0.75"
+                              title="Độ li định mức thực tế — chỉ nhập số, tự hiểu là (đm n li)"
+                            />
+                          </div>
+                        ) : null}
                         <div className="col-span-1 min-w-0">
                           <input
                             type="number"
@@ -1808,6 +1945,47 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             placeholder="Nhập KG"
                           />
                         </div>
+                        {isFormSouthOrder ? (
+                          <>
+                            <div className="min-w-0">
+                              <SearchableSelect
+                                value={line.tem || ''}
+                                onChange={tem => updateConversionProductLine(line.key, { tem })}
+                                options={[...SOUTH_TEM_OPTIONS]}
+                                placeholder="Chọn/nhập tem"
+                                getLabel={item => String(item)}
+                                getValue={item => String(item)}
+                                allowEmpty
+                                allowCustomValue
+                                inputClassName={orderFieldClass}
+                              />
+                            </div>
+                            <div className="min-w-0">
+                              <SearchableSelect
+                                value={line.mauTem || ''}
+                                onChange={mauTem => updateConversionProductLine(line.key, { mauTem })}
+                                options={[...SOUTH_TEM_COLOR_OPTIONS]}
+                                placeholder={`Màu (${SOUTH_TEM_COLOR_DEFAULT})`}
+                                getLabel={item => String(item)}
+                                getValue={item => String(item)}
+                                allowEmpty
+                                allowCustomValue
+                                inputClassName={orderFieldClass}
+                              />
+                            </div>
+                            <div className="flex min-w-0 items-center justify-center">
+                              <label className="flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-200 px-2 text-xs font-bold text-zinc-700 hover:bg-zinc-50" title="Dán Tem 2 Đầu">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(line.danTem2Dau)}
+                                  onChange={e => updateConversionProductLine(line.key, { danTem2Dau: e.target.checked })}
+                                  className="h-4 w-4 accent-emerald-600"
+                                />
+                                2 Đầu
+                              </label>
+                            </div>
+                          </>
+                        ) : null}
                         <div className="min-w-0">
                           <input
                             value={line.note}
@@ -1909,8 +2087,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           value={line.productionName}
                           onChange={productionName => pickProductionName(line.key, productionName)}
                           options={getProductionNameOptions(line.productCode, line.productName)}
-                          placeholder="Chọn hoặc nhập tên sản xuất"
-                          allowCustomValue
+                          placeholder={line.productCode.trim() ? 'Chọn tên sản xuất' : 'Chọn mã AMIS trước'}
+                          isLoading={isLoadingLookups}
+                          disabled={!line.productCode.trim()}
                           skipUnchangedBlurCommit
                           inputClassName={orderFieldClass}
                           getLabel={item => String(item)}
@@ -2104,8 +2283,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <span className="mr-2 font-black tabular-nums text-zinc-400">{line.stt || index + 1}.</span>
                         {line.productCode || '-'} · {line.productName || '-'}
                       </p>
-                      <p className="mt-0.5 text-xs font-semibold text-zinc-500">Tên sản xuất: {line.productionName || findOrderProductByCode(productOptions, line.productCode)?.productionName || '-'}</p>
-                      <p className="mt-0.5 text-xs font-bold text-zinc-700">Tên ghép: {formatProductionNameWithLength(line.productionName || line.productName || '', line.quyCachMDai, { tenGhep: line.tenGhep }) || '-'}</p>
+                      <p className="mt-0.5 text-xs font-semibold text-zinc-500">Tên sản xuất: {line.tenGhep || '-'}</p>
                       <p className="mt-0.5 text-xs font-semibold text-zinc-500">Ghi chú: {line.note || '-'}</p>
                       <p className="mt-0.5 text-zinc-600">
                         SL: {line.quantity || '-'}
@@ -2155,13 +2333,24 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 <Printer className="h-4 w-4" />
                 In phiếu
               </button>
-              {canEdit ? (
+              {canEdit && !viewingOrder.isDeleted ? (
                 <button type="button" onClick={() => openEditForm(viewingOrder)} className="flex h-10 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/20 bg-red-50 px-4 text-xs font-extrabold text-[#ef1b2d] transition hover:bg-red-100">
                   <Pencil className="h-4 w-4" />
                   Sửa
                 </button>
               ) : null}
-              {canDelete ? (
+              {canEdit && viewingOrder.isDeleted ? (
+                <button
+                  type="button"
+                  onClick={() => handleRestoreOrder(viewingOrder)}
+                  disabled={restoringOrderId === viewingOrder.id}
+                  className="flex h-10 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {restoringOrderId === viewingOrder.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                  Khôi phục
+                </button>
+              ) : null}
+              {canDelete && !viewingOrder.isDeleted ? (
                 <button
                   type="button"
                   onClick={() => handleDeleteOrder(viewingOrder)}
@@ -2184,12 +2373,22 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3 text-[11px] font-bold text-zinc-500">
-            <span>{orders.length} đơn</span>
+            <span>{visibleOrders.length} đơn{showDeleted ? ' đã xóa' : ''}</span>
             <span>{customerCount} KH</span>
             <span>SL {formatNumber(totalQuantity)}</span>
           </div>
 
-          {canCreate ? (
+          <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleShowDeleted}
+            className={`flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-extrabold transition ${showDeleted ? 'border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-700' : 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'}`}
+            title={showDeleted ? 'Về danh sách đơn hàng' : 'Xem đơn đã xóa (thùng rác)'}
+          >
+            <Archive className="h-4 w-4" />
+            {showDeleted ? 'Về danh sách' : 'Đơn đã xóa'}
+          </button>
+          {canCreate && !showDeleted ? (
             <button
               type="button"
               onClick={openAddForm}
@@ -2199,6 +2398,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               Thêm mới
             </button>
           ) : null}
+          </div>
         </div>
 
         <TableToolbar
@@ -2282,14 +2482,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             <div className="grid grid-cols-[2rem_minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2 text-xs font-semibold text-zinc-700">
                               <span className="font-black tabular-nums text-zinc-500">{line.stt || index + 1}</span>
                               <span className="font-black text-zinc-950">{line.productCode || '-'}</span>
-                              <span className="text-zinc-800">
-                                {line.tenGhep ||
-                                  formatProductionNameWithLength(
-                                    line.productionName || line.productName || '',
-                                    line.quyCachMDai
-                                  ) ||
-                                  '-'}
-                              </span>
+                              <span className="text-zinc-800">{line.tenGhep || '-'}</span>
                               <span className="text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
                               <span className="font-bold text-zinc-600">{line.unit || '-'}</span>
                             </div>
@@ -2333,7 +2526,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       >
                         <Eye className="h-4 w-4" />
                       </button>
-                      {canEdit ? (
+                      {canEdit && !showDeleted ? (
                         <button
                           type="button"
                           onClick={() => openEditForm(order)}
@@ -2343,13 +2536,43 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           <Pencil className="h-4 w-4" />
                         </button>
                       ) : null}
-                      {canDelete ? (
+                      {canDelete && !showDeleted ? (
                         <button
                           type="button"
                           onClick={() => handleDeleteOrder(order)}
                           disabled={deletingOrderId === order.id}
-                          title="Xóa"
+                          title="Xóa (giữ lại, có thể khôi phục)"
                           className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {deletingOrderId === order.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </button>
+                      ) : null}
+                      {showDeleted && canEdit ? (
+                        <button
+                          type="button"
+                          onClick={() => handleRestoreOrder(order)}
+                          disabled={restoringOrderId === order.id}
+                          title="Khôi phục đơn hàng"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-200 text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {restoringOrderId === order.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <RotateCcw className="h-4 w-4" />
+                          )}
+                        </button>
+                      ) : null}
+                      {showDeleted && canDelete ? (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteOrder(order, true)}
+                          disabled={deletingOrderId === order.id}
+                          title="Xóa vĩnh viễn (không thể khôi phục)"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-300 bg-rose-50 text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {deletingOrderId === order.id ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -2367,7 +2590,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
             {!isLoadingOrders && filteredOrders.length === 0 && (
               <TableEmptyRow colSpan={9}>
-                Bảng don_hang chưa có dữ liệu hoặc không có đơn phù hợp bộ lọc.
+                {showDeleted
+                  ? 'Không có đơn hàng đã xóa.'
+                  : 'Bảng don_hang chưa có dữ liệu hoặc không có đơn phù hợp bộ lọc.'}
               </TableEmptyRow>
             )}
           </TableBody>

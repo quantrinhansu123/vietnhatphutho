@@ -187,6 +187,66 @@ export function normalizeDoLiToken(value: string): string {
   return `${normalizeDecimalToken(t.replace(/\s*l?i\s*$/iu, ''))}li`;
 }
 
+/**
+ * Nhận `(đm 0.75 li)`, `đm 0.75 li`, `0.75` hoặc `7,8 kg` → `(đm n li|kg)`.
+ * Ô đơn miền nam lưu đúng cột `do_li_dm`, không phải `do_li`.
+ */
+export function normalizeDoLiDm(
+  value: string | null | undefined,
+  unitHint: 'li' | 'kg' = 'li'
+): string {
+  const t = String(value || '').trim();
+  if (!t) return '';
+  const extracted = extractDoLiDm(t);
+  if (extracted) return extracted;
+  const labeled = t.match(/^đm\s*([\d.,]+)\s*(li|kg)\s*$/iu);
+  if (labeled) {
+    return `(đm ${normalizeDecimalToken(labeled[1])} ${labeled[2].toLowerCase()})`;
+  }
+  const bare = t.match(/^([\d.,]+)(?:\s+(li|kg))?\s*$/iu);
+  if (!bare) return '';
+  const unit = (bare[2] || unitHint || 'li').toLowerCase();
+  return `(đm ${normalizeDecimalToken(bare[1])} ${unit})`;
+}
+
+/**
+ * Lấy số thuần từ `do_li_dm` để hiển thị trên form đơn miền nam
+ * (`(đm 0.75 li)` / `0.75` → `0.75`). Trả '' khi không parse được.
+ */
+export function extractDoLiDmNumber(value: string | null | undefined): string {
+  const t = String(value || '').trim();
+  if (!t) return '';
+  const fromParen = t.match(/\(\s*đm\s*([\d.,]+)\s*(?:li|kg)\s*\)/iu);
+  if (fromParen) return normalizeDecimalToken(fromParen[1]);
+  const labeled = t.match(/^đm\s*([\d.,]+)\s*(?:li|kg)?\s*$/iu);
+  if (labeled) return normalizeDecimalToken(labeled[1]);
+  const bare = t.match(/^([\d.,]+)\s*$/u);
+  if (bare) return normalizeDecimalToken(bare[1]);
+  return '';
+}
+
+/**
+ * Đơn miền nam: thay segment định mức thực tế `(đm n li|kg)` trong tên ghép.
+ * Không đụng token độ li (`0.8li`) hay tem `(Dán Tem 5li)`.
+ */
+export function replaceDoLiDmInTenGhep(
+  tenGhep: string,
+  doLiDm: string | null | undefined,
+  unitHint: 'li' | 'kg' = 'li'
+): string {
+  const text = String(tenGhep || '').trim();
+  const normalized = normalizeDoLiDm(doLiDm, unitHint);
+  if (!text || !normalized) return text;
+  if (DO_LI_DM_RE.test(text)) {
+    return text.replace(DO_LI_DM_RE, normalized);
+  }
+  const meterMatch = text.match(/\s*-\s*[\d.,]+\s*m\b/iu);
+  if (meterMatch && meterMatch.index != null) {
+    return `${text.slice(0, meterMatch.index)} - ${normalized}${text.slice(meterMatch.index)}`.trim();
+  }
+  return `${text} - ${normalized}`;
+}
+
 /** Token độ li hợp lệ: …li hoặc …i (vd `10i`) — không phải KG, không phải ZEM. */
 export function isValidDoLiToken(value: string): boolean {
   const t = String(value || '').trim();
@@ -450,6 +510,8 @@ export function buildOrderTenGhep(
     nhomVthh?: string;
     maAmis?: string;
     cutLengthM?: number | string | null;
+    /** Định mức thực tế `do_li_dm` (đơn miền nam) — ghi đè segment `(đm n li|kg)`, không đổi `do_li`. */
+    doLiDm?: string | null;
   }
 ): string {
   const nhomVthh = String(options?.nhomVthh || '').trim();
@@ -458,12 +520,15 @@ export function buildOrderTenGhep(
     nhomVthh,
     maAmis: options?.maAmis || ''
   });
+  const overrides: Partial<ProductionNameParts> = {};
   const cut = Number(String(options?.cutLengthM ?? '').replace(',', '.'));
   if (Number.isFinite(cut) && cut > 0) {
-    return composeProductionDisplayName(
-      { ...seeded, doDaiM: formatMetersLabel(cut) },
-      nhomVthh
-    );
+    overrides.doDaiM = formatMetersLabel(cut);
+  }
+  const doLiDmOverride = normalizeDoLiDm(options?.doLiDm);
+  if (doLiDmOverride) overrides.doLiDm = doLiDmOverride;
+  if (Object.keys(overrides).length > 0) {
+    return composeProductionDisplayName({ ...seeded, ...overrides }, nhomVthh);
   }
   return seeded.tenGhep;
 }

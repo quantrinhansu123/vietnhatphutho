@@ -1,5 +1,7 @@
 /* Viet Nhat IPT service worker */
-const VERSION = 'v1.0.1';
+// ĐỔI VERSION mỗi khi build bản mới có thay đổi giao diện — nếu không,
+// trình duyệt giữ index.html/bundle cũ trong cache và người dùng không thấy nút/màn hình mới.
+const VERSION = 'v1.0.5';
 const SHELL_CACHE = `vnipt-shell-${VERSION}`;
 const RUNTIME_CACHE = `vnipt-runtime-${VERSION}`;
 
@@ -63,7 +65,15 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-first cho shell & static assets, fallback network + cache update.
+  // Network-first cho navigation (/, /danh-sach-so-tron, ...): đảm bảo index.html
+  // luôn mới → trình duyệt tải đúng bundle JS/CSS có hash mới nhất.
+  // (Trước đây dùng cache-first cho index.html nên bản build mới không bao giờ hiện.)
+  if (req.mode === 'navigate') {
+    event.respondWith(networkFirst(req));
+    return;
+  }
+
+  // Cache-first cho static assets có hash (JS/CSS bundle), fallback network + cache update.
   event.respondWith(cacheFirst(req));
 });
 

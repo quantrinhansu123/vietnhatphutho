@@ -29,6 +29,34 @@ export function normalizeNvlMatchKey(code: string) {
     .replace(/(\d)[X×](?=\d)/gi, '$1*');
 }
 
+function normalizeStringForComparison(value: string): string {
+  return value
+    .trim()
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\s+/g, '')
+    .trim();
+}
+
+/** Khóa định danh SP theo mã + tên + tên SX (dùng bảng quy đổi / import). */
+export function buildProductIdentityKey(code: string, name: string, productionName: string) {
+  const trimmedCode = code.trim();
+  const trimmedName = name.trim();
+  const trimmedProductionName = productionName.trim();
+
+  if (!trimmedCode || !trimmedName || !trimmedProductionName) {
+    return '';
+  }
+
+  return [
+    normalizeStringForComparison(trimmedCode).toUpperCase(),
+    normalizeStringForComparison(trimmedName),
+    normalizeStringForComparison(trimmedProductionName)
+  ].join('|');
+}
+
 export function findMaterialOptionByCode(
   materialOptions: MaterialOption[],
   rawCode: string
@@ -80,11 +108,22 @@ export interface ProductRow {
   newCode: string;
   amisCode: string;
   name: string;
+  /** Tên dùng trong sản xuất (main) — optional để tương thích form kho feature. */
+  productionName?: string;
+  tenGoc?: string;
+  doLi?: string;
+  doLiDm?: string;
+  doDayM?: string;
+  doDaiM?: string;
+  mang?: string;
+  hangPhe?: string;
+  tenGhep?: string;
   nature: string;
   group: string;
   unit: string;
   warehouse: string;
   totalWeight: string;
+  wastePercent?: string;
   rollWidth: string;
   rollLength: string;
   coreWeight: string;
@@ -107,6 +146,7 @@ export type ProductNplAmountType = 'percent' | 'quantity';
 export interface ProductNplItem {
   code: string;
   name: string;
+  productionName?: string;
   amountType: ProductNplAmountType;
   percent: number | null;
   quantity: number | null;
@@ -116,11 +156,16 @@ export interface ProductNplItem {
 }
 
 export interface MaterialOption {
+  /** Khóa định danh ổn định của dòng kho NVL; mã có thể bị trùng giữa nhiều dòng danh mục. */
+  id?: string;
   code: string;
   name: string;
+  productionName?: string;
   unit: string;
   /** Tổng khối lượng (kg/ĐVT) từ kho NVL — dùng để quy đổi số lượng sang kg khi ĐVT ≠ kg. */
   totalWeight?: string;
+  phanLoai?: string;
+  nhomVatTuPhu?: string;
 }
 
 export function roundNplNumber(value: number) {

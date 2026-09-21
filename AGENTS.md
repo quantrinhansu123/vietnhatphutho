@@ -44,3 +44,13 @@ Panel lớn trong App.tsx chuyển sang `src/features/<bang>/` — **cập nhậ
 
 - `ai-table-index.mdc` — luôn áp dụng
 - `weighing-image-preview.mdc` — phiếu cân / ảnh
+
+## Quy ước ngày giờ tiếng Việt (bắt buộc)
+
+- Hiển thị cho người dùng cuối luôn kiểu Việt Nam: ngày `DD/MM/YYYY`, tháng `Tháng X`, thứ `Thứ 2` … `Chủ nhật`.
+- **Không dùng** `input type="date" / type="month" / type="datetime-local"` native cho UI người dùng cuối — chúng hiển thị theo locale trình duyệt, không đảm bảo tiếng Việt.
+  Thay bằng lịch popup / select tiếng Việt tự làm (tuần bắt đầu Thứ 2, tháng `Tháng X`). Tham khảo mẫu chuẩn
+  trong `src/features/so-che-do-may/index.tsx`:
+  `VnCalendarPicker` (lịch popup chọn ngày đầy đủ), `MonthYearPicker` (popup chỉ tháng + năm).
+- Lưu trữ và truyền API chuẩn ISO `YYYY-MM-DD`; validate ngày hợp lệ (kể cả năm nhuận, dùng được tới năm 2999) trước khi lưu — xem `parseDateStr` / `formatDateVN` cùng file mẫu trên.
+- `index.html` đã đặt `<html lang="vi">` — giữ nguyên.

@@ -17,6 +17,9 @@ export interface HrMember {
   password?: string;
   signatureUrl?: string;
   region?: string;
+  /** Soft delete: true = đã xóa mềm (ẩn khỏi danh sách mặc định). */
+  isDeleted?: boolean;
+  deletedAt?: string | null;
   viewPermissions: StaffViewPermissions;
   assignedPositions?: StaffAssignablePosition[];
 }
@@ -79,6 +82,20 @@ export function normalizeHrBranches(data: unknown): HrBranch[] {
                     ''
                   ).trim() || undefined,
                   region: String(memberRecord.region ?? memberRecord.khu_vuc ?? '').trim() || undefined,
+                  isDeleted: Boolean(
+                    memberRecord.isDeleted ??
+                    memberRecord.is_deleted ??
+                    memberRecord.da_xoa ??
+                    (memberRecord.deletedAt ?? memberRecord.deleted_at
+                      ? true
+                      : false)
+                  ),
+                  deletedAt:
+                    memberRecord.deletedAt != null
+                      ? String(memberRecord.deletedAt)
+                      : memberRecord.deleted_at != null
+                        ? String(memberRecord.deleted_at)
+                        : null,
                   viewPermissions: normalizeStaffViewPermissions(
                     memberRecord.viewPermissions ?? memberRecord.quyen_xem
                   ),
