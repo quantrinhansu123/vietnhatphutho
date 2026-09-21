@@ -18,6 +18,8 @@ export interface OrderProductLine {
   stt?: number;
   /** Chỉ dùng cho đơn "Đơn theo quy cách của khách đặt" (đơn cắt lẻ). */
   doLi?: string;
+  /** Chỉ dùng cho "Đơn miền nam": định mức thực tế, dạng `(đm n li)` / `(đm n kg)`. */
+  doLiDm?: string;
   kho?: string;
   daiM?: string;
   note?: string;

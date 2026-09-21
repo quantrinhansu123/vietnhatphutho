@@ -125,6 +125,8 @@ export interface OrderProductOption {
   tenGhep: string;
   /** Mét dài chuẩn trên danh mục SP — đơn cắt lẻ dùng làm "m dài chính" để thay đúng token. */
   doDaiM: string;
+  /** Định mức thực tế trên danh mục SP (`do_li_dm`) — đơn miền nam prefills ô Độ li ĐM. */
+  doLiDm: string;
 }
 
 export function normalizeLookupText(value: string) {
@@ -217,7 +219,8 @@ export function normalizeOrderProducts(data: unknown): OrderProductOption[] {
     unit: product.unit === '-' ? '' : product.unit,
     newCode: product.newCode,
     tenGhep: product.tenGhep || '',
-    doDaiM: product.doDaiM || ''
+    doDaiM: product.doDaiM || '',
+    doLiDm: product.doLiDm || ''
   })).filter(product => product.code);
 }
 
