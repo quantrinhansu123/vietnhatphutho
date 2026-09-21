@@ -6,14 +6,22 @@ import { STAFF_MENU_VIEW_TREE } from '../features/nhan-su/menuViews';
  * Tránh lọt quyền vì tab form không có trong STAFF_MENU_VIEW_TREE.
  */
 export const TAB_ACCESS_ALIASES: Record<string, string> = {
-  'weighing-summary': 'weighing-summary-list',
   'damaged-goods-report': 'damaged-goods-report-list',
   'mixing-report': 'mixing-report-list',
   'machine-nvl-report': 'machine-nvl-report-list',
-  'so-tron': 'so-tron-list',
   'machine-downtime-report': 'machine-downtime-list',
+  'shift-handover-report': 'shift-handover-list',
   'acceptance-report': 'acceptance-report-list',
-  'machine-run-log': 'machine-run-log-list'
+  'machine-run-log': 'machine-run-log-list',
+  'damaged-goods-warehouse': 'warehouse-history',
+  /** Trang chi tiết phiếu (mở tab mới) dùng chung quyền với lịch sử xuất nhập kho. */
+  'warehouse-history-detail': 'warehouse-history',
+  /** Cùng quyền «Báo cáo mới» /phan-tich-tu-dong (alias cũ dashboard). */
+  'dashboard-auto': 'dashboard',
+  /** Trang chi tiết lệnh SX (mở tab mới) dùng chung quyền với danh sách lệnh SX. */
+  'production-order-detail': 'production-orders',
+  /** Trang chi tiết đơn hàng (mở tab mới) dùng chung quyền với danh sách đơn hàng. */
+  'orders-detail': 'orders'
 };
 
 /**
@@ -22,35 +30,40 @@ export const TAB_ACCESS_ALIASES: Record<string, string> = {
  */
 export const HUB_IMPLIED_TABS: Record<string, readonly string[]> = {
   'report-forms': [
-    'so-tron',
     'machine-nvl-report',
     'mixing-report',
-    'weighing-summary',
+    'can-tu-dong',
+    'can-kiem-kho',
     'machine-downtime-report',
+    'shift-handover-report',
     'machine-run-log',
     'damaged-goods-report',
     'acceptance-report',
     'kiem-kho',
+    'doi-soat',
     // form ↔ list (nút Danh sách / Sửa)
     'machine-nvl-report-list',
     'mixing-report-list',
     'weighing-summary-list',
     'machine-downtime-list',
+    'shift-handover-list',
     'machine-run-log-list',
     'damaged-goods-report-list',
     'acceptance-report-list'
   ],
   'report-lists': [
-    'so-tron-list',
     'machine-nvl-report-list',
     'mixing-report-list',
     'weighing-summary-list',
     'can-tu-dong',
+    'can-tu-dong-pilot',
+    'can-kiem-kho',
     'kiem-kho',
     'damaged-goods-report-list',
     'acceptance-report-list',
     'warehouse-history',
     'machine-downtime-list',
+    'shift-handover-list',
     'machine-run-log-list'
   ],
   'production-reports': ['report-forms', 'report-lists']
@@ -102,12 +115,22 @@ export function buildKnownPermissionTabSet(): Set<string> {
   tabs.add('factory');
   tabs.add('menu');
   tabs.add('form');
+  tabs.add('inventory-catalog');
   return tabs;
 }
 
 /** Hub menu cha: được vào nếu có quyền cha hoặc bất kỳ menu con. */
 export function hubHasAllowedChild(hubTab: string, allowed: Set<string>): boolean {
   if (allowed.has(hubTab)) return true;
+  if (hubTab === 'inventory-catalog') {
+    return ['materials', 'products'].some(tab => allowed.has(tab));
+  }
+  // Hai route kho dùng chung giao diện, nhưng quyền nghiệp vụ phải giữ riêng theo loại kho.
+  // Chỉ dùng phép suy ngược này để mở route; không đưa vào expandImpliedHubTabs vì quyền
+  // warehouse-slip cũ tuyệt đối không được tự biến thành quyền sửa/xóa cả hai kho mới.
+  if (hubTab === 'warehouse-slip' || hubTab === 'warehouse-history') {
+    return ['warehouse-slip-vat-tu', 'warehouse-slip-thanh-pham'].some(tab => allowed.has(tab));
+  }
   const group = STAFF_MENU_VIEW_TREE.find(item => item.menu === hubTab);
   if (group) {
     return group.children.some(child => allowed.has(child.tab));

@@ -22,6 +22,7 @@ export function SearchableSelect({
   onChange,
   options,
   placeholder,
+  emptyInputText,
   isLoading,
   disabled,
   getLabel,
@@ -29,19 +30,25 @@ export function SearchableSelect({
   inputClassName,
   maxResults = 50,
   allowEmpty = true,
+  allowCustomValue = false,
   onSelectOption,
   resolveSelectedItem,
   getOptionLabel,
   getSearchText,
   displaySelectedAsValue = false,
-  desktopAutoFlip = true,
-  allowCustomValue = false,
-  skipUnchangedBlurCommit = false
+  desktopAutoFlip = false,
+  openUpward = false,
+  comboboxMode = false,
+  comboboxSearchable = true,
+  matchDropdownWidth = false,
+  searchPlaceholder
 }: {
   value: string;
   onChange: (value: string) => void;
   options: unknown[];
   placeholder: string;
+  /** Nội dung tùy chọn khi ô chưa có giá trị hoặc danh sách đang rỗng. */
+  emptyInputText?: string;
   isLoading?: boolean;
   disabled?: boolean;
   getLabel: (item: unknown) => string;
@@ -49,6 +56,8 @@ export function SearchableSelect({
   inputClassName?: string;
   maxResults?: number;
   allowEmpty?: boolean;
+  /** Cho phép giữ giá trị người dùng tự nhập dù không có trong danh sách gợi ý. */
+  allowCustomValue?: boolean;
   onSelectOption?: (item: unknown | null) => void;
   resolveSelectedItem?: (options: unknown[], value: string) => unknown | null;
   getOptionLabel?: (item: unknown) => string;
@@ -56,13 +65,19 @@ export function SearchableSelect({
   displaySelectedAsValue?: boolean;
   /** Trên desktop, tự mở menu lên trên nếu phía dưới không đủ chỗ. */
   desktopAutoFlip?: boolean;
-  /** Cho phép gõ giá trị tự do không có trong danh sách — giữ nguyên khi blur thay vì revert. */
-  allowCustomValue?: boolean;
-  /** Không gọi onChange khi chỉ focus rồi blur mà giá trị không đổi. */
-  skipUnchangedBlurCommit?: boolean;
+  openUpward?: boolean;
+  /** Hiển thị dạng combobox: nút có mũi tên, menu mở ra có ô tìm kiếm riêng. */
+  comboboxMode?: boolean;
+  /** Cho phép hiển thị ô tìm kiếm bên trong menu combobox. */
+  comboboxSearchable?: boolean;
+  matchDropdownWidth?: boolean;
+  /** Placeholder riêng cho ô tìm kiếm trong menu combobox. */
+  searchPlaceholder?: string;
 }) {
   const fieldClass = inputClassName || orderFieldClass;
-  const inputRef = useRef<HTMLInputElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [menuStyle, setMenuStyle] = useState<React.CSSProperties | null>(null);
   const selectedItem = useMemo(() => {
     if (!value) return null;
@@ -79,9 +94,6 @@ export function SearchableSelect({
 
   const [query, setQuery] = useState(selectedLabel);
   const [open, setOpen] = useState(false);
-  // Vừa mở dropdown (focus/click) chưa gõ gì → hiện toàn bộ danh sách như select thường,
-  // không lọc theo text đang hiển thị trong ô (giá trị đã chọn trước đó).
-  const [justOpened, setJustOpened] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -90,7 +102,13 @@ export function SearchableSelect({
   }, [selectedLabel, open]);
 
   const filteredOptions = useMemo(() => {
-    const normalized = justOpened ? '' : normalizeSearchText(query.trim());
+    // Combobox không có ô tìm: luôn hiện đủ danh sách.
+    // Nếu lọc theo `query` (= giá trị đang chọn) thì đổi ca sẽ mất option khác
+    // (vd đang HC1 → "hc2" không chứa "hc1" → không chọn được HC2).
+    if (comboboxMode && !comboboxSearchable) {
+      return options.slice(0, maxResults);
+    }
+    const normalized = normalizeSearchText(query.trim());
     const list = normalized
       ? options.filter(item => {
           const label = normalizeSearchText((getSearchText ?? getLabel)(item));
@@ -99,7 +117,16 @@ export function SearchableSelect({
         })
       : options;
     return list.slice(0, maxResults);
-  }, [options, query, getLabel, getSearchText, getValue, maxResults, justOpened]);
+  }, [
+    options,
+    query,
+    getLabel,
+    getSearchText,
+    getValue,
+    maxResults,
+    comboboxMode,
+    comboboxSearchable
+  ]);
 
   const commitValue = (nextValue: string, item: unknown | null = null) => {
     const trimmed = nextValue.trim();
@@ -125,12 +152,6 @@ export function SearchableSelect({
         return;
       }
 
-      if (skipUnchangedBlurCommit && query.trim() === selectedLabel.trim()) {
-        setQuery(selectedLabel);
-        setOpen(false);
-        return;
-      }
-
       const normalized = query.trim().toLowerCase();
       if (!normalized) {
         if (allowEmpty) {
@@ -142,19 +163,15 @@ export function SearchableSelect({
         return;
       }
 
-      const exactValueMatches = options.filter(item => getValue(item).toLowerCase() === normalized);
-      if (exactValueMatches.length > 0) {
-        const keepCurrent = exactValueMatches.find(item => getValue(item) === value);
-        const chosen = keepCurrent ?? exactValueMatches[0];
-        commitValue(getValue(chosen), chosen);
+      const exactValue = options.find(item => getValue(item).toLowerCase() === normalized);
+      if (exactValue) {
+        commitValue(getValue(exactValue), exactValue);
         return;
       }
 
-      const exactLabelMatches = options.filter(item => getLabel(item).toLowerCase() === normalized);
-      if (exactLabelMatches.length > 0) {
-        const keepCurrent = exactLabelMatches.find(item => getValue(item) === value);
-        const chosen = keepCurrent ?? exactLabelMatches[0];
-        commitValue(getValue(chosen), chosen);
+      const exactLabel = options.find(item => getLabel(item).toLowerCase() === normalized);
+      if (exactLabel) {
+        commitValue(getValue(exactLabel), exactLabel);
         return;
       }
 
@@ -166,13 +183,13 @@ export function SearchableSelect({
         }
       }
 
-      if (filteredOptions.length === 1) {
-        commitValue(getValue(filteredOptions[0]), filteredOptions[0]);
+      if (allowCustomValue) {
+        commitValue(query, null);
         return;
       }
 
-      if (allowCustomValue) {
-        commitValue(query.trim(), null);
+      if (filteredOptions.length === 1) {
+        commitValue(getValue(filteredOptions[0]), filteredOptions[0]);
         return;
       }
 
@@ -182,40 +199,40 @@ export function SearchableSelect({
   };
 
   const isDisabled = Boolean(disabled || isLoading);
-
-  const openMenu = () => {
-    if (isDisabled || open) return;
-    suppressBlurRef.current = false;
-    setOpen(true);
-    setJustOpened(true);
-  };
-  const emptyText = isLoading ? 'Đang tải...' : options.length === 0 ? 'Không có dữ liệu' : placeholder;
+  const emptyText = isLoading
+    ? emptyInputText ?? 'Đang tải...'
+    : options.length === 0
+      ? emptyInputText ?? 'Không có dữ liệu'
+      : placeholder;
 
   const updateMenuPosition = () => {
-    const element = inputRef.current;
+    const element = anchorRef.current;
     if (!element) return;
     const rect = element.getBoundingClientRect();
     // Trên mobile ô nhập rất hẹp → nới rộng menu để tên dài không bị xuống dòng nhiều
     const viewportWidth = document.documentElement.clientWidth;
     const margin = 8;
-    const width = Math.max(rect.width, Math.min(340, viewportWidth - margin * 2));
+    const width = matchDropdownWidth
+      ? Math.min(rect.width, viewportWidth - margin * 2)
+      : Math.max(rect.width, Math.min(340, viewportWidth - margin * 2));
     const left = Math.min(Math.max(margin, rect.left), Math.max(margin, viewportWidth - width - margin));
     const isDesktop = window.matchMedia('(min-width: 1280px)').matches;
-    const isMobile =
-      window.matchMedia('(max-width: 768px)').matches || window.matchMedia('(pointer: coarse)').matches;
+    const viewportHeight = document.documentElement.clientHeight;
+    const preferredHeight = 208;
+    const spaceBelow = Math.max(0, viewportHeight - rect.bottom - margin);
+    const spaceAbove = Math.max(0, rect.top - margin);
 
-    // Trên mobile luôn mở dropdown xuống dưới để không che ô nhập liệu.
-    if (isMobile) {
-      setMenuStyle({ top: rect.bottom + 4, left, width });
+    if (openUpward && spaceAbove > 0) {
+      setMenuStyle({
+        bottom: viewportHeight - rect.top + 4,
+        left,
+        width,
+        maxHeight: Math.min(preferredHeight, spaceAbove)
+      });
       return;
     }
 
     if (desktopAutoFlip && isDesktop) {
-      const viewportHeight = document.documentElement.clientHeight;
-      const preferredHeight = 208;
-      const spaceBelow = Math.max(0, viewportHeight - rect.bottom - margin);
-      const spaceAbove = Math.max(0, rect.top - margin);
-
       if (spaceBelow < preferredHeight && spaceAbove > spaceBelow) {
         setMenuStyle({
           bottom: viewportHeight - rect.top + 4,
@@ -255,31 +272,190 @@ export function SearchableSelect({
       window.removeEventListener('scroll', handleReposition, true);
       document.removeEventListener('scroll', handleReposition, true);
     };
-  }, [open, query, filteredOptions.length, desktopAutoFlip]);
+  }, [open, query, filteredOptions.length, desktopAutoFlip, openUpward, matchDropdownWidth]);
+
+  useEffect(() => {
+    if (!open || !comboboxMode) return;
+    const focusTimer = comboboxSearchable
+      ? window.setTimeout(() => searchInputRef.current?.focus(), 0)
+      : null;
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (anchorRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      const trimmed = query.trim();
+      if (allowCustomValue && trimmed) {
+        const exactValue = options.find(item => getValue(item).toLowerCase() === trimmed.toLowerCase());
+        if (exactValue) {
+          commitValue(getValue(exactValue), exactValue);
+          return;
+        }
+        const exactLabel = options.find(item => getLabel(item).toLowerCase() === trimmed.toLowerCase());
+        if (exactLabel) {
+          commitValue(getValue(exactLabel), exactLabel);
+          return;
+        }
+        commitValue(trimmed, null);
+        return;
+      }
+      setQuery(selectedLabel);
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    return () => {
+      if (focusTimer !== null) window.clearTimeout(focusTimer);
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+    };
+  }, [
+    open,
+    comboboxMode,
+    comboboxSearchable,
+    selectedLabel,
+    allowCustomValue,
+    query,
+    options,
+    getValue,
+    getLabel
+  ]);
 
   const dropdownPanelClass =
-    'fixed z-[300] max-h-52 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg';
+    'fixed z-[200] max-h-52 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg';
 
   const keepFocusForSelection = () => {
     suppressBlurRef.current = true;
   };
 
+  const queryTrimmed = query.trim();
+  const hasExactQueryMatch = useMemo(() => {
+    if (!queryTrimmed) return false;
+    const normalized = queryTrimmed.toLowerCase();
+    return options.some(
+      item =>
+        getValue(item).toLowerCase() === normalized || getLabel(item).toLowerCase() === normalized
+    );
+  }, [options, queryTrimmed, getValue, getLabel]);
+
+  const commitTypedOrMatchedValue = () => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    const exactValue = options.find(item => getValue(item).toLowerCase() === trimmed.toLowerCase());
+    if (exactValue) {
+      commitValue(getValue(exactValue), exactValue);
+      return;
+    }
+    const exactLabel = options.find(item => getLabel(item).toLowerCase() === trimmed.toLowerCase());
+    if (exactLabel) {
+      commitValue(getValue(exactLabel), exactLabel);
+      return;
+    }
+    if (allowCustomValue) {
+      commitValue(trimmed, null);
+      return;
+    }
+    if (filteredOptions.length === 1) {
+      commitValue(getValue(filteredOptions[0]), filteredOptions[0]);
+    }
+  };
+
+  const renderCustomAddOption = () => {
+    if (!allowCustomValue || !queryTrimmed || hasExactQueryMatch) return null;
+    return (
+      <button
+        type="button"
+        onMouseDown={event => event.preventDefault()}
+        onClick={() => commitValue(queryTrimmed, null)}
+        className="block w-full px-3 py-2.5 text-left text-sm font-extrabold text-[#ef1b2d] transition hover:bg-red-50"
+      >
+        Thêm «{queryTrimmed}»
+      </button>
+    );
+  };
+
   const renderDropdown = () => {
     if (!open || isDisabled || !menuStyle) return null;
 
-    if (filteredOptions.length > 0) {
+    if (comboboxMode) {
       return createPortal(
-        <div className={dropdownPanelClass} style={menuStyle} onMouseDown={keepFocusForSelection}>
+        <div
+          ref={menuRef}
+          className="fixed z-[200] overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg"
+          style={menuStyle}
+        >
+          {comboboxSearchable ? (
+            <div className="border-b border-zinc-100 bg-white p-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+                <input
+                  ref={searchInputRef}
+                  value={query}
+                  onChange={event => setQuery(event.target.value)}
+                  onKeyDown={event => {
+                    if (event.key !== 'Enter') return;
+                    event.preventDefault();
+                    commitTypedOrMatchedValue();
+                  }}
+                  placeholder={searchPlaceholder || placeholder}
+                  className="h-10 w-full rounded-lg bg-zinc-50 pl-9 pr-3 text-sm font-medium text-zinc-800 outline-none ring-1 ring-transparent placeholder:text-zinc-400 focus:bg-white focus:ring-red-200"
+                />
+              </div>
+            </div>
+          ) : null}
+          <div className={`${comboboxSearchable ? 'max-h-44' : 'max-h-52'} overflow-y-auto py-1`}>
+            {allowEmpty && !query.trim() ? (
+              <button
+                type="button"
+                onClick={() => commitValue('', null)}
+                className={`block w-full px-3 py-2.5 text-left text-sm transition hover:bg-red-50 ${
+                  value ? 'font-semibold text-zinc-500' : 'bg-red-50 font-black text-[#ef1b2d]'
+                }`}
+              >
+                {placeholder}
+              </button>
+            ) : null}
+            {renderCustomAddOption()}
+            {filteredOptions.length > 0 ? (
+              filteredOptions.map((item, index) => {
+                const optionValue = getValue(item);
+                const optionLabel = (getOptionLabel ?? getLabel)(item);
+                return (
+                  <button
+                    key={`${optionValue}-${index}`}
+                    type="button"
+                    onClick={() => commitValue(optionValue, item)}
+                    className={`block w-full px-3 py-2.5 text-left text-sm transition hover:bg-red-50 ${
+                      optionValue === value
+                        ? 'bg-red-50 font-black text-[#ef1b2d]'
+                        : 'font-semibold text-zinc-800'
+                    }`}
+                  >
+                    {optionLabel}
+                  </button>
+                );
+              })
+            ) : allowCustomValue && queryTrimmed ? null : (
+              <div className="px-4 py-8 text-center text-sm font-medium text-zinc-400">
+                {isLoading ? 'Đang tải...' : 'Không tìm thấy kết quả phù hợp'}
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      );
+    }
+
+    if (filteredOptions.length > 0 || (allowCustomValue && queryTrimmed && !hasExactQueryMatch)) {
+      return createPortal(
+        <div ref={menuRef} className={dropdownPanelClass} style={menuStyle} onMouseDown={keepFocusForSelection}>
           {allowEmpty && !query.trim() && (
             <button
               type="button"
               onMouseDown={event => event.preventDefault()}
               onClick={() => commitValue('', null)}
-              className="block w-full cursor-pointer px-3 py-2 text-left text-xs font-semibold text-zinc-500 transition hover:bg-zinc-50"
+              className="block w-full px-3 py-2 text-left text-xs font-semibold text-zinc-500 transition hover:bg-zinc-50"
             >
               {placeholder}
             </button>
           )}
+          {renderCustomAddOption()}
           {filteredOptions.map((item, index) => {
             const optionValue = getValue(item);
             const optionLabel = (getOptionLabel ?? getLabel)(item);
@@ -289,7 +465,7 @@ export function SearchableSelect({
                 type="button"
                 onMouseDown={event => event.preventDefault()}
                 onClick={() => commitValue(optionValue, item)}
-                className={`block w-full cursor-pointer px-3 py-2 text-left text-sm transition hover:bg-red-50 ${
+                className={`block w-full px-3 py-2 text-left text-sm transition hover:bg-red-50 ${
                   optionValue === value ? 'bg-red-50 font-black text-[#ef1b2d]' : 'font-semibold text-zinc-800'
                 }`}
               >
@@ -304,7 +480,7 @@ export function SearchableSelect({
 
     if (query.trim()) {
       return createPortal(
-        <div className={dropdownPanelClass} style={menuStyle} onMouseDown={keepFocusForSelection}>
+        <div ref={menuRef} className={dropdownPanelClass} style={menuStyle} onMouseDown={keepFocusForSelection}>
           <div className="px-3 py-2 text-xs font-semibold text-zinc-500">Không tìm thấy kết quả</div>
         </div>,
         document.body
@@ -315,37 +491,47 @@ export function SearchableSelect({
   };
 
   return (
-    <div className="relative min-w-0 w-full">
-      <input
-        ref={inputRef}
-        value={query}
-        onChange={event => {
-          const nextQuery = event.target.value;
-          setQuery(nextQuery);
-          setOpen(true);
-          setJustOpened(false);
-          // Propagate clearing immediately so optional fields (for example
-          // production name) can be emptied without blur restoring the old value.
-          if (!nextQuery.trim() && allowEmpty) {
-            onChange('');
-            onSelectOption?.(null);
-            return;
-          }
-          // Custom values (tên NVL sản xuất) must reach form state before Save;
-          // clicking Lưu blurs after handleSave already read the previous value.
-          if (allowCustomValue) {
-            onChange(nextQuery);
-          }
-        }}
-        onFocus={openMenu}
-        // Chọn option giữ focus trên input. Vì vậy lần bấm kế tiếp không có
-        // sự kiện focus mới; onClick vẫn phải mở lại danh sách.
-        onClick={openMenu}
-        onBlur={handleBlur}
-        disabled={isDisabled}
-        placeholder={emptyText}
-        className={fieldClass}
-      />
+    <div ref={anchorRef} className="relative min-w-0 w-full">
+      {comboboxMode ? (
+        <button
+          type="button"
+          disabled={isDisabled}
+          onClick={() => {
+            if (isDisabled) return;
+            setQuery('');
+            setOpen(current => !current);
+          }}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          className={`${fieldClass} flex items-center justify-between gap-3 text-left disabled:cursor-not-allowed disabled:opacity-60`}
+        >
+          <span className={`min-w-0 truncate ${selectedItem || value ? 'text-zinc-800' : 'text-zinc-400'}`}>
+            {isLoading ? 'Đang tải...' : selectedLabel || placeholder}
+          </span>
+          {isLoading ? (
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-zinc-400" />
+          ) : (
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`}
+            />
+          )}
+        </button>
+      ) : (
+        <input
+          value={query}
+          onChange={event => {
+            setQuery(event.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => {
+            if (!isDisabled) setOpen(true);
+          }}
+          onBlur={handleBlur}
+          disabled={isDisabled}
+          placeholder={emptyText}
+          className={fieldClass}
+        />
+      )}
       {renderDropdown()}
     </div>
   );

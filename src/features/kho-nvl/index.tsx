@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import QRCode from 'qrcode';
 import { useTabAccess } from '../../app/useTabAccess';
 import {
   Download,
@@ -11,13 +10,16 @@ import {
   Package,
   Pencil,
   Plus,
+  QrCode,
   Save,
   Trash2,
-  Upload
+  Upload,
+  X
 } from 'lucide-react';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
-import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
+import { SearchableSelect } from '../../components/shared/SearchableSelect';
+import { pickText, formatCell } from '../_shared/recordHelpers';
 import {
   downloadBulkMaterialTotalWeightTemplate,
   parseBulkMaterialTotalWeightExcel,
@@ -26,15 +28,16 @@ import {
 import {
   downloadMaterialCatalogExcelTemplate,
   parseMaterialCatalogExcel,
-  materialCatalogRowToPayload,
-  type MaterialCatalogExcelRow
+  materialCatalogRowToPayload
 } from '../../utils/materialCatalogExcel';
 import { showAppToast } from '../../lib/appToast';
+import ProductQrPrintModal, {
+  type ProductQrPrintLabel as WarehouseProductQrPrintLabel
+} from '../../components/ProductQrPrintModal';
 import { productFieldClass } from '../san-pham/productFieldClass';
 import { readUnitSuggestions, saveUnitSuggestion } from '../_shared/orderHelpers';
+import { matchesWarehouseFilter, type InventoryBalanceRow } from '../kho-hang';
 import {
-  FilterCombobox,
-  TableToolbar,
   TableSearchInput,
   TableShell,
   TableHead,
@@ -50,8 +53,8 @@ export interface MaterialRow {
   id: string;
   code: string;
   name: string;
-  productionName: string;
   unit: string;
+  warehouse: string;
   totalWeight: string;
   plasticWeight: string;
   bagWeight: string;
@@ -61,61 +64,29 @@ export interface MaterialRow {
   openingStock: string;
   inbound: string;
   outbound: string;
-  phanLoai: string;
-  auxiliaryMaterialGroup: string;
+  /** Dòng tồn phát sinh từ phiếu kho nhưng chưa có bản ghi riêng trong danh mục kho_nvl. */
+  inventoryBalanceOnly?: boolean;
 }
 
-export const AUXILIARY_MATERIAL_GROUPS = [
-  'Băng Dính',
-  'Bạt Bọc',
-  'Dây Đai',
-  'Dung Môi',
-  'Màng',
-  'Mực In',
-  'Tem',
-  'Kẹp Sắt'
-] as const;
+export type MaterialIssuedQrCode = {
+  id: string;
+  ma_qr: string;
+  ma_npl_goc: string;
+  ten_npl: string;
+  ten_kho: string;
+  so_lan_in: number;
+  ngay_in_gan_nhat: string;
+  nguoi_tao: string;
+  trang_thai: string;
+  ma_phieu_nhap: string;
+  created_at: string;
+};
 
 export function parseInventoryNumber(value: string): number | null {
   if (!value || value === '-') return null;
   const normalized = String(value).trim().replace(',', '.');
   const num = Number(normalized);
   return Number.isFinite(num) ? num : null;
-}
-
-function parseDecimalParts(raw: string) {
-  const trimmed = String(raw ?? '').trim();
-  if (!trimmed || trimmed === '-') return null;
-  // Accept both "1.234,56" (vi-VN) and "1234.56" (dot decimal).
-  // If there's a comma, treat comma as decimal separator and dots as thousands separators.
-  // If no comma, keep dot as decimal separator (do NOT strip it).
-  const normalized = trimmed.includes(',')
-    ? trimmed.replace(/\./g, '').replace(',', '.')
-    : trimmed.replace(/\s+/g, '');
-  if (!/^\d+(\.\d+)?$/.test(normalized)) return null;
-  const [intPart, fracPart = ''] = normalized.split('.');
-  return { intPart, fracPart };
-}
-
-function sumDecimalStrings(values: string[]) {
-  const parts = values.map(parseDecimalParts).filter(Boolean) as Array<{ intPart: string; fracPart: string }>;
-  if (parts.length === 0) return '0';
-  const maxScale = parts.reduce((max, item) => Math.max(max, item.fracPart.length), 0);
-  const sum = parts.reduce((acc, item) => {
-    const scaled = BigInt(item.intPart + item.fracPart.padEnd(maxScale, '0'));
-    return acc + scaled;
-  }, 0n);
-  const rawSum = sum.toString().padStart(maxScale + 1, '0');
-  const intPart = rawSum.slice(0, rawSum.length - maxScale) || '0';
-  const fracPart = maxScale > 0 ? rawSum.slice(rawSum.length - maxScale) : '';
-  return fracPart ? `${intPart}.${fracPart}` : intPart;
-}
-
-function formatKgNoRounding(value: string) {
-  if (!value) return '0';
-  const [intPart, fracPart = ''] = value.split('.');
-  const withSeparators = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  return fracPart ? `${withSeparators},${fracPart}` : withSeparators;
 }
 
 export function computeClosingStock(opening: string, inbound: string, outbound: string): string {
@@ -146,8 +117,8 @@ export function normalizeMaterialsInventory(data: unknown): MaterialRow[] {
           : code || rawId || name,
         code,
         name,
-        productionName: String(record.ten_nvl_sx ?? '').trim(),
         unit: formatCell(record.don_vi),
+        warehouse: formatCell(record.ten_kho),
         totalWeight: formatCell(record.tong_trong_luong),
         plasticWeight: formatCell(record.trong_luong_nhua),
         bagWeight: formatCell(record.trong_luong_tui),
@@ -156,9 +127,7 @@ export function normalizeMaterialsInventory(data: unknown): MaterialRow[] {
         unitLength: formatCell(record.chieu_dai_don_vi),
         openingStock: formatCell(record.ton_dau_ky),
         inbound: formatCell(record.nhap_trong_ky),
-        outbound: formatCell(record.xuat_trong_ky),
-        phanLoai: formatCell(record.phan_loai ?? record.kho_ngam_dinh),
-        auxiliaryMaterialGroup: formatCell(record.nhom_vat_tu_phu === 'Bạt Dọc' ? 'Bạt Bọc' : record.nhom_vat_tu_phu)
+        outbound: formatCell(record.xuat_trong_ky)
       };
     })
     .filter((material): material is MaterialRow => Boolean(material));
@@ -167,8 +136,8 @@ export function normalizeMaterialsInventory(data: unknown): MaterialRow[] {
 export type MaterialFormState = {
   code: string;
   name: string;
-  productionName: string;
   unit: string;
+  warehouse: string;
   totalWeight: string;
   plasticWeight: string;
   bagWeight: string;
@@ -178,15 +147,13 @@ export type MaterialFormState = {
   openingStock: string;
   inbound: string;
   outbound: string;
-  phanLoai: string;
-  auxiliaryMaterialGroup: string;
 };
 
 const emptyMaterialForm = (): MaterialFormState => ({
   code: '',
   name: '',
-  productionName: '',
   unit: '',
+  warehouse: '',
   totalWeight: '',
   plasticWeight: '',
   bagWeight: '',
@@ -195,9 +162,7 @@ const emptyMaterialForm = (): MaterialFormState => ({
   unitLength: '',
   openingStock: '',
   inbound: '',
-  outbound: '',
-  phanLoai: '',
-  auxiliaryMaterialGroup: ''
+  outbound: ''
 });
 
 export function materialCellToInput(value: string) {
@@ -208,8 +173,8 @@ export function materialToForm(material: MaterialRow): MaterialFormState {
   return {
     code: materialCellToInput(material.code),
     name: materialCellToInput(material.name),
-    productionName: materialCellToInput(material.productionName),
     unit: materialCellToInput(material.unit),
+    warehouse: materialCellToInput(material.warehouse),
     totalWeight: materialCellToInput(material.totalWeight),
     plasticWeight: materialCellToInput(material.plasticWeight),
     bagWeight: materialCellToInput(material.bagWeight),
@@ -218,11 +183,7 @@ export function materialToForm(material: MaterialRow): MaterialFormState {
     unitLength: materialCellToInput(material.unitLength),
     openingStock: materialCellToInput(material.openingStock),
     inbound: materialCellToInput(material.inbound),
-    outbound: materialCellToInput(material.outbound),
-    phanLoai: materialCellToInput(material.phanLoai),
-    auxiliaryMaterialGroup: materialCellToInput(
-      material.auxiliaryMaterialGroup === 'Bạt Dọc' ? 'Bạt Bọc' : material.auxiliaryMaterialGroup
-    )
+    outbound: materialCellToInput(material.outbound)
   };
 }
 
@@ -231,66 +192,6 @@ const materialFieldClass =
 
 export function normalizeMaterialCodeKey(code: string) {
   return code.trim().replace(/\s+/g, '').toUpperCase();
-}
-
-export function normalizeMaterialTextKey(value: string) {
-  return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi-VN');
-}
-
-function isEmptyMaterialText(value: string) {
-  const normalized = normalizeMaterialTextKey(value);
-  return !normalized || normalized === '-';
-}
-
-export function findMaterialCatalogMatch(row: MaterialCatalogExcelRow, materials: MaterialRow[]) {
-  const codeKey = normalizeMaterialCodeKey(row.code);
-  const nameKey = normalizeMaterialTextKey(row.name);
-  const productionNameKey = normalizeMaterialTextKey(row.productionName);
-
-  if (!codeKey) {
-    return { material: null, error: 'thiếu mã NPL' } as const;
-  }
-  if (!nameKey || nameKey === '-') {
-    return { material: null, error: 'thiếu tên nguyên vật liệu' } as const;
-  }
-
-  const candidates = materials.filter(
-    material =>
-      normalizeMaterialCodeKey(material.code) === codeKey &&
-      normalizeMaterialTextKey(material.name) === nameKey
-  );
-
-  const material = candidates.find(candidate => {
-    const candidateProductionName = candidate.productionName;
-    return productionNameKey
-      ? normalizeMaterialTextKey(candidateProductionName) === productionNameKey
-      : isEmptyMaterialText(candidateProductionName);
-  });
-
-  return { material, error: null } as const;
-}
-
-type MaterialCatalogPayload = ReturnType<typeof materialCatalogRowToPayload> & { name: string };
-
-function materialWithCatalogPayload(id: string, payload: MaterialCatalogPayload): MaterialRow {
-  return {
-    id,
-    code: payload.code,
-    name: payload.name,
-    productionName: payload.productionName || '-',
-    unit: payload.unit || '-',
-    totalWeight: payload.totalWeight || '-',
-    plasticWeight: payload.plasticWeight || '-',
-    bagWeight: payload.bagWeight || '-',
-    coreWeight: payload.coreWeight || '-',
-    rollWidth: payload.rollWidth || '-',
-    unitLength: payload.unitLength || '-',
-    openingStock: payload.openingStock || '-',
-    inbound: payload.inbound || '-',
-    outbound: payload.outbound || '-',
-    phanLoai: payload.phanLoai || '-',
-    auxiliaryMaterialGroup: payload.auxiliaryMaterialGroup || '-'
-  };
 }
 
 export type BulkMaterialTotalWeightPreviewRow = BulkMaterialTotalWeightImportRow & {
@@ -644,28 +545,39 @@ export function sumMaterialMovementQuantity(rows: MaterialMovementRow[], slipTyp
     .reduce((sum, row) => sum + row.quantity, 0);
 }
 
-export type MaterialViewTab = 'detail' | 'inbound-history' | 'outbound-history';
+export type MaterialViewTab = 'detail' | 'inbound-history' | 'outbound-history' | 'issued-qr';
 
 export function MaterialViewModal({
   material,
   onClose,
   onEdit,
   onDelete,
+  onPrintIssuedQrCodes,
+  canEditQrCodes = false,
   isDeleting
 }: {
   material: MaterialRow;
   onClose: () => void;
   onEdit?: (material: MaterialRow) => void;
   onDelete?: (material: MaterialRow) => void;
+  onPrintIssuedQrCodes?: (codes: MaterialIssuedQrCode[]) => Promise<void>;
+  canEditQrCodes?: boolean;
   isDeleting: boolean;
 }) {
   const [tab, setTab] = useState<MaterialViewTab>('detail');
   const [movements, setMovements] = useState<MaterialMovementRow[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState('');
+  const [issuedQrCodes, setIssuedQrCodes] = useState<MaterialIssuedQrCode[]>([]);
+  const [isLoadingIssuedQrCodes, setIsLoadingIssuedQrCodes] = useState(false);
+  const [issuedQrCodesError, setIssuedQrCodesError] = useState('');
+  const [selectedIssuedQrIds, setSelectedIssuedQrIds] = useState<Set<string>>(() => new Set());
+  const [isPrintingIssuedQrCodes, setIsPrintingIssuedQrCodes] = useState(false);
+  const [issuedQrStatusFilter, setIssuedQrStatusFilter] = useState<'all' | 'dang_dung' | 'da_huy'>('all');
+  const [updatingIssuedQrId, setUpdatingIssuedQrId] = useState('');
 
   useEffect(() => {
-    if (tab === 'detail' || !material.code || movements.length > 0) return;
+    if (tab === 'detail' || tab === 'issued-qr' || !material.code || movements.length > 0) return;
 
     const loadHistory = async () => {
       setIsLoadingHistory(true);
@@ -689,6 +601,106 @@ export function MaterialViewModal({
     loadHistory();
   }, [tab, material.code, movements.length]);
 
+  useEffect(() => {
+    if (tab !== 'issued-qr') return;
+    const controller = new AbortController();
+    setIsLoadingIssuedQrCodes(true);
+    setIssuedQrCodesError('');
+
+    const params = new URLSearchParams({ ma_npl: material.code });
+    if (material.warehouse && material.warehouse !== '-') params.set('ten_kho', material.warehouse);
+    void fetch(`/api/kho-nvl/ma-qr?${params.toString()}`, { signal: controller.signal })
+      .then(async response => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Không thể tải danh sách QR đã cấp.');
+        const records = Array.isArray(data.records) ? data.records : [];
+        const normalized: MaterialIssuedQrCode[] = records.map((record: Record<string, unknown>) => ({
+          id: String(record.id ?? ''),
+          ma_qr: String(record.ma_qr ?? ''),
+          ma_npl_goc: String(record.ma_npl_goc ?? ''),
+          ten_npl: String(record.ten_npl ?? ''),
+          ten_kho: String(record.ten_kho ?? ''),
+          so_lan_in: Number(record.so_lan_in) || 0,
+          ngay_in_gan_nhat: String(record.ngay_in_gan_nhat ?? ''),
+          nguoi_tao: String(record.nguoi_tao ?? ''),
+          trang_thai: String(record.trang_thai ?? ''),
+          ma_phieu_nhap: String(record.ma_phieu_nhap ?? ''),
+          created_at: String(record.created_at ?? '')
+        }));
+        setIssuedQrCodes(normalized);
+        const availableIds = new Set(normalized.map(record => record.id));
+        setSelectedIssuedQrIds(previous => new Set([...previous].filter(id => availableIds.has(id))));
+      })
+      .catch(error => {
+        if (error?.name !== 'AbortError') {
+          setIssuedQrCodes([]);
+          setIssuedQrCodesError(error?.message || 'Không thể tải danh sách QR đã cấp.');
+        }
+      })
+      .finally(() => setIsLoadingIssuedQrCodes(false));
+
+    return () => controller.abort();
+  }, [material.code, material.warehouse, tab]);
+
+  const filteredIssuedQrCodes = issuedQrCodes.filter(code =>
+    issuedQrStatusFilter === 'all' || code.trang_thai === issuedQrStatusFilter
+  );
+  const printableIssuedQrCodes = filteredIssuedQrCodes.filter(code => code.trang_thai !== 'da_huy');
+  const selectedIssuedQrCodes = filteredIssuedQrCodes.filter(
+    code => code.trang_thai !== 'da_huy' && selectedIssuedQrIds.has(code.id)
+  );
+  const allIssuedQrCodesSelected = printableIssuedQrCodes.length > 0
+    && printableIssuedQrCodes.every(code => selectedIssuedQrIds.has(code.id));
+
+  const toggleAllIssuedQrCodes = () => {
+    setSelectedIssuedQrIds(previous => {
+      const next = new Set(previous);
+      if (allIssuedQrCodesSelected) printableIssuedQrCodes.forEach(code => next.delete(code.id));
+      else printableIssuedQrCodes.forEach(code => next.add(code.id));
+      return next;
+    });
+  };
+
+  const handlePrintSelectedIssuedQrCodes = async () => {
+    if (!onPrintIssuedQrCodes || selectedIssuedQrCodes.length === 0) return;
+    setIsPrintingIssuedQrCodes(true);
+    setIssuedQrCodesError('');
+    try {
+      await onPrintIssuedQrCodes(selectedIssuedQrCodes);
+    } catch (error: any) {
+      setIssuedQrCodesError(error?.message || 'Không thể in lại các mã QR đã chọn.');
+    } finally {
+      setIsPrintingIssuedQrCodes(false);
+    }
+  };
+
+  const handleUpdateIssuedQrStatus = async (code: MaterialIssuedQrCode, trangThai: 'dang_dung' | 'da_huy') => {
+    if (code.trang_thai === trangThai) return;
+    setUpdatingIssuedQrId(code.id);
+    setIssuedQrCodesError('');
+    try {
+      const response = await fetch(`/api/ma-qr-nvl/${encodeURIComponent(code.id)}/trang-thai`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trang_thai: trangThai })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Không thể cập nhật trạng thái QR.');
+      setIssuedQrCodes(previous => previous.map(item => item.id === code.id ? { ...item, trang_thai: trangThai } : item));
+      if (trangThai === 'da_huy') {
+        setSelectedIssuedQrIds(previous => {
+          const next = new Set(previous);
+          next.delete(code.id);
+          return next;
+        });
+      }
+    } catch (error: any) {
+      setIssuedQrCodesError(error?.message || 'Không thể cập nhật trạng thái QR.');
+    } finally {
+      setUpdatingIssuedQrId('');
+    }
+  };
+
   const inboundRows = useMemo(() => movements.filter(row => row.slipType === 'nhap'), [movements]);
   const outboundRows = useMemo(() => movements.filter(row => row.slipType === 'xuat'), [movements]);
   const totalInbound = sumMaterialMovementQuantity(movements, 'nhap');
@@ -700,10 +712,8 @@ export function MaterialViewModal({
   const infoRows: Array<[string, string]> = [
     ['Mã NPL', material.code],
     ['Tên NVL', material.name],
-    ['Tên NVL sản xuất', material.productionName || '-'],
-    ['Phân loại', material.phanLoai || '-'],
-    ['Nhóm vật tư phụ', material.auxiliaryMaterialGroup || '-'],
     ['Đơn vị', material.unit],
+    ['Kho', material.warehouse || '—'],
     ['Tồn đầu', material.openingStock],
     ['Nhập', inboundDisplay],
     ['Xuất', outboundDisplay],
@@ -722,9 +732,7 @@ export function MaterialViewModal({
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
       <div
-        className={`flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl ${
-          tab === 'detail' ? 'max-w-lg' : 'max-w-3xl'
-        }`}
+        className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl"
       >
         <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-4 py-3">
           <div>
@@ -766,10 +774,24 @@ export function MaterialViewModal({
             <History className="h-4 w-4" />
             Lịch sử xuất
           </button>
+          <button
+            type="button"
+            onClick={() => setTab('issued-qr')}
+            className={`flex items-center gap-1.5 border-b-2 px-4 py-3 text-xs font-black uppercase tracking-wider transition ${
+              tab === 'issued-qr' ? 'border-[#ef1b2d] text-[#ef1b2d]' : 'border-transparent text-zinc-500 hover:text-zinc-900'
+            }`}
+          >
+            <QrCode className="h-4 w-4" />
+            Mã QR đã cấp
+          </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          {tab !== 'detail' ? (
+        <div
+          className={`min-h-0 flex-1 p-4 ${
+            tab === 'issued-qr' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'
+          }`}
+        >
+          {tab === 'inbound-history' || tab === 'outbound-history' ? (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {[
@@ -836,14 +858,140 @@ export function MaterialViewModal({
                   </div>
               )}
             </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              {[...infoRows, ...nvlInfoRows].map(([label, value]) => (
-                <div key={label} className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">{label}</p>
-                  <p className="mt-1 font-bold text-zinc-900">{value || '-'}</p>
+          ) : tab === 'issued-qr' ? (
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-black text-zinc-950">Danh sách QR đã cấp</p>
+                  <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+                    Mỗi mã được lưu duy nhất trong CSDL; chọn mã để in lại mà không sinh mã mới.
+                  </p>
                 </div>
-              ))}
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={issuedQrStatusFilter}
+                    onChange={event => {
+                      setIssuedQrStatusFilter(event.target.value as 'all' | 'dang_dung' | 'da_huy');
+                      setSelectedIssuedQrIds(new Set());
+                    }}
+                    className="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 outline-none focus:border-[#ef1b2d]"
+                    aria-label="Lọc trạng thái QR"
+                  >
+                    <option value="all">Tất cả trạng thái</option>
+                    <option value="dang_dung">Đang dùng</option>
+                    <option value="da_huy">Đã hủy</option>
+                  </select>
+                  <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-black text-[#ef1b2d]">
+                    {selectedIssuedQrCodes.length > 0
+                      ? `Đã chọn ${selectedIssuedQrCodes.length}/${printableIssuedQrCodes.length}`
+                      : `${filteredIssuedQrCodes.length} mã`}
+                  </span>
+                  {onPrintIssuedQrCodes ? (
+                    <button
+                      type="button"
+                      onClick={() => void handlePrintSelectedIssuedQrCodes()}
+                      disabled={selectedIssuedQrCodes.length === 0 || isPrintingIssuedQrCodes}
+                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-black text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isPrintingIssuedQrCodes ? <Loader2 className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}
+                      {isPrintingIssuedQrCodes ? 'Đang chuẩn bị...' : 'In lại mã đã chọn'}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              {issuedQrCodesError ? (
+                <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                  {issuedQrCodesError}
+                </p>
+              ) : null}
+
+              <TableShell
+                className="min-h-0 flex flex-1 flex-col"
+                minWidthClassName="min-w-[980px]"
+                maxHeightClassName="min-h-0 flex-1"
+              >
+                <TableHead>
+                  <TableHeadCell align="center" className="w-12">
+                    <input
+                      type="checkbox"
+                      checked={allIssuedQrCodesSelected}
+                      onChange={toggleAllIssuedQrCodes}
+                      disabled={printableIssuedQrCodes.length === 0}
+                      aria-label="Chọn tất cả QR đã cấp"
+                      className="h-4 w-4 cursor-pointer accent-[#ef1b2d] disabled:cursor-not-allowed"
+                    />
+                  </TableHeadCell>
+                  <TableHeadCell>STT</TableHeadCell>
+                  <TableHeadCell>Mã QR đầy đủ</TableHeadCell>
+                  <TableHeadCell>Trạng thái</TableHeadCell>
+                  <TableHeadCell>Kho</TableHeadCell>
+                  <TableHeadCell align="center">Số lần in</TableHeadCell>
+                  <TableHeadCell>Ngày in gần nhất</TableHeadCell>
+                  <TableHeadCell>Ngày cấp</TableHeadCell>
+                </TableHead>
+                <TableBody>
+                  {filteredIssuedQrCodes.map((code, index) => (
+                    <TableRow key={code.id || code.ma_qr}>
+                      <td className="px-4 py-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedIssuedQrIds.has(code.id)}
+                          disabled={code.trang_thai === 'da_huy'}
+                          onChange={() => setSelectedIssuedQrIds(previous => {
+                            const next = new Set(previous);
+                            if (next.has(code.id)) next.delete(code.id);
+                            else next.add(code.id);
+                            return next;
+                          })}
+                          aria-label={`Chọn in ${code.ma_qr}`}
+                          className="h-4 w-4 cursor-pointer accent-[#ef1b2d] disabled:cursor-not-allowed disabled:opacity-40"
+                        />
+                      </td>
+                      <td className="px-4 py-3 font-bold text-zinc-500">{index + 1}</td>
+                      <td className="px-4 py-3 font-mono font-black text-zinc-950">{code.ma_qr}</td>
+                      <td className="px-4 py-3">
+                        {canEditQrCodes ? (
+                          <select
+                            value={code.trang_thai}
+                            disabled={updatingIssuedQrId === code.id}
+                            onChange={event => void handleUpdateIssuedQrStatus(code, event.target.value as 'dang_dung' | 'da_huy')}
+                            className="h-8 cursor-pointer rounded-lg border border-zinc-200 bg-white px-2 text-xs font-bold text-zinc-700 outline-none focus:border-[#ef1b2d] disabled:cursor-not-allowed disabled:opacity-50"
+                            aria-label={`Đổi trạng thái ${code.ma_qr}`}
+                          >
+                            <option value="dang_dung">Đang dùng</option>
+                            <option value="da_huy">Đã hủy</option>
+                          </select>
+                        ) : (
+                          <StatusBadge
+                            label={code.trang_thai === 'dang_dung' ? 'Đang dùng' : code.trang_thai === 'da_huy' ? 'Đã hủy' : code.trang_thai || '-'}
+                            color={code.trang_thai === 'dang_dung' ? 'emerald' : 'rose'}
+                          />
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-zinc-700">{code.ten_kho || '-'}</td>
+                      <td className="px-4 py-3 text-center font-bold text-zinc-700">{code.so_lan_in}</td>
+                      <td className="px-4 py-3 text-xs font-semibold text-zinc-600">{code.ngay_in_gan_nhat ? new Date(code.ngay_in_gan_nhat).toLocaleString('vi-VN') : '-'}</td>
+                      <td className="px-4 py-3 text-xs font-semibold text-zinc-600">{code.created_at ? new Date(code.created_at).toLocaleString('vi-VN') : '-'}</td>
+                    </TableRow>
+                  ))}
+                  {!isLoadingIssuedQrCodes && filteredIssuedQrCodes.length === 0 ? (
+                    <TableEmptyRow colSpan={8}>{issuedQrCodes.length === 0 ? 'NVL này chưa có mã QR đã cấp.' : 'Không có mã QR theo trạng thái đã chọn.'}</TableEmptyRow>
+                  ) : null}
+                  {isLoadingIssuedQrCodes ? <TableEmptyRow colSpan={8}>Đang tải danh sách QR đã cấp...</TableEmptyRow> : null}
+                </TableBody>
+              </TableShell>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                {[...infoRows, ...nvlInfoRows].map(([label, value]) => (
+                  <div key={label} className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">{label}</p>
+                    <p className="mt-1 font-bold text-zinc-900">{value || '-'}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -872,17 +1020,32 @@ export function MaterialViewModal({
   );
 }
 
-export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
+export function MaterialsInventoryPanel({
+  onBack,
+  warehouseFilter = '',
+  includeUnassigned = false,
+  asOfDate = '',
+  balanceRows = [],
+  topControls = null
+}: {
+  onBack: () => void;
+  warehouseFilter?: string;
+  includeUnassigned?: boolean;
+  asOfDate?: string;
+  balanceRows?: InventoryBalanceRow[];
+  topControls?: ReactNode;
+}) {
   const { canCreate, canEdit, canDelete } = useTabAccess('materials');
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
   const [searchText, setSearchText] = useState('');
-  const [selectedUnit, setSelectedUnit] = useState('all');
   const [isLoadingMaterials, setIsLoadingMaterials] = useState(true);
   const [materialsError, setMaterialsError] = useState('');
   const [formMode, setFormMode] = useState<'add' | 'edit' | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewingMaterial, setViewingMaterial] = useState<MaterialRow | null>(null);
   const [deletingMaterialId, setDeletingMaterialId] = useState<string | null>(null);
+  const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<string>>(() => new Set());
+  const [isDeletingMaterials, setIsDeletingMaterials] = useState(false);
   const [isSavingMaterial, setIsSavingMaterial] = useState(false);
   const [formError, setFormError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
@@ -890,6 +1053,33 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
   const [showBulkTotalWeight, setShowBulkTotalWeight] = useState(false);
   const [isImportingCatalog, setIsImportingCatalog] = useState(false);
   const catalogFileInputRef = useRef<HTMLInputElement>(null);
+  const [warehouseOptions, setWarehouseOptions] = useState<string[]>([]);
+  const [isUploadingMaterialImage, setIsUploadingMaterialImage] = useState(false);
+  const [viewingMaterialImage, setViewingMaterialImage] = useState<WeighingPreviewImage | null>(null);
+  const [materialQrPrintLabels, setMaterialQrPrintLabels] = useState<WarehouseProductQrPrintLabel[]>([]);
+  const [materialQrPrintOpen, setMaterialQrPrintOpen] = useState(false);
+  const [showPrintQtyModal, setShowPrintQtyModal] = useState(false);
+  const [printQtyById, setPrintQtyById] = useState<Record<string, string>>({});
+  const [bulkPrintQty, setBulkPrintQty] = useState('1');
+  const [printQtyError, setPrintQtyError] = useState('');
+  const [isGeneratingPrintQr, setIsGeneratingPrintQr] = useState(false);
+
+  useEffect(() => {
+    const loadWarehouses = async () => {
+      try {
+        const res = await fetch('/api/quan-ly-kho');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const records: Array<{ ten_kho?: string }> = Array.isArray(data?.records) ? data.records : [];
+        setWarehouseOptions(
+          Array.from(new Set(records.map(r => String(r.ten_kho ?? '').trim()).filter(Boolean)))
+        );
+      } catch {
+        setWarehouseOptions([]);
+      }
+    };
+    void loadWarehouses();
+  }, []);
 
   const loadMaterials = async () => {
     setIsLoadingMaterials(true);
@@ -912,40 +1102,217 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const handlePrintIssuedQrCodes = async (codes: MaterialIssuedQrCode[]) => {
+    if (!viewingMaterial || codes.length === 0) return;
+    setMaterialQrPrintLabels(codes.map((code, index) => ({
+      key: `${viewingMaterial.code}-${code.id || index}`,
+      payload: code.ma_qr,
+      productCode: code.ma_npl_goc || viewingMaterial.code,
+      productName: code.ten_npl || viewingMaterial.name,
+      itemLabel: 'Tên NVL',
+      unit: viewingMaterial.unit !== '-' ? viewingMaterial.unit : undefined
+    })));
+    setMaterialQrPrintOpen(true);
+  };
+
   useEffect(() => {
     loadMaterials();
   }, []);
 
-  const units = useMemo(
-    () => ['all', ...Array.from(new Set(materials.map(material => material.unit).filter(unit => unit !== '-'))).sort((a, b) => String(a).localeCompare(String(b), 'vi'))],
-    [materials]
-  );
+  const datedMaterials = useMemo(() => {
+    if (!asOfDate) return [];
+    const balanceByCode = new Map<string, InventoryBalanceRow>();
+    for (const balance of balanceRows) {
+      const key = normalizeMaterialCodeKey(balance.ma);
+      if (!key || key === '-') continue;
+      balanceByCode.set(key, balance);
+    }
+    const seenKeys = new Set<string>();
+
+    // Hiện hết danh mục thuộc kho (kể cả tồn 0 / chưa có phiếu).
+    const fromCatalog = materials.flatMap(material => {
+      if (
+        !matchesWarehouseFilter(material.warehouse, warehouseFilter, {
+          includeUnassigned
+        })
+      ) {
+        return [];
+      }
+      const key = normalizeMaterialCodeKey(material.code);
+      if (!key || key === '-') return [];
+      seenKeys.add(key);
+      const balance = balanceByCode.get(key);
+      return [{
+        ...material,
+        // Cột Kho luôn theo bộ lọc đang chọn trên /kho-hang.
+        warehouse: warehouseFilter || balance?.ten_kho || material.warehouse,
+        openingStock: balance ? String(balance.ton_dau_ky) : material.openingStock && material.openingStock !== '-' ? material.openingStock : '0',
+        inbound: balance ? String(balance.nhap_trong_ky) : '0',
+        outbound: balance ? String(balance.xuat_trong_ky) : '0'
+      }];
+    });
+
+    // Bổ sung mã chỉ có trên phiếu kho, chưa có trong danh mục.
+    const fromBalancesOnly = balanceRows.flatMap(balance => {
+      const key = normalizeMaterialCodeKey(balance.ma);
+      if (!key || key === '-' || seenKeys.has(key)) return [];
+      return [{
+        id: `inventory-balance:${key}`,
+        code: balance.ma,
+        name: balance.ten || balance.ma,
+        unit: balance.don_vi || '-',
+        warehouse: warehouseFilter || balance.ten_kho,
+        totalWeight: '-',
+        plasticWeight: '-',
+        bagWeight: '-',
+        coreWeight: '-',
+        rollWidth: '-',
+        unitLength: '-',
+        openingStock: String(balance.ton_dau_ky),
+        inbound: String(balance.nhap_trong_ky),
+        outbound: String(balance.xuat_trong_ky),
+        inventoryBalanceOnly: true
+      }];
+    });
+
+    return [...fromCatalog, ...fromBalancesOnly];
+  }, [asOfDate, balanceRows, includeUnassigned, materials, warehouseFilter]);
+
   const materialUnitSuggestions = useMemo(() => {
     const fromMaterials = materials.map(material => material.unit).filter(unit => unit && unit !== '-');
     return [...new Set([...fromMaterials, ...readUnitSuggestions()])].sort((a, b) => a.localeCompare(b, 'vi'));
   }, [materials]);
-  const unitFilterOptions = useMemo(() => units.filter(unit => unit !== 'all'), [units]);
   const normalizedSearch = searchText.trim().toLowerCase();
   const filteredMaterials = useMemo(() => {
-    return materials.filter(material => {
-      const matchesUnit = selectedUnit === 'all' || material.unit === selectedUnit;
+    return datedMaterials.filter(material => {
+      const matchesWarehouse = matchesWarehouseFilter(material.warehouse, warehouseFilter, {
+        includeUnassigned
+      });
       const matchesSearch =
         !normalizedSearch ||
-        `${material.code} ${material.name} ${material.productionName} ${material.unit} ${material.auxiliaryMaterialGroup}`.toLowerCase().includes(normalizedSearch);
-      return matchesUnit && matchesSearch;
+        `${material.code} ${material.name} ${material.unit}`.toLowerCase().includes(normalizedSearch);
+      return matchesWarehouse && matchesSearch;
     });
-  }, [materials, normalizedSearch, selectedUnit]);
+  }, [asOfDate, datedMaterials, includeUnassigned, normalizedSearch, warehouseFilter]);
 
-  const hasActiveFilters = selectedUnit !== 'all' || Boolean(searchText);
-  const resetFilters = () => {
-    setSelectedUnit('all');
-    setSearchText('');
+  const selectableFilteredMaterials = useMemo(
+    () => filteredMaterials.filter(material => !material.inventoryBalanceOnly && Boolean(material.id)),
+    [filteredMaterials]
+  );
+  const selectedMaterials = useMemo(
+    () => materials.filter(material => selectedMaterialIds.has(material.id)),
+    [materials, selectedMaterialIds]
+  );
+  const allFilteredSelected =
+    selectableFilteredMaterials.length > 0 &&
+    selectableFilteredMaterials.every(material => selectedMaterialIds.has(material.id));
+
+  const toggleMaterial = (materialId: string) => {
+    setSelectedMaterialIds(prev => {
+      const next = new Set(prev);
+      if (next.has(materialId)) next.delete(materialId);
+      else next.add(materialId);
+      return next;
+    });
   };
 
-  const totalWeightAllText = useMemo(() => {
-    const sum = sumDecimalStrings(materials.map(material => material.totalWeight));
-    return formatKgNoRounding(sum);
-  }, [materials]);
+  const toggleFilteredMaterials = () => {
+    setSelectedMaterialIds(prev => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        selectableFilteredMaterials.forEach(material => next.delete(material.id));
+      } else {
+        selectableFilteredMaterials.forEach(material => next.add(material.id));
+      }
+      return next;
+    });
+  };
+
+  const selectedPrintMaterials = useMemo(
+    () => selectedMaterials.filter(material => String(material.code || '').trim() && !material.inventoryBalanceOnly),
+    [selectedMaterials]
+  );
+  const parsePrintCopyCount = (value: string) => {
+    const num = Math.floor(Number(String(value).trim()));
+    return Number.isFinite(num) && num > 0 ? Math.min(num, 999) : 0;
+  };
+  const totalPrintCopies = useMemo(
+    () => selectedPrintMaterials.reduce((sum, material) => sum + parsePrintCopyCount(printQtyById[material.id] ?? '0'), 0),
+    [printQtyById, selectedPrintMaterials]
+  );
+
+  const handlePrintSelectedMaterialQr = () => {
+    const next: Record<string, string> = {};
+    selectedPrintMaterials.forEach(material => {
+      next[material.id] = printQtyById[material.id] ?? '1';
+    });
+    setActionMessage('');
+    setPrintQtyById(next);
+    setBulkPrintQty('1');
+    setPrintQtyError('');
+    setShowPrintQtyModal(true);
+  };
+
+  const handleApplyBulkPrintQty = () => {
+    const qty = String(Math.max(1, parsePrintCopyCount(bulkPrintQty) || 1));
+    setBulkPrintQty(qty);
+    setPrintQtyById(prev => {
+      const nextState = { ...prev };
+      selectedPrintMaterials.forEach(material => {
+        nextState[material.id] = qty;
+      });
+      return nextState;
+    });
+  };
+
+  const handleConfirmPrintQrLabels = async () => {
+    setPrintQtyError('');
+    const items = selectedPrintMaterials
+      .map(material => ({
+        maNpl: material.code,
+        tenNpl: material.name,
+        tenKho: material.warehouse && material.warehouse !== '-' ? material.warehouse : '',
+        soLuongTem: parsePrintCopyCount(printQtyById[material.id] ?? '0')
+      }))
+      .filter(item => item.maNpl && item.soLuongTem > 0);
+    if (items.length === 0) {
+      setPrintQtyError('Nhập số lượng (> 0) cho ít nhất một mã NVL.');
+      return;
+    }
+    setIsGeneratingPrintQr(true);
+    try {
+      const response = await fetch('/api/ma-qr-nvl/cap-moi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Không thể cấp mã QR mới.');
+      const records: Array<Record<string, unknown>> = Array.isArray(data.records) ? data.records : [];
+      const labels: WarehouseProductQrPrintLabel[] = records.map(record => ({
+        key: String(record.id ?? record.ma_qr ?? ''),
+        payload: String(record.ma_qr ?? '').trim(),
+        productCode: String(record.ma_npl_goc ?? '').trim(),
+        productName: String(record.ten_npl ?? '').trim() || '-',
+        itemLabel: 'Tên NVL'
+      })).filter(label => Boolean(label.key && label.payload && label.productCode));
+      if (labels.length !== totalPrintCopies) {
+        throw new Error('CSDL trả về thiếu mã QR. Chưa thể mở tem để in.');
+      }
+      setMaterialQrPrintLabels(labels);
+      setShowPrintQtyModal(false);
+      setMaterialQrPrintOpen(true);
+    } catch (reason: unknown) {
+      setPrintQtyError(reason instanceof Error ? reason.message : 'Không thể cấp mã QR mới.');
+    } finally {
+      setIsGeneratingPrintQr(false);
+    }
+  };
+
+  const hasActiveFilters = Boolean(searchText);
+  const resetFilters = () => {
+    setSearchText('');
+  };
 
   const handleDownloadTotalWeightTemplate = () => {
     downloadBulkMaterialTotalWeightTemplate(
@@ -973,29 +1340,29 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
         throw new Error('File Excel không có dòng NVL hợp lệ (cần cột Mã NPL).');
       }
 
-      // Keep successful imports in the working set so duplicate rows in one file
-      // follow the same match rules as rows already loaded from the database.
-      let workingMaterials = [...materials];
-      const createRecords: MaterialCatalogPayload[] = [];
-      const updateRecords = new Map<string, MaterialCatalogPayload>();
-      const pendingCreateIndexes = new Map<string, number>();
+      const byCode = new Map<string, MaterialRow>(
+        materials
+          .map(material => [normalizeMaterialCodeKey(material.code), material] as const)
+          .filter(([key]) => Boolean(key))
+      );
 
+      let created = 0;
+      let updated = 0;
       const failures: string[] = [];
-      const skippedMissingName: number[] = [];
 
       for (const row of rows) {
-        const match = findMaterialCatalogMatch(row, workingMaterials);
-        if (match.error) {
-          if (match.error === 'thiếu tên nguyên vật liệu') {
-            skippedMissingName.push(row.rowNumber);
-          } else {
-            failures.push(`dòng ${row.rowNumber}: ${match.error}`);
-          }
+        const code = row.code.trim();
+        if (!code) {
+          failures.push(`dòng ${row.rowNumber}: thiếu mã NPL`);
           continue;
         }
 
-        const existing = match.material;
-        const name = row.name.trim();
+        const existing = byCode.get(normalizeMaterialCodeKey(code));
+        const name = row.name.trim() || existing?.name || '';
+        if (!name || name === '-') {
+          failures.push(`dòng ${row.rowNumber}: thiếu tên nguyên phụ liệu`);
+          continue;
+        }
 
         const payload = {
           ...materialCatalogRowToPayload(row),
@@ -1006,42 +1373,24 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
           saveUnitSuggestion(payload.unit);
         }
 
-        if (existing) {
-          const pendingIndex = pendingCreateIndexes.get(existing.id);
-          if (pendingIndex !== undefined) {
-            createRecords[pendingIndex] = payload;
-          } else {
-            updateRecords.set(existing.id, payload);
-          }
-          workingMaterials = workingMaterials.map(material =>
-            material.id === existing.id ? materialWithCatalogPayload(existing.id, payload) : material
-          );
-        } else {
-          const pendingId = `__pending_material_${row.rowNumber}_${createRecords.length}`;
-          pendingCreateIndexes.set(pendingId, createRecords.length);
-          createRecords.push(payload);
-          workingMaterials = [...workingMaterials, materialWithCatalogPayload(pendingId, payload)];
-        }
-      }
-
-      let created = 0;
-      let updated = 0;
-      if (createRecords.length > 0 || updateRecords.size > 0) {
-        const res = await fetch('/api/kho-nvl/import-batch', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            creates: createRecords,
-            updates: Array.from(updateRecords, ([id, payload]) => ({ id, ...payload }))
-          })
-        });
+        const res = existing
+          ? await fetch(`/api/kho-nvl/${existing.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            })
+          : await fetch('/api/kho-nvl', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          failures.push(data.error || 'Không lưu được dữ liệu import hàng loạt.');
-        } else {
-          created = Number(data.createdCount) || createRecords.length;
-          updated = Number(data.updatedCount) || updateRecords.size;
+          failures.push(`dòng ${row.rowNumber}: ${data.error || 'Không lưu được'}`);
+          continue;
         }
+        if (existing) updated += 1;
+        else created += 1;
       }
 
       if (created > 0 || updated > 0) {
@@ -1049,10 +1398,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
       }
 
       const summary = [
-        created || updated ? `Đã nhập Excel NVL: thêm ${created}, cập nhật ${updated}.` : 'Không có dòng hợp lệ để nhập.',
-        skippedMissingName.length
-          ? `${skippedMissingName.length} dòng bỏ qua do thiếu tên nguyên vật liệu.`
-          : '',
+        created || updated ? `Đã nhập Excel NVL: thêm ${created}, cập nhật ${updated}.` : 'Không nhập được dòng nào.',
         failures.length ? `${failures.length} dòng lỗi (${failures.slice(0, 3).join('; ')}).` : ''
       ]
         .filter(Boolean)
@@ -1062,8 +1408,6 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
       else if (failures.length > 0) {
         setMaterialsError(summary);
         showAppToast(failures[0], 'error');
-      } else if (skippedMissingName.length > 0) {
-        showAppToast(summary);
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Không thể đọc hoặc nhập Excel danh mục NVL.';
@@ -1080,7 +1424,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
     setFormError('');
     setActionMessage('');
     setEditingId(null);
-    setMaterialForm(emptyMaterialForm());
+    setMaterialForm({ ...emptyMaterialForm(), warehouse: warehouseFilter });
     setFormMode('add');
   };
 
@@ -1107,6 +1451,10 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
     }
     if (!materialForm.name.trim()) {
       setFormError('Vui lòng nhập tên nguyên phụ liệu.');
+      return;
+    }
+    if (!materialForm.warehouse.trim()) {
+      setFormError('Vui lòng chọn kho lưu trữ.');
       return;
     }
 
@@ -1166,6 +1514,11 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
       }
 
       if (viewingMaterial?.id === material.id) setViewingMaterial(null);
+      setSelectedMaterialIds(prev => {
+        const next = new Set(prev);
+        next.delete(material.id);
+        return next;
+      });
       setActionMessage('Đã xóa nguyên phụ liệu.');
       await loadMaterials();
     } catch (error: any) {
@@ -1175,127 +1528,181 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const handleBulkDeleteMaterials = async () => {
+    if (selectedMaterials.length === 0) return;
+
+    const label =
+      selectedMaterials.length === 1
+        ? `"${selectedMaterials[0].code || selectedMaterials[0].name}"`
+        : `${selectedMaterials.length} nguyên phụ liệu`;
+
+    if (!window.confirm(`Bạn có chắc muốn xóa ${label}? Hành động này không thể hoàn tác.`)) {
+      return;
+    }
+
+    setIsDeletingMaterials(true);
+    setActionMessage('');
+    setMaterialsError('');
+
+    try {
+      const res = await fetch('/api/kho-nvl', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedMaterials.map(material => material.id) })
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Không thể xóa nguyên phụ liệu đã chọn.');
+      }
+
+      if (viewingMaterial && selectedMaterialIds.has(viewingMaterial.id)) {
+        setViewingMaterial(null);
+      }
+      setSelectedMaterialIds(new Set());
+      setActionMessage(`Đã xóa ${data.deleted ?? selectedMaterials.length} nguyên phụ liệu.`);
+      await loadMaterials();
+    } catch (error: any) {
+      setMaterialsError(error.message || 'Không thể xóa nguyên phụ liệu đã chọn.');
+    } finally {
+      setIsDeletingMaterials(false);
+    }
+  };
+
   const materialFormFields: Array<{ key: keyof MaterialFormState; label: string; required?: boolean; placeholder?: string }> = [
-    { key: 'name', label: 'Tên nguyên vật liệu', required: true, placeholder: 'VD: Màng PE' },
-    { key: 'productionName', label: 'Tên nguyên vật liệu sản xuất', placeholder: 'Tên dùng trong sản xuất' },
-    { key: 'phanLoai', label: 'Phân loại' },
-    { key: 'auxiliaryMaterialGroup', label: 'Nhóm vật tư phụ' },
+    { key: 'name', label: 'Tên nguyên phụ liệu', required: true, placeholder: 'VD: Màng PE' },
     { key: 'totalWeight', label: 'Tổng kg' },
     { key: 'plasticWeight', label: 'Kg nhựa' },
     { key: 'bagWeight', label: 'Kg túi' },
     { key: 'coreWeight', label: 'Kg lõi' },
     { key: 'rollWidth', label: 'Khổ cuộn' },
-    { key: 'unitLength', label: 'Chiều dài ĐV' },
-    { key: 'openingStock', label: 'Tồn đầu kỳ' },
-    { key: 'inbound', label: 'Nhập trong kỳ' },
-    { key: 'outbound', label: 'Xuất trong kỳ' }
+    { key: 'unitLength', label: 'Chiều dài ĐV' }
   ];
 
   return (
     <div className="mx-auto w-full max-w-[1680px] space-y-4">
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
-        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
-          <div className="flex items-start justify-end gap-3">
-            <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
-              <button
-                type="button"
-                onClick={handleDownloadCatalogTemplate}
-                disabled={isImportingCatalog || isLoadingMaterials}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-extrabold text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
-                title="Mẫu Excel khớp cột bảng /kho-nvl — ô trống vẫn đẩy lên"
-              >
-                <Download className="h-4 w-4" />
-                Tải mẫu Excel
-              </button>
-              {canCreate || canEdit ? (
-                <button
-                  type="button"
-                  onClick={() => catalogFileInputRef.current?.click()}
-                  disabled={isImportingCatalog || isLoadingMaterials}
-                  className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isImportingCatalog ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                  {isImportingCatalog ? 'Đang nhập...' : 'Tải Excel lên'}
-                </button>
-              ) : null}
-              <input
-                ref={catalogFileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={event => void handleImportCatalogExcel(event.target.files?.[0])}
-              />
-              <button
-                type="button"
-                onClick={handleDownloadTotalWeightTemplate}
-                disabled={isLoadingMaterials}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-extrabold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                title="Chỉ cập nhật cột Tổng kg theo mã NVL"
-              >
-                <Download className="h-4 w-4" />
-                Mẫu cập nhật Tổng kg
-              </button>
-              {canEdit ? (
-                <button
-                  type="button"
-                  onClick={() => setShowBulkTotalWeight(true)}
-                  className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-100 px-3 text-xs font-extrabold text-slate-700 transition hover:bg-slate-200"
-                >
-                  <Upload className="h-4 w-4" />
-                  Nhập Tổng kg
-                </button>
-              ) : null}
-              {canCreate ? (
-                <button
-                  type="button"
-                  onClick={openAddForm}
-                  className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-                >
-                  <Plus className="h-4 w-4" />
-                  Thêm mới
-                </button>
-              ) : null}
-            </div>
-          </div>
+      <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          {topControls}
+          {topControls ? <div className="hidden h-8 w-px shrink-0 bg-zinc-200 lg:block" aria-hidden /> : null}
 
-          <div className="mt-5 grid grid-cols-3 gap-2 text-xs">
-            {[
-              ['Mã NVL', materials.length],
-              ['Tổng kg', totalWeightAllText],
-              ['Đơn vị', units.length > 0 ? units.length - 1 : 0]
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <span className="block font-bold text-slate-500">{label}</span>
-                <span className="mt-1 block text-xl font-black text-slate-900">{value}</span>
-              </div>
-            ))}
-          </div>
+          <button
+            type="button"
+            onClick={handlePrintSelectedMaterialQr}
+            disabled={selectedPrintMaterials.length === 0 || isLoadingMaterials}
+            className="flex h-10 items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-black text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+            title="Nhập số tem QR cần in cho các NVL đã chọn; mỗi tem là một mã QR duy nhất lưu trong CSDL"
+          >
+            <QrCode className="h-4 w-4" />
+            In mã QR
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadCatalogTemplate}
+            disabled={isImportingCatalog || isLoadingMaterials}
+            className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-extrabold text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+            title="Mẫu Excel khớp cột bảng /kho-nvl — ô trống vẫn đẩy lên"
+          >
+            <Download className="h-4 w-4" />
+            Tải mẫu Excel
+          </button>
+          {canCreate || canEdit ? (
+            <button
+              type="button"
+              onClick={() => catalogFileInputRef.current?.click()}
+              disabled={isImportingCatalog || isLoadingMaterials}
+              className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isImportingCatalog ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              {isImportingCatalog ? 'Đang nhập...' : 'Tải Excel lên'}
+            </button>
+          ) : null}
+          <input
+            ref={catalogFileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={event => void handleImportCatalogExcel(event.target.files?.[0])}
+          />
+          <button
+            type="button"
+            onClick={handleDownloadTotalWeightTemplate}
+            disabled={isLoadingMaterials}
+            className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-extrabold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+            title="Chỉ cập nhật cột Tổng kg theo mã NVL"
+          >
+            <Download className="h-4 w-4" />
+            Mẫu cập nhật Tổng kg
+          </button>
+          {canEdit ? (
+            <button
+              type="button"
+              onClick={() => setShowBulkTotalWeight(true)}
+              className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-100 px-3 text-xs font-extrabold text-slate-700 transition hover:bg-slate-200"
+            >
+              <Upload className="h-4 w-4" />
+              Nhập Tổng kg
+            </button>
+          ) : null}
+          {canCreate ? (
+            <button
+              type="button"
+              onClick={openAddForm}
+              className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+            >
+              <Plus className="h-4 w-4" />
+              Thêm mới
+            </button>
+          ) : null}
+          {canDelete ? (
+            <button
+              type="button"
+              onClick={() => void handleBulkDeleteMaterials()}
+              disabled={selectedMaterials.length === 0 || isDeletingMaterials}
+              className="flex h-10 items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isDeletingMaterials ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              {isDeletingMaterials ? 'Đang xóa...' : 'Xóa đã chọn'}
+            </button>
+          ) : null}
         </div>
+
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <TableSearchInput
+            value={searchText}
+            onChange={setSearchText}
+            placeholder="Tìm mã NVL, tên nguyên phụ liệu..."
+            disabled={isLoadingMaterials}
+          />
+
+          {isLoadingMaterials ? (
+            <div className="flex h-10 shrink-0 items-center rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs font-bold text-zinc-500">
+              Đang tải...
+            </div>
+          ) : null}
+
+          {hasActiveFilters ? (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="flex h-10 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs font-black text-zinc-600 transition hover:border-[#ef1b2d] hover:text-[#ef1b2d]"
+            >
+              Xóa lọc
+            </button>
+          ) : null}
+        </div>
+
+        {materialsError ? (
+          <p className="mt-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+            {materialsError}
+          </p>
+        ) : null}
+        {actionMessage ? (
+          <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+            {actionMessage}
+          </p>
+        ) : null}
       </section>
-
-      <TableToolbar
-        isLoading={isLoadingMaterials}
-        hasActiveFilters={hasActiveFilters}
-        onResetFilters={resetFilters}
-        loadError={materialsError}
-        actionMessage={actionMessage}
-      >
-        <TableSearchInput
-          value={searchText}
-          onChange={setSearchText}
-          placeholder="Tìm mã NVL, tên nguyên phụ liệu..."
-          disabled={isLoadingMaterials}
-        />
-
-        <FilterCombobox
-          label="Đơn vị"
-          options={unitFilterOptions}
-          value={selectedUnit}
-          onChange={setSelectedUnit}
-          searchPlaceholder="Tìm đơn vị..."
-          compact
-        />
-      </TableToolbar>
 
       {formMode && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
@@ -1344,38 +1751,32 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                   ))}
                 </datalist>
               </label>
+              <label className="space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Kho lưu trữ *</span>
+                <SearchableSelect
+                  value={materialForm.warehouse}
+                  onChange={value => setMaterialForm(prev => ({ ...prev, warehouse: value }))}
+                  options={warehouseOptions}
+                  placeholder="Chọn kho lưu trữ"
+                  searchPlaceholder="Tìm kho..."
+                  getLabel={item => String(item)}
+                  getValue={item => String(item)}
+                  inputClassName={materialFieldClass}
+                  allowEmpty={false}
+                  comboboxMode
+                />
+              </label>
               {materialFormFields.map(field => (
                 <label key={field.key} className="space-y-1.5">
                   <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
                     {field.label}{field.required ? ' *' : ''}
                   </span>
-                  {field.key === 'phanLoai' ? (
-                    <select
-                      value={materialForm[field.key]}
-                      onChange={e => setMaterialForm(prev => ({ ...prev, [field.key]: e.target.value }))}
-                      className={materialFieldClass}
-                    >
-                      <option value="">-- Chọn phân loại --</option>
-                      <option value="Nguyên vật liệu phụ">Nguyên vật liệu phụ</option>
-                      <option value="Nguyên vật liệu chính">Nguyên vật liệu chính</option>
-                    </select>
-                  ) : field.key === 'auxiliaryMaterialGroup' ? (
-                    <select
-                      value={materialForm[field.key]}
-                      onChange={e => setMaterialForm(prev => ({ ...prev, [field.key]: e.target.value }))}
-                      className={materialFieldClass}
-                    >
-                      <option value="">-- Chọn nhóm vật tư phụ --</option>
-                      {AUXILIARY_MATERIAL_GROUPS.map(group => <option key={group} value={group}>{group}</option>)}
-                    </select>
-                  ) : (
-                    <input
-                      value={materialForm[field.key]}
-                      onChange={e => setMaterialForm(prev => ({ ...prev, [field.key]: e.target.value }))}
-                      className={materialFieldClass}
-                      placeholder={field.placeholder}
-                    />
-                  )}
+                  <input
+                    value={materialForm[field.key]}
+                    onChange={e => setMaterialForm(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    className={materialFieldClass}
+                    placeholder={field.placeholder}
+                  />
                 </label>
               ))}
             </div>
@@ -1406,9 +1807,143 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
           }}
           onEdit={canEdit ? openEditForm : undefined}
           onDelete={canDelete ? handleDeleteMaterial : undefined}
+          onPrintIssuedQrCodes={handlePrintIssuedQrCodes}
+          canEditQrCodes={canEdit}
           isDeleting={deletingMaterialId === viewingMaterial.id}
         />
       )}
+
+      {showPrintQtyModal
+        ? createPortal(
+            <div className="fixed inset-0 z-[90] flex items-end justify-center bg-zinc-950/45 p-0 sm:items-center sm:p-4">
+              <button
+                type="button"
+                className="absolute inset-0 cursor-default"
+                aria-label="Đóng"
+                onClick={() => setShowPrintQtyModal(false)}
+              />
+              <div className="relative z-10 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+                <div className="flex items-start justify-between gap-3 border-b border-zinc-200 bg-gradient-to-r from-zinc-50 to-white px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#ef1b2d]">In tem QR</p>
+                    <h3 className="mt-0.5 text-base font-black text-zinc-900">Số bản theo mã NVL</h3>
+                    <p className="mt-1 text-[11px] font-semibold text-zinc-500">
+                      Mỗi tem là một mã QR duy nhất được lưu trong CSDL
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowPrintQtyModal(false)}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 transition hover:bg-zinc-50"
+                    title="Đóng"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-3 overflow-y-auto px-4 py-4">
+                  <div className="flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                    <label className="min-w-[120px] flex-1 text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                      Áp dụng tất cả
+                      <input
+                        type="number"
+                        min={1}
+                        max={999}
+                        value={bulkPrintQty}
+                        onChange={e => setBulkPrintQty(e.target.value)}
+                        className="mt-1 h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleApplyBulkPrintQty}
+                      className="h-10 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-black text-zinc-700 transition hover:border-zinc-950"
+                    >
+                      Áp dụng
+                    </button>
+                  </div>
+
+                  <TableShell minWidthClassName="min-w-full" maxHeightClassName="max-h-72">
+                    <TableHead>
+                      <TableHeadCell>Mã NVL</TableHeadCell>
+                      <TableHeadCell align="center" className="w-28">Số bản</TableHeadCell>
+                    </TableHead>
+                    <TableBody>
+                      {selectedPrintMaterials.map(material => (
+                        <React.Fragment key={material.id}>
+                          <TableRow>
+                            <td className="px-3 py-2.5">
+                              <p className="font-black text-zinc-900">{material.code}</p>
+                              <p className="mt-0.5 line-clamp-1 text-[11px] font-semibold text-zinc-500">
+                                {material.name || '—'}
+                              </p>
+                            </td>
+                            <td className="px-3 py-2.5 text-center">
+                              <input
+                                type="number"
+                                min={0}
+                                max={999}
+                                value={printQtyById[material.id] ?? '1'}
+                                onChange={e =>
+                                  setPrintQtyById(prev => ({ ...prev, [material.id]: e.target.value }))
+                                }
+                                className="mx-auto h-10 w-20 rounded-lg border border-zinc-200 bg-white px-2 text-center text-sm font-black text-zinc-900 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10"
+                              />
+                            </td>
+                          </TableRow>
+                        </React.Fragment>
+                      ))}
+                    </TableBody>
+                  </TableShell>
+
+                  {printQtyError ? (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                      {printQtyError}
+                    </div>
+                  ) : null}
+
+                  <p className="text-xs font-semibold text-zinc-500">
+                    Tổng sẽ in: <span className="font-black text-[#ef1b2d]">{totalPrintCopies}</span> tem
+                  </p>
+                </div>
+
+                <div className="flex gap-2 border-t border-zinc-200 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowPrintQtyModal(false)}
+                    className="inline-flex h-10 flex-1 items-center justify-center rounded-xl border border-zinc-200 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleConfirmPrintQrLabels()}
+                    disabled={totalPrintCopies <= 0 || isGeneratingPrintQr}
+                    className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] text-xs font-bold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <QrCode className="h-4 w-4" />
+                    {isGeneratingPrintQr ? 'Đang cấp QR...' : `Xem trước ${totalPrintCopies > 0 ? `${totalPrintCopies} tem` : 'QR'}`}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+
+      <ProductQrPrintModal
+        open={materialQrPrintOpen}
+        labels={materialQrPrintLabels}
+        trackProductPrint={false}
+        trackMaterialPrint
+        showPayload={false}
+        title="Mã QR NVL"
+        description={`${materialQrPrintLabels.length} tem · mỗi tem là một đơn vị NVL đã lưu trong CSDL`}
+        onClose={() => {
+          setMaterialQrPrintOpen(false);
+          setMaterialQrPrintLabels([]);
+        }}
+      />
 
       <BulkMaterialTotalWeightModal
         open={showBulkTotalWeight}
@@ -1420,36 +1955,52 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
         }}
       />
 
-      <TableShell minWidthClassName="min-w-[1150px]">
+      <TableShell minWidthClassName="min-w-[850px]">
         <TableHead>
+          <TableHeadCell align="center" className="w-14">
+            <input
+              type="checkbox"
+              checked={allFilteredSelected}
+              onChange={toggleFilteredMaterials}
+              disabled={selectableFilteredMaterials.length === 0 || isDeletingMaterials}
+              className="h-4 w-4 accent-[#ef1b2d]"
+              aria-label="Chọn tất cả nguyên phụ liệu đang lọc"
+            />
+          </TableHeadCell>
           <TableHeadCell>Mã NPL</TableHeadCell>
-          <TableHeadCell>Tên nguyên vật liệu</TableHeadCell>
-          <TableHeadCell>Phân loại</TableHeadCell>
-          <TableHeadCell>Nhóm vật tư phụ</TableHeadCell>
-          <TableHeadCell>Tên NVL sản xuất</TableHeadCell>
+          <TableHeadCell>Tên nguyên phụ liệu</TableHeadCell>
           <TableHeadCell>ĐV</TableHeadCell>
+          <TableHeadCell>Kho</TableHeadCell>
           <TableHeadCell align="center">Tổng kg</TableHeadCell>
-          <TableHeadCell>Tồn đầu</TableHeadCell>
-          <TableHeadCell>Nhập</TableHeadCell>
-          <TableHeadCell>Xuất</TableHeadCell>
-          <TableHeadCell>Tồn cuối</TableHeadCell>
+          <TableHeadCell align="center">Tổng SL</TableHeadCell>
           <TableHeadCell align="center">Thao tác</TableHeadCell>
         </TableHead>
         <TableBody>
-          {filteredMaterials.map(material => (
+          {filteredMaterials.map(material => {
+            const canSelect = !material.inventoryBalanceOnly && Boolean(material.id);
+            return (
             <React.Fragment key={material.id}>
               <TableRow>
+                <td className="px-3 py-3 text-center">
+                  {canSelect ? (
+                    <input
+                      type="checkbox"
+                      checked={selectedMaterialIds.has(material.id)}
+                      onChange={() => toggleMaterial(material.id)}
+                      disabled={isDeletingMaterials}
+                      className="h-4 w-4 accent-[#ef1b2d]"
+                      aria-label={`Chọn ${material.code || material.name}`}
+                    />
+                  ) : (
+                    <span className="inline-block h-4 w-4" aria-hidden />
+                  )}
+                </td>
                 <td className="px-4 py-3 font-black text-zinc-950">{material.code || '-'}</td>
                 <td className="px-4 py-3 font-semibold text-zinc-900">{material.name || '-'}</td>
-                <td className="px-4 py-3 text-xs font-semibold text-zinc-600">{material.phanLoai || '-'}</td>
-                <td className="px-4 py-3 text-xs font-semibold text-zinc-700">{material.auxiliaryMaterialGroup || '-'}</td>
-                <td className="px-4 py-3 font-semibold text-zinc-700">{material.productionName || '-'}</td>
                 <td className="px-4 py-3 text-zinc-700">{material.unit}</td>
+                <td className="px-4 py-3 text-zinc-700">{material.warehouse || '—'}</td>
                 <td className="px-4 py-3 text-right font-mono font-bold text-zinc-800">{material.totalWeight}</td>
-                <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.openingStock}</td>
-                <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.inbound}</td>
-                <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.outbound}</td>
-                <td className="px-4 py-3 font-mono font-bold text-zinc-900">
+                <td className="px-4 py-3 text-right font-mono font-bold text-zinc-800">
                   {computeClosingStock(material.openingStock, material.inbound, material.outbound)}
                 </td>
                 <td className="px-4 py-3 text-center">
@@ -1463,7 +2014,7 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                     >
                       <Eye className="h-4 w-4" />
                     </button>
-                    {canEdit ? (
+                    {canEdit && !material.inventoryBalanceOnly ? (
                       <button
                         type="button"
                         onClick={() => openEditForm(material)}
@@ -1473,11 +2024,11 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                         <Pencil className="h-4 w-4" />
                       </button>
                     ) : null}
-                    {canDelete ? (
+                    {canDelete && !material.inventoryBalanceOnly ? (
                       <button
                         type="button"
                         onClick={() => handleDeleteMaterial(material)}
-                        disabled={deletingMaterialId === material.id}
+                        disabled={deletingMaterialId === material.id || isDeletingMaterials}
                         title="Xóa"
                         className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
                       >
@@ -1493,11 +2044,12 @@ export function MaterialsInventoryPanel({ onBack }: { onBack: () => void }) {
                 </td>
               </TableRow>
             </React.Fragment>
-          ))}
+            );
+          })}
 
           {!isLoadingMaterials && filteredMaterials.length === 0 && (
-            <TableEmptyRow colSpan={11}>
-              Không có nguyên phụ liệu phù hợp bộ lọc.
+            <TableEmptyRow colSpan={8}>
+              {asOfDate ? 'Không có mã hàng trong kho này.' : 'Vui lòng chọn ngày để xem hàng còn trong kho.'}
             </TableEmptyRow>
           )}
         </TableBody>

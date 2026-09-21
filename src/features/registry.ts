@@ -14,7 +14,6 @@ export type TableId =
   | 'kho_nvl'
   | 'phieu_xuat_nhap_kho'
   | 'don_hang'
-  | 'ton_kho_toi_thieu_toi_da'
   | 'khach_hang'
   | 'lenh_xuat_hang'
   | 'lenh_sx'
@@ -174,17 +173,6 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appTab: 'orders',
     appLines: 'src/features/don-hang/index.tsx, src/features/_shared/orderHelpers.ts',
     components: ['src/components/shared/Select2.tsx', 'src/components/shared/SearchableSelect.tsx', 'src/components/OrderPrintSheet.tsx'],
-    utils: []
-  },
-  ton_kho_toi_thieu_toi_da: {
-    table: 'ton_kho_toi_thieu_toi_da',
-    label: 'Tồn kho tối thiểu - Tồn kho tối đa',
-    sql: ['supabase-ton-kho-toi-thieu-toi-da.sql'],
-    apiPrefix: '/api/ton-kho-toi-thieu-toi-da',
-    serverLines: '5720–5830; GET /api/canh-bao-ton-kho: 6769–6833',
-    appTab: 'inventory-limits | canh-bao-ton-kho',
-    appLines: 'src/features/ton-kho-toi-thieu-toi-da/index.tsx, src/features/canh-bao-ton-kho/index.tsx',
-    components: [],
     utils: []
   },
   khach_hang: {

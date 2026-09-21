@@ -63,10 +63,7 @@ import {
   getActivePageMeta
 } from './app/menus';
 import { ProductsPanel } from './features/san-pham';
-import { InventoryLimitsPanel } from './features/ton-kho-toi-thieu-toi-da';
 import { MachinesPanel } from './features/danh-sach-may';
-import { MaterialsInventoryPanel } from './features/kho-nvl';
-import { WarehouseSlipPanel, WarehouseHistoryPanel } from './features/phieu-xuat-nhap-kho';
 import { CustomersPanel } from './features/khach-hang';
 import { ShippingOrdersPanel } from './features/lenh-xuat-hang';
 import { OrdersPanel } from './features/don-hang';
@@ -80,11 +77,8 @@ import { ControlBoardPanel } from './features/control-board';
 import { HumanResourcesPanel } from './features/nhan-su';
 import { VehiclesPanel } from './features/danh-sach-xe';
 import { CanTuDongPanel } from './features/can-tu-dong';
-import { KiemKhoPanel } from './features/kiem-kho';
-import { QuanLyKhoPanel } from './features/quan-ly-kho';
 import { MachineNvlReportPanel } from './features/bao-cao-may-nvl-ton';
 import { SoTronPanel, SoTronListView, type SoTronSavedReport } from './features/so-tron';
-import { InventoryAlertPanel } from './features/canh-bao-ton-kho';
 
 const DEFAULT_REPORT: Omit<ProductionReport, 'id' | 'createdAt'> = {
   date: new Date().toISOString().split('T')[0],
@@ -1106,26 +1100,6 @@ export default function App() {
               >
                 <CanTuDongPanel onBack={() => goBack('report-lists')} />
               </motion.div>
-            ) : resolvedTab === 'kiem-kho' ? (
-              <motion.div
-                key="kiem-kho"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.15 }}
-              >
-                <KiemKhoPanel onBack={() => goBack('factory-kho')} currentUser={authUser} />
-              </motion.div>
-            ) : resolvedTab === 'quan-ly-kho' ? (
-              <motion.div
-                key="quan-ly-kho"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.15 }}
-              >
-                <QuanLyKhoPanel onBack={() => goBack('factory-kho')} />
-              </motion.div>
             ) : resolvedTab === 'weighing-summary' ? (
               <motion.div
                 key="weighing-summary"
@@ -1360,17 +1334,6 @@ export default function App() {
               >
                 <ProductsPanel onBack={() => goBack('business')} />
               </motion.div>
-            ) : activeTab === 'inventory-limits' ? (
-              <motion.div
-                key="inventory-limits"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.15 }}
-                className="flex h-full min-h-0 flex-col"
-              >
-                <InventoryLimitsPanel onBack={() => goBack('business')} />
-              </motion.div>
             ) : activeTab === 'machines' ? (
               <motion.div
                 key="machines"
@@ -1380,42 +1343,6 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <MachinesPanel onBack={() => goBack('menu')} />
-              </motion.div>
-            ) : activeTab === 'materials' ? (
-              <motion.div
-                key="materials"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.15 }}
-              >
-                <MaterialsInventoryPanel onBack={() => goBack('factory-kho')} />
-              </motion.div>
-            ) : activeTab === 'warehouse-slip' ? (
-              <motion.div
-                key="warehouse-slip"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.15 }}
-              >
-                <WarehouseSlipPanel
-                  onBack={() => goBack('factory-kho')}
-                  onOpenHistory={() => navigateToTab('warehouse-history')}
-                />
-              </motion.div>
-            ) : activeTab === 'warehouse-history' ? (
-              <motion.div
-                key="warehouse-history"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.15 }}
-              >
-                <WarehouseHistoryPanel
-                  onBack={() => goBack('factory-kho')}
-                  onOpenSlip={() => navigateToTab('warehouse-slip')}
-                />
               </motion.div>
             ) : activeTab === 'orders' ? (
               <motion.div
@@ -1497,16 +1424,6 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <SapXepLichLamViecPanel onBack={() => goBack('factory-quan-doc')} />
-              </motion.div>
-            ) : activeTab === 'canh-bao-ton-kho' ? (
-              <motion.div
-                key="canh-bao-ton-kho"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.15 }}
-              >
-                <InventoryAlertPanel onBack={() => goBack('factory-quan-doc')} />
               </motion.div>
             ) : activeTab === 'settings' ? (
               <motion.div

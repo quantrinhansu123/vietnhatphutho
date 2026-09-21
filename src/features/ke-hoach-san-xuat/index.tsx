@@ -3978,6 +3978,28 @@ export function buildProductionOrderMaterialProposal(
   });
 }
 
+/** Điền NVL theo BOM, ưu tiên kg nhựa lấy từ phiếu cân thực tế. */
+export function buildProductionOrderMaterialProposalFromActualWeighing(
+  actualProductQty: number,
+  actualPlasticKg: number,
+  items: ProductNplItem[],
+  product?: Pick<ProductRow, 'plasticWeight' | 'totalWeight' | 'coreWeight' | 'bagWeight'> | null
+): ProductionOrderMaterialLine[] {
+  const qty = Number.isFinite(actualProductQty) && actualProductQty > 0 ? actualProductQty : 0;
+  const fallbackKg = resolveProductMaterialBaseKg(product) * qty;
+  const plasticKg = Number.isFinite(actualPlasticKg) && actualPlasticKg > 0 ? actualPlasticKg : fallbackKg;
+  return items.map(item => {
+    if (item.amountType !== 'quantity') {
+      const weightKg = roundNplNumber((plasticKg * (item.percent ?? 0)) / 100);
+      return { code: item.code, name: item.name || item.code, normLabel: formatProductionOrderNormLabel(item), percent: item.percent ?? 0, weightKg, proposedQuantity: weightKg, unit: 'kg' };
+    }
+    const qtyPerSp = item.quantity != null && item.quantity > 0 ? item.quantity : null;
+    const weightPerSp = item.weightKg != null && item.weightKg > 0 ? item.weightKg : null;
+    const weightKg = weightPerSp != null ? roundNplNumber(weightPerSp * qty) : null;
+    return { code: item.code, name: item.name || item.code, normLabel: formatProductionOrderNormLabel(item), percent: null, weightKg, proposedQuantity: qtyPerSp != null ? roundNplNumber(qtyPerSp * qty) : weightKg ?? 0, unit: qtyPerSp != null && item.unit !== '-' ? item.unit : 'kg' };
+  });
+}
+
 let productNplCache: ProductRow[] | null = null;
 let productNplCachePromise: Promise<ProductRow[]> | null = null;
 
