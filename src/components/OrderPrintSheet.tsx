@@ -1,9 +1,8 @@
 import React from 'react';
 import { formatNumber, parsePercentInput } from '../utils';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
+import { SOUTH_ORDER_TYPE, isCutLikeOrderType } from '../features/_shared/orderHelpers';
 import { getOrderProductLines, type OrderRow } from '../features/_shared/orderRecordHelpers';
-import { SOUTH_ORDER_TYPE, SOUTH_TEM_COLOR_DEFAULT, isCutLikeOrderType, southMvByMauTem } from '../features/_shared/orderHelpers';
-import { formatProductionNameWithLength } from '../features/_shared/productionProductHelpers';
 
 function formatOrderCreatedAt(value: string): string {
   const trimmed = String(value || '').trim();
@@ -90,7 +89,7 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
             <tr>
               <th>STT</th>
               <th>Mã sản phẩm</th>
-              <th>Tên ghép</th>
+              <th>Tên sản xuất</th>
               <th>Quy cách</th>
               <th>ĐVT</th>
               <th>Số lượng</th>
@@ -111,16 +110,7 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
                   <td className="order-print-center">{line.stt || idx + 1}</td>
                   <td className="order-print-mono">{displayCell(line.productCode)}</td>
                   <td className="order-print-product-name">
-                    {displayCell(
-                      formatProductionNameWithLength(
-                        line.productionName || line.productName || '',
-                        line.quyCachMDai,
-                        { tenGhep: line.tenGhep }
-                      )
-                    ) || displayCell(line.productName)}
-                    {(line.tem || line.mauTem || line.danTem2Dau) ? (
-                      <div>{line.tem ? `(Dán Tem ${displayCell(line.tem)})` : ''}{line.mauTem ? ` Màu ${displayCell(line.mauTem)} ${southMvByMauTem(line.mauTem)}` : line.tem ? ` Màu ${SOUTH_TEM_COLOR_DEFAULT} ${southMvByMauTem(SOUTH_TEM_COLOR_DEFAULT)}` : ''}{line.danTem2Dau ? ' Dán Tem 2 Đầu' : ''}</div>
-                    ) : null}
+                    {displayCell(line.tenGhep)}
                   </td>
                   <td>{formatLineSpec(line)}</td>
                   <td className="order-print-center">{displayCell(line.unit)}</td>

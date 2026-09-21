@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BackButton } from '../../components/layout/NavButtons';
 import { ChiPhiNhanCongList } from './ChiPhiNhanCongList';
 import { ChiPhiNhanCongForm } from './ChiPhiNhanCongForm';
 import { DinhGiaNhanCongModal } from './DinhGiaNhanCongModal';
@@ -7,11 +6,11 @@ import type { ChiPhiNhanCongRecord, MachineInfo } from './types';
 import { normalizeShiftSettings } from '../../utils/shiftSettings';
 
 interface ChiPhiNhanCongPanelProps {
-  onBack: () => void;
+  onBack?: () => void;
   currentUser?: any;
 }
 
-export function ChiPhiNhanCongPanel({ onBack, currentUser }: ChiPhiNhanCongPanelProps) {
+export function ChiPhiNhanCongPanel({ currentUser }: ChiPhiNhanCongPanelProps) {
   const [viewMode, setViewMode] = useState<'list' | 'create' | 'edit' | 'view'>('list');
   const [selectedRecord, setSelectedRecord] = useState<ChiPhiNhanCongRecord | null>(null);
 
@@ -198,21 +197,6 @@ export function ChiPhiNhanCongPanel({ onBack, currentUser }: ChiPhiNhanCongPanel
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 px-3 py-3 sm:px-6">
-      {/* Header bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-card">
-        <div className="flex items-center gap-3">
-          <BackButton onClick={viewMode === 'list' ? onBack : () => setViewMode('list')} />
-          <div>
-            <h1 className="font-display text-base font-semibold tracking-tight text-slate-900">
-              Chi phí nhân công
-            </h1>
-            <p className="mt-0.5 text-[11.5px] leading-snug text-slate-500">
-              Quản lý và tính toán chi phí nhân công theo tháng và máy từ lịch làm việc & điều động
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* Body contents based on viewMode */}
       {viewMode === 'list' ? (
         <ChiPhiNhanCongList

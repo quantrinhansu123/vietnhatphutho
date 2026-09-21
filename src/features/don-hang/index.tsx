@@ -20,13 +20,11 @@ import {
   SOUTH_TEM_OPTIONS,
   SOUTH_TEM_COLOR_OPTIONS,
   SOUTH_TEM_COLOR_DEFAULT,
-  southMvByMauTem,
   appendSouthTemToTenGhep,
   parseSouthTemFromTenGhep,
   orderFieldClass,
   normalizeOrderProducts,
   findOrderProductById,
-  findOrderProductByCode,
   resolveOrderProductFields,
   readUnitSuggestions,
   saveUnitSuggestion,
@@ -42,8 +40,7 @@ import {
   type StaffOption,
   type CustomerOption
 } from '../_shared/orderHelpers';
-import { buildOrderTenGhep, classifyProductPxGroup, replaceCutLengthMeters } from '../../utils/productProductionName';
-import { formatProductionNameWithLength } from '../_shared/productionProductHelpers';
+import { extractDoLiDmNumber, buildOrderTenGhep, classifyProductPxGroup, replaceCutLengthMeters, replaceDoLiDmInTenGhep, normalizeDoLiDm } from '../../utils/productProductionName';
 import {
   parseOrderProductsFromRecord,
   summarizeOrderProducts,
@@ -79,7 +76,7 @@ interface OrderRowExt extends OrderRow {
 const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1180px]';
 const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1420px]';
 const ORDER_CUT_TABLE_MIN_WIDTH = 'min-w-[1480px]';
-const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[1880px]';
+const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2060px]';
 export const PRODUCTION_ORDER_TYPE = 'Đơn sản xuất';
 const orderProductGridClass =
   'grid-cols-[2.25rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(12rem,1.35fr)_minmax(7rem,0.9fr)_5.5rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
@@ -88,7 +85,7 @@ const orderProductionProductGridClass =
 const orderCutProductGridClass =
   'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_6rem_minmax(8rem,1fr)_6.5rem]';
 const orderSouthProductGridClass =
-  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_6.5rem]';
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_8.5rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
 const CUSTOMER_ENTERED_KG_SOURCE = 'khach_hang_nhap_kg';
 /** Ô Tìm Mã AMIS: hiện tối đa 400 kết quả đã lọc. Các Select khác vẫn mặc định 50. */
@@ -205,6 +202,8 @@ export type OrderProductFormLine = {
   slNam?: string;
   /** Chỉ dùng cho đơn "Đơn theo quy cách của khách đặt" và "Đơn miền nam" (đơn cắt lẻ). */
   doLi?: string;
+  /** Chỉ dùng cho "Đơn miền nam": định mức thực tế `do_li_dm`, dạng `(đm n li)` / `(đm n kg)`. */
+  doLiDm?: string;
   kho?: string;
   daiM: string;
   /** Chỉ dùng cho "Đơn miền nam": loại tem + màu tem (dropdown từ phân tích sp_mien_nam.xlsx) + 2 Đầu. */
@@ -573,12 +572,15 @@ export function orderProductLinesToPayload(
       const temValue = String(line.tem || '').trim();
       const mauTemValue = String(line.mauTem || '').trim() || (temValue && isSouthOrder ? SOUTH_TEM_COLOR_DEFAULT : '');
       const danTem2DauValue = Boolean(line.danTem2Dau);
+      // Form chỉ nhập số; khi lưu/ghép tên luôn hiểu là (đm n li).
+      const doLiDmValue = isSouthOrder ? normalizeDoLiDm(line.doLiDm, 'li') : '';
       // Ghi đè stale trong sourceProduct khi user xóa tem/màu/bỏ tick 2 Đầu (undefined bị JSON.stringify loại bỏ).
       const southExtraFields = isSouthOrder
         ? {
             tem: temValue || undefined,
             mau_tem: mauTemValue || undefined,
-            dan_tem_2_dau: danTem2DauValue ? 1 : undefined
+            dan_tem_2_dau: danTem2DauValue ? 1 : undefined,
+            do_li_dm: doLiDmValue || undefined
           }
         : {};
       const shouldRecalculateConversion = line.shouldRecalculateConversion !== false;
@@ -606,16 +608,21 @@ export function orderProductLinesToPayload(
         // Ưu tiên tên ghép đã lưu trên danh mục SP (đúng tuyệt đối).
         // Đơn cắt lẻ / miền nam: thay đúng token m dài chính thành mét cắt
         // (tránh "...6m - 8m" khi m dài không đứng cuối).
+        // Đơn miền nam: thay segment (đm n li|kg) theo định mức thực tế, giữ nguyên token do_li.
         if (catalogTenGhep && (!tenSanXuat || tenSanXuat === catalogProductionName)) {
-          const base = cutLength != null
+          let base = cutLength != null
             ? replaceCutLengthMeters(catalogTenGhep, cutLength, mainForCut)
             : catalogTenGhep;
+          if (doLiDmValue) {
+            base = replaceDoLiDmInTenGhep(base, doLiDmValue, 'li');
+          }
           return isSouthOrder ? appendSouthTemToTenGhep(base, temValue, mauTemValue, danTem2DauValue) : base;
         }
         const tenGhep = buildOrderTenGhep(tenSanXuat, {
           nhomVthh: selectedProduct?.group,
           maAmis: selectedProduct?.newCode,
-          cutLengthM: cutLength
+          cutLengthM: cutLength,
+          doLiDm: doLiDmValue || undefined
         });
         if (!tenGhep) return undefined;
         return isSouthOrder ? appendSouthTemToTenGhep(tenGhep, temValue, mauTemValue, danTem2DauValue) : tenGhep;
@@ -796,6 +803,8 @@ export function orderToForm(order: OrderRow): OrderFormState {
     slTrung: line.soLuongTrung || '',
     slNam: line.soLuongNam || '',
     daiM: line.daiM || '',
+    doLi: line.doLi || '',
+    doLiDm: extractDoLiDmNumber(line.doLiDm || ''),
     tem: orderCellToInput(line.tem || fallbackTem?.tem || ''),
     mauTem: orderCellToInput(line.mauTem || fallbackTem?.mauTem || ''),
     danTem2Dau: Boolean(line.danTem2Dau ?? fallbackTem?.danTem2Dau ?? false),
@@ -1185,6 +1194,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       productName: match?.name || '',
       productionName: match?.productionName || '',
       unit: 'Tấm',
+      doLiDm: extractDoLiDmNumber(match?.doLiDm || ''),
       tongKg: '',
       manualTongKg: false
     });
@@ -1711,6 +1721,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'productionName', label: 'Tên sản xuất' },
                         { key: 'unit', label: 'ĐVT' },
                         { key: 'daiM', label: 'Dài (m)', required: true },
+                        { key: 'doLi', label: 'Độ li ĐM' },
                         { key: 'bac', label: 'Bắc' },
                         { key: 'trung', label: 'Trung' },
                         { key: 'nam', label: 'Nam' },
@@ -1855,6 +1866,20 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             placeholder="2.8"
                           />
                         </div>
+                        {isFormSouthOrder ? (
+                          <div className="col-span-1 min-w-0">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={line.doLiDm || ''}
+                              onChange={e => updateConversionProductLine(line.key, { doLiDm: e.target.value })}
+                              className={orderFieldClass}
+                              placeholder="0.75"
+                              title="Độ li định mức thực tế — chỉ nhập số, tự hiểu là (đm n li)"
+                            />
+                          </div>
+                        ) : null}
                         <div className="col-span-1 min-w-0">
                           <input
                             type="number"
@@ -2258,12 +2283,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <span className="mr-2 font-black tabular-nums text-zinc-400">{line.stt || index + 1}.</span>
                         {line.productCode || '-'} · {line.productName || '-'}
                       </p>
-                      <p className="mt-0.5 text-xs font-semibold text-zinc-500">Tên sản xuất: {formatProductionNameWithLength(line.productionName || findOrderProductByCode(productOptions, line.productCode)?.productionName || line.productName || '', line.quyCachMDai, { tenGhep: line.tenGhep }) || '-'}</p>
-                      {(line.tem || line.mauTem || line.danTem2Dau) ? (
-                        <p className="mt-0.5 text-xs font-bold text-purple-700">
-                          {line.tem ? `(Dán Tem ${line.tem})` : ''}{line.mauTem ? ` Màu ${line.mauTem} ${southMvByMauTem(line.mauTem)}` : line.tem ? ` Màu ${SOUTH_TEM_COLOR_DEFAULT} ${southMvByMauTem(SOUTH_TEM_COLOR_DEFAULT)}` : ''}{line.danTem2Dau ? ' Dán Tem 2 Đầu' : ''}
-                        </p>
-                      ) : null}
+                      <p className="mt-0.5 text-xs font-semibold text-zinc-500">Tên sản xuất: {line.tenGhep || '-'}</p>
                       <p className="mt-0.5 text-xs font-semibold text-zinc-500">Ghi chú: {line.note || '-'}</p>
                       <p className="mt-0.5 text-zinc-600">
                         SL: {line.quantity || '-'}
@@ -2462,23 +2482,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             <div className="grid grid-cols-[2rem_minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2 text-xs font-semibold text-zinc-700">
                               <span className="font-black tabular-nums text-zinc-500">{line.stt || index + 1}</span>
                               <span className="font-black text-zinc-950">{line.productCode || '-'}</span>
-                              <span className="text-zinc-800">
-                                {line.tenGhep ||
-                                  formatProductionNameWithLength(
-                                    line.productionName || line.productName || '',
-                                    line.quyCachMDai
-                                  ) ||
-                                  '-'}
-                              </span>
+                              <span className="text-zinc-800">{line.tenGhep || '-'}</span>
                               <span className="text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
                               <span className="font-bold text-zinc-600">{line.unit || '-'}</span>
                             </div>
                             {specText ? <div className="mt-0.5 text-[11px] font-semibold text-zinc-400">{specText}</div> : null}
-                            {(line.tem || line.mauTem || line.danTem2Dau) ? (
-                              <div className="mt-0.5 text-[11px] font-bold text-purple-700">
-                                {line.tem ? `(Dán Tem ${line.tem})` : ''}{line.mauTem ? ` Màu ${line.mauTem} ${southMvByMauTem(line.mauTem)}` : line.tem ? ` Màu ${SOUTH_TEM_COLOR_DEFAULT} ${southMvByMauTem(SOUTH_TEM_COLOR_DEFAULT)}` : ''}{line.danTem2Dau ? ' Dán Tem 2 Đầu' : ''}
-                              </div>
-                            ) : null}
                             {(line.soLuongBac || line.soLuongTrung || line.soLuongNam) ? (
                               <div className="mt-0.5 text-[11px] font-bold text-sky-700">
                                 Bắc {line.soLuongBac || 0} · Trung {line.soLuongTrung || 0} · Nam {line.soLuongNam || 0}

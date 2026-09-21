@@ -16,7 +16,7 @@ import {
   resolveAuxiliaryWeightPerUnit,
   stripMixingNormRevisionSuffix
 } from './src/utils/mixingNormAuxiliary';
-import { buildOrderTenGhep, calculateDoLiDm, isDiscontinuedWhiteSuProduct, replaceCutLengthMeters } from './src/utils/productProductionName';
+import { buildOrderTenGhep, calculateDoLiDm, isDiscontinuedWhiteSuProduct, replaceCutLengthMeters, replaceDoLiDmInTenGhep } from './src/utils/productProductionName';
 
 dotenv.config();
 
@@ -5442,6 +5442,8 @@ type OrderProductRecord = {
   so_luong: number | null;
   stt?: number;
   do_li?: string | null;
+  /** Định mức thực tế đơn miền nam: `(đm n li)` hoặc `(đm n kg)`. */
+  do_li_dm?: string | null;
   kho?: number | string | null;
   dai_m?: number | null;
   ghi_chu?: string | null;
@@ -5578,6 +5580,7 @@ function parseOrderProductsInput(
     }
     const ma_don_hang = pickRowField(row, ['ma_don_hang', 'orderRef', 'order_code']);
     const do_li = pickRowField(row, ['do_li', 'doLi']);
+    const do_li_dm = pickRowField(row, ['do_li_dm', 'doLiDm']);
     const kho = parseOrderQuantity(row.kho);
     const dai_m = parseOrderQuantity(row.dai_m ?? row.daiM);
     const ghi_chu = pickRowField(row, ['ghi_chu', 'note']);
@@ -5603,12 +5606,16 @@ function parseOrderProductsInput(
     const healed_ten_ghep = isSouthOrderInput
       ? collapseDuplicateTrailingCutMetersServer(stripped_ten_ghep, parsedQuyCachMDai)
       : stripped_ten_ghep;
-    const base_ten_ghep = resolveStoredOrderTenGhep(
+    let base_ten_ghep = resolveStoredOrderTenGhep(
       healed_ten_ghep,
       ten_san_xuat || ten_sp,
       '',
       parsedQuyCachMDai
     );
+    // Đơn miền nam: thay segment (đm n li|kg) theo do_li_dm — không đụng token do_li.
+    if (isSouthOrderInput && do_li_dm) {
+      base_ten_ghep = replaceDoLiDmInTenGhep(base_ten_ghep, do_li_dm);
+    }
     const ten_ghep = isSouthOrderInput
       ? appendSouthTemToTenGhepServer(base_ten_ghep, tem, mau_tem, dan_tem_2_dau)
       : base_ten_ghep;
@@ -5624,6 +5631,7 @@ function parseOrderProductsInput(
     const stt = parsedStt !== null && parsedStt > 0 ? Math.floor(parsedStt) : undefined;
     const extraFields: Partial<OrderProductRecord> = {
       ...(do_li ? { do_li } : {}),
+      ...(do_li_dm ? { do_li_dm } : {}),
       ...(kho !== null && kho > 0 ? { kho } : {}),
       ...(dai_m !== null && dai_m > 0 ? { dai_m } : {}),
       ...(ghi_chu ? { ghi_chu } : {}),
@@ -5734,6 +5742,7 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
         if (!ma_sp && !ten_sp) return null;
         const san_pham_id = pickRowField(record, ['san_pham_id', 'productId', 'product_id']);
         const do_li = pickRowField(record, ['do_li', 'doLi']);
+        const do_li_dm = pickRowField(record, ['do_li_dm', 'doLiDm']);
         const kho = parseOrderQuantity(record.kho);
         const dai_m = parseOrderQuantity(record.dai_m ?? record.daiM);
         const ghi_chu = pickRowField(record, ['ghi_chu', 'note']);
@@ -5785,6 +5794,7 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
           ...(san_pham_id ? { san_pham_id } : {}),
           ...(parsedStt !== null && parsedStt > 0 ? { stt: Math.floor(parsedStt) } : {}),
           ...(do_li ? { do_li } : {}),
+          ...(do_li_dm ? { do_li_dm } : {}),
           ...(kho !== null && kho > 0 ? { kho } : {}),
           ...(dai_m !== null && dai_m > 0 ? { dai_m } : {}),
           ...(parsedQuyCachMDai !== null && parsedQuyCachMDai > 0 ? { quy_cach_m_dai: parsedQuyCachMDai } : {}),

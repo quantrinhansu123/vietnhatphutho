@@ -14,7 +14,9 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
-  Info
+  Info,
+  Search,
+  X
 } from 'lucide-react';
 import type {
   ChiPhiNhanCongRecord,
@@ -78,8 +80,6 @@ export function ChiPhiNhanCongForm({
     }
     return rates;
   });
-  const [defaultRateInput, setDefaultRateInput] = useState('0');
-
   // Raw data fetched from backend for recalculation
   const [rawPhanCong, setRawPhanCong] = useState<any[]>([]);
   const [rawDieuDong, setRawDieuDong] = useState<any[]>([]);
@@ -88,6 +88,7 @@ export function ChiPhiNhanCongForm({
   const [errorMsg, setErrorMsg] = useState('');
   const [expandedMachine, setExpandedMachine] = useState<Record<string, boolean>>({});
   const [expandedDaysPerson, setExpandedDaysPerson] = useState<Record<string, boolean>>({});
+  const [personNameSearch, setPersonNameSearch] = useState('');
 
   // Auto update title when month/year changes if title hasn't been heavily customized
   useEffect(() => {
@@ -181,6 +182,14 @@ export function ChiPhiNhanCongForm({
     savedResult
   ]);
 
+  const filteredPersonSummary = useMemo(() => {
+    const q = personNameSearch.trim().toLowerCase();
+    if (!q) return calculatedResult.personSummary;
+    return calculatedResult.personSummary.filter(p =>
+      (p.personName || '').toLowerCase().includes(q)
+    );
+  }, [calculatedResult.personSummary, personNameSearch]);
+
   // Machine toggle helper
   const toggleMachine = (code: string) => {
     setSelectedMachineCodes(prev =>
@@ -202,16 +211,6 @@ export function ChiPhiNhanCongForm({
       ...prev,
       [personCode]: rate
     }));
-  };
-
-  const applyDefaultRateToAll = () => {
-    const val = Number(defaultRateInput) || 0;
-    if (val < 0) return;
-    const newRates: Record<string, number> = {};
-    for (const p of calculatedResult.personSummary) {
-      newRates[p.personCode] = val;
-    }
-    setHourlyRates(newRates);
   };
 
   // Save handler
@@ -406,28 +405,6 @@ export function ChiPhiNhanCongForm({
           </div>
         </div>
 
-        {/* Thiết lập đơn giá lương nhanh */}
-        <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3 text-xs">
-          <span className="font-semibold text-slate-700">Đơn giá chung (đ/giờ):</span>
-          <input
-            type="number"
-            min={0}
-            step={1000}
-            value={defaultRateInput}
-            onChange={e => setDefaultRateInput(e.target.value)}
-            className="h-8 w-32 rounded-lg border border-slate-300 px-2.5 text-right text-xs font-semibold text-slate-800"
-          />
-          <button
-            type="button"
-            onClick={applyDefaultRateToAll}
-            className="h-8 rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-200 transition"
-          >
-            Áp dụng cho tất cả nhân sự
-          </button>
-          <span className="text-[11px] text-slate-400 italic">
-            (Có thể sửa trực tiếp đơn giá theo từng người bên dưới)
-          </span>
-        </div>
       </div>
 
       {/* Thống kê tổng hợp toàn bộ các máy */}
@@ -502,13 +479,14 @@ export function ChiPhiNhanCongForm({
                   onClick={() =>
                     setExpandedMachine(prev => ({
                       ...prev,
-                      [mach.machineCode]: !prev[mach.machineCode]
+                      // Mặc định mở (undefined/true); lần click đầu phải đóng ngay
+                      [mach.machineCode]: prev[mach.machineCode] === false
                     }))
                   }
                 >
                   <div className="flex items-center gap-2.5">
                     <div className="rounded-lg bg-brand-100 p-1.5 text-brand-700 font-bold">
-                      <Cpu className="h-4 w-4" />
+                      <Cpu className="h-4 w-4 pointer-events-none" />
                     </div>
                     <div>
                       <span className="text-sm font-bold text-slate-900">{mach.machineName}</span>
@@ -527,23 +505,23 @@ export function ChiPhiNhanCongForm({
                       Thành tiền: <strong>{mach.totalCost.toLocaleString('vi-VN')} đ</strong>
                     </span>
                     {isCollapsed ? (
-                      <ChevronDown className="h-4 w-4 text-slate-400" />
+                      <ChevronDown className="h-4 w-4 text-slate-400 pointer-events-none" />
                     ) : (
-                      <ChevronUp className="h-4 w-4 text-slate-400" />
+                      <ChevronUp className="h-4 w-4 text-slate-400 pointer-events-none" />
                     )}
                   </div>
                 </div>
 
                 {/* Bảng nhân sự của máy */}
                 {!isCollapsed && (
-                  <div className="overflow-x-auto">
+                  <div className="max-h-[min(420px,55vh)] overflow-auto">
                     {mach.personnel.length === 0 ? (
                       <div className="p-4 text-center text-xs text-slate-400">
                         Không có nhân sự nào làm việc trên máy này trong tháng {thang}/{nam}.
                       </div>
                     ) : (
                       <table className="w-full text-left text-xs text-slate-600">
-                        <thead className="border-b border-slate-200 bg-slate-50/50 text-[11px] font-bold uppercase tracking-wider text-slate-700">
+                        <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-700">
                           <tr>
                             <th className="px-3.5 py-2.5 text-center w-12">STT</th>
                             <th className="px-3.5 py-2.5">Mã NV</th>
@@ -692,20 +670,17 @@ export function ChiPhiNhanCongForm({
           <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900 flex items-center gap-2">
             <span>3. Bảng tổng hợp toàn bộ nhân công theo ngày & tháng (Tất cả máy được chọn)</span>
           </h2>
-          <p className="mt-1 text-xs text-slate-500">
-            Bảng ma trận tổng hợp toàn bộ số người và số giờ công của tất cả các máy trong từng ngày và tổng cộng toàn tháng.
-          </p>
         </div>
 
         {/* BẢNG A: TỔNG HỢP THEO NGÀY TRONG THÁNG */}
         <div>
           <h3 className="mb-2 text-xs font-bold uppercase text-slate-700 flex items-center gap-1.5">
             <Calendar className="h-3.5 w-3.5 text-brand-600" />
-            <span>A. Ma trận nhân công theo ngày trong tháng {thang}/{nam}</span>
+            <span>A. Nhân công theo ngày trong tháng {thang}/{nam}</span>
           </h3>
-          <div className="overflow-x-auto border border-slate-200 rounded-lg">
+          <div className="max-h-[min(420px,55vh)] overflow-auto border border-slate-200 rounded-lg">
             <table className="w-full text-left text-xs text-slate-600">
-              <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold uppercase text-slate-700">
+              <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-[11px] font-bold uppercase text-slate-700">
                 <tr>
                   <th className="px-3 py-2 text-center w-12">Ngày</th>
                   <th className="px-3 py-2 text-center w-24">Thứ</th>
@@ -754,7 +729,7 @@ export function ChiPhiNhanCongForm({
                   );
                 })}
               </tbody>
-              <tfoot className="border-t-2 border-slate-300 bg-slate-100 font-bold text-slate-900">
+              <tfoot className="sticky bottom-0 border-t-2 border-slate-300 bg-slate-100 font-bold text-slate-900">
                 <tr>
                   <td colSpan={2} className="px-3 py-2.5 text-center uppercase">
                     Tổng cả tháng:
@@ -778,13 +753,35 @@ export function ChiPhiNhanCongForm({
 
         {/* BẢNG B: TỔNG HỢP THEO NHÂN SỰ TOÀN BỘ CÁC MÁY */}
         <div>
-          <h3 className="mb-2 text-xs font-bold uppercase text-slate-700 flex items-center gap-1.5">
-            <Users className="h-3.5 w-3.5 text-brand-600" />
-            <span>B. Tổng hợp thời gian & Chi phí theo từng nhân sự qua các máy</span>
-          </h3>
-          <div className="overflow-x-auto border border-slate-200 rounded-lg">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xs font-bold uppercase text-slate-700 flex items-center gap-1.5">
+              <Users className="h-3.5 w-3.5 text-brand-600 pointer-events-none" />
+              <span>B. Tổng hợp thời gian & Chi phí theo từng nhân sự qua các máy</span>
+            </h3>
+            <div className="relative w-full max-w-xs sm:w-64">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={personNameSearch}
+                onChange={e => setPersonNameSearch(e.target.value)}
+                placeholder="Tìm theo họ và tên..."
+                className="h-8 w-full rounded-lg border border-slate-300 bg-white py-1.5 pl-8 pr-8 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+              />
+              {personNameSearch && (
+                <button
+                  type="button"
+                  aria-label="Xóa tìm kiếm"
+                  onClick={() => setPersonNameSearch('')}
+                  className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <X className="h-3.5 w-3.5 pointer-events-none" />
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="max-h-[min(420px,55vh)] overflow-auto border border-slate-200 rounded-lg">
             <table className="w-full text-left text-xs text-slate-600">
-              <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold uppercase text-slate-700">
+              <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-[11px] font-bold uppercase text-slate-700">
                 <tr>
                   <th className="px-3.5 py-2.5 text-center w-12">STT</th>
                   <th className="px-3.5 py-2.5">Mã NV</th>
@@ -808,7 +805,19 @@ export function ChiPhiNhanCongForm({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {calculatedResult.personSummary.map((p, idx) => (
+                {filteredPersonSummary.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={7 + calculatedResult.machineDetails.length}
+                      className="px-3.5 py-6 text-center text-slate-400"
+                    >
+                      {personNameSearch.trim()
+                        ? `Không tìm thấy nhân sự khớp “${personNameSearch.trim()}”.`
+                        : 'Chưa có dữ liệu nhân sự.'}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredPersonSummary.map((p, idx) => (
                   <tr key={p.personCode} className="hover:bg-slate-50 transition">
                     <td className="px-3.5 py-2.5 text-center text-slate-400 font-medium">{idx + 1}</td>
                     <td className="px-3.5 py-2.5 font-mono font-medium text-slate-700">{p.personCode}</td>
@@ -842,9 +851,10 @@ export function ChiPhiNhanCongForm({
                       {p.totalCost.toLocaleString('vi-VN')} đ
                     </td>
                   </tr>
-                ))}
+                  ))
+                )}
               </tbody>
-              <tfoot className="border-t-2 border-slate-300 bg-slate-100 font-bold text-slate-900">
+              <tfoot className="sticky bottom-0 border-t-2 border-slate-300 bg-slate-100 font-bold text-slate-900">
                 <tr>
                   <td colSpan={4} className="px-3.5 py-2.5 text-right uppercase">
                     Tổng cộng toàn bộ nhân sự:

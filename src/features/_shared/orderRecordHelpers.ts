@@ -97,6 +97,7 @@ export function parseOrderProductsFromRecord(
         const unit = formatCell(row.don_vi ?? row.unit);
         const quantity = formatCell(row.so_luong ?? row.quantity);
         const doLi = pickText(row, ['do_li', 'doLi'], '');
+        const doLiDm = pickText(row, ['do_li_dm', 'doLiDm'], '');
         const kho = pickText(row, ['kho'], '');
         const daiM = pickText(row, ['dai_m', 'daiM'], '');
         const kg1Sp = pickText(row, ['kg_1_sp', 'kg1Sp', 'tl_tam', 'tlTam'], '');
@@ -137,6 +138,7 @@ export function parseOrderProductsFromRecord(
           quantity,
           stt: readOrderProductStt(row.stt ?? row.STT, index),
           doLi: doLi || undefined,
+          doLiDm: doLiDm || undefined,
           kho: kho || undefined,
           daiM: daiM || undefined,
           kg1Sp: kg1Sp || undefined,
