@@ -1860,8 +1860,9 @@ export function WarehouseSlipPanel({
           : productionReportLoai === 'sp_rac'
             ? 'SP rác'
             : '';
-  const showPendingProductionReports =
-    Boolean(productionReportLoai) && slipType === 'nhap' && !isXuatTreoMode && !editSlipCode;
+  // Tạm tắt: API /api/bao-cao-san-luong/cho-nhap-kho chưa sẵn sàng.
+  const showPendingProductionReports = false;
+  // Boolean(productionReportLoai) && slipType === 'nhap' && !isXuatTreoMode && !editSlipCode;
 
   useEffect(() => {
     if (editSlipCode) return;
@@ -1870,33 +1871,10 @@ export function WarehouseSlipPanel({
   }, [editSlipCode, loginName]);
 
   const loadPendingDamagedReports = async () => {
-    const requestSeq = ++damagedReportsRequestSeqRef.current;
-    if (!productionReportLoai || !slipDate) {
-      setPendingDamagedReports([]);
-      setDamagedReportsError('');
-      setIsLoadingDamagedReports(false);
-      return;
-    }
-    setIsLoadingDamagedReports(true);
+    // Tạm không gọi /api/bao-cao-san-luong/cho-nhap-kho (API chưa có).
+    setPendingDamagedReports([]);
     setDamagedReportsError('');
-    try {
-      const params = new URLSearchParams({ loai: productionReportLoai, ngay: slipDate });
-      const res = await fetch(`/api/bao-cao-san-luong/cho-nhap-kho?${params.toString()}`);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-          throw new Error(readApiErrorMessage(res, data, 'Không thể tải báo cáo sản lượng chờ nhập kho.'));
-      }
-      if (requestSeq !== damagedReportsRequestSeqRef.current) return;
-      setPendingDamagedReports(Array.isArray(data?.records) ? data.records : []);
-    } catch (error: any) {
-      if (requestSeq !== damagedReportsRequestSeqRef.current) return;
-      setPendingDamagedReports([]);
-      setDamagedReportsError(error?.message || 'Không thể tải báo cáo sản lượng chờ nhập kho.');
-    } finally {
-      if (requestSeq === damagedReportsRequestSeqRef.current) {
-        setIsLoadingDamagedReports(false);
-      }
-    }
+    setIsLoadingDamagedReports(false);
   };
 
   const handleReviewDamagedReport = (report: PendingDamagedReport) => {
