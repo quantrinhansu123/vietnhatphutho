@@ -105,3 +105,26 @@ test('resolveSoTronPrevTonFromReports: 12C2 cung ngay lay 12C1', () => {
   assert.deepEqual(result.source, { ngay: '2026-09-21', ca: '12C1' });
   assert.equal(lookupSoTronPrevTon(result.tonByMaterialKey, null, 'HM09'), 10);
 });
+
+test('buildTonMap: chap nhan alias ma_npl (ngoai ma_nvl)', () => {
+  const result = resolveSoTronPrevTonFromReports({
+    ngay: '2026-09-22',
+    ca: '12C2',
+    maMay: 'M1',
+    tenMay: 'Máy 1',
+    shiftOptions,
+    shiftSettings,
+    reports: [
+      {
+        id: 'd',
+        ngay: '2026-09-22',
+        ca: '12C1',
+        ma_may: 'M1',
+        ten_may: 'Máy 1',
+        bang_ban_giao: [{ material_id: '', ma_npl: 'NPL-001', ton_cuoi_ca: 55 }]
+      }
+    ]
+  });
+  assert.deepEqual(result.source, { ngay: '2026-09-22', ca: '12C1' });
+  assert.equal(lookupSoTronPrevTon(result.tonByMaterialKey, '', 'NPL-001'), 55);
+});

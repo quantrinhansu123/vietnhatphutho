@@ -21,6 +21,8 @@ export type SoTronPrevTonResult = {
 type SoTronBanGiaoLine = {
   material_id?: unknown;
   ma_nvl?: unknown;
+  /** Alias lịch sử / stub — một số nguồn ghi mã NVL bằng `ma_npl`. */
+  ma_npl?: unknown;
   ton_cuoi_ca?: unknown;
 };
 
@@ -113,7 +115,7 @@ function buildTonMap(prev: SoTronReportLite | undefined): Map<string, number> {
   for (const line of prev.bang_ban_giao || []) {
     const value = Number(line.ton_cuoi_ca) || 0;
     const materialId = str(line.material_id).toLowerCase();
-    const maNvl = str(line.ma_nvl).toLowerCase();
+    const maNvl = str(line.ma_nvl || line.ma_npl).toLowerCase();
     if (materialId) map.set(materialId, value);
     if (maNvl) map.set(maNvl, value);
   }
@@ -274,4 +276,60 @@ export function lookupSoTronPrevTon(
   if (id && tonByMaterialKey.has(id)) return tonByMaterialKey.get(id);
   if (code && tonByMaterialKey.has(code)) return tonByMaterialKey.get(code);
   return undefined;
+}
+
+/**
+ * Lay ton cuoi ca cua DUNG o (ngay, ca, may) trong so tron — khong lui ca.
+ * Dung cho o Ngay + Ca truoc cua phieu xuat NVL: ton dau ca phieu xuat
+ * chinh la ton cuoi ca cua o ngay/ca da chon (theo may o tren).
+ */
+export async function fetchSoTronTonCuoiCaSlot(options: {
+  ngay: string;
+  ca: string;
+  maMay: string;
+  tenMay?: string;
+  shiftOptions: ShiftOption[];
+  signal?: AbortSignal;
+}): Promise<SoTronPrevTonResult> {
+  const maMay = str(options.maMay);
+  const tenMay = str(options.tenMay || options.maMay);
+  const ngay = str(options.ngay);
+  const ca = str(options.ca);
+  if (!maMay || !ngay || !ca) {
+    return { tonByMaterialKey: new Map(), source: null };
+  }
+
+  const canon = (value: string) => {
+    if (!value) return '';
+    if (options.shiftOptions.length > 0) {
+      try {
+        return resolveShiftName(value, options.shiftOptions);
+      } catch {
+        return value.trim();
+      }
+    }
+    return value.trim();
+  };
+  const targetCa = canon(ca).trim().toLowerCase();
+
+  const res = await fetch('/api/so-tron?limit=300', { signal: options.signal });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(
+      (data && typeof data === 'object' && 'error' in data && String((data as { error?: unknown }).error)) ||
+        'Không tải được sổ trộn.'
+    );
+  }
+
+  const hit = normalizeSoTronList(data).find(
+    r =>
+      r.ngay === ngay &&
+      canon(r.ca || '').trim().toLowerCase() === targetCa &&
+      soTronReportMatchesMachine(r, maMay, tenMay)
+  );
+
+  return {
+    tonByMaterialKey: buildTonMap(hit),
+    source: hit ? { ngay: hit.ngay, ca: hit.ca } : null
+  };
 }

@@ -4580,6 +4580,8 @@ function parseWarehouseMaterialClass(value: unknown): WarehouseMaterialClass {
 type WarehouseSlipLineInput = {
   code: string;
   name: string;
+  /** Ten NVL san xuat SNAPSHOT tai thoi diem lap phieu (module 1). */
+  productionName?: string;
   unit: string;
   quantity: number;
   documentQuantity?: number;
@@ -4897,6 +4899,9 @@ function parseWarehouseSlipLines(
         ''
     ).trim();
     const unit = String(record.unit ?? record.don_vi ?? '').trim();
+    const productionName = String(
+      record.productionName ?? record.ten_nvl_sx ?? record.tenSx ?? record.ten_sx ?? ''
+    ).trim();
     const quantity = parseOptionalMaterialNumber(record.quantity ?? record.so_luong);
     const documentQuantity = parseOptionalMaterialNumber(
       record.documentQuantity ?? record.so_luong_chung_tu ?? record.document_qty
@@ -4946,6 +4951,7 @@ function parseWarehouseSlipLines(
     items.push({
       code,
       name,
+      ...(productionName ? { productionName } : {}),
       unit,
       quantity: roundWarehouseMoney(quantity),
       documentQuantity:
@@ -5013,6 +5019,15 @@ function parseWarehouseSlipBody(body: unknown): {
   ghiChu: string | null;
   nguoiLap: string | null;
   ca: string | null;
+  /** Module 1: 1 ngay + N ca (phieu xuat). `ca` giu ca dau tien de tuong thich cu. */
+  caList: string[];
+  tenKho: string | null;
+  nguoiGiao: string | null;
+  diaDiem: string | null;
+  /** Module 1: chi dung cho phieu nhap (tu nhap tu do). */
+  loaiNhapKho: string | null;
+  /** Module 1: phieu xuat NVL bat buoc; phieu nhap khong can. */
+  may: string | null;
   items: WarehouseSlipLineInput[];
   lenhSxDaChon: WarehouseSlipLenhSxRef[];
 } {
@@ -5038,6 +5053,52 @@ function parseWarehouseSlipBody(body: unknown): {
     return { error: 'Vui lòng chọn ít nhất một phiếu trộn định mức để xuất kho NVL.' };
   }
 
+  // Module 1: header mo rong (tuong thich payload cu thieu cac truong nay).
+  const tenKho =
+    String(source.tenKho ?? source.ten_kho ?? source.warehouseName ?? '').trim() || null;
+  const nguoiGiao =
+    String(source.nguoiGiao ?? source.nguoi_giao ?? source.deliverer ?? '').trim() || null;
+  const diaDiem =
+    String(source.diaDiem ?? source.dia_diem ?? source.warehouseLocation ?? '').trim() || null;
+  const loaiNhapKhoRaw = String(
+    source.loaiNhapKho ?? source.loai_nhap_kho ?? source.inboundKind ?? ''
+  ).trim();
+  const loaiNhapKho =
+    loaiPhieu === 'nhap' && loaiNhapKhoRaw ? loaiNhapKhoRaw.slice(0, 120) : null;
+  const mayHeader = String(source.may ?? source.machine ?? '').trim() || null;
+
+  // Module 1: multi-ca — nhan ca_list (mang) hoac ca (chuoi). Khong doi dinh dang luu cu:
+  // `ca` giu ca dau tien, `ca_list` giu toan bo.
+  const caRaw = source.caList ?? source.ca_list ?? source.selectedShifts ?? null;
+  let caList: string[] = [];
+  if (Array.isArray(caRaw)) {
+    const seen = new Set<string>();
+    for (const entry of caRaw) {
+      const value = String(entry ?? '').trim();
+      if (!value || seen.has(value)) continue;
+      seen.add(value);
+      caList.push(value);
+    }
+  }
+  const caSingle = String(source.ca ?? source.shift ?? source.ca_san_xuat ?? '').trim() || null;
+  if (caList.length === 0 && caSingle) {
+    caList = caSingle
+      .split(/[,;+]/)
+      .map(item => item.trim())
+      .filter(Boolean);
+  }
+  const ca = caList.length > 0 ? caList[0] : caSingle;
+
+  // Module 1 chot: phieu nhap KHONG can May; phieu xuat NVL May bat buoc
+  // (may header hoac may tren tung dong tu PTDM).
+  if (loaiPhieu === 'xuat' && loaiKho === 'nvl') {
+    const hasMachine =
+      Boolean(mayHeader) || parsedItems.items.some(item => Boolean(item.machine));
+    if (!hasMachine) {
+      return { error: 'Vui lòng chọn máy cho phiếu xuất NVL.' };
+    }
+  }
+
   return {
     loaiPhieu,
     loaiKho,
@@ -5045,7 +5106,13 @@ function parseWarehouseSlipBody(body: unknown): {
     lyDo: String(source.lyDo ?? source.ly_do ?? source.reason ?? '').trim() || null,
     ghiChu: String(source.ghiChu ?? source.ghi_chu ?? source.note ?? '').trim() || null,
     nguoiLap: String(source.nguoiLap ?? source.nguoi_lap ?? source.createdBy ?? '').trim() || null,
-    ca: String(source.ca ?? source.shift ?? source.ca_san_xuat ?? '').trim() || null,
+    ca,
+    caList,
+    tenKho,
+    nguoiGiao,
+    diaDiem,
+    loaiNhapKho,
+    may: mayHeader,
     items: parsedItems.items,
     lenhSxDaChon
   };
@@ -5060,12 +5127,19 @@ function buildWarehouseSlipInsertRecords(
     ghiChu: string | null;
     nguoiLap: string | null;
     ca: string | null;
+    caList: string[];
+    tenKho: string | null;
+    nguoiGiao: string | null;
+    diaDiem: string | null;
+    loaiNhapKho: string | null;
+    may: string | null;
     items: WarehouseSlipLineInput[];
   },
   maPhieu: string
 ) {
   const nhanSu = parsed.nguoiLap || 'Hệ thống';
   return parsed.items.map(item => {
+    const lineMachine = parsed.loaiKho === 'nvl' ? item.machine || parsed.may || null : null;
     const base: Record<string, unknown> = {
       ma_phieu: maPhieu,
       loai_phieu: parsed.loaiPhieu,
@@ -5081,6 +5155,11 @@ function buildWarehouseSlipInsertRecords(
       nguoi_lap: parsed.nguoiLap || nhanSu,
       nhan_su: nhanSu,
       ca: parsed.ca || '',
+      ca_list: parsed.caList.length > 0 ? parsed.caList : null,
+      ten_kho: parsed.tenKho || null,
+      nguoi_giao: parsed.nguoiGiao || null,
+      dia_diem: parsed.diaDiem || null,
+      loai_nhap_kho: parsed.loaiPhieu === 'nhap' ? parsed.loaiNhapKho : null,
       id_dong_nhap_nguon:
         parsed.loaiPhieu === 'xuat' && parsed.loaiKho === 'nvl' && item.sourceInboundLineId
           ? item.sourceInboundLineId
@@ -5089,10 +5168,11 @@ function buildWarehouseSlipInsertRecords(
         parsed.loaiPhieu === 'xuat' && parsed.loaiKho === 'nvl' && item.sourceInboundSlipCode
           ? item.sourceInboundSlipCode
           : null,
-      may: parsed.loaiKho === 'nvl' ? item.machine || null : null,
+      may: lineMachine,
       phan_loai_nvl: parsed.loaiKho === 'nvl' ? item.materialClass : null,
       trong_luong_kg: parsed.loaiKho === 'nvl' ? item.weightKg ?? null : null,
       nhom_vthh: parsed.loaiKho === 'nvl' ? item.nhomVthh || null : null,
+      ten_nvl_sx: parsed.loaiKho === 'nvl' ? item.productionName || null : null,
       ton_dau_ca_may: parsed.loaiKho === 'nvl' ? item.tonDauCaMay ?? null : null
     };
 
@@ -5300,6 +5380,49 @@ function warehouseSlipWriteErrorMessage(error: { code?: string; message?: string
     return 'Không thể lưu phiếu xuất nhập kho: cột số lượng trên Supabase đang là kiểu integer (chỉ nhận số nguyên). Hãy chạy file supabase-phieu-xuat-nhap-kho-so-luong-numeric.sql trong Supabase SQL Editor, hoặc đặt SUPABASE_DB_PASSWORD trong .env rồi chạy npm run migrate:warehouse-numeric.';
   }
   return `Không thể lưu phiếu xuất nhập kho. ${error.message}${error.details ? ` (${error.details})` : ''}`;
+}
+
+/**
+ * Module 1: insert tuong thich ca DB chua chay migration module1
+ * (supabase-phieu-xuat-nhap-kho-module1.sql) va DB da chay.
+ * Thu full truoc; neu thieu cot thi strip 6 cot moi va thu lai (khong chan luu phieu).
+ */
+const WAREHOUSE_SLIP_MODULE1_COLUMNS = [
+  'ten_kho',
+  'nguoi_giao',
+  'dia_diem',
+  'loai_nhap_kho',
+  'ten_nvl_sx',
+  'ca_list'
+];
+
+async function insertWarehouseSlipRecordsResilient(
+  records: Record<string, unknown>[]
+): Promise<{ data: any[] | null; error: { code?: string; message?: string; details?: string } | null }> {
+  if (!supabase) {
+    return { data: null, error: { message: 'Supabase chưa được cấu hình.' } };
+  }
+  let attempt = records;
+  for (let round = 0; round < 2; round += 1) {
+    const { data, error } = await supabase
+      .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
+      .insert(attempt)
+      .select('*');
+    if (!error) return { data: (data as any[]) || [], error: null };
+    if (isMissingColumnError(error) && round === 0) {
+      console.warn(
+        `Bảng ${SUPABASE_WAREHOUSE_MOVEMENTS_TABLE} thiếu cột module 1 (${error.message}). Hãy chạy supabase-phieu-xuat-nhap-kho-module1.sql — tự lưu phiếu ở chế độ tương thích cũ.`
+      );
+      attempt = attempt.map(row => {
+        const clone: Record<string, unknown> = { ...row };
+        for (const key of WAREHOUSE_SLIP_MODULE1_COLUMNS) delete clone[key];
+        return clone;
+      });
+      continue;
+    }
+    return { data: null, error };
+  }
+  return { data: null, error: { message: 'Không thể lưu phiếu xuất nhập kho.' } };
 }
 
 async function ensureWarehouseSlipNumericColumns() {
@@ -10947,10 +11070,7 @@ export function createApp() {
       const maPhieu = generateWarehouseSlipCode(parsed.loaiPhieu);
       const records = buildWarehouseSlipInsertRecords(parsed, maPhieu);
 
-      const { data, error } = await supabase
-        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-        .insert(records)
-        .select('*');
+      const { data, error } = await insertWarehouseSlipRecordsResilient(records);
 
       if (error) {
         console.error('Supabase phieu_xuat_nhap_kho insert error:', error);
@@ -11083,10 +11203,7 @@ export function createApp() {
 
       const records = buildWarehouseSlipInsertRecords(parsed, slipCode);
 
-      const { data, error } = await supabase
-        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-        .insert(records)
-        .select('*');
+      const { data, error } = await insertWarehouseSlipRecordsResilient(records);
 
       if (error) {
         console.error('Supabase phieu_xuat_nhap_kho update insert error:', error);
@@ -14476,6 +14593,129 @@ async function loadKiemKhoLiveTongHopForDot(
       : fallbackData;
     return { data, error: null };
   }
+
+  app.get('/api/ton-kho-nvl', async (req, res) => {
+    if (!supabase) {
+      return res.json({ rows: [], total: 0, source: 'local' });
+    }
+
+    try {
+      // Module 1 chot: Ton dau ky HARD 0 — chi tinh phieu (khong cong kho_nvl.ton_dau_ky).
+      // Ton cuoi = 0 + Nhap - Xuat trong ky da chon (khong chon ky = toan thoi gian).
+      const tuNgay = parseWarehouseSlipDate(req.query.from ?? req.query.tu_ngay);
+      const denNgay = parseWarehouseSlipDate(req.query.to ?? req.query.den_ngay);
+      const tenKho = String(req.query.ten_kho ?? req.query.tenKho ?? '').trim() || null;
+      const maNpl = String(req.query.ma_npl ?? req.query.materialCode ?? '').trim() || null;
+      const keyword = String(req.query.q ?? req.query.keyword ?? '').trim().toLowerCase() || null;
+
+      let query = supabase
+        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
+        .select('*')
+        .or('loai_kho.eq.nvl,loai_kho.is.null')
+        .order('ngay_phieu', { ascending: true })
+        .limit(20000);
+      if (tuNgay) query = query.gte('ngay_phieu', tuNgay);
+      if (denNgay) query = query.lte('ngay_phieu', denNgay);
+      if (maNpl) query = query.eq('ma_npl', maNpl);
+
+      const { data: movements, error: movementError } = await query;
+      if (movementError) {
+        console.error('Supabase ton-kho-nvl query error:', movementError);
+        return res.status(500).json({ error: `Không thể tải tồn kho NVL. ${movementError.message}` });
+      }
+
+      const { data: catalog } = await supabase
+        .from(SUPABASE_MATERIALS_TABLE)
+        .select('ma_npl, ten_npl, ten_nvl_sx, don_vi, ten_kho, phan_loai, nhom_vat_tu_phu, tong_trong_luong')
+        .limit(20000);
+      const catalogByCode = new Map<string, Record<string, unknown>>();
+      for (const record of catalog || []) {
+        const code = String((record as Record<string, unknown>).ma_npl ?? '').trim();
+        if (code && !catalogByCode.has(code)) catalogByCode.set(code, record as Record<string, unknown>);
+      }
+
+      type NvlBalance = {
+        ma_npl: string;
+        ten_npl: string;
+        ten_nvl_sx: string;
+        phan_loai: string;
+        nhom_vthh: string;
+        don_vi: string;
+        ten_kho: string;
+        tong_kg: number | null;
+        ton_dau: number;
+        nhap: number;
+        xuat: number;
+      };
+      const balances = new Map<string, NvlBalance>();
+      for (const raw of movements || []) {
+        const row = raw as Record<string, unknown>;
+        const code = String(row.ma_npl ?? '').trim();
+        if (!code) continue;
+        const rowKho = String(row.ten_kho ?? '').trim();
+        if (tenKho && rowKho !== tenKho) continue;
+        const key = `${code}||${rowKho}`;
+        let balance = balances.get(key);
+        if (!balance) {
+          const catalogRow = catalogByCode.get(code);
+          balance = {
+            ma_npl: code,
+            ten_npl: String(row.ten_npl ?? catalogRow?.ten_npl ?? '').trim(),
+            ten_nvl_sx: '',
+            phan_loai: String(catalogRow?.phan_loai ?? '').trim(),
+            nhom_vthh: String(catalogRow?.nhom_vat_tu_phu ?? row.nhom_vthh ?? '').trim(),
+            don_vi: String(row.don_vi ?? catalogRow?.don_vi ?? '').trim(),
+            ten_kho: rowKho || String(catalogRow?.ten_kho ?? '').trim(),
+            tong_kg: Number(catalogRow?.tong_trong_luong ?? NaN),
+            ton_dau: 0,
+            nhap: 0,
+            xuat: 0
+          };
+          if (!Number.isFinite(balance.tong_kg as number)) balance.tong_kg = null;
+          balances.set(key, balance);
+        }
+        const snapshotSx = String(row.ten_nvl_sx ?? '').trim();
+        if (snapshotSx) balance.ten_nvl_sx = snapshotSx;
+        if (!balance.ten_npl) balance.ten_npl = String(row.ten_npl ?? '').trim();
+        const qty = Number(row.so_luong);
+        if (!Number.isFinite(qty)) continue;
+        if (String(row.loai_phieu ?? '').trim().toLowerCase() === 'xuat') {
+          balance.xuat = roundWarehouseMoney(balance.xuat + qty);
+        } else {
+          balance.nhap = roundWarehouseMoney(balance.nhap + qty);
+        }
+      }
+      // Ten NVL SX fallback danh muc khi phieu cu chua snapshot.
+      for (const balance of balances.values()) {
+        if (!balance.ten_nvl_sx) {
+          balance.ten_nvl_sx = String(catalogByCode.get(balance.ma_npl)?.ten_nvl_sx ?? '').trim();
+        }
+      }
+
+      let rows = Array.from(balances.values()).map(balance => ({
+        ...balance,
+        ton_cuoi: roundWarehouseMoney(balance.ton_dau + balance.nhap - balance.xuat)
+      }));
+      if (keyword) {
+        rows = rows.filter(row =>
+          row.ma_npl.toLowerCase().includes(keyword) ||
+          row.ten_npl.toLowerCase().includes(keyword) ||
+          row.ten_nvl_sx.toLowerCase().includes(keyword)
+        );
+      }
+      rows.sort((a, b) => a.ma_npl.localeCompare(b.ma_npl, 'vi'));
+
+      return res.json({
+        rows,
+        total: rows.length,
+        tu_ngay: tuNgay,
+        den_ngay: denNgay,
+        source: 'supabase'
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải tồn kho NVL.' });
+    }
+  });
 
   app.get('/api/ton-kho/chi-tiet', async (req, res) => {
     if (!supabase) {

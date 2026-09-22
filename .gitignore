@@ -10,3 +10,4 @@ log.txt
 .env*
 !.env.example
 .ai/
+test-results/
