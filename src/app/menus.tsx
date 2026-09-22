@@ -54,7 +54,7 @@ import calendarPlain3d from '@iconify-icons/fluent-emoji/calendar';
 import ledger3d from '@iconify-icons/fluent-emoji/ledger';
 import {
   FilePlus2, Layers, History, UsersRound, Building2, BriefcaseBusiness, Package, Cpu, Boxes,
-  ClipboardList, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, Scale, Settings,
+  ClipboardList, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, ArrowLeftRight, Scale, Settings,
   CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity, Truck,
   ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, AlertTriangle, Coins
 } from 'lucide-react';
@@ -268,13 +268,6 @@ export const PRODUCTION_REPORT_MENU_ITEMS: MenuCardConfig[] = [
 
 export const FACILITY_MENU_ITEMS: MenuCardConfig[] = [
   {
-    title: 'Kho NVL',
-    desc: 'Quản lý nguyên phụ liệu, trọng lượng, khổ cuộn và tồn nhập xuất.',
-    icon: Boxes,
-    icon3d: inventory3d,
-    tab: 'materials'
-  },
-  {
     title: 'Sản phẩm',
     desc: 'Xem danh mục mã hàng, nhóm VTHH, đơn vị và tồn kho.',
     icon: Package,
@@ -295,27 +288,6 @@ export const FACILITY_MENU_ITEMS: MenuCardConfig[] = [
     icon3d: factory3d,
     tab: 'production-orders'
   },
-  {
-    title: 'Phiếu xuất nhập kho',
-    desc: 'Lập phiếu nhập hoặc xuất NVL theo từng mã NPL.',
-    icon: ArrowDownToLine,
-    icon3d: warehouseSlip3d,
-    tab: 'warehouse-slip'
-  },
-  {
-    title: 'Lịch sử xuất nhập kho',
-    desc: 'Tra cứu phiếu đã lưu, lọc theo loại và ngày.',
-    icon: History,
-    icon3d: warehouseHistory3d,
-    tab: 'warehouse-history'
-  },
-  {
-    title: 'Quản lý kho',
-    desc: 'Danh mục kho: tên kho, vị trí, tên vị trí và người phụ trách.',
-    icon: Warehouse,
-    icon3d: pushpin3d,
-    tab: 'quan-ly-kho'
-  }
 ];
 
 export const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
@@ -383,13 +355,6 @@ export const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'can-tu-dong'
   },
   {
-    title: 'Báo cáo kiểm kho',
-    desc: 'Nhập và xem các dòng kiểm kho đã quét mã SP.',
-    icon: ClipboardList,
-    icon3d: reportList3d,
-    tab: 'kiem-kho'
-  },
-  {
     title: 'Danh sách báo cáo hàng hỏng',
     desc: 'Xem, sửa và in các phiếu hàng hỏng đã lưu theo ngày, ca và máy.',
     icon: PackageX,
@@ -402,13 +367,6 @@ export const REPORT_LIST_MENU_ITEMS: MenuCardConfig[] = [
     icon: ClipboardList,
     icon3d: checkMarkButton3d,
     tab: 'acceptance-report-list'
-  },
-  {
-    title: 'Danh sách phiếu nhập kho thành phẩm',
-    desc: 'Tra cứu các phiếu nhập kho thành phẩm đã lưu.',
-    icon: ArrowDownToLine,
-    icon3d: warehouseHistory3d,
-    tab: 'warehouse-history'
   },
   {
     title: 'Danh sách báo cáo dừng máy',
@@ -647,13 +605,6 @@ export const FACTORY_QUAN_DOC_MENU_ITEMS: MenuCardConfig[] = [
     icon3d: people3d,
     tab: 'sap-xep-lich-lam-viec'
   },
-  {
-    title: 'Cảnh báo tồn kho',
-    desc: 'Danh sách các sản phẩm sắp hết tồn kho trong tháng.',
-    icon: AlertTriangle,
-    icon3d: noEntry3d,
-    tab: 'canh-bao-ton-kho'
-  }
 ];
 
 export const FACTORY_QC_MENU_ITEMS: MenuCardConfig[] = [
@@ -755,11 +706,11 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'quan-ly-kho'
   },
   {
-    title: 'Kho nguyên vật liệu',
-    desc: 'Quản lý nguyên phụ liệu, trọng lượng, khổ cuộn và tồn nhập xuất.',
+    title: 'Kho hàng',
+    desc: 'Quản lý nguyên vật liệu, thành phẩm và kho lưu trữ của từng mặt hàng.',
     icon: Boxes,
     icon3d: inventory3d,
-    tab: 'materials'
+    tab: 'inventory-catalog'
   },
   {
     title: 'Phiếu xuất nhập kho',
@@ -776,11 +727,31 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'kiem-kho'
   },
   {
+    title: 'Cân kiểm kho',
+    desc: 'Mở trạm cân kiểm kho để chụp, đọc khối lượng và lưu phiếu kiểm kho.',
+    icon: Scale,
+    icon3d: scale3d,
+    tab: 'can-kiem-kho'
+  },
+  {
+    title: 'Xử lý chênh lệch',
+    desc: 'Đối chiếu số lượng kiểm kê với tồn cuối và tạo phiếu điều chỉnh.',
+    icon: ArrowLeftRight,
+    tab: 'kiem-kho-chenh-lech'
+  },
+  {
     title: 'Lịch sử xuất nhập',
     desc: 'Tra cứu phiếu đã lưu, lọc theo loại và ngày.',
     icon: History,
     icon3d: warehouseHistory3d,
     tab: 'warehouse-history'
+  },
+  {
+    title: 'Tồn kho',
+    desc: 'Xem tổng hợp tồn kho theo kho, loại và khoảng ngày.',
+    icon: BarChart3,
+    icon3d: chartIncreasing3d,
+    tab: 'ton-kho'
   },
   {
     title: 'Chuẩn bị xuất hàng',
@@ -1063,10 +1034,13 @@ export const PRIMARY_NAV_GROUPS: {
     tab: 'factory-kho',
     children: [
       { label: 'Danh mục kho', tab: 'quan-ly-kho' },
-      { label: 'Kho nguyên vật liệu', tab: 'materials' },
+      { label: 'Kho hàng', tab: 'inventory-catalog' },
       { label: 'Phiếu xuất nhập kho', tab: 'warehouse-slip' },
       { label: 'Kiểm kho', tab: 'kiem-kho' },
+      { label: 'Cân kiểm kho', tab: 'can-kiem-kho' },
+      { label: 'Xử lý chênh lệch', tab: 'kiem-kho-chenh-lech' },
       { label: 'Lịch sử xuất nhập', tab: 'warehouse-history' },
+      { label: 'Tồn kho', tab: 'ton-kho' },
       { label: 'Chuẩn bị xuất hàng', tab: 'factory-kho', disabled: true }
     ]
   },
@@ -1100,8 +1074,10 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'chi-phi-bao-duong': { group: 'QC', sub: 'Chi phí bảo dưỡng' },
   'weighing-summary': { group: 'Sản xuất', sub: 'Phiếu cân' },
   'weighing-summary-list': { group: 'QC', sub: 'Phiếu cân ca' },
-  'can-tu-dong': { group: 'QC', sub: 'Dữ liệu cân tự động' },
+  'can-tu-dong': { group: 'Sản xuất', sub: 'Danh sách cân' },
+  'can-kiem-kho': { group: 'Kho', sub: 'Cân kiểm kho' },
   'kiem-kho': { group: 'Kho', sub: 'Kiểm kho' },
+  'kiem-kho-chenh-lech': { group: 'Kho', sub: 'Xử lý chênh lệch' },
   'quan-ly-kho': { group: 'Kho', sub: 'Danh mục kho' },
   'damaged-goods-report': { group: 'Sản xuất', sub: 'Báo cáo hàng hư' },
   'damaged-goods-report-list': { group: 'QC', sub: 'Kiểm soát hàng hỏng' },
@@ -1130,12 +1106,14 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'facility-management': { group: 'Kho', sub: 'Quản lý CSVC' },
   'factory': { group: 'Trang chủ', sub: 'Chọn vai trò' },
   'materials': { group: 'Kho', sub: 'Kho nguyên vật liệu' },
-  'materials-inventory': { group: 'Kho', sub: 'Kho nguyên vật liệu' },
-  'products': { group: 'Kinh doanh', sub: 'Sản phẩm' },
-  'inventory-limits': { group: 'Kinh doanh', sub: 'Tồn kho tối thiểu - Tồn kho tối đa' },
+  'products': { group: 'Kho', sub: 'Kho thành phẩm' },
+  'inventory-catalog': { group: 'Kho', sub: 'Kho hàng' },
   'machines': { group: 'Trang chủ', sub: 'Quản lý máy' },
   'warehouse-slip': { group: 'Kho', sub: 'Phiếu xuất nhập kho' },
   'warehouse-history': { group: 'Kho', sub: 'Lịch sử xuất nhập' },
+  'warehouse-history-detail': { group: 'Kho', sub: 'Chi tiết phiếu' },
+  'damaged-goods-warehouse': { group: 'Kho', sub: 'Kho hàng hỏng' },
+  'ton-kho': { group: 'Kho', sub: 'Tồn kho' },
   'settings': { group: 'Quản trị', sub: 'Người dùng và phân quyền / Cấu hình hệ thống' },
   'hr': { group: 'HCNS', sub: 'Hồ sơ nhân sự' },
   'chi-phi-nhan-cong': { group: 'HCNS', sub: 'Chi phí nhân công' },
@@ -1147,7 +1125,6 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'production-orders': { group: 'Quản Đốc', sub: 'Lệnh sản xuất' },
   'dieu-dong-nhan-su': { group: 'Quản Đốc', sub: 'Điều động nhân sự' },
   'sap-xep-lich-lam-viec': { group: 'Quản Đốc', sub: 'Sắp xếp lịch làm việc' },
-  'canh-bao-ton-kho': { group: 'Quản Đốc', sub: 'Cảnh báo tồn kho' },
   'factory-quan-doc': { group: 'Trang chủ', sub: 'Quản Đốc' },
   'factory-qc': { group: 'Trang chủ', sub: 'QC' },
   'factory-cong-nhan': { group: 'Trang chủ', sub: 'Sản xuất' },

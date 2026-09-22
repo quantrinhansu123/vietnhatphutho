@@ -64,6 +64,7 @@ import {
 } from './app/menus';
 import { ProductsPanel } from './features/san-pham';
 import { InventoryLimitsPanel } from './features/ton-kho-toi-thieu-toi-da';
+import { InventoryCatalogPanel } from './features/kho-hang';
 import { MachinesPanel } from './features/danh-sach-may';
 import { MaterialsInventoryPanel } from './features/kho-nvl';
 import { WarehouseSlipPanel, WarehouseHistoryPanel } from './features/phieu-xuat-nhap-kho';
@@ -84,7 +85,10 @@ import { ChiPhiDienPanel } from './features/chi-phi-dien';
 import { ChiPhiBaoDuongPanel } from './features/chi-phi-bao-duong';
 import { VehiclesPanel } from './features/danh-sach-xe';
 import { CanTuDongPanel } from './features/can-tu-dong';
+import { CanKiemKhoPilotPanel } from './features/can-tu-dong/pilot';
 import { KiemKhoPanel } from './features/kiem-kho';
+import { XuLyChenhLechPanel } from './features/xu-ly-chenh-lech';
+import { TonKhoPanel } from './features/ton-kho';
 import { QuanLyKhoPanel } from './features/quan-ly-kho';
 import { MachineNvlReportPanel } from './features/bao-cao-may-nvl-ton';
 import { SoTronPanel, SoTronListView, type SoTronSavedReport } from './features/so-tron';
@@ -95,7 +99,8 @@ import { HangLoiKhachHangPanel } from './features/bao-cao-hang-loi-khach-hang';
 import { ThongKeHangLoiPanel } from './features/bao-cao-hang-loi-khach-hang/thong-ke';
 import { BaoCaoTuanPanel } from './features/bao-cao-tuan';
 import { BaoCaoNgayListView, BaoCaoNgayPanel, type BaoCaoNgaySavedReport } from './features/bao-cao-ngay';
-import { BaoCaoThangListView, BaoCaoThangPanel, type BaoCaoThangRow } from './features/bao-cao-thang';
+import { BaoCaoThangListView, BaoCaoThangPanel } from './features/bao-cao-thang';
+import type { BaoCaoThangRow } from './features/bao-cao-thang/types';
 import { InventoryAlertPanel } from './features/canh-bao-ton-kho';
 
 const DEFAULT_REPORT: Omit<ProductionReport, 'id' | 'createdAt'> = {
@@ -1131,6 +1136,16 @@ export default function App() {
               >
                 <KiemKhoPanel onBack={() => goBack('factory-kho')} currentUser={authUser} />
               </motion.div>
+            ) : resolvedTab === 'can-kiem-kho' ? (
+              <motion.div
+                key="can-kiem-kho"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <CanKiemKhoPilotPanel />
+              </motion.div>
             ) : resolvedTab === 'quan-ly-kho' ? (
               <motion.div
                 key="quan-ly-kho"
@@ -1140,6 +1155,36 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <QuanLyKhoPanel onBack={() => goBack('factory-kho')} />
+              </motion.div>
+            ) : resolvedTab === 'kiem-kho-chenh-lech' ? (
+              <motion.div
+                key="kiem-kho-chenh-lech"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <XuLyChenhLechPanel onBack={() => goBack('factory-kho')} currentUser={authUser} />
+              </motion.div>
+            ) : resolvedTab === 'inventory-catalog' ? (
+              <motion.div
+                key="inventory-catalog"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <InventoryCatalogPanel onBack={() => goBack('factory-kho')} />
+              </motion.div>
+            ) : activeTab === 'ton-kho' ? (
+              <motion.div
+                key="ton-kho"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <TonKhoPanel onBack={() => goBack('factory-kho')} />
               </motion.div>
             ) : resolvedTab === 'weighing-summary' ? (
               <motion.div
@@ -1604,6 +1649,7 @@ export default function App() {
                 <WarehouseSlipPanel
                   onBack={() => goBack('factory-kho')}
                   onOpenHistory={() => navigateToTab('warehouse-history')}
+                  currentUser={authUser}
                 />
               </motion.div>
             ) : activeTab === 'warehouse-history' ? (

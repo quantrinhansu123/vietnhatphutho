@@ -5,6 +5,22 @@ create table if not exists public.kho_nvl (
   created_at timestamptz not null default now()
 );
 
+-- Tự vá cho bảng đã tồn tại nhưng thiếu cột id (VD tạo thủ công/import trước đó) —
+-- create table if not exists ở trên bị bỏ qua trong trường hợp này nên phải thêm riêng.
+alter table public.kho_nvl
+  add column if not exists id uuid default gen_random_uuid();
+update public.kho_nvl set id = gen_random_uuid() where id is null;
+alter table public.kho_nvl
+  alter column id set not null;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'kho_nvl_pkey'
+  ) then
+    alter table public.kho_nvl add constraint kho_nvl_pkey primary key (id);
+  end if;
+end $$;
+
 alter table public.kho_nvl
   add column if not exists created_at timestamptz not null default now(),
   add column if not exists ma_npl text,
@@ -16,15 +32,11 @@ alter table public.kho_nvl
   add column if not exists trong_luong_loi numeric,
   add column if not exists kho_cuon numeric,
   add column if not exists chieu_dai_don_vi numeric,
-  add column if not exists nhom_vat_tu_phu text,
   add column if not exists ton_dau_ky numeric,
   add column if not exists nhap_trong_ky numeric,
   add column if not exists xuat_trong_ky numeric;
 
--- ma_npl khong con la khoa duy nhat: import phan biet theo ma_npl + ten_npl + ten_nvl_sx.
-alter table public.kho_nvl
-  drop constraint if exists kho_nvl_ma_npl_key,
-drop index if exists public.kho_nvl_ma_npl_key;
+create unique index if not exists kho_nvl_ma_npl_key on public.kho_nvl (ma_npl);
 
 alter table public.kho_nvl enable row level security;
 
@@ -52,13 +64,3 @@ create policy "kho_nvl_delete_all"
 comment on table public.kho_nvl is 'Kho nguyen vat lieu (NPL).';
 comment on column public.kho_nvl.ma_npl is 'Ma nguyen phu lieu.';
 comment on column public.kho_nvl.ten_npl is 'Ten nguyen phu lieu.';
-
-
-alter table public.kho_nvl
-  add column if not exists ten_nvl_sx text;
-comment on column public.kho_nvl.ten_nvl_sx is 'Ten nguyen vat lieu su dung trong san xuat.';
-comment on column public.kho_nvl.nhom_vat_tu_phu is 'Nhom vat tu phu dung de loc khi lap phieu tron dinh muc.';
-
-alter table public.kho_nvl
-  add column if not exists phan_loai text;
-comment on column public.kho_nvl.phan_loai is 'Phan loai: Nguyen vat lieu phu hoac Nguyen vat lieu chinh.';

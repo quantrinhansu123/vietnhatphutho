@@ -288,6 +288,10 @@ export type OrderProductConversion = {
   dienTichM2: number | null; trongLuongKgMDai: number | null;
   trongLuongKgM2: number | null; trongLuongKgTam: number | null;
   trongLuongKgCuon: number | null;
+  /** Alias / field mở rộng dùng ở cảnh báo tồn kho (main). */
+  dienTichM2Tam?: number | null;
+  dienTichM2Cuon?: number | null;
+  chieuDaiMCuon?: number | null;
 };
 
 export type CutOrderWeightResult = {

@@ -1,0 +1,834 @@
+import { normalizeProductCodeKey } from '../features/san-pham/types';
+import { parseDateToIso } from './dateFormat';
+import { shiftNamesMatch } from './shiftSettings';
+
+/** Bản ghi tối thiểu để tính trọng lượng nhựa / lọc lần cân. */
+export type CanTuDongWeightRow = {
+  qr_code?: string | null;
+  can_loi?: number | string | null;
+  tare_weight?: number | string | null;
+  can_san_pham?: number | string | null;
+  weight?: number | string | null;
+  /** Cột UI «Trọng lượng nhựa» ưu tiên tính SP − lõi − bì; các field này chỉ dự phòng. */
+  khoi_luong_thuc?: number | string | null;
+  net_weight?: number | string | null;
+  ca?: string | null;
+  lenh_sx?: string | null;
+  ma_lenh_sx?: string | null;
+  /** Máy từ metadata / API (SOURCE_MACHINE). */
+  may?: string | null;
+  machine?: string | null;
+  captured_at?: string | null;
+  created_at?: string | null;
+  /** Cột Ngày (SOURCE_DATE / work_date) — không phải ngày cân. */
+  ngay?: string | null;
+  work_date?: string | null;
+  device_id?: string | null;
+  metadata?: unknown;
+};
+
+type CanTuDongProductAlias = {
+  code?: string | null;
+  newCode?: string | null;
+  amisCode?: string | null;
+  name?: string | null;
+};
+
+/** Trọng lượng bì mặc định (kg). */
+export const DEFAULT_CAN_TU_DONG_BI_KG = 0.16;
+
+function asFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const num = typeof value === 'number' ? value : Number(String(value).replace(',', '.'));
+  return Number.isFinite(num) ? num : null;
+}
+
+export function resolveCanLoiKg(row: CanTuDongWeightRow) {
+  return asFiniteNumber(row.can_loi ?? row.tare_weight);
+}
+
+export function resolveCanSpKg(row: CanTuDongWeightRow) {
+  return asFiniteNumber(row.can_san_pham ?? row.weight);
+}
+
+/** Trọng lượng bì (kg) — mặc định 0,16; không làm tròn. */
+export function resolveTrongLuongBiKg(_row?: CanTuDongWeightRow) {
+  return DEFAULT_CAN_TU_DONG_BI_KG;
+}
+
+/**
+ * Trọng lượng nhựa / Nhựa thực tế (kg) = Cân SP − Cân lõi − Trọng lượng bì.
+ * Trừ thẳng 0,16 — không làm tròn trung gian.
+ */
+export function resolveTrongLuongNhuaKg(row: CanTuDongWeightRow) {
+  const sp = resolveCanSpKg(row);
+  const loi = resolveCanLoiKg(row);
+  if (sp === null || loi === null) return null;
+  return sp - loi - resolveTrongLuongBiKg(row);
+}
+
+/** Nhựa TT tab cân thực tế = SP − lõi − bì − màng (BOM / cuộn). */
+export function resolveTrongLuongNhuaKgMinusFilm(
+  row: CanTuDongWeightRow,
+  filmKgPerRoll?: number | null
+): number | null {
+  const base = resolveTrongLuongNhuaKg(row);
+  if (base === null) return null;
+  const film =
+    filmKgPerRoll != null && Number.isFinite(filmKgPerRoll) && filmKgPerRoll > 0 ? filmKgPerRoll : 0;
+  return base - film;
+}
+
+/** Nhựa thực tế trên `/can-tu-dong` — trừ BOM màng theo Mã SP từ QR khi có. */
+export function resolveCanTuDongNhuaThucTeKg(
+  row: CanTuDongWeightRow,
+  filmKgByProductCode?: Map<string, number>
+) {
+  const maSpKey = normalizeProductCodeKey(parseCanTuDongQrProductCode(row.qr_code));
+  const filmKgPerRoll =
+    maSpKey && filmKgByProductCode ? filmKgByProductCode.get(maSpKey) : undefined;
+  return resolveTrongLuongNhuaKgMinusFilm(row, filmKgPerRoll);
+}
+
+/**
+ * Nhựa định mức (kg) theo Mã SP:
+ * ưu tiên `san_pham.trong_luong_nhua`; không có thì TL tiêu chuẩn − lõi LT − bì.
+ */
+export function resolveNhuaDinhMucKg(
+  standardKg: number | null | undefined,
+  coreKg: number | null | undefined,
+  plasticKgFromProduct?: number | null
+) {
+  if (plasticKgFromProduct != null && Number.isFinite(plasticKgFromProduct) && plasticKgFromProduct > 0) {
+    return plasticKgFromProduct;
+  }
+  if (standardKg == null || !Number.isFinite(standardKg) || !(standardKg > 0)) return null;
+  const core = coreKg != null && Number.isFinite(coreKg) && coreKg > 0 ? coreKg : 0;
+  return standardKg - core - DEFAULT_CAN_TU_DONG_BI_KG;
+}
+
+/** Tab cân thực tế — Nhựa ĐM / cuộn: chỉ cột «Trọng lượng nhựa + phụ gia (kg)» Kho hàng. */
+export function resolveCanTuDongNhuaDinhMucKgPerRoll(plasticKgFromProduct?: number | null): number | null {
+  if (plasticKgFromProduct != null && Number.isFinite(plasticKgFromProduct) && plasticKgFromProduct > 0) {
+    return plasticKgFromProduct;
+  }
+  return null;
+}
+
+/** Ngày lịch VN (YYYY-MM-DD) từ ISO timestamp. */
+export function vietnamIsoDateFromTimestamp(iso?: string | null): string | null {
+  const raw = String(iso || '').trim();
+  if (!raw) return null;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    const m = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    return m ? m[1] : null;
+  }
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(date);
+}
+
+function pickMetaText(meta: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = meta[key];
+    if (value == null) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+function asCanTuDongMetadata(metadata: unknown): Record<string, unknown> | null {
+  if (!metadata) return null;
+  if (typeof metadata === 'string') {
+    try {
+      const parsed = JSON.parse(metadata);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+  if (typeof metadata === 'object' && !Array.isArray(metadata)) {
+    return metadata as Record<string, unknown>;
+  }
+  return null;
+}
+
+/** Cột Ngày: SOURCE_DATE / work_date. Không dùng captured_at (Ngày cân / Thời điểm). */
+export function resolveCanTuDongBusinessDate(row: CanTuDongWeightRow): string | null {
+  const fromRow = parseDateToIso(row.ngay ?? row.work_date ?? '');
+  if (fromRow) return fromRow;
+
+  const meta = asCanTuDongMetadata(row.metadata);
+  if (!meta) return null;
+
+  for (const key of ['SOURCE_DATE', 'source_date', 'work_date', 'ngay', 'date']) {
+    const parsed = parseDateToIso(meta[key]);
+    if (parsed) return parsed;
+  }
+
+  for (const value of Object.values(meta)) {
+    if (typeof value !== 'string' || !value.trim()) continue;
+    const match = value.match(
+      /SOURCE_DATE\s*=\s*(\d{4}-\d{2}-\d{2}|\d{1,2}[/.\-]\d{1,2}[/.\-]\d{4})/i
+    );
+    if (match?.[1]) {
+      const fromRaw = parseDateToIso(match[1]);
+      if (fromRaw) return fromRaw;
+    }
+  }
+  return null;
+}
+
+/** Lệnh SX: cột API `lenh_sx`, metadata.production_order / SOURCE_PRODUCTION_ORDER, hoặc phần sau `+` trên QR. */
+export function resolveCanTuDongProductionOrder(row: CanTuDongWeightRow): string | null {
+  const fromRow = String(row.lenh_sx ?? row.ma_lenh_sx ?? '').trim();
+  if (fromRow) return fromRow;
+
+  const metadata = row.metadata;
+  if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+    const meta = metadata as Record<string, unknown>;
+    const direct = pickMetaText(meta, [
+      'production_order',
+      'SOURCE_PRODUCTION_ORDER',
+      'source_production_order',
+      'ma_lenh_sx',
+      'lenh_sx',
+      'lenhSx'
+    ]);
+    if (direct) return direct;
+
+    for (const value of Object.values(meta)) {
+      if (typeof value !== 'string' || !value.trim()) continue;
+      const match = value.match(/SOURCE_PRODUCTION_ORDER\s*=\s*([^\s;|,]+)/i);
+      if (match?.[1]) return match[1].trim();
+    }
+  }
+
+  const qr = String(row.qr_code || '').trim();
+  const plusIdx = qr.indexOf('+');
+  if (plusIdx > 0) {
+    const after = qr.slice(plusIdx + 1).trim();
+    if (after) return after;
+  }
+  return null;
+}
+
+/** Máy: metadata.machine / SOURCE_MACHINE, hoặc cột may/machine. */
+export function resolveCanTuDongMachine(row: CanTuDongWeightRow): string | null {
+  const direct = String(row.may ?? row.machine ?? '').trim();
+  if (direct) return direct;
+
+  const metadata = row.metadata;
+  if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+    const meta = metadata as Record<string, unknown>;
+    const fromMeta = pickMetaText(meta, [
+      'machine',
+      'SOURCE_MACHINE',
+      'source_machine',
+      'may',
+      'ten_may',
+      'ma_may',
+      'machine_name'
+    ]);
+    if (fromMeta) return fromMeta;
+
+    for (const value of Object.values(meta)) {
+      if (typeof value !== 'string' || !value.trim()) continue;
+      const match = value.match(/SOURCE_MACHINE\s*=\s*([^;|,]+)/i);
+      if (match?.[1]) return match[1].trim();
+    }
+  }
+  return null;
+}
+
+/** Hệ số lớp màng cách nhiệt trên một cuộn. */
+export const INSULATION_FILM_LAYERS = 2;
+/** @deprecated Không còn dùng — TL màng lấy từ BOM × 2 × SL. */
+export const INSULATION_FILM_KG_PER_M2 = 0.02324;
+
+function parsePositiveDecimal(value: string | null | undefined): number | null {
+  const number = Number(String(value || '').trim().replace(',', '.'));
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+export type InsulationFilmBomItem = {
+  code?: string | null;
+  name?: string | null;
+  amountType?: 'percent' | 'quantity' | null;
+  quantity?: number | null;
+  weightKg?: number | null;
+  unit?: string | null;
+};
+
+export type InsulationProductAlias = {
+  code?: string | null;
+  newCode?: string | null;
+  amisCode?: string | null;
+  rollWidth?: string | null;
+  rollLength?: string | null;
+  totalWeight?: string | null;
+  nplItems?: InsulationFilmBomItem[] | null;
+};
+
+function normalizeInsulationFilmText(...parts: Array<string | null | undefined>) {
+  return parts
+    .map(part => String(part || ''))
+    .join(' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+/** Dòng BOM màng (màng xi / film) — không lấy rác màng. */
+export function isInsulationFilmBomItem(item: InsulationFilmBomItem): boolean {
+  const text = normalizeInsulationFilmText(item.code, item.name);
+  if (!text.trim()) return false;
+  if (text.includes('rac mang') || text.includes('racmang')) return false;
+  return text.includes('mang') || text.includes('film');
+}
+
+/**
+ * Trọng lượng màng trong BOM (1 SP): ưu tiên `weightKg`, không thì `quantity` (ĐVT số lượng).
+ */
+export function resolveInsulationFilmBomWeightPerUnit(product: InsulationProductAlias): number | null {
+  const lines = listInsulationFilmBomLines(product);
+  if (lines.length === 0) return null;
+  return lines.reduce((sum, line) => sum + line.dinhLuong, 0);
+}
+
+/** Định lượng từng dòng NVL màng trên Thành phần SP (Kho sản phẩm). */
+export type InsulationFilmBomLineDetail = {
+  code: string;
+  name: string;
+  unit: string;
+  /** Định lượng / 1 SP từ BOM. */
+  dinhLuong: number;
+};
+
+export function listInsulationFilmBomLines(product: InsulationProductAlias): InsulationFilmBomLineDetail[] {
+  const items = Array.isArray(product.nplItems) ? product.nplItems : [];
+  const lines: InsulationFilmBomLineDetail[] = [];
+  for (const item of items) {
+    if (!isInsulationFilmBomItem(item)) continue;
+    let dinhLuong: number | null = null;
+    // TL màng quy về kg: ưu tiên weightKg; không thì lấy số lượng BOM (dùng như kg).
+    if (item.weightKg != null && Number.isFinite(item.weightKg) && item.weightKg > 0) {
+      dinhLuong = item.weightKg;
+    } else if (
+      item.amountType === 'quantity' &&
+      item.quantity != null &&
+      Number.isFinite(item.quantity) &&
+      item.quantity > 0
+    ) {
+      dinhLuong = item.quantity;
+    }
+    if (dinhLuong == null) continue;
+    lines.push({
+      code: String(item.code || '').trim(),
+      name: String(item.name || item.code || '').trim(),
+      unit: 'kg',
+      dinhLuong
+    });
+  }
+  return lines;
+}
+
+/** TL màng 1 cuộn = trọng lượng màng trong BOM × 2 (dùng BB / báo cáo máy). */
+export function resolveInsulationFilmKgPerRoll(product: InsulationProductAlias): number | null {
+  const bomWeight = resolveInsulationFilmBomWeightPerUnit(product);
+  if (bomWeight === null) return null;
+  return bomWeight * INSULATION_FILM_LAYERS;
+}
+
+/** TL màng /cuộn trên `/can-tu-dong` — BOM màng Thành phần SP, không ×2. */
+export function resolveCanTuDongFilmKgPerRoll(product: InsulationProductAlias): number | null {
+  return resolveInsulationFilmBomWeightPerUnit(product);
+}
+
+export function buildCanTuDongFilmKgByProductCode(products: InsulationProductAlias[]): Map<string, number> {
+  const filmKgByProductCode = new Map<string, number>();
+  for (const product of products) {
+    const filmKg = resolveCanTuDongFilmKgPerRoll(product);
+    if (filmKg === null) continue;
+    for (const productCode of [product.code, product.newCode, product.amisCode]) {
+      const key = normalizeProductCodeKey(productCode);
+      if (key && key !== '-') filmKgByProductCode.set(key, filmKg);
+    }
+  }
+  return filmKgByProductCode;
+}
+
+/** @deprecated Dùng `buildCanTuDongFilmKgByProductCode` cho /can-tu-dong (không ×2). */
+export function buildInsulationFilmKgByProductCode(products: InsulationProductAlias[]): Map<string, number> {
+  const filmKgByProductCode = new Map<string, number>();
+  for (const product of products) {
+    const filmKg = resolveInsulationFilmKgPerRoll(product);
+    if (filmKg === null) continue;
+    for (const productCode of [product.code, product.newCode, product.amisCode]) {
+      const key = normalizeProductCodeKey(productCode);
+      if (key && key !== '-') filmKgByProductCode.set(key, filmKg);
+    }
+  }
+  return filmKgByProductCode;
+}
+
+/**
+ * TL màng máy cách nhiệt = Σ (trọng lượng màng BOM × 2) theo từng phiếu cân
+ * = trọng lượng BOM × 2 × số lượng cuộn.
+ */
+export function computeInsulationFilmWeightKg(
+  products: InsulationProductAlias[],
+  records: CanTuDongWeightRow[]
+): number {
+  const filmKgByProductCode = buildInsulationFilmKgByProductCode(products);
+  return records.reduce((total, record) => {
+    const productCode = normalizeProductCodeKey(parseCanTuDongQrProductCode(record.qr_code));
+    return total + (filmKgByProductCode.get(productCode) || 0);
+  }, 0);
+}
+
+/** Nhựa định mức máy cách nhiệt = Σ (KL nhựa+phụ gia Kho hàng × 1 cuộn) theo Mã SP từ QR. */
+export function computeInsulationPlasticNorm(
+  products: InsulationProductAlias[],
+  records: CanTuDongWeightRow[]
+): { weightKg: number; counted: number } {
+  const plasticKgByProductCode = new Map<string, number>();
+  for (const product of products) {
+    const plasticKg = parsePositiveDecimal(
+      (product as InsulationProductAlias & { plasticWeight?: string | null }).plasticWeight
+    );
+    if (plasticKg === null) continue;
+    for (const productCode of [product.code, product.newCode, product.amisCode]) {
+      const key = normalizeProductCodeKey(productCode);
+      if (key && key !== '-') plasticKgByProductCode.set(key, plasticKg);
+    }
+  }
+  return records.reduce(
+    (total, record) => {
+      const productCode = normalizeProductCodeKey(parseCanTuDongQrProductCode(record.qr_code));
+      const nhuaDm = resolveCanTuDongNhuaDinhMucKgPerRoll(plasticKgByProductCode.get(productCode));
+      if (nhuaDm === null) return total;
+      return {
+        weightKg: total.weightKg + nhuaDm,
+        counted: total.counted + 1
+      };
+    },
+    { weightKg: 0, counted: 0 }
+  );
+}
+
+/**
+ * Tem QR: `MãSP_hậuTố` (vd MT-MN010_4UOOH7T98S1), `MãSP_ddmmyy`+serial,
+ * hoặc `MãSP+LSX...`.
+ * Mã SP = **tiền tố** trước `_` / trước `+` (hoặc trước hậu tố serial `-000001XX`).
+ */
+export function parseCanTuDongQrProductCode(raw?: string | null): string {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return '';
+  const plusIdx = trimmed.indexOf('+');
+  const beforePlus = plusIdx > 0 ? trimmed.slice(0, plusIdx).trim() : trimmed;
+  if (!beforePlus) return '';
+  const us = beforePlus.indexOf('_');
+  if (us > 0) return beforePlus.slice(0, us).trim();
+  const serialMatch = beforePlus.match(/^(.+)[_-](\d{6})([0-9A-Za-z]{2,})$/);
+  if (serialMatch?.[1]) return serialMatch[1].trim();
+  return beforePlus;
+}
+
+/** Đổi phần mã SP trong QR, giữ hậu tố `_…` / serial / phần sau `+` nếu có. */
+export function replaceCanTuDongQrProductCode(
+  raw: string | null | undefined,
+  newProductCode: string
+): string {
+  const next = String(newProductCode || '').trim();
+  if (!next) return String(raw || '').trim();
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return next;
+  const plusIdx = trimmed.indexOf('+');
+  if (plusIdx > 0) return `${next}${trimmed.slice(plusIdx)}`;
+  const us = trimmed.indexOf('_');
+  if (us > 0) return `${next}${trimmed.slice(us)}`;
+  const serialMatch = trimmed.match(/^(.+?)([_-]\d{6}[0-9A-Za-z]{2,})$/);
+  if (serialMatch?.[2]) return `${next}${serialMatch[2]}`;
+  return next;
+}
+
+function addProductMatchKey(keys: Set<string>, value?: string | null) {
+  const key = normalizeProductCodeKey(String(value || ''));
+  if (key && key !== '-') keys.add(key);
+}
+
+function findCatalogProductForCanTuDong(
+  catalog: CanTuDongProductAlias[],
+  productCode?: string | null,
+  productName?: string | null
+) {
+  const codeKey = normalizeProductCodeKey(String(productCode || ''));
+  const nameKey = normalizeProductCodeKey(String(productName || ''));
+  return catalog.find(product => {
+    const aliases = [product.code, product.newCode, product.amisCode, product.name].map(value =>
+      normalizeProductCodeKey(String(value || ''))
+    );
+    if (codeKey && aliases.includes(codeKey)) return true;
+    if (nameKey && aliases.includes(nameKey)) return true;
+    return false;
+  });
+}
+
+/** Tập mã SP (kèm mã mới / AMIS / tên) của lệnh SX đang lọc — dùng khớp QR cân tự động. */
+export function collectCanTuDongProductMatchKeys(
+  lines: Array<{ productCode?: string | null; productName?: string | null }>,
+  catalog: CanTuDongProductAlias[] = []
+): Set<string> {
+  const keys = new Set<string>();
+  for (const line of lines) {
+    addProductMatchKey(keys, line.productCode);
+    addProductMatchKey(keys, line.productName);
+    const product = findCatalogProductForCanTuDong(catalog, line.productCode, line.productName);
+    if (!product) continue;
+    addProductMatchKey(keys, product.code);
+    addProductMatchKey(keys, product.newCode);
+    addProductMatchKey(keys, product.amisCode);
+    addProductMatchKey(keys, product.name);
+  }
+  return keys;
+}
+
+export function canTuDongQrMatchesProductKeys(
+  qrCode: string | null | undefined,
+  productCodeKeys: Set<string>
+): boolean {
+  if (productCodeKeys.size === 0) return false;
+  const parsedKey = normalizeProductCodeKey(parseCanTuDongQrProductCode(qrCode));
+  if (parsedKey && productCodeKeys.has(parsedKey)) return true;
+  const fullKey = normalizeProductCodeKey(String(qrCode || ''));
+  return Boolean(fullKey && productCodeKeys.has(fullKey));
+}
+
+/**
+ * Khớp ca: bằng nhau (không phân biệt hoa thường), hoặc token đầy đủ.
+ * Tránh `includes` kiểu "C1" khớp nhầm "HC1"/"12C1".
+ */
+export function canTuDongShiftMatches(rowCa: string, shiftFilter: string): boolean {
+  const a = String(rowCa || '').trim().toLowerCase();
+  const b = String(shiftFilter || '').trim().toLowerCase();
+  if (!a || !b || b === 'all') return true;
+  if (a === b) return true;
+  const aTokens = a.split(/[\s/_-]+/).filter(Boolean);
+  const bTokens = b.split(/[\s/_-]+/).filter(Boolean);
+  if (aTokens.includes(b) || bTokens.includes(a)) return true;
+  // Nhãn dài ("Ca HC1") — chỉ khi mã ca ≥ 3 ký tự để tránh khớp nhầm
+  if (a.length >= 3 && b.includes(a)) return true;
+  if (b.length >= 3 && a.includes(b)) return true;
+  return shiftNamesMatch(rowCa, shiftFilter) && Math.min(a.length, b.length) >= 3;
+}
+
+export function filterCanTuDongRecordsForBoard<T extends CanTuDongWeightRow>(
+  records: T[],
+  opts: {
+    shiftFilter?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    machineFilter?: string;
+    selectedMachine?: { code?: string; name?: string } | null;
+    /** Khi truyền: chỉ giữ lần cân có ngày+ca(+máy) trùng một lệnh SX đang lọc. */
+    orderShiftBuckets?: Array<{
+      ngay?: string | null;
+      shift?: string | null;
+      machine?: string | null;
+    }> | null;
+    /** Khi truyền (kể cả Set rỗng): chỉ giữ lần cân có QR khớp mã SP lệnh SX. */
+    productCodeKeys?: Iterable<string> | null;
+  } = {}
+): T[] {
+  const shiftFilter = String(opts.shiftFilter || '').trim();
+  const dateFrom = String(opts.dateFrom || '').trim();
+  const dateTo = String(opts.dateTo || '').trim();
+  const machineFilter = String(opts.machineFilter || '').trim();
+  const selectedMachine = opts.selectedMachine ?? null;
+  const buckets = Array.isArray(opts.orderShiftBuckets)
+    ? opts.orderShiftBuckets
+        .map(bucket => ({
+          ngay: String(bucket.ngay || '').trim(),
+          shift: String(bucket.shift || '').trim(),
+          machine: String(bucket.machine || '').trim()
+        }))
+        .filter(bucket => bucket.ngay || bucket.shift || bucket.machine)
+    : null;
+  const productKeys =
+    opts.productCodeKeys == null
+      ? null
+      : new Set(
+          [...opts.productCodeKeys]
+            .map(value => normalizeProductCodeKey(String(value || '')))
+            .filter(key => key && key !== '-')
+        );
+
+  const normalizeMachineToken = (value: string) =>
+    value
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '');
+
+  const machineMatches = (candidate: string, filter: string, selected?: { code?: string; name?: string } | null) => {
+    if (!filter || filter === 'all') return true;
+    const tokens = new Set<string>();
+    const add = (v?: string | null) => {
+      const t = normalizeMachineToken(String(v || ''));
+      if (t) tokens.add(t);
+    };
+    add(filter);
+    add(selected?.code);
+    add(selected?.name);
+    const cand = normalizeMachineToken(candidate);
+    if (!cand || tokens.size === 0) return false;
+    for (const token of tokens) {
+      if (cand === token || cand.includes(token) || token.includes(cand)) return true;
+    }
+    return false;
+  };
+
+  return records.filter(row => {
+    if (shiftFilter && shiftFilter !== 'all' && !canTuDongShiftMatches(String(row.ca || ''), shiftFilter)) {
+      return false;
+    }
+
+    const businessDate = dateFrom || dateTo || buckets ? resolveCanTuDongBusinessDate(row) : null;
+    const rowMachine = resolveCanTuDongMachine(row) || '';
+
+    if (dateFrom || dateTo) {
+      if (!businessDate) return false;
+      if (dateFrom && businessDate < dateFrom) return false;
+      if (dateTo && businessDate > dateTo) return false;
+    }
+    // Không có từ/đến ngày (Ngày = Tất cả): giữ mọi dòng, kể cả trống Ngày / không chênh lệch.
+
+    if (machineFilter && machineFilter !== 'all' && !machineMatches(rowMachine, machineFilter, selectedMachine)) {
+      return false;
+    }
+
+    if (buckets) {
+      if (buckets.length === 0) return false;
+      const rowCa = String(row.ca || '');
+      const matched = buckets.some(bucket => {
+        if (bucket.ngay && businessDate !== bucket.ngay) return false;
+        if (bucket.shift && !canTuDongShiftMatches(rowCa, bucket.shift)) return false;
+        if (bucket.machine && !machineMatches(rowMachine, bucket.machine, null)) return false;
+        return true;
+      });
+      if (!matched) return false;
+    }
+
+    if (productKeys && !canTuDongQrMatchesProductKeys(row.qr_code, productKeys)) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+/** Tổng cột «Nhựa thực tế» = SP − lõi − bì − màng (khi có BOM màng). */
+export function sumCanTuDongSanLuongTotals(
+  records: CanTuDongWeightRow[],
+  filmKgByProductCode?: Map<string, number>
+) {
+  let weightKg = 0;
+  for (const row of records) {
+    const nhua = resolveCanTuDongNhuaThucTeKg(row, filmKgByProductCode);
+    if (nhua !== null) weightKg += nhua;
+  }
+  return {
+    /** Số lần cân = số bản ghi can_tu_dong trong bộ lọc. */
+    quantity: records.length,
+    weightKg
+  };
+}
+
+/** Tổng cột «Trọng lượng TT» (Cân sản phẩm — chưa trừ lõi/bì) + số lần cân (= số dòng đã lọc). */
+export function sumCanTuDongThucTeTotals(records: CanTuDongWeightRow[]) {
+  let weightKg = 0;
+  for (const row of records) {
+    const canSp = resolveCanSpKg(row);
+    if (canSp !== null) weightKg += canSp;
+  }
+  return {
+    /** Số lần cân = số bản ghi can_tu_dong trong bộ lọc. */
+    quantity: records.length,
+    weightKg
+  };
+}
+
+/** Tổng cột «Nhựa định mức» theo Mã SP (`trong_luong_nhua` hoặc TL − lõi − bì). */
+export function sumCanTuDongNhuaDinhMucKg(
+  records: CanTuDongWeightRow[],
+  standardKgByProductCode: Map<string, number>,
+  coreKgByProductCode: Map<string, number>,
+  plasticKgByProductCode?: Map<string, number>
+) {
+  let weightKg = 0;
+  let counted = 0;
+  for (const row of records) {
+    const maSpKey = normalizeProductCodeKey(parseCanTuDongQrProductCode(row.qr_code));
+    const standardKg = maSpKey ? standardKgByProductCode.get(maSpKey) : undefined;
+    const coreKg = maSpKey ? coreKgByProductCode.get(maSpKey) : undefined;
+    const plasticKg = maSpKey && plasticKgByProductCode ? plasticKgByProductCode.get(maSpKey) : undefined;
+    const nhua = resolveNhuaDinhMucKg(standardKg, coreKg, plasticKg);
+    if (nhua == null || !Number.isFinite(nhua)) continue;
+    weightKg += nhua;
+    counted += 1;
+  }
+  return { weightKg, counted };
+}
+
+/** Tổng Nhựa chênh lệch = Σ (Nhựa thực tế − Nhựa định mức) khi đủ cả hai. */
+export function sumCanTuDongChenhLechNhuaKg(
+  records: CanTuDongWeightRow[],
+  standardKgByProductCode: Map<string, number>,
+  coreKgByProductCode: Map<string, number>,
+  plasticKgByProductCode?: Map<string, number>,
+  filmKgByProductCode?: Map<string, number>
+) {
+  let weightKg = 0;
+  let counted = 0;
+  for (const row of records) {
+    const thucTe = resolveCanTuDongNhuaThucTeKg(row, filmKgByProductCode);
+    if (thucTe === null) continue;
+    const maSpKey = normalizeProductCodeKey(parseCanTuDongQrProductCode(row.qr_code));
+    const standardKg = maSpKey ? standardKgByProductCode.get(maSpKey) : undefined;
+    const coreKg = maSpKey ? coreKgByProductCode.get(maSpKey) : undefined;
+    const plasticKg = maSpKey && plasticKgByProductCode ? plasticKgByProductCode.get(maSpKey) : undefined;
+    const dinhMuc = resolveNhuaDinhMucKg(standardKg, coreKg, plasticKg);
+    if (dinhMuc == null || !Number.isFinite(dinhMuc)) continue;
+    weightKg += thucTe - dinhMuc;
+    counted += 1;
+  }
+  return { weightKg, counted };
+}
+
+/** Tổng cột «Trọng lượng tiêu chuẩn» (`san_pham.tong_trong_luong` theo Mã SP từ QR). */
+export function sumCanTuDongNhuaTieuChuanKg(
+  records: CanTuDongWeightRow[],
+  standardKgByProductCode: Map<string, number>
+) {
+  let weightKg = 0;
+  let counted = 0;
+  for (const row of records) {
+    const maSpKey = normalizeProductCodeKey(parseCanTuDongQrProductCode(row.qr_code));
+    const standardKg = maSpKey ? standardKgByProductCode.get(maSpKey) : undefined;
+    if (standardKg == null || !(standardKg > 0) || !Number.isFinite(standardKg)) continue;
+    weightKg += standardKg;
+    counted += 1;
+  }
+  return { weightKg, counted };
+}
+
+/** Tổng cột «Cân sản phẩm» / Trọng lượng TT (`weight` / `can_san_pham`). */
+export function sumCanTuDongCanSanPhamKg(records: CanTuDongWeightRow[]) {
+  let weightKg = 0;
+  let counted = 0;
+  for (const row of records) {
+    const sp = resolveCanSpKg(row);
+    if (sp === null) continue;
+    weightKg += sp;
+    counted += 1;
+  }
+  return { weightKg, counted };
+}
+
+/** Tổng chênh lệch TT − LT = Σ (Cân sản phẩm − Trọng lượng tiêu chuẩn) khi đủ cả hai. */
+export function sumCanTuDongChenhLechTtLtKg(
+  records: CanTuDongWeightRow[],
+  standardKgByProductCode: Map<string, number>
+) {
+  let weightKg = 0;
+  let counted = 0;
+  for (const row of records) {
+    const sp = resolveCanSpKg(row);
+    if (sp === null) continue;
+    const maSpKey = normalizeProductCodeKey(parseCanTuDongQrProductCode(row.qr_code));
+    const standardKg = maSpKey ? standardKgByProductCode.get(maSpKey) : undefined;
+    if (standardKg == null || !(standardKg > 0) || !Number.isFinite(standardKg)) continue;
+    weightKg += sp - standardKg;
+    counted += 1;
+  }
+  return { weightKg, counted };
+}
+
+/** Tổng cột «Lõi tiêu chuẩn / lõi lý thuyết» (`san_pham.trong_luong_loi` theo Mã SP từ QR). */
+export function sumCanTuDongLoiTieuChuanKg(
+  records: CanTuDongWeightRow[],
+  coreKgByProductCode: Map<string, number>
+) {
+  let weightKg = 0;
+  let counted = 0;
+  for (const row of records) {
+    const maSpKey = normalizeProductCodeKey(parseCanTuDongQrProductCode(row.qr_code));
+    const coreKg = maSpKey ? coreKgByProductCode.get(maSpKey) : undefined;
+    if (coreKg == null || !(coreKg > 0) || !Number.isFinite(coreKg)) continue;
+    weightKg += coreKg;
+    counted += 1;
+  }
+  return { weightKg, counted };
+}
+
+/** Tổng cột «Cân lõi» (`tare_weight` / `can_loi`). */
+export function sumCanTuDongCanLoiKg(records: CanTuDongWeightRow[]) {
+  let weightKg = 0;
+  let counted = 0;
+  for (const row of records) {
+    const loi = resolveCanLoiKg(row);
+    if (loi === null) continue;
+    weightKg += loi;
+    counted += 1;
+  }
+  return { weightKg, counted };
+}
+
+/**
+ * Tổng chênh lệch lõi = Σ (Cân lõi − Lõi lý thuyết) khi đủ cả hai.
+ * Cùng công thức kiểu Chênh lệch TT−LT: thực tế − lý thuyết.
+ */
+export function sumCanTuDongChenhLechLoiKg(
+  records: CanTuDongWeightRow[],
+  coreKgByProductCode: Map<string, number>
+) {
+  let weightKg = 0;
+  let counted = 0;
+  for (const row of records) {
+    const loi = resolveCanLoiKg(row);
+    if (loi === null) continue;
+    const maSpKey = normalizeProductCodeKey(parseCanTuDongQrProductCode(row.qr_code));
+    const lyThuyetKg = maSpKey ? coreKgByProductCode.get(maSpKey) : undefined;
+    if (lyThuyetKg == null || !(lyThuyetKg > 0) || !Number.isFinite(lyThuyetKg)) continue;
+    weightKg += loi - lyThuyetKg;
+    counted += 1;
+  }
+  return { weightKg, counted };
+}
+
+/** Tổng cột «Trọng lượng màng» = Σ BOM màng / cuộn theo Mã SP từ QR (không ×2). */
+export function sumCanTuDongFilmKg(
+  records: CanTuDongWeightRow[],
+  filmKgByProductCode: Map<string, number>
+) {
+  let weightKg = 0;
+  let counted = 0;
+  for (const row of records) {
+    const maSpKey = normalizeProductCodeKey(parseCanTuDongQrProductCode(row.qr_code));
+    const filmKg = maSpKey ? filmKgByProductCode.get(maSpKey) : undefined;
+    if (filmKg == null || !(filmKg > 0) || !Number.isFinite(filmKg)) continue;
+    weightKg += filmKg;
+    counted += 1;
+  }
+  return { weightKg, counted };
+}

@@ -337,6 +337,7 @@ export function InventoryAlertPanel({ onBack }: { onBack: () => void }) {
         nature: catalogProduct?.nature || 'Chưa phân loại',
         group: catalogProduct?.group || 'Chưa nhóm',
         unit: catalogProduct?.unit || 'Tấm',
+        warehouse: catalogProduct?.warehouse || '',
         totalWeight: catalogProduct?.totalWeight || '',
         wastePercent: catalogProduct?.wastePercent || '',
         rollWidth: catalogProduct?.rollWidth || '',

@@ -22,7 +22,8 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
     menu: 'quan-tri',
     label: 'Quản trị',
     children: [
-      { tab: 'dashboard', label: 'Dashboard' },
+      { tab: 'dashboard-auto', label: 'Báo cáo mới' },
+      { tab: 'bieu-do-th', label: 'Biểu đồ TH' },
       { tab: 'settings', label: 'Cài đặt / phân quyền' }
     ]
   },
@@ -54,28 +55,29 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
       { tab: 'dot-san-xuat', label: 'Đợt sản xuất' },
       { tab: 'production-orders', label: 'Lệnh sản xuất' },
       { tab: 'control-board', label: 'Theo dõi sản xuất' },
-      { tab: 'production-reports', label: 'Báo cáo sản xuất' },
-      { tab: 'dieu-dong-nhan-su', label: 'Điều động nhân sự' },
-      { tab: 'sap-xep-lich-lam-viec', label: 'Sắp xếp lịch làm việc' }
+      { tab: 'production-reports', label: 'Báo cáo sản xuất' }
     ]
   },
   {
     menu: 'factory-qc',
     label: 'QC',
     children: [
+      { tab: 'products', label: 'Danh sách sản phẩm' },
       { tab: 'mixing-report-list', label: 'BOM và tỷ lệ phối trộn' },
       { tab: 'damaged-goods-report-list', label: 'Kiểm soát hàng hỏng' },
       { tab: 'weighing-summary-list', label: 'Phiếu cân ca' },
-      { tab: 'can-tu-dong', label: 'Dữ liệu cân tự động' },
+      { tab: 'can-tu-dong', label: 'Danh sách cân' },
+      { tab: 'can-tu-dong-pilot', label: 'Trạm cân QR' },
+      { tab: 'can-kiem-kho', label: 'Cân kiểm kho' },
       { tab: 'acceptance-report-list', label: 'Kiểm tra kho thành phẩm' },
       { tab: 'so-test-mau-nhua', label: 'Sổ test mẫu nhựa' },
       { tab: 'thong-ke-hang-loi', label: 'Thống kê hàng lỗi hỏng' },
-      { tab: 'chi-phi-bao-duong', label: 'Chi phí bảo dưỡng' },
+      { tab: 'chi-phi-bao-duong', label: 'Chi phí bảo dưỡng' }
     ]
   },
   {
     menu: 'factory-cong-nhan',
-    label: 'Công nhân',
+    label: 'Sản xuất',
     children: [
       { tab: 'production-orders', label: 'Công việc được giao' },
       { tab: 'report-forms', label: 'Nhập báo cáo ca' },
@@ -89,9 +91,13 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
       { tab: 'quan-ly-kho', label: 'Danh mục kho' },
       { tab: 'materials', label: 'Kho nguyên vật liệu' },
       { tab: 'products', label: 'Kho thành phẩm' },
-      { tab: 'warehouse-slip', label: 'Phiếu xuất nhập kho' },
+      { tab: 'warehouse-slip-vat-tu', label: 'Phiếu xuất nhập kho - Vật tư' },
+      { tab: 'warehouse-slip-thanh-pham', label: 'Phiếu xuất nhập kho - Thành phẩm' },
       { tab: 'kiem-kho', label: 'Kiểm kho' },
-      { tab: 'warehouse-history', label: 'Lịch sử xuất nhập' }
+      { tab: 'can-kiem-kho', label: 'Cân kiểm kho' },
+      { tab: 'kiem-kho-chenh-lech', label: 'Xử lý chênh lệch' },
+      { tab: 'warehouse-history', label: 'Lịch sử xuất nhập' },
+      { tab: 'ton-kho', label: 'Tồn kho' }
     ]
   },
   {
@@ -111,7 +117,8 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
       { tab: 'materials', label: 'Kho NVL' },
       { tab: 'products', label: 'Sản phẩm' },
       { tab: 'machines', label: 'Máy móc' },
-      { tab: 'warehouse-slip', label: 'Phiếu xuất nhập kho' }
+      { tab: 'warehouse-slip-vat-tu', label: 'Phiếu xuất nhập kho - Vật tư' },
+      { tab: 'warehouse-slip-thanh-pham', label: 'Phiếu xuất nhập kho - Thành phẩm' }
     ]
   }
 ];

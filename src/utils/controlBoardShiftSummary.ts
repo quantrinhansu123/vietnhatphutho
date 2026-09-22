@@ -38,7 +38,45 @@ export type ShiftSummaryWarehouseMovement = {
   createdBy: string;
   /** Lý do phiếu — thường chứa mã lệnh SX đã chọn khi lập phiếu */
   reason?: string;
+  /** Ghi chú phiếu — có thể chứa mã lệnh SX (autofill cũ) */
+  note?: string;
 };
+
+/** Token mã lệnh SX — ví dụ LSX-DH029 / LSX00094. */
+export function looksLikeProductionOrderCode(token: string | undefined | null): boolean {
+  const value = String(token || '').trim();
+  if (value.length < 3 || /\s/.test(value)) return false;
+  if (/^(HC|12C|CA)\d{1,2}$/i.test(value) || /^\d{4}[-/]\d{2}[-/]\d{2}$/.test(value)) return false;
+  if (/^LSX[\w\-]*\d[\w\-]*$/i.test(value)) return true;
+  return value.length >= 5 && /[A-Za-zÀ-ỹ]/.test(value) && /\d/.test(value);
+}
+
+export function parseProductionOrderCodeTokens(value: string | undefined | null): string[] {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  const tokens: string[] = [];
+  const push = (token: string) => {
+    const cleaned = token.trim().replace(/^[(\[{<'"]+|[)\]}>'",.;:]+$/g, '');
+    if (looksLikeProductionOrderCode(cleaned)) tokens.push(cleaned);
+  };
+  for (const segment of raw.split('|').slice(1)) for (const token of segment.split(/[,;|/]+/)) push(token);
+  for (const token of raw.match(/\bLSX[\w\-]*/gi) || []) push(token);
+  return [...new Set(tokens)];
+}
+
+export function extractLinkedProductionOrderCodes(...parts: Array<string | undefined | null>): string[] {
+  return [...new Set(parts.flatMap(parseProductionOrderCodeTokens))];
+}
+
+export function stripProductionOrderCodesFromReason(reason: string | undefined | null): string {
+  return String(reason || '').split('|')[0]?.trim() || '';
+}
+
+export function composeReasonWithProductionOrderCodes(reason: string | undefined | null, codes: string[]): string {
+  const base = stripProductionOrderCodesFromReason(reason);
+  const suffix = [...new Set(codes.map(code => String(code || '').trim()).filter(Boolean))].join(', ');
+  return suffix ? (base ? `${base} | ${suffix}` : suffix) : base;
+}
 
 export type ShiftSummaryFilterSources = {
   shiftSettings: ShiftSetting[];
