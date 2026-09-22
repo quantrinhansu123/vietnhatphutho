@@ -7,22 +7,34 @@ import {
   ArrowUpFromLine,
   Boxes,
   ChevronDown,
-  Eye,
+  ClipboardCheck,
+  Clock,
+  Factory,
   History,
-  Layers,
+  ImagePlus,
   Loader2,
   Package,
   Pencil,
   Plus,
   Printer,
+  QrCode,
+  Recycle,
+  RefreshCw,
   Save,
+  ScanBarcode,
   Search,
-  Trash2
+  Scale,
+  TriangleAlert,
+  Trash2,
+  Wrench,
+  X
 } from 'lucide-react';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { useTabAccess } from '../../app/useTabAccess';
+import type { AuthUser } from '../../app/authUser';
 import { BackButton } from '../../components/layout/NavButtons';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
+import ProductQrScanner from '../../components/ProductQrScanner';
 import {
   FilterCombobox,
   TableToolbar,
@@ -34,56 +46,89 @@ import {
   TableBody,
   TableRow,
   TableEmptyRow,
-  StatusBadge,
   RowActionsMenu
 } from '../../components/shared/table';
-import { pickText, fileToDataUrl, uploadImage } from '../_shared/recordHelpers';
-import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from '../../components/WarehouseSlipPrintModal';
-import { STORAGE_WAREHOUSE_SLIP_DRAFT_KEY } from '../_shared/storageKeys';
+import { pickText, fileToDataUrl, fileToOptimizedImageDataUrl, uploadImage } from '../_shared/recordHelpers';
+import { CAMERA_IMAGE_INPUT_PROPS } from '../../utils/cameraCapture';
+import WeighingImagePreviewModal, {
+  WeighingImageThumbnail,
+  type WeighingPreviewImage
+} from '../../components/WeighingImagePreviewModal';
+import WarehouseSlipPrintModal, {
+  mergeWarehousePrintLines,
+  mergeWarehousePrintSlips,
+  type WarehouseSlipPrintData
+} from '../../components/WarehouseSlipPrintModal';
+import ProductQrPrintModal, { type ProductQrPrintLabel } from '../../components/ProductQrPrintModal';
+import {
+  STORAGE_WAREHOUSE_SLIP_DRAFT_KEY,
+  STORAGE_WAREHOUSE_SLIP_SCANNING_DRAFTS_KEY
+} from '../_shared/storageKeys';
 import { getProductionShiftOptions, normalizeShiftSettings, shiftNamesMatch } from '../../utils/shiftSettings';
 import {
-  formatMixingNormSlipName,
-  normalizeNhomVatTuPhuKey,
-  resolveWorkshopType,
-  isTapeOrStampMaterial,
-  resolveAuxiliaryWeightPerUnit
-} from '../../utils/mixingNormAuxiliary';
+  fetchSoTronPrevShiftTon,
+  lookupSoTronPrevTon,
+  type SoTronPrevTonSource
+} from '../../utils/soTronPrevShiftTon';
+import { findProductByCode, normalizeProducts } from '../san-pham';
+import { normalizeProductCodeKey } from '../san-pham/types';
 import {
-  type NormMaterialLine,
-  type NormMaterialSource,
-  parseNormJson,
-  normalizeMaterialKey,
-  mergeNormMaterialLines,
-  mergeAuxiliaryWarehouseLines,
-  consolidateWarehouseLines
-} from '../../utils/warehouseNormMerge';
-import { normalizeProducts } from '../san-pham';
+  buildProductionOrderMaterialProposal,
+  buildProductionOrderMaterialProposalFromActualWeighing,
+  loadProductionOrderProductCatalog
+} from '../ke-hoach-san-xuat';
 import { normalizeMaterialsInventory } from '../kho-nvl';
-import type { ShiftSummaryWarehouseMovement } from '../../utils/controlBoardShiftSummary';
+import {
+  composeReasonWithProductionOrderCodes,
+  extractLinkedProductionOrderCodes,
+  stripProductionOrderCodesFromReason,
+  type ShiftSummaryWarehouseMovement
+} from '../../utils/controlBoardShiftSummary';
+import {
+  canTuDongShiftMatches,
+  parseCanTuDongQrProductCode,
+  resolveCanTuDongMachine,
+  resolveTrongLuongNhuaKg,
+  type CanTuDongWeightRow
+} from '../../utils/canTuDongWeights';
 import { readApiErrorMessage, showAppToast, showSaveFailure } from '../../lib/appToast';
 import type { MaterialOption } from '../san-pham/types';
 import {
   convertWarehouseQuantityToKg,
+  findMaterialTongKgPerUnit,
   formatWarehouseWeightKg,
+  isWarehouseKgUnit as isWarehouseWeightKgUnit,
   mapMaterialToWeightCatalogItem,
   mapProductToWeightCatalogItem,
   type WarehouseWeightCatalogItem
 } from '../../utils/warehouseWeight';
+import { isCuonUnit } from '../../utils/controlBoardShiftSummary';
+import {
+  formatMixingNormSlipName,
+  isTapeOrStampMaterial,
+  normalizeNhomVatTuPhuKey,
+  resolveAuxiliaryWeightPerUnit
+} from '../../utils/mixingNormAuxiliary';
+import {
+  normalizeMaterialKey,
+  mergeNormMaterialLines,
+  mergeAuxiliaryWarehouseLines,
+  type WarehouseMaterialClass,
+  normalizeWarehouseMaterialClass
+} from '../../utils/warehouseNormMerge';
 
 export type WarehouseSlipType = 'nhap' | 'xuat';
-export type WarehouseKind = 'nvl' | 'san_pham';
-export type WarehouseMaterialClass = 'nvl_chinh' | 'nvl_phu' | 'chua_phan_loai';
+export type WarehouseKind =
+  | 'nvl'
+  | 'san_pham'
+  | 'tai_che'
+  | 'hang_hong'
+  | 'hang_hoa'
+  | 'cong_cu_dung_cu'
+  | 'gia_cong';
 
-export function normalizeWarehouseMaterialClass(value: unknown): WarehouseMaterialClass {
-  const normalized = normalizeMaterialKey(value);
-  if (normalized === 'nvl_phu' || normalized.includes('nguyen vat lieu phu') || normalized.includes('nvl phu')) {
-    return 'nvl_phu';
-  }
-  if (normalized === 'nvl_chinh' || normalized.includes('nguyen vat lieu chinh') || normalized.includes('nvl chinh')) {
-    return 'nvl_chinh';
-  }
-  return 'chua_phan_loai';
-}
+export type { WarehouseMaterialClass };
+export { normalizeWarehouseMaterialClass };
 
 function warehouseMaterialClassLabel(value: unknown): string {
   const materialClass = normalizeWarehouseMaterialClass(value);
@@ -92,21 +137,43 @@ function warehouseMaterialClassLabel(value: unknown): string {
   return 'Chưa phân loại';
 }
 
+function warehouseMaterialClassRank(value: unknown): number {
+  const materialClass = normalizeWarehouseMaterialClass(value);
+  if (materialClass === 'nvl_chinh') return 0;
+  if (materialClass === 'nvl_phu') return 1;
+  return 2;
+}
+
+const WAREHOUSE_HISTORY_TABS = [
+  ['nvl', 'Kho NVL', Boxes],
+  ['san_pham', 'Kho thành phẩm', Package],
+  ['hang_hong', 'Kho hàng hỏng', TriangleAlert],
+  ['hang_hoa', 'Kho hàng hóa', Package],
+  ['cong_cu_dung_cu', 'Kho công cụ dụng cụ', Wrench],
+  ['gia_cong', 'Kho gia công', Factory],
+  ['tai_che', 'Kho tái chế', Recycle]
+] as const satisfies ReadonlyArray<readonly [WarehouseKind, string, React.ComponentType<{ className?: string }>]>;
+
+const WAREHOUSE_HISTORY_SLIP_TYPE_TABS = [
+  { key: 'xuat' as const, label: 'Xuất kho', hint: 'Phiếu xuất kho đã lưu', Icon: ArrowUpFromLine },
+  { key: 'nhap' as const, label: 'Nhập kho', hint: 'Phiếu nhập kho đã lưu', Icon: ArrowDownToLine }
+];
+
 export interface WarehouseMovementRow {
   id: string;
   slipCode: string;
   slipType: WarehouseSlipType;
   warehouseKind: WarehouseKind;
+  warehouseName: string;
   slipDate: string;
   shift: string;
   machine: string;
-  materialClass: WarehouseMaterialClass;
+  materialClass?: WarehouseMaterialClass | string;
   itemCode: string;
   itemName: string;
   unit: string;
   quantity: number;
   documentQuantity?: number;
-  tonDauCaMay?: number;
   unitPrice: number;
   lineAmount: number;
   weightKg?: number;
@@ -116,7 +183,11 @@ export interface WarehouseMovementRow {
   createdAt: string;
   sourceInboundLineId?: string;
   sourceInboundSlipCode?: string;
-  nhomVthh?: string;
+  damagedReportRowId?: string;
+  acceptanceReportRowId?: string;
+  treo?: boolean;
+  actualWeightImageUrl?: string;
+  daIn?: boolean;
 }
 
 export interface WarehouseSlipLineDraft {
@@ -141,6 +212,13 @@ export interface WarehouseSlipLineDraft {
   sourceInboundSlipCode?: string;
   nhomVthh?: string;
   auxiliaryGroup?: string;
+  damagedReportRowId?: string;
+  /** ID dòng bao_cao_nghiem_thu nguồn (gợi ý nhập kho từ Báo cáo sản lượng). */
+  acceptanceReportRowId?: string;
+  actualWeightImageUrl?: string;
+  actualWeightImagePublicId?: string;
+  /** Dòng được tạo/cập nhật bằng quét mã, không cần chụp ảnh số cân. */
+  isScanned?: boolean;
 }
 
 /** Tham chiếu đúng 1 phiếu trộn định mức được chọn để xuất kho NVL. */
@@ -159,6 +237,9 @@ export function lenhSxInstanceKey(ref: WarehouseLenhSxRef): string {
 }
 
 function parseLenhSxInstanceKey(key: string): WarehouseLenhSxRef {
+  if (key.startsWith('dinh-muc:')) {
+    return { dinh_muc_id: key.slice('dinh-muc:'.length), ma_lenh_sx: '', ngay: '', ca: '' };
+  }
   const [ma_lenh_sx = '', ngay = '', ca = ''] = key.split('::');
   return { ma_lenh_sx, ngay, ca };
 }
@@ -168,6 +249,38 @@ function formatPickerDate(ngay: string): string {
   if (!match) return ngay || '';
   return `${match[3]}/${match[2]}/${match[1]}`;
 }
+
+type PendingDamagedReportItem = {
+  reportRowId: string;
+  materialType: string;
+  code: string;
+  name: string;
+  unit: string;
+  quantity: number;
+};
+
+type PendingDamagedReport = {
+  key: string;
+  documentNo: string;
+  reportDate: string;
+  productionDate: string;
+  shift: string;
+  weigher: string;
+  machine: string;
+  note: string;
+  createdAt: string;
+  items: PendingDamagedReportItem[];
+};
+
+type WarehouseMachineOption = {
+  id: string;
+  code: string;
+  name: string;
+};
+
+type WarehouseMachineSelectOption = WarehouseMachineOption & {
+  label: string;
+};
 
 export type NvlInboundLotOption = {
   id: string;
@@ -185,6 +298,7 @@ export type NvlInboundLotOption = {
 export type WarehouseSlipPrefillDraft = {
   slipType: WarehouseSlipType;
   warehouseKind: WarehouseKind;
+  warehouseName?: string;
   slipDate?: string;
   reason: string;
   note: string;
@@ -196,13 +310,14 @@ export type WarehouseSlipPrefillDraft = {
   deliverer?: string;
   warehouseLocation?: string;
   editSlipCode?: string;
-  /** Các lệnh SX (mã + ngày + ca) đã chọn khi lập phiếu xuất kho NVL — dùng để khôi phục đúng lựa chọn khi sửa. */
-  lenhSxDaChon?: WarehouseLenhSxRef[];
+  actualWeightImageUrl?: string;
+  actualWeightImagePublicId?: string;
   /** Thời điểm tạo draft (Date.now()) — dùng để bỏ qua draft cũ còn sót lại trong localStorage. */
   createdAt?: number;
   lines: Array<
     Pick<
       WarehouseSlipLineDraft,
+      | 'materialId'
       | 'code'
       | 'name'
       | 'productionName'
@@ -219,9 +334,69 @@ export type WarehouseSlipPrefillDraft = {
       | 'normWeightPerUnitKg'
       | 'sourceInboundLineId'
       | 'sourceInboundSlipCode'
+      | 'nhomVthh'
+      | 'auxiliaryGroup'
+      | 'damagedReportRowId'
+      | 'acceptanceReportRowId'
+      | 'actualWeightImageUrl'
+      | 'actualWeightImagePublicId'
+      | 'isScanned'
     >
   >;
 };
+
+type WarehouseScanningDraft = WarehouseSlipPrefillDraft & {
+  id: string;
+  updatedAt: number;
+  owner: string;
+  scannedFullCodes: Record<string, string[]>;
+};
+
+function readWarehouseScanningDrafts(): WarehouseScanningDraft[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_WAREHOUSE_SLIP_SCANNING_DRAFTS_KEY) || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(draft => draft && typeof draft.id === 'string' && Array.isArray(draft.lines))
+      .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0));
+  } catch {
+    return [];
+  }
+}
+
+function writeWarehouseScanningDrafts(drafts: WarehouseScanningDraft[]) {
+  localStorage.setItem(
+    STORAGE_WAREHOUSE_SLIP_SCANNING_DRAFTS_KEY,
+    JSON.stringify([...drafts].sort((left, right) => right.updatedAt - left.updatedAt))
+  );
+}
+
+function createWarehouseScanningDraftId() {
+  return `warehouse-scan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function formatWarehouseDraftUpdatedAt(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return '';
+  return new Date(value).toLocaleString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+}
+
+function warehouseScanningDraftLabel(draft: WarehouseScanningDraft) {
+  const itemCount = draft.lines.filter(line => line.code.trim()).length;
+  return `${draft.warehouseName || warehouseKindLabel(draft.warehouseKind)} · ${itemCount} mã · ${formatWarehouseDraftUpdatedAt(draft.updatedAt)}`;
+}
+
+function warehouseScanningDraftSearchText(draft: WarehouseScanningDraft) {
+  const lineText = draft.lines.map(line => `${line.code} ${line.name}`).join(' ');
+  return [warehouseScanningDraftLabel(draft), draft.createdBy, draft.reason, draft.note, lineText]
+    .filter(Boolean)
+    .join(' ');
+}
 
 /** Draft quá thời gian này (ms) coi như đã cũ/bỏ dở, không tự điền vào phiếu mới nữa. */
 const WAREHOUSE_SLIP_DRAFT_MAX_AGE_MS = 5 * 60 * 1000;
@@ -232,68 +407,69 @@ export function buildWarehouseSlipDraftFromHistoryRows(
 ): WarehouseSlipPrefillDraft | null {
   const header = rows[0];
   if (!header) return null;
-  const classRank = (value: WarehouseMaterialClass) => value === 'nvl_chinh' ? 0 : value === 'nvl_phu' ? 1 : 2;
-  const sortedRows = [...rows].sort((a, b) =>
-    classRank(a.materialClass) - classRank(b.materialClass) ||
-    a.itemCode.localeCompare(b.itemCode, 'vi', { numeric: true }) ||
-    (a.machine || '~~~').localeCompare(b.machine || '~~~', 'vi', { numeric: true })
-  );
 
-  const rawLines = sortedRows.map(row => {
-    let normWeightPerUnitKg: number | undefined = undefined;
-    if (row.materialClass === 'nvl_phu') {
-      if (Number.isFinite(row.weightKg) && Number(row.weightKg) > 0 && Number.isFinite(row.quantity) && row.quantity > 0) {
-        normWeightPerUnitKg = Number(row.weightKg) / row.quantity;
-      } else {
-        const groupKey = normalizeNhomVatTuPhuKey(row.itemName || row.itemCode);
-        normWeightPerUnitKg = resolveAuxiliaryWeightPerUnit(groupKey, row.nhomVthh, row.unit);
-      }
-    }
-    return {
+  const linkedOrderCodes = extractLinkedProductionOrderCodes(header.reason, header.note);
+
+  return {
+    slipType: header.slipType,
+    warehouseKind: header.warehouseKind,
+    warehouseName: header.warehouseName,
+    slipDate: header.slipDate,
+    reason: stripProductionOrderCodesFromReason(header.reason || ''),
+    note: header.note || '',
+    createdBy: header.createdBy || '',
+    productionOrderRef: formatWarehouseProductionOrderSelection(linkedOrderCodes),
+    machine: header.machine || '',
+    shift: header.shift || '',
+    editSlipCode: slipCode,
+    lines: rows.map(row => ({
       code: row.itemCode,
       name: row.itemName,
-      productionName: '',
       unit: row.unit,
       quantity: formatNumber(row.quantity, 2),
       documentQuantity:
         row.documentQuantity != null && Number.isFinite(row.documentQuantity)
           ? formatNumber(row.documentQuantity, 2)
           : '',
-      tonDauCaMay:
-        row.tonDauCaMay != null && Number.isFinite(row.tonDauCaMay)
-          ? formatNumber(row.tonDauCaMay, 2)
-          : '',
       unitPrice: row.unitPrice > 0 ? String(row.unitPrice) : '',
-      warehouseClass: row.materialClass,
-      machine: row.machine,
-      normWeightPerUnitKg,
       sourceInboundLineId: row.sourceInboundLineId || '',
       sourceInboundSlipCode: row.sourceInboundSlipCode || '',
-      nhomVthh: row.nhomVthh || '',
-      weightKg: row.weightKg
-    };
-  });
-
-  const consolidatedLines = header.warehouseKind === 'nvl' && header.slipType === 'xuat'
-    ? consolidateWarehouseLines(rawLines)
-    : rawLines;
-
-  return {
-    slipType: header.slipType,
-    warehouseKind: header.warehouseKind,
-    slipDate: header.slipDate,
-    reason: header.reason || '',
-    note: header.note || '',
-    createdBy: header.createdBy || '',
-    shift: header.shift || '',
-    machine: [...new Set(sortedRows.map(row => row.machine).filter(Boolean))].join(', '),
-    editSlipCode: slipCode,
-    lines: consolidatedLines
+      damagedReportRowId: row.damagedReportRowId || '',
+      acceptanceReportRowId: row.acceptanceReportRowId || '',
+      actualWeightImageUrl: row.actualWeightImageUrl || '',
+      actualWeightImagePublicId: '',
+    }))
   };
 }
 
 const warehouseFieldClass =
-  'h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+  'h-9 w-full rounded-lg border border-zinc-200 px-2.5 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+
+const warehouseLineFieldClass =
+  'h-9 w-full rounded-md border border-zinc-200 px-2.5 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+
+const warehouseLineHeaderClass =
+  'px-0.5 text-[10px] font-black uppercase tracking-wide text-white whitespace-nowrap';
+
+const warehouseNhapLineGridClass =
+  'grid min-w-0 grid-cols-[minmax(0,1.2fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] items-center gap-1.5 border-b border-zinc-200/80 py-1.5 md:min-w-[50rem] md:grid-cols-[2.25rem_minmax(7rem,0.95fr)_minmax(7rem,1.15fr)_3.25rem_5.5rem_5.5rem_4.5rem_5.75rem_2rem]';
+
+const warehouseXuatLineGridClass =
+  'grid min-w-0 grid-cols-[minmax(0,1.2fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] items-center gap-1.5 border-b border-zinc-200/80 py-1.5 md:min-w-[56rem] md:grid-cols-[2.25rem_minmax(7rem,0.95fr)_minmax(7rem,1.15fr)_3.25rem_4.5rem_6.25rem_5.5rem_4.5rem_5.75rem_2rem]';
+
+const warehouseXuatNvlLineGridClass =
+  'grid min-w-0 grid-cols-[minmax(0,1.2fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] items-center gap-1.5 border-b border-zinc-200/80 py-1.5 md:min-w-[62rem] md:grid-cols-[2.25rem_minmax(7rem,0.95fr)_minmax(7rem,1.15fr)_3.25rem_4.5rem_4.5rem_6.25rem_5.5rem_4.5rem_5.75rem_2rem]';
+
+const warehouseNhapHeaderGridClass =
+  'mb-1 grid min-w-0 grid-cols-[minmax(0,1.2fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-2 py-2 md:min-w-[50rem] md:grid-cols-[2.25rem_minmax(7rem,0.95fr)_minmax(7rem,1.15fr)_3.25rem_5.5rem_5.5rem_4.5rem_5.75rem_2rem]';
+
+const warehouseXuatHeaderGridClass =
+  'mb-1 grid min-w-0 grid-cols-[minmax(0,1.2fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-2 py-2 md:min-w-[56rem] md:grid-cols-[2.25rem_minmax(7rem,0.95fr)_minmax(7rem,1.15fr)_3.25rem_4.5rem_6.25rem_5.5rem_4.5rem_5.75rem_2rem]';
+
+const warehouseXuatNvlHeaderGridClass =
+  'mb-1 grid min-w-0 grid-cols-[minmax(0,1.2fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-2 py-2 md:min-w-[62rem] md:grid-cols-[2.25rem_minmax(7rem,0.95fr)_minmax(7rem,1.15fr)_3.25rem_4.5rem_4.5rem_6.25rem_5.5rem_4.5rem_5.75rem_2rem]';
+
+const warehouseLineMobileHiddenClass = 'hidden md:block';
 
 export function parseWarehouseShiftSelection(value: string | string[] | undefined): string[] {
   if (Array.isArray(value)) {
@@ -307,6 +483,35 @@ export function parseWarehouseShiftSelection(value: string | string[] | undefine
 
 export function formatWarehouseShiftSelection(shifts: string[]): string {
   return shifts.join(', ');
+}
+
+/** ĐVT kg (không phân biệt hoa thường) → ưu tiên xếp đầu danh sách xuất kho. */
+export function isWarehouseKgUnit(unit?: string | null) {
+  return isWarehouseWeightKgUnit(String(unit || ''));
+}
+
+/** Xuất kho: ĐVT kg lên đầu, trong mỗi nhóm xếp khối lượng quy đổi giảm dần, rồi theo mã. */
+export function sortWarehouseLinesKgFirst<T extends { unit?: string; code?: string; itemCode?: string }>(
+  lines: T[],
+  options?: { getWeightKg?: (line: T) => number | null }
+): T[] {
+  return [...lines].sort((a, b) => {
+    const aKg = isWarehouseKgUnit(a.unit);
+    const bKg = isWarehouseKgUnit(b.unit);
+    if (aKg !== bKg) return aKg ? -1 : 1;
+
+    if (options?.getWeightKg) {
+      const aWeight = options.getWeightKg(a);
+      const bWeight = options.getWeightKg(b);
+      const aVal = aWeight !== null && Number.isFinite(aWeight) && aWeight > 0 ? aWeight : -1;
+      const bVal = bWeight !== null && Number.isFinite(bWeight) && bWeight > 0 ? bWeight : -1;
+      if (aVal !== bVal) return bVal - aVal;
+    }
+
+    const aCode = String(a.code || a.itemCode || '');
+    const bCode = String(b.code || b.itemCode || '');
+    return aCode.localeCompare(bCode, 'vi');
+  });
 }
 
 export function toggleWarehouseShiftSelection(current: string[], shiftValue: string): string[] {
@@ -336,8 +541,122 @@ export function warehouseSlipTypeLabel(type: WarehouseSlipType) {
   return type === 'nhap' ? 'Nhập kho' : 'Xuất kho';
 }
 
+function sumWarehouseRollQuantity(rows: Array<{ quantity: number; unit?: string }>): number {
+  let total = 0;
+  for (const row of rows) {
+    const unit = String(row.unit || '').trim();
+    if (!isCuonUnit(unit)) continue;
+    const qty = Number(row.quantity);
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    total += qty;
+  }
+  return total;
+}
+
+function formatWarehouseRollTotal(total: number): string {
+  if (!(total > 0)) return '0 cuộn';
+  const rounded = Math.round(total * 100) / 100;
+  const digits = Number.isInteger(rounded) ? 0 : 2;
+  return `${formatNumber(rounded, digits)} cuộn`;
+}
+
+function normalizeWarehouseNameKey(value?: string | null) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+export function isRecycleWarehouseName(value?: string | null) {
+  const key = normalizeWarehouseNameKey(value);
+  if (!key) return false;
+  return key.includes('tai che') || key.includes('recycle') || key.includes('tai_che') || key.includes('tai-che');
+}
+
+/** Kho rác (chứa SP rác từ Báo cáo sản lượng). "trac" (trách) không tính. */
+export function isTrashWarehouseName(value?: string | null) {
+  const key = normalizeWarehouseNameKey(value);
+  if (!key) return false;
+  return key.includes('trash') || (key.includes('rac') && !key.includes('trac'));
+}
+
+export function isDamagedGoodsWarehouseName(value?: string | null) {
+  const key = normalizeWarehouseNameKey(value);
+  if (!key) return false;
+  return key.includes('hang hong') || key.includes('hang_hong') || key.includes('hang-hong') || key.includes('damaged');
+}
+
+export function isGoodsWarehouseName(value?: string | null) {
+  const key = normalizeWarehouseNameKey(value);
+  return key.includes('hang hoa') || key.includes('hang_hoa') || key.includes('hang-hoa') || key.includes('goods');
+}
+
+export function isToolsWarehouseName(value?: string | null) {
+  const key = normalizeWarehouseNameKey(value);
+  return key.includes('cong cu dung cu') || key.includes('cong_cu_dung_cu') || key.includes('cong-cu-dung-cu') || key.includes('tools');
+}
+
+export function isProcessingWarehouseName(value?: string | null) {
+  const key = normalizeWarehouseNameKey(value);
+  return key.includes('gia cong') || key.includes('gia_cong') || key.includes('gia-cong') || key.includes('processing');
+}
+
+export function isFinishedGoodsWarehouseName(value?: string | null) {
+  const key = normalizeWarehouseNameKey(value);
+  if (!key) return false;
+  return (
+    key.includes('thanh pham') ||
+    key.includes('san pham') ||
+    key.includes('finished') ||
+    key.includes('kho sp')
+  );
+}
+
+/** Suy loại kho từ tên kho trong Quản lý kho. */
+export function inferWarehouseKindFromName(value?: string | null): WarehouseKind {
+  if (isFinishedGoodsWarehouseName(value)) return 'san_pham';
+  if (isDamagedGoodsWarehouseName(value)) return 'hang_hong';
+  if (isGoodsWarehouseName(value)) return 'hang_hoa';
+  if (isToolsWarehouseName(value)) return 'cong_cu_dung_cu';
+  if (isProcessingWarehouseName(value)) return 'gia_cong';
+  if (isRecycleWarehouseName(value)) return 'tai_che';
+  return 'nvl';
+}
+
+/**
+ * Kho vật tư (NVL, tái chế, hàng hỏng, hàng hóa, công cụ dụng cụ, gia công) và Kho thành phẩm
+ * do 2 người phụ trách khác nhau theo luồng nghiệp vụ → tách quyền Thêm/Sửa/Xóa theo loại kho.
+ */
+export function warehouseKindPermissionTab(kind: WarehouseKind): 'warehouse-slip-vat-tu' | 'warehouse-slip-thanh-pham' {
+  return kind === 'san_pham' ? 'warehouse-slip-thanh-pham' : 'warehouse-slip-vat-tu';
+}
+
+/** Quyền Thêm/Sửa/Xóa của người phụ trách Vật tư và người phụ trách Thành phẩm. */
+export function useWarehouseSlipAccess() {
+  return {
+    vatTu: useTabAccess('warehouse-slip-vat-tu'),
+    thanhPham: useTabAccess('warehouse-slip-thanh-pham')
+  };
+}
+
+/** Chọn bộ quyền tương ứng với loại kho đang thao tác. */
+export function pickWarehouseSlipAccess(
+  access: ReturnType<typeof useWarehouseSlipAccess>,
+  kind: WarehouseKind
+) {
+  return warehouseKindPermissionTab(kind) === 'warehouse-slip-thanh-pham' ? access.thanhPham : access.vatTu;
+}
+
 export function warehouseKindLabel(kind: WarehouseKind) {
-  return kind === 'san_pham' ? 'Kho Sản phẩm' : 'Kho NVL';
+  if (kind === 'san_pham') return 'Kho thành phẩm';
+  if (kind === 'hang_hong') return 'Kho hàng hỏng';
+  if (kind === 'hang_hoa') return 'Kho hàng hóa';
+  if (kind === 'cong_cu_dung_cu') return 'Kho công cụ dụng cụ';
+  if (kind === 'gia_cong') return 'Kho gia công';
+  if (kind === 'tai_che') return 'Kho tái chế';
+  return 'Kho NVL';
 }
 
 export function warehouseItemCodeLabel(kind: WarehouseKind) {
@@ -364,7 +683,6 @@ export function generateWarehouseSlipPreviewCode(slipType: WarehouseSlipType) {
 }
 
 export type WarehouseSlipPayloadItem = {
-  materialId?: string;
   code: string;
   name: string;
   unit: string;
@@ -375,64 +693,89 @@ export type WarehouseSlipPayloadItem = {
   quotaQuantity?: number;
   suggestedQuantity?: number;
   lineNote?: string;
-  materialClass: WarehouseMaterialClass;
-  phan_loai_nvl: WarehouseMaterialClass;
-  warehouseClass: WarehouseMaterialClass;
+  materialId?: string;
+  materialClass?: WarehouseMaterialClass;
+  phan_loai_nvl?: WarehouseMaterialClass;
+  warehouseClass?: WarehouseMaterialClass | string;
   machine?: string;
   weightKg?: number;
-  sourceInboundLineId?: string;
-  sourceInboundSlipCode?: string;
   nhomVthh?: string;
   nhom_vthh?: string;
   auxiliaryGroup?: string;
+  sourceInboundLineId?: string;
+  sourceInboundSlipCode?: string;
+  damagedReportRowId?: string;
+  acceptanceReportRowId?: string;
+  actualWeightImageUrl?: string;
+  actualWeightImagePublicId?: string;
+  isScanned?: boolean;
 };
 
 export function parseWarehouseSlipPayloadItems(
   lines: WarehouseSlipLineDraft[],
   warehouseKind: WarehouseKind,
-  options?: { allowMissingUnitPrice?: boolean; requireInboundLot?: boolean }
+  options?: {
+    allowMissingUnitPrice?: boolean;
+    requireInboundLot?: boolean;
+    includeDocumentQuantity?: boolean;
+  }
 ): { error: string } | { items: WarehouseSlipPayloadItem[] } {
   const itemLabel = warehouseKind === 'san_pham' ? 'sản phẩm' : 'NVL';
   const codeLabel = warehouseItemCodeLabel(warehouseKind);
   const allowMissingUnitPrice = options?.allowMissingUnitPrice ?? false;
   const requireInboundLot = options?.requireInboundLot ?? false;
+  const includeDocumentQuantity = options?.includeDocumentQuantity ?? false;
+  const isNvlKind = warehouseKind === 'nvl' || warehouseKind === 'tai_che';
 
   const rawPayloadItems = lines
     .map(line => {
       const quantity = parsePercentInput(line.quantity);
       const documentQuantity = parsePercentInput(line.documentQuantity ?? line.suggestedQuantity ?? '');
-      const tonDauCaMay = parsePercentInput(line.tonDauCaMay ?? '');
       const unitPrice = parseMoneyInput(line.unitPrice);
       const quotaQuantity = parsePercentInput(line.quotaQuantity ?? '');
       const suggestedQuantity = parsePercentInput(line.suggestedQuantity ?? '');
       const sourceInboundLineId = String(line.sourceInboundLineId || '').trim();
       const sourceInboundSlipCode = String(line.sourceInboundSlipCode || '').trim();
-      const materialClass =
-        warehouseKind === 'nvl'
-          ? normalizeWarehouseMaterialClass(line.warehouseClass)
-          : 'chua_phan_loai';
+      const damagedReportRowId = String(line.damagedReportRowId || '').trim();
+      const acceptanceReportRowId = String(line.acceptanceReportRowId || '').trim();
+      const actualWeightImageUrl = String(line.actualWeightImageUrl || '').trim();
+      const actualWeightImagePublicId = String(line.actualWeightImagePublicId || '').trim();
+      const tonDauCaMay = parsePercentInput(line.tonDauCaMay ?? '');
+      const materialId = String(line.materialId || '').trim();
+      const materialClass = isNvlKind
+        ? normalizeWarehouseMaterialClass(line.warehouseClass)
+        : 'chua_phan_loai';
       let effectivePerUnit = Number(line.normWeightPerUnitKg);
-      if ((!Number.isFinite(effectivePerUnit) || effectivePerUnit <= 0) && (materialClass === 'nvl_phu' || materialClass === 'nvl_chinh' || materialClass === 'chua_phan_loai')) {
+      if (
+        (!Number.isFinite(effectivePerUnit) || effectivePerUnit <= 0) &&
+        isNvlKind
+      ) {
         const groupKey = normalizeNhomVatTuPhuKey(
           line.auxiliaryGroup || line.productionName || line.name || line.code
         );
         effectivePerUnit = resolveAuxiliaryWeightPerUnit(groupKey, line.nhomVthh, line.unit) ?? 0;
       }
       const weightKg =
-        (materialClass === 'nvl_phu' || materialClass === 'nvl_chinh' || materialClass === 'chua_phan_loai') &&
-        Number.isFinite(quantity) && quantity > 0 &&
-        Number.isFinite(effectivePerUnit) && effectivePerUnit > 0
+        isNvlKind &&
+        Number.isFinite(quantity) &&
+        quantity > 0 &&
+        Number.isFinite(effectivePerUnit) &&
+        effectivePerUnit > 0
           ? Math.round(quantity * effectivePerUnit * 1000) / 1000
           : undefined;
-      const nhomVthh = warehouseKind === 'nvl' ? String(line.nhomVthh || '').trim() || undefined : undefined;
+      const nhomVthh = isNvlKind ? String(line.nhomVthh || '').trim() || undefined : undefined;
+      const lineMachine = String(line.machine || '').trim();
       return {
-        materialId: line.materialId?.trim() || undefined,
         code: line.code.trim(),
         name: line.name.trim(),
         unit: line.unit.trim(),
         quantity,
         documentQuantity:
-          Number.isFinite(documentQuantity) && documentQuantity > 0 ? documentQuantity : undefined,
+          includeDocumentQuantity && Number.isFinite(documentQuantity) && documentQuantity > 0
+            ? documentQuantity
+            : Number.isFinite(documentQuantity) && documentQuantity > 0
+              ? documentQuantity
+              : undefined,
         tonDauCaMay:
           Number.isFinite(tonDauCaMay) && tonDauCaMay >= 0 ? tonDauCaMay : undefined,
         unitPrice: Number.isFinite(unitPrice) && unitPrice >= 0 ? unitPrice : 0,
@@ -440,23 +783,29 @@ export function parseWarehouseSlipPayloadItems(
         suggestedQuantity:
           Number.isFinite(suggestedQuantity) && suggestedQuantity > 0 ? suggestedQuantity : undefined,
         lineNote: line.lineNote?.trim() || undefined,
+        materialId: materialId || undefined,
         materialClass,
-        // Gửi kèm tên cột DB và tên tương thích để không mất phân loại
-        // qua các bản API/server đang được triển khai khác nhau.
         phan_loai_nvl: materialClass,
         warehouseClass: materialClass,
-        machine: warehouseKind === 'nvl' ? String(line.machine || '').trim() || undefined : undefined,
+        machine: isNvlKind ? lineMachine || undefined : undefined,
         weightKg,
-        sourceInboundLineId: sourceInboundLineId || undefined,
-        sourceInboundSlipCode: sourceInboundSlipCode || undefined,
         nhomVthh,
         nhom_vthh: nhomVthh,
-        auxiliaryGroup: line.auxiliaryGroup?.trim() || undefined
+        auxiliaryGroup: line.auxiliaryGroup?.trim() || undefined,
+        sourceInboundLineId: sourceInboundLineId || undefined,
+        sourceInboundSlipCode: sourceInboundSlipCode || undefined,
+        damagedReportRowId: damagedReportRowId || undefined,
+        acceptanceReportRowId: acceptanceReportRowId || undefined,
+        actualWeightImageUrl: actualWeightImageUrl || undefined,
+        actualWeightImagePublicId: actualWeightImagePublicId || undefined,
+        isScanned: line.isScanned === true
       };
     })
     .filter(line => line.code || line.quantity);
 
-  const payloadItems = warehouseKind === 'nvl' ? mergeAuxiliaryWarehouseLines(rawPayloadItems) : rawPayloadItems;
+  const payloadItems = isNvlKind
+    ? mergeAuxiliaryWarehouseLines(rawPayloadItems)
+    : rawPayloadItems;
 
   if (payloadItems.length === 0) {
     return { error: `Vui lòng thêm ít nhất một dòng ${itemLabel}.` };
@@ -496,30 +845,46 @@ export function buildWarehouseSlipPrintData(
     recipient?: string;
     deliverer?: string;
     warehouseLocation?: string;
+    warehouseName?: string;
+    materials?: WarehouseWeightCatalogItem[];
+    products?: WarehouseWeightCatalogItem[];
   }
 ): WarehouseSlipPrintData {
-  const printLines = items.map(item => ({
-    code: item.code,
-    name: item.name,
-    unit: item.unit,
-    quantity: item.quantity,
-    documentQuantity: item.documentQuantity ?? item.suggestedQuantity ?? null,
-    tonDauCaMay: item.tonDauCaMay ?? null,
-    unitPrice: item.unitPrice,
-    lineAmount: Math.round(item.quantity * item.unitPrice * 100) / 100,
-    quotaQuantity: item.quotaQuantity ?? null,
-    suggestedQuantity: item.suggestedQuantity ?? null,
-    lineNote: item.lineNote,
-    materialClass: item.materialClass,
-    machine: item.machine,
-    weightKg: item.weightKg,
-    sourceInboundSlipCode: item.sourceInboundSlipCode,
-    nhomVthh: item.nhomVthh
-  }));
+  const weightKind = options.warehouseKind === 'san_pham' ? 'san_pham' : 'nvl';
+  const printLines = items.map(item => {
+    const weightKg = convertWarehouseQuantityToKg({
+      quantity: item.quantity,
+      unit: item.unit,
+      itemCode: item.code,
+      warehouseKind: weightKind,
+      materials: options.materials ?? [],
+      products: options.products ?? [],
+      preferTongKgOnly: true
+    });
+    return {
+      code: item.code,
+      name: item.name,
+      unit: item.unit,
+      quantity: item.quantity,
+      documentQuantity: item.documentQuantity ?? null,
+      unitPrice: item.unitPrice,
+      lineAmount: Math.round(item.quantity * item.unitPrice * 100) / 100,
+      weightKg,
+      quotaQuantity: item.quotaQuantity ?? item.quantity ?? null,
+      suggestedQuantity: item.suggestedQuantity ?? null,
+      lineNote: item.lineNote,
+      sourceInboundSlipCode: item.sourceInboundSlipCode
+    };
+  });
+
+  const mergedLines =
+    options.slipType === 'xuat' && options.warehouseKind !== 'san_pham'
+      ? mergeWarehousePrintLines(printLines)
+      : printLines;
 
   return {
     slipCode: options.slipCode,
-    slipType: options.slipType,
+    slipType: options.slipType === 'xuat' ? 'xuat' : 'nhap',
     warehouseKind: options.warehouseKind,
     slipDate: options.slipDate,
     reason: options.reason,
@@ -531,13 +896,121 @@ export function buildWarehouseSlipPrintData(
     recipient: options.recipient,
     deliverer: options.deliverer,
     warehouseLocation: options.warehouseLocation,
-    totalAmount: printLines.reduce((sum, line) => sum + line.lineAmount, 0),
-    lines: printLines
+    warehouseName: options.warehouseName,
+    totalAmount: mergedLines.reduce((sum, line) => sum + line.lineAmount, 0),
+    lines: mergedLines
   };
 }
 
 export function formatWarehouseMoney(value: number) {
   return formatMoney(value, 0);
+}
+
+/** So khớp mã bỏ qua khoảng trắng/hoa-thường — mã trong kho_nvl đôi khi bị nhập thiếu dấu cách so với mã gốc bên danh mục sản phẩm (VD "MT-MN043" vs "MT- MN043"). */
+function normalizeMaterialCodeKey(raw: string) {
+  return String(raw ?? '').replace(/\s+/g, '').toUpperCase();
+}
+
+function materialWarehouseNameKey(material: { warehouse?: string }) {
+  return normalizeWarehouseNameKey(material.warehouse === '-' ? '' : material.warehouse);
+}
+
+function materialHasCatalogTotalWeight(material: { totalWeight?: string }) {
+  const value = String(material.totalWeight || '').trim();
+  return Boolean(value && value !== '-');
+}
+
+/** Gộp mã NVL trùng — ưu tiên bản ghi đúng kho phiếu và có cột Tổng kg (quy đổi kg). */
+export function dedupeWarehouseSlipMaterials<T extends { code: string; warehouse?: string; totalWeight?: string }>(
+  materials: T[],
+  selectedWarehouseName: string
+): T[] {
+  const selectedWarehouseKey = normalizeWarehouseNameKey(selectedWarehouseName);
+  const byCode = new Map<string, T>();
+
+  const score = (item: T) => {
+    const warehouseKey = materialWarehouseNameKey(item);
+    let value = 0;
+    if (selectedWarehouseKey && warehouseKey === selectedWarehouseKey) value += 4;
+    if (materialHasCatalogTotalWeight(item)) value += 2;
+    if (warehouseKey) value += 1;
+    return value;
+  };
+
+  for (const material of materials) {
+    const codeKey = normalizeMaterialCodeKey(material.code);
+    if (!codeKey) continue;
+    const existing = byCode.get(codeKey);
+    if (!existing || score(material) > score(existing)) {
+      byCode.set(codeKey, material);
+    }
+  }
+
+  return [...byCode.values()];
+}
+
+function warehouseExportLineDraftMergeKey(line: Pick<WarehouseSlipLineDraft, 'code' | 'unit'>) {
+  return `${normalizeMaterialCodeKey(line.code)}|${String(line.unit || '').trim().toLowerCase()}`;
+}
+
+function sumWarehouseLineQtyText(left: string, right: string) {
+  const total = (parsePercentInput(left) || 0) + (parsePercentInput(right) || 0);
+  if (total <= 0) return '';
+  const formatted = formatNumber(total, 3);
+  return formatted.includes('.') ? formatted.replace(/\.?0+$/, '') : formatted;
+}
+
+/** Gộp dòng xuất NVL trùng mã + ĐVT trước khi lưu/in. */
+function mergeWarehouseExportLineDrafts(lines: WarehouseSlipLineDraft[]): WarehouseSlipLineDraft[] {
+  const map = new Map<string, WarehouseSlipLineDraft>();
+  const order: string[] = [];
+
+  for (const line of lines) {
+    const code = line.code.trim();
+    if (!code) {
+      const emptyKey = `__empty__${line.key}`;
+      map.set(emptyKey, line);
+      order.push(emptyKey);
+      continue;
+    }
+    const key = warehouseExportLineDraftMergeKey(line);
+    const existing = map.get(key);
+    if (existing) {
+      existing.quantity = sumWarehouseLineQtyText(existing.quantity, line.quantity);
+      existing.documentQuantity = sumWarehouseLineQtyText(existing.documentQuantity, line.documentQuantity);
+      existing.quotaQuantity = sumWarehouseLineQtyText(existing.quotaQuantity || '', line.quotaQuantity || '');
+      existing.suggestedQuantity = sumWarehouseLineQtyText(
+        existing.suggestedQuantity || '',
+        line.suggestedQuantity || ''
+      );
+      if (!existing.name && line.name) existing.name = line.name;
+      if (line.lineNote) {
+        existing.lineNote = existing.lineNote
+          ? [...new Set([existing.lineNote, line.lineNote].filter(Boolean))].join('; ')
+          : line.lineNote;
+      }
+    } else {
+      map.set(key, { ...line });
+      order.push(key);
+    }
+  }
+
+  return order.map(key => map.get(key)!);
+}
+
+/** Tiền tố trước dấu "_" — dùng để tra tên/ĐVT trong danh mục khi mã quét có hậu tố lô/serial (VD "L30cm_3701190208G" → "L30cm"). */
+function warehouseCodePrefix(raw: string) {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  const underscoreIdx = trimmed.indexOf('_');
+  return underscoreIdx > 0 ? trimmed.slice(0, underscoreIdx).trim() : trimmed;
+}
+
+/** Có hậu tố lô/serial sau dấu `_` (VD `MT-MN001_3701190208G`). Mã chỉ tiền tố → không chặn quét trùng. */
+function warehouseScanHasLotSuffix(raw: string) {
+  const trimmed = raw.trim();
+  const underscoreIdx = trimmed.indexOf('_');
+  return underscoreIdx > 0 && underscoreIdx < trimmed.length - 1;
 }
 
 export function createWarehouseLineDraft(): WarehouseSlipLineDraft {
@@ -558,7 +1031,12 @@ export function createWarehouseLineDraft(): WarehouseSlipLineDraft {
     machine: '',
     normWeightPerUnitKg: undefined,
     nhomVthh: '',
-    auxiliaryGroup: ''
+    auxiliaryGroup: '',
+    damagedReportRowId: '',
+    acceptanceReportRowId: '',
+    actualWeightImageUrl: '',
+    actualWeightImagePublicId: '',
+    isScanned: false
   };
 }
 
@@ -584,6 +1062,11 @@ export function createWarehouseLineDraftFromPrefill(
     | 'sourceInboundSlipCode'
     | 'nhomVthh'
     | 'auxiliaryGroup'
+    | 'damagedReportRowId'
+    | 'acceptanceReportRowId'
+    | 'actualWeightImageUrl'
+    | 'actualWeightImagePublicId'
+    | 'isScanned'
   >
 ): WarehouseSlipLineDraft {
   return {
@@ -609,7 +1092,12 @@ export function createWarehouseLineDraftFromPrefill(
     sourceInboundLineId: line.sourceInboundLineId || '',
     sourceInboundSlipCode: line.sourceInboundSlipCode || '',
     nhomVthh: line.nhomVthh || '',
-    auxiliaryGroup: line.auxiliaryGroup || ''
+    auxiliaryGroup: line.auxiliaryGroup || '',
+    damagedReportRowId: line.damagedReportRowId || '',
+    acceptanceReportRowId: line.acceptanceReportRowId || '',
+    actualWeightImageUrl: line.actualWeightImageUrl || '',
+    actualWeightImagePublicId: line.actualWeightImagePublicId || '',
+    isScanned: line.isScanned === true
   };
 }
 
@@ -624,19 +1112,48 @@ export function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow
     .map((entry): WarehouseMovementRow | null => {
       if (!entry || typeof entry !== 'object') return null;
       const record = entry as Record<string, unknown>;
-      const slipTypeRaw = String(record.loai_phieu ?? record.slipType ?? '').trim().toLowerCase();
-      const slipType: WarehouseSlipType = slipTypeRaw === 'xuat' ? 'xuat' : 'nhap';
+      const slipTypeRaw = String(record.loai_phieu ?? record.slipType ?? '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      const slipType: WarehouseSlipType =
+        slipTypeRaw === 'xuat' ||
+        slipTypeRaw === 'export' ||
+        slipTypeRaw === 'out' ||
+        slipTypeRaw.includes('xuat')
+          ? 'xuat'
+          : 'nhap';
       const maSp = String(record.ma_sp ?? record.productCode ?? '').trim();
       const maNpl = String(record.ma_npl ?? record.materialCode ?? '').trim();
       const tenSp = String(record.ten_sp ?? record.productName ?? '').trim();
       const tenNpl = String(record.ten_npl ?? record.materialName ?? '').trim();
       const warehouseKindRaw = String(record.loai_kho ?? record.warehouseKind ?? '').trim().toLowerCase();
+      const warehouseName = String(record.ten_kho ?? record.warehouseName ?? '').trim();
       // Có mã SP (không có mã NPL) → thành phẩm, kể cả bản ghi cũ thiếu/sai loai_kho
+      // Kho tái chế: loai_kho=tai_che hoặc tên kho chứa "tái chế"
       const warehouseKind: WarehouseKind =
-        warehouseKindRaw === 'san_pham' || (Boolean(maSp) && !maNpl) ? 'san_pham' : 'nvl';
+        warehouseKindRaw === 'san_pham' || (Boolean(maSp) && !maNpl)
+          ? 'san_pham'
+          : warehouseKindRaw === 'hang_hong' ||
+              warehouseKindRaw === 'hang-hong' ||
+              warehouseKindRaw === 'damaged' ||
+              isDamagedGoodsWarehouseName(warehouseName)
+            ? 'hang_hong'
+          : warehouseKindRaw === 'hang_hoa' || isGoodsWarehouseName(warehouseName)
+            ? 'hang_hoa'
+          : warehouseKindRaw === 'cong_cu_dung_cu' || isToolsWarehouseName(warehouseName)
+            ? 'cong_cu_dung_cu'
+          : warehouseKindRaw === 'gia_cong' || isProcessingWarehouseName(warehouseName)
+            ? 'gia_cong'
+          : warehouseKindRaw === 'tai_che' ||
+              warehouseKindRaw === 'tai-che' ||
+              warehouseKindRaw === 'recycle' ||
+              isRecycleWarehouseName(warehouseName)
+            ? 'tai_che'
+            : 'nvl';
       const quantity = Number(record.so_luong ?? record.quantity);
       const documentQuantity = Number(record.so_luong_chung_tu ?? record.documentQuantity);
-      const tonDauCaMay = Number(record.ton_dau_ca_may ?? record.tonDauCaMay);
       const unitPrice = Number(record.don_gia ?? record.unitPrice ?? record.price ?? 0);
       const lineAmountRaw = Number(record.thanh_tien ?? record.lineAmount ?? record.amount);
       const lineAmount = Number.isFinite(lineAmountRaw)
@@ -658,26 +1175,17 @@ export function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow
         slipCode: String(record.ma_phieu ?? record.slipCode ?? '').trim(),
         slipType,
         warehouseKind,
+        warehouseName,
         slipDate: String(record.ngay_phieu ?? record.slipDate ?? '').trim(),
         shift: String(record.ca ?? record.shift ?? record.ca_san_xuat ?? '').trim(),
-        machine: String(record.may ?? record.machine ?? '').trim(),
-        materialClass:
-          warehouseKind === 'nvl'
-            ? normalizeWarehouseMaterialClass(record.phan_loai_nvl ?? record.materialClass ?? record.warehouseClass)
-            : 'chua_phan_loai',
+        machine: String(record.may ?? record.ma_may ?? record.ten_may ?? record.machine ?? '').trim(),
         itemCode,
         itemName,
         unit: String(record.don_vi ?? record.unit ?? '').trim() || '-',
         quantity: Number.isFinite(quantity) ? quantity : 0,
         documentQuantity: Number.isFinite(documentQuantity) && documentQuantity > 0 ? documentQuantity : undefined,
-        tonDauCaMay: Number.isFinite(tonDauCaMay) && tonDauCaMay >= 0 ? tonDauCaMay : undefined,
         unitPrice: Number.isFinite(unitPrice) ? unitPrice : 0,
         lineAmount: Number.isFinite(lineAmount) ? lineAmount : 0,
-        weightKg:
-          Number.isFinite(Number(record.trong_luong_kg ?? record.weightKg)) &&
-          Number(record.trong_luong_kg ?? record.weightKg) > 0
-            ? Number(record.trong_luong_kg ?? record.weightKg)
-            : undefined,
         reason: String(record.ly_do ?? record.reason ?? '').trim(),
         note: String(record.ghi_chu ?? record.note ?? '').trim(),
         createdBy: String(record.nguoi_lap ?? record.nhan_su ?? record.createdBy ?? '').trim(),
@@ -685,218 +1193,40 @@ export function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow
         sourceInboundLineId: String(record.id_dong_nhap_nguon ?? record.sourceInboundLineId ?? '').trim() || undefined,
         sourceInboundSlipCode:
           String(record.ma_phieu_nhap_nguon ?? record.sourceInboundSlipCode ?? '').trim() || undefined,
-        nhomVthh: String(record.nhom_vthh ?? record.nhomVthh ?? '').trim() || undefined
+        damagedReportRowId:
+          String(record.id_bao_cao_hang_hong ?? record.damagedReportRowId ?? '').trim() || undefined,
+        acceptanceReportRowId:
+          String(record.id_bao_cao_nghiem_thu ?? record.acceptanceReportRowId ?? '').trim() || undefined,
+        treo: record.treo === true,
+        actualWeightImageUrl: String(record.link_anh_can_thuc_te ?? record.actualWeightImageUrl ?? '').trim() || undefined,
+        daIn: record.da_in === true
       };
     })
     .filter((row): row is WarehouseMovementRow => Boolean(row.id || row.slipCode));
 }
 
-/** 1 row bảng `phieu_xuat_nhap_kho_lich_su` = 1 lần sửa phiếu xuất kho NVL. */
-export interface WarehouseSlipHistoryEntry {
-  id: string;
-  createdAt: string;
-  maPhieu: string;
-  loaiPhieu: string;
-  loaiKho: string;
-  ngayPhieu: string;
-  ca: string;
-  nguoiSua: string;
-  snapshotCu: Record<string, unknown>[];
-  snapshotMoi: Record<string, unknown>[];
-}
-
-function asHistorySnapshot(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
-    : [];
-}
-
-export function normalizeWarehouseSlipHistory(data: unknown): WarehouseSlipHistoryEntry[] {
-  const list = data && typeof data === 'object' && Array.isArray((data as { history?: unknown }).history)
-    ? (data as { history: unknown[] }).history
-    : Array.isArray(data)
-      ? data
-      : [];
-  return list
-    .map((entry): WarehouseSlipHistoryEntry | null => {
-      if (!entry || typeof entry !== 'object') return null;
-      const record = entry as Record<string, unknown>;
-      return {
-        id: String(record.id ?? '').trim(),
-        createdAt: String(record.created_at ?? record.createdAt ?? '').trim(),
-        maPhieu: String(record.ma_phieu ?? record.slipCode ?? '').trim(),
-        loaiPhieu: String(record.loai_phieu ?? '').trim(),
-        loaiKho: String(record.loai_kho ?? '').trim(),
-        ngayPhieu: String(record.ngay_phieu ?? '').trim(),
-        ca: String(record.ca ?? '').trim(),
-        nguoiSua: String(record.nguoi_sua ?? '').trim(),
-        snapshotCu: asHistorySnapshot(record.snapshot_cu ?? record.snapshotCu),
-        snapshotMoi: asHistorySnapshot(record.snapshot_moi ?? record.snapshotMoi)
-      };
-    })
-    .filter((row): row is WarehouseSlipHistoryEntry => Boolean(row.maPhieu))
-    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-}
-
-export function formatWarehouseHistoryTime(value: string): string {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
-type HistorySnapshotField = {
-  key: string;
-  label: string;
-  format: (row: Record<string, unknown>) => string;
-  isChanged: (before: Record<string, unknown>, after: Record<string, unknown>) => boolean;
-};
-
-const HISTORY_NUMBER = (value: unknown, digits = 2) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? formatNumber(num, digits) : '';
-};
-
-const HISTORY_SNAPSHOT_FIELDS: HistorySnapshotField[] = [
-  { key: 'ten', label: 'Tên NVL', format: row => String(row.ten_npl ?? row.itemName ?? '').trim() || '—', isChanged: (a, b) => String(a.ten_npl ?? '').trim() !== String(b.ten_npl ?? '').trim() },
-  { key: 'don_vi', label: 'ĐVT', format: row => String(row.don_vi ?? row.unit ?? '').trim() || '—', isChanged: (a, b) => String(a.don_vi ?? '').trim() !== String(b.don_vi ?? '').trim() },
-  { key: 'may', label: 'Máy', format: row => String(row.may ?? row.machine ?? '').trim() || '—', isChanged: (a, b) => String(a.may ?? '').trim() !== String(b.may ?? '').trim() },
-  { key: 'ton_dau_ca_may', label: 'Tồn đầu ca', format: row => HISTORY_NUMBER(row.ton_dau_ca_may ?? row.tonDauCaMay), isChanged: (a, b) => Number(a.ton_dau_ca_may ?? a.tonDauCaMay ?? 0) !== Number(b.ton_dau_ca_may ?? b.tonDauCaMay ?? 0) },
-  { key: 'so_luong_chung_tu', label: 'SL CT', format: row => HISTORY_NUMBER(row.so_luong_chung_tu ?? row.documentQuantity), isChanged: (a, b) => Number(a.so_luong_chung_tu ?? a.documentQuantity ?? 0) !== Number(b.so_luong_chung_tu ?? b.documentQuantity ?? 0) },
-  { key: 'so_luong', label: 'SL thực', format: row => HISTORY_NUMBER(row.so_luong ?? row.quantity), isChanged: (a, b) => Number(a.so_luong ?? a.quantity ?? 0) !== Number(b.so_luong ?? b.quantity ?? 0) },
-  { key: 'don_gia', label: 'Giá', format: row => HISTORY_NUMBER(row.don_gia ?? row.unitPrice, 0), isChanged: (a, b) => Number(a.don_gia ?? a.unitPrice ?? 0) !== Number(b.don_gia ?? b.unitPrice ?? 0) },
-  { key: 'thanh_tien', label: 'Thành tiền', format: row => HISTORY_NUMBER(row.thanh_tien ?? row.lineAmount, 0), isChanged: (a, b) => Number(a.thanh_tien ?? a.lineAmount ?? 0) !== Number(b.thanh_tien ?? b.lineAmount ?? 0) }
-];
-
-function historySnapshotLineKey(row: Record<string, unknown>, index: number): string {
-  const code = String(row.ma_npl ?? row.itemCode ?? row.code ?? '').trim();
-  const machine = String(row.may ?? row.machine ?? '').trim().toLowerCase();
-  const cls = String(row.phan_loai_nvl ?? row.materialClass ?? '').trim().toLowerCase();
-  const unit = String(row.don_vi ?? row.unit ?? '').trim().toLowerCase();
-  const base = `${code}|${machine}|${cls}|${unit}`;
-  return base === '|||' ? `__dong_${index}` : `${base}#${index}`;
-}
-
-export interface WarehouseSlipHistoryFieldChange {
-  label: string;
-  before: string;
-  after: string;
-}
-
-export interface WarehouseSlipHistoryLineDiff {
-  key: string;
-  status: 'added' | 'removed' | 'changed' | 'unchanged';
-  code: string;
-  name: string;
-  changes: WarehouseSlipHistoryFieldChange[];
-}
-
-export interface WarehouseSlipHistoryDiff {
-  headerChanges: WarehouseSlipHistoryFieldChange[];
-  lineDiffs: WarehouseSlipHistoryLineDiff[];
-  addedCount: number;
-  removedCount: number;
-  changedCount: number;
-}
-
-const historyText = (value: unknown) => String(value ?? '').trim();
-
-export function diffWarehouseSlipSnapshots(
-  snapshotCu: Record<string, unknown>[],
-  snapshotMoi: Record<string, unknown>[]
-): WarehouseSlipHistoryDiff {
-  const headerOf = (rows: Record<string, unknown>[]) => rows[0] ?? {};
-  const before = headerOf(snapshotCu);
-  const after = headerOf(snapshotMoi);
-  const headerPairs: Array<[string, unknown, unknown]> = [
-    ['Ngày phiếu', before.ngay_phieu ?? '', after.ngay_phieu ?? ''],
-    ['Ca', before.ca ?? '', after.ca ?? ''],
-    ['Lý do', before.ly_do ?? '', after.ly_do ?? ''],
-    ['Ghi chú', before.ghi_chu ?? '', after.ghi_chu ?? ''],
-    ['Người lập', before.nguoi_lap ?? '', after.nguoi_lap ?? '']
-  ];
-  const headerChanges = headerPairs
-    .filter(([, a, b]) => historyText(a) !== historyText(b))
-    .map(([label, a, b]) => ({ label, before: historyText(a) || '—', after: historyText(b) || '—' }));
-
-  const beforeKeys = snapshotCu.map((row, index) => historySnapshotLineKey(row, index));
-  const afterKeys = snapshotMoi.map((row, index) => historySnapshotLineKey(row, index));
-  const beforeByKey = new Map(snapshotCu.map((row, index) => [beforeKeys[index], row] as const));
-  const afterByKey = new Map(snapshotMoi.map((row, index) => [afterKeys[index], row] as const));
-
-  const lineDiffs: WarehouseSlipHistoryLineDiff[] = [];
-  const seen = new Set<string>();
-  const pushLine = (key: string, status: WarehouseSlipHistoryLineDiff['status'], b?: Record<string, unknown>, a?: Record<string, unknown>) => {
-    if (seen.has(`${status}:${key}`)) return;
-    seen.add(`${status}:${key}`);
-    const ref = (a ?? b ?? {}) as Record<string, unknown>;
-    const changes: WarehouseSlipHistoryFieldChange[] = [];
-    if (status === 'changed' && b && a) {
-      HISTORY_SNAPSHOT_FIELDS.forEach(field => {
-        if (field.isChanged(b, a)) {
-          changes.push({ label: field.label, before: field.format(b) || '—', after: field.format(a) || '—' });
-        }
-      });
-    }
-    lineDiffs.push({
-      key,
-      status,
-      code: String(ref.ma_npl ?? ref.itemCode ?? ref.code ?? '').trim() || '—',
-      name: String(ref.ten_npl ?? ref.itemName ?? ref.name ?? '').trim(),
-      changes
-    });
-  };
-
-  beforeKeys.forEach((key, index) => {
-    const b = beforeByKey.get(key);
-    const a = afterByKey.get(key);
-    if (!b) return;
-    if (!a) pushLine(key, 'removed', b);
-    else if (HISTORY_SNAPSHOT_FIELDS.some(field => field.isChanged(b, a))) pushLine(key, 'changed', b, a);
-    else pushLine(key, 'unchanged', b, a);
-    void index;
-  });
-  afterKeys.forEach(key => {
-    if (!beforeByKey.has(key)) {
-      const a = afterByKey.get(key);
-      if (a) pushLine(key, 'added', undefined, a);
-    }
-  });
-
-  return {
-    headerChanges,
-    lineDiffs,
-    addedCount: lineDiffs.filter(line => line.status === 'added').length,
-    removedCount: lineDiffs.filter(line => line.status === 'removed').length,
-    changedCount: lineDiffs.filter(line => line.status === 'changed').length
-  };
-}
-
-export function summarizeWarehouseHistoryDiff(diff: WarehouseSlipHistoryDiff): string {
-  const parts: string[] = [];
-  if (diff.headerChanges.length > 0) parts.push(`${diff.headerChanges.length} thông tin phiếu`);
-  if (diff.changedCount > 0) parts.push(`sửa ${diff.changedCount} dòng`);
-  if (diff.addedCount > 0) parts.push(`thêm ${diff.addedCount} dòng`);
-  if (diff.removedCount > 0) parts.push(`xóa ${diff.removedCount} dòng`);
-  return parts.length > 0 ? parts.join(' · ') : 'Không đổi nội dung dòng';
-}
-
 export function mapWarehouseMovementsForShiftSummary(rows: WarehouseMovementRow[]): ShiftSummaryWarehouseMovement[] {
-  return rows.map(row => ({
-    id: row.id,
-    slipCode: row.slipCode,
-    slipDate: row.slipDate,
-    shift: row.shift,
-    slipType: row.slipType,
-    warehouseKind: row.warehouseKind,
-    itemCode: row.itemCode,
-    itemName: row.itemName,
-    unit: row.unit,
-    quantity: row.quantity,
-    unitPrice: Number.isFinite(row.unitPrice) ? row.unitPrice : 0,
-    createdBy: row.createdBy,
-    reason: row.reason || ''
-  }));
+  return rows
+    .filter(
+      (row): row is WarehouseMovementRow & { warehouseKind: 'nvl' | 'san_pham' } =>
+        row.warehouseKind === 'nvl' || row.warehouseKind === 'san_pham'
+    )
+    .map(row => ({
+      id: row.id,
+      slipCode: row.slipCode,
+      slipDate: row.slipDate,
+      shift: row.shift,
+      slipType: row.slipType,
+      warehouseKind: row.warehouseKind,
+      itemCode: row.itemCode,
+      itemName: row.itemName,
+      unit: row.unit,
+      quantity: row.quantity,
+      unitPrice: Number.isFinite(row.unitPrice) ? row.unitPrice : 0,
+      createdBy: row.createdBy,
+      reason: row.reason || '',
+      note: row.note || ''
+    }));
 }
 
 export type WarehouseProductionOrderOption = {
@@ -907,8 +1237,6 @@ export type WarehouseProductionOrderOption = {
   /** Trạng thái lệnh SX (trang_thai) — dùng để ẩn phiếu định mức của lệnh đã xong. */
   status: string;
   startDate: string;
-  /** ngay_ket_thuc — rỗng nếu lệnh SX chỉ chạy 1 ngày (startDate). */
-  endDate: string;
   lines: Array<{ code: string; name: string; unit: string; quantity: number | null }>;
 };
 
@@ -923,28 +1251,40 @@ function isWarehouseDoneOrderStatus(status?: string | null): boolean {
   return normalized === 'hoan thanh' || normalized === 'huy';
 }
 
-/** Chặn trên số ngày sinh ra từ 1 khoảng ngay_bat_dau..ngay_ket_thuc, phòng dữ liệu lỗi. */
-const WAREHOUSE_PRODUCTION_ORDER_MAX_SPAN_DAYS = 60;
+/** Chuẩn hóa ngày lệnh SX về YYYY-MM-DD (ưu tiên cột `ngay`, không cắt chuỗi datetime thô). */
+export function resolveWarehouseProductionOrderDate(record: Record<string, unknown>): string {
+  const candidates = [
+    pickText(record, ['ngay', 'ngay_san_xuat'], ''),
+    pickText(record, ['ngay_bat_dau'], ''),
+    pickText(record, ['ngay_gio_bat_dau', 'start_date'], '')
+  ];
 
-/** Sinh danh sách ngày (YYYY-MM-DD) từ startDate đến endDate (bao gồm 2 đầu). */
-export function expandWarehouseProductionOrderDates(startDate: string, endDate: string): string[] {
-  const start = new Date(`${startDate}T00:00:00`);
-  if (Number.isNaN(start.getTime())) return [];
-  const end = endDate ? new Date(`${endDate}T00:00:00`) : start;
-  if (Number.isNaN(end.getTime()) || end < start) return [startDate];
+  for (const raw of candidates) {
+    const trimmed = String(raw || '').trim();
+    if (!trimmed) continue;
 
-  const days: string[] = [];
-  const cursor = new Date(start);
-  while (cursor <= end && days.length < WAREHOUSE_PRODUCTION_ORDER_MAX_SPAN_DAYS) {
-    // Không dùng toISOString() ở đây vì nó chuyển 00:00 giờ local về ngày trước
-    // ở các múi giờ UTC+, khiến ngày kết thúc (ví dụ ngày 31) bị hiển thị thành ngày 30.
-    const year = cursor.getFullYear();
-    const month = String(cursor.getMonth() + 1).padStart(2, '0');
-    const day = String(cursor.getDate()).padStart(2, '0');
-    days.push(`${year}-${month}-${day}`);
-    cursor.setDate(cursor.getDate() + 1);
+    const iso = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+    const dmy = trimmed.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
+    if (dmy) {
+      return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+    }
+
+    const parsed = new Date(trimmed);
+    if (!Number.isNaN(parsed.getTime())) {
+      // Dùng UTC date cho chuỗi có offset Z/+00 — tránh lệch ngày local.
+      if (/[zZ]|[+\-]\d{2}:\d{2}$/.test(trimmed)) {
+        return parsed.toISOString().slice(0, 10);
+      }
+      const y = parsed.getFullYear();
+      const m = String(parsed.getMonth() + 1).padStart(2, '0');
+      const d = String(parsed.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
   }
-  return days;
+
+  return '';
 }
 
 function parseWarehouseProductionOrderLines(record: Record<string, unknown>) {
@@ -1012,223 +1352,72 @@ export function normalizeWarehouseProductionOrders(data: unknown): WarehouseProd
         shift: pickText(record, ['ca', 'shift'], ''),
         machine: pickText(record, ['may', 'ma_may', 'ten_may', 'machine'], ''),
         status: pickText(record, ['trang_thai', 'status', 'tinh_trang'], ''),
-        startDate: pickText(record, ['ngay_gio_bat_dau', 'ngay_bat_dau', 'ngay_san_xuat', 'start_date'], '').slice(0, 10),
-        endDate: pickText(record, ['ngay_gio_ket_thuc', 'ngay_ket_thuc', 'end_date'], '').slice(0, 10),
+        startDate: resolveWarehouseProductionOrderDate(record),
         lines: parseWarehouseProductionOrderLines(record)
       };
     })
     .filter((order): order is WarehouseProductionOrderOption => Boolean(order));
 }
 
-export function WarehouseSlipHistoryModal({
-  maPhieu,
-  open,
-  onClose
-}: {
-  maPhieu: string | null;
-  open: boolean;
-  onClose: () => void;
-}) {
-  const [entries, setEntries] = useState<WarehouseSlipHistoryEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+export function filterWarehouseProductionOrdersByDateShift(
+  orders: WarehouseProductionOrderOption[],
+  dateIso: string,
+  shifts: string[]
+) {
+  const ngay = String(dateIso || '').trim().slice(0, 10);
+  return orders.filter(order => {
+    if (ngay && order.startDate && order.startDate !== ngay) return false;
+    if (shifts.length === 0) return true;
+    return shifts.some(
+      shift => shiftNamesMatch(shift, order.shift) || shift === order.shift || !order.shift
+    );
+  });
+}
 
-  useEffect(() => {
-    if (!open || !maPhieu) return;
-    let cancelled = false;
-    const load = async () => {
-      setIsLoading(true);
-      setError('');
-      try {
-        const res = await fetch(`/api/phieu-xuat-nhap-kho/${encodeURIComponent(maPhieu)}/lich-su`);
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'Không thể tải lịch sử thay đổi.');
-        if (cancelled) return;
-        const normalized = normalizeWarehouseSlipHistory(data);
-        setEntries(normalized);
-        setExpandedId(normalized[0]?.id ?? null);
-      } catch (loadError: any) {
-        if (cancelled) return;
-        setEntries([]);
-        setError(loadError.message || 'Không thể tải lịch sử thay đổi.');
-      } finally {
-        if (!cancelled) setIsLoading(false);
+function mergeWarehouseProductLinesFromOrders(orders: WarehouseProductionOrderOption[]) {
+  const merged = new Map<string, { code: string; name: string; unit: string; quantity: number }>();
+  for (const order of orders) {
+    for (const line of order.lines) {
+      const code = line.code.trim();
+      if (!code) continue;
+      const key = code.toLowerCase();
+      const qty = Number(line.quantity);
+      const existing = merged.get(key);
+      if (existing) {
+        if (Number.isFinite(qty) && qty > 0) existing.quantity += qty;
+        if (!existing.name && line.name) existing.name = line.name;
+        if (!existing.unit && line.unit) existing.unit = line.unit;
+      } else {
+        merged.set(key, {
+          code,
+          name: line.name || code,
+          unit: line.unit || '',
+          quantity: Number.isFinite(qty) && qty > 0 ? qty : 0
+        });
       }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [open, maPhieu]);
-
-  const diffs = useMemo(
-    () => new Map(entries.map(entry => [entry.id, diffWarehouseSlipSnapshots(entry.snapshotCu, entry.snapshotMoi)] as const)),
-    [entries]
-  );
-
-  if (!open) return null;
-
-  const statusStyle: Record<WarehouseSlipHistoryLineDiff['status'], string> = {
-    added: 'bg-emerald-100 text-emerald-800',
-    removed: 'bg-rose-100 text-rose-700',
-    changed: 'bg-amber-100 text-amber-800',
-    unchanged: 'bg-zinc-100 text-zinc-500'
-  };
-  const statusLabel: Record<WarehouseSlipHistoryLineDiff['status'], string> = {
-    added: 'Thêm',
-    removed: 'Xóa',
-    changed: 'Sửa',
-    unchanged: 'Giữ nguyên'
-  };
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:max-h-[88vh] sm:rounded-2xl">
-        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
-          <div>
-            <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Lịch sử thay đổi</h3>
-            <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-              {maPhieu || '—'} · {entries.length} lần sửa
-            </p>
-          </div>
-          <BackButton onClick={onClose} />
-        </div>
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
-          {isLoading ? (
-            <p className="flex items-center gap-1.5 text-xs font-bold text-zinc-500">
-              <Loader2 className="h-4 w-4 animate-spin" /> Đang tải lịch sử thay đổi...
-            </p>
-          ) : error ? (
-            <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>
-          ) : entries.length === 0 ? (
-            <p className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-bold text-zinc-500">
-              Phiếu này chưa có lần sửa nào được lưu.
-            </p>
-          ) : (
-            entries.map((entry, entryIndex) => {
-              const diff = diffs.get(entry.id);
-              const summary = diff ? summarizeWarehouseHistoryDiff(diff) : '';
-              const expanded = expandedId === entry.id;
-              const visibleLines = (diff?.lineDiffs ?? []).filter(line => line.status !== 'unchanged');
-              const unchangedCount = (diff?.lineDiffs ?? []).filter(line => line.status === 'unchanged').length;
-              return (
-                <div key={entry.id || `${entryIndex}`} className="overflow-hidden rounded-xl border border-zinc-200">
-                  <button
-                    type="button"
-                    onClick={() => setExpandedId(expanded ? null : entry.id)}
-                    className="flex w-full flex-wrap items-center gap-2 bg-zinc-50 px-3 py-2.5 text-left transition hover:bg-zinc-100"
-                  >
-                    <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-[10px] font-black text-white">
-                      Lần {entries.length - entryIndex}
-                    </span>
-                    <span className="font-mono text-xs font-black text-zinc-900">
-                      {formatWarehouseHistoryTime(entry.createdAt)}
-                    </span>
-                    <span className="text-xs font-bold text-zinc-600">
-                      {entry.nguoiSua ? `Người sửa: ${entry.nguoiSua}` : 'Không rõ người sửa'}
-                    </span>
-                    <span className="text-[11px] font-semibold text-zinc-500">{summary}</span>
-                    <ChevronDown className={`ml-auto h-4 w-4 text-zinc-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                  </button>
-                  {expanded && diff ? (
-                    <div className="space-y-2 border-t border-zinc-200 bg-white px-3 py-3">
-                      {diff.headerChanges.length > 0 ? (
-                        <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
-                          <p className="text-[10px] font-black uppercase tracking-wider text-sky-700">Thông tin phiếu đổi</p>
-                          <ul className="mt-1 space-y-0.5">
-                            {diff.headerChanges.map(change => (
-                              <li key={change.label} className="text-xs font-semibold text-zinc-700">
-                                {change.label}: <span className="font-mono text-rose-700 line-through">{change.before}</span>
-                                {' → '}
-                                <span className="font-mono text-emerald-700">{change.after}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-                      {visibleLines.length === 0 ? (
-                        <p className="text-xs font-semibold text-zinc-500">Không đổi nội dung dòng NVL.</p>
-                      ) : (
-                        <table className="min-w-full text-left text-xs">
-                          <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
-                            <tr>
-                              <th className="px-2 py-1.5 font-black">Mã NVL</th>
-                              <th className="px-2 py-1.5 font-black">Thay đổi</th>
-                              <th className="px-2 py-1.5 font-black">Trạng thái</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-zinc-100">
-                            {visibleLines.map(line => (
-                              <tr key={line.key}>
-                                <td className="px-2 py-1.5 font-bold text-zinc-900">
-                                  {line.code}
-                                  {line.name && line.name !== '—' ? (
-                                    <span className="block max-w-[220px] truncate font-semibold text-zinc-500" title={line.name}>
-                                      {line.name}
-                                    </span>
-                                  ) : null}
-                                </td>
-                                <td className="px-2 py-1.5">
-                                  {line.status === 'added' ? (
-                                    <span className="font-bold text-emerald-700">Dòng mới thêm</span>
-                                  ) : line.status === 'removed' ? (
-                                    <span className="font-bold text-rose-700">Dòng bị xóa</span>
-                                  ) : (
-                                    <ul className="space-y-0.5">
-                                      {line.changes.map(change => (
-                                        <li key={change.label} className="font-semibold text-zinc-700">
-                                          {change.label}:{' '}
-                                          <span className="font-mono text-rose-700">{change.before}</span>
-                                          {' → '}
-                                          <span className="font-mono text-emerald-700">{change.after}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  )}
-                                </td>
-                                <td className="px-2 py-1.5">
-                                  <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-black ${statusStyle[line.status]}`}>
-                                    {statusLabel[line.status]}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
-                      {unchangedCount > 0 ? (
-                        <p className="text-[11px] font-semibold text-zinc-400">{unchangedCount} dòng giữ nguyên.</p>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
-    </div>
-  );
+    }
+  }
+  return [...merged.values()].sort((a, b) => a.code.localeCompare(b.code, 'vi'));
 }
 
 export function WarehouseSlipPanel({
   onBack,
-  onOpenHistory
+  onOpenHistory,
+  currentUser
 }: {
   onBack: () => void;
   onOpenHistory: () => void;
+  currentUser?: AuthUser | null;
 }) {
+  const loginName = String(currentUser?.name ?? '').trim();
   const [warehouseKind, setWarehouseKind] = useState<WarehouseKind>('nvl');
-  // Ma trận phân quyền hiện tại tách Vật tư / Thành phẩm; vẫn chấp nhận quyền warehouse-slip cũ.
-  const legacyAccess = useTabAccess('warehouse-slip');
-  const vatTuAccess = useTabAccess('warehouse-slip-vat-tu');
-  const thanhPhamAccess = useTabAccess('warehouse-slip-thanh-pham');
-  const kindAccess = warehouseKind === 'san_pham' ? thanhPhamAccess : vatTuAccess;
-  const canCreate = legacyAccess.canCreate || kindAccess.canCreate;
-  const canEdit = legacyAccess.canEdit || kindAccess.canEdit;
-  const canDelete = legacyAccess.canDelete || kindAccess.canDelete;
+  const warehouseAccess = useWarehouseSlipAccess();
+  const { canCreate, canEdit, canDelete } = pickWarehouseSlipAccess(warehouseAccess, warehouseKind);
+  const [warehouseName, setWarehouseName] = useState('');
+  const [warehouseOptions, setWarehouseOptions] = useState<string[]>([]);
   const [slipType, setSlipType] = useState<WarehouseSlipType>('nhap');
+  /** true = đang ở tab "Xuất kho treo" — form chờ nhận dữ liệu báo cáo hàng hỏng; bấm Lưu sẽ tạo phiếu xuất chính thức. */
+  const [isXuatTreoMode, setIsXuatTreoMode] = useState(false);
   const [slipDate, setSlipDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
@@ -1243,7 +1432,7 @@ export function WarehouseSlipPanel({
   const [selectedShifts, setSelectedShifts] = useState<string[]>([]);
   const [recipient, setRecipient] = useState('');
   const [deliverer, setDeliverer] = useState('');
-  const [warehouseLocation, setWarehouseLocation] = useState('Phú Thọ');
+  const [warehouseLocation, setWarehouseLocation] = useState('Đà Nẵng');
   const [lines, setLines] = useState<WarehouseSlipLineDraft[]>(() => [createWarehouseLineDraft()]);
   const [itemOptions, setItemOptions] = useState<MaterialOption[]>([]);
   const [weightCatalog, setWeightCatalog] = useState<WarehouseWeightCatalogItem[]>([]);
@@ -1272,18 +1461,193 @@ export function WarehouseSlipPanel({
   const [printSlip, setPrintSlip] = useState<WarehouseSlipPrintData | null>(null);
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [printAutoTrigger, setPrintAutoTrigger] = useState(false);
+  const [pendingQrLabels, setPendingQrLabels] = useState<ProductQrPrintLabel[]>([]);
+  const [qrPrintOpen, setQrPrintOpen] = useState(false);
+  const [qrPrintAutoTrigger, setQrPrintAutoTrigger] = useState(false);
   const [editSlipCode, setEditSlipCode] = useState<string | null>(null);
-  const [showEditHistory, setShowEditHistory] = useState(false);
+  const [uploadingLineImageKey, setUploadingLineImageKey] = useState<string | null>(null);
+  const [viewingSlipImage, setViewingSlipImage] = useState<WeighingPreviewImage | null>(null);
+  const [scanningDrafts, setScanningDrafts] = useState<WarehouseScanningDraft[]>(readWarehouseScanningDrafts);
+  const [activeScanningDraftId, setActiveScanningDraftId] = useState<string | null>(null);
+  const [lastDraftSavedAt, setLastDraftSavedAt] = useState<number | null>(null);
   const [shiftSettings, setShiftSettings] = useState<ReturnType<typeof normalizeShiftSettings>>([]);
+  const [machineOptions, setMachineOptions] = useState<WarehouseMachineOption[]>([]);
+  const [isLoadingMachines, setIsLoadingMachines] = useState(false);
   const [productionOrders, setProductionOrders] = useState<WarehouseProductionOrderOption[]>([]);
+  const [isAutofillingFromOrders, setIsAutofillingFromOrders] = useState(false);
+  const [isAutofillingFromCanTuDong, setIsAutofillingFromCanTuDong] = useState(false);
   const [isLoadingProductionOrders, setIsLoadingProductionOrders] = useState(true);
+  const [pendingDamagedReports, setPendingDamagedReports] = useState<PendingDamagedReport[]>([]);
+  const [isLoadingDamagedReports, setIsLoadingDamagedReports] = useState(false);
+  const [damagedReportsError, setDamagedReportsError] = useState('');
+  const [reviewingDamagedReportKey, setReviewingDamagedReportKey] = useState('');
+  const damagedReportsRequestSeqRef = useRef(0);
+
+  const clearSavedPrint = () => {
+    setPrintSlip(null);
+    setPrintAutoTrigger(false);
+    setPendingQrLabels([]);
+  };
   const [mixingNormRecords, setMixingNormRecords] = useState<Record<string, unknown>[]>([]);
   const [isLoadingMixingNorms, setIsLoadingMixingNorms] = useState(true);
   const [normLoadMessage, setNormLoadMessage] = useState('');
   // Phiếu trộn định mức mà CHÍNH phiếu đang sửa đã chọn (giữ để tương thích draft cũ).
   const [, setOwnInstanceKeys] = useState<Set<string>>(new Set());
+  const [tonDauCaSource, setTonDauCaSource] = useState<SoTronPrevTonSource | null>(null);
 
   const shiftOptions = useMemo(() => getProductionShiftOptions(shiftSettings), [shiftSettings]);
+  const machineSelectOptions = useMemo<WarehouseMachineSelectOption[]>(() => {
+    const options = machineOptions
+      .map(machineOption => ({
+        ...machineOption,
+        label: [machineOption.code, machineOption.name].filter(Boolean).join(' - ')
+      }))
+      .sort((first, second) =>
+        first.code.localeCompare(second.code, undefined, { numeric: true, sensitivity: 'base' })
+      );
+    const currentValue = machine.trim();
+    if (
+      currentValue &&
+      !options.some(option =>
+        [option.label, option.code, option.name].some(value => value.trim().toLowerCase() === currentValue.toLowerCase())
+      )
+    ) {
+      options.unshift({ id: `current-${currentValue}`, code: '', name: currentValue, label: currentValue });
+    }
+    return options;
+  }, [machine, machineOptions]);
+  const ownedScanningDrafts = useMemo(
+    () => scanningDrafts.filter(draft => String(draft.owner || '').trim() === loginName),
+    [scanningDrafts, loginName]
+  );
+  const selectedWarehouseName = warehouseName.trim();
+  // Ca/Máy hiện khi đã chọn tên kho vật tư (NVL hoặc tái chế) — giống luồng xuất NVL trên main.
+  const showNvlShiftAndMachine =
+    Boolean(selectedWarehouseName) && (warehouseKind === 'nvl' || warehouseKind === 'tai_che');
+  const productionReportLoai: 'thanh_pham' | 'gia_cong' | 'sp_loi' | 'sp_rac' | null = !selectedWarehouseName
+    ? null
+    : isFinishedGoodsWarehouseName(warehouseName)
+      ? 'thanh_pham'
+      : isProcessingWarehouseName(warehouseName)
+        ? 'gia_cong'
+        : isDamagedGoodsWarehouseName(warehouseName)
+          ? 'sp_loi'
+          : isTrashWarehouseName(warehouseName)
+            ? 'sp_rac'
+            : null;
+  const productionReportLoaiLabel =
+    productionReportLoai === 'thanh_pham'
+      ? 'Thành phẩm'
+      : productionReportLoai === 'gia_cong'
+        ? 'Gia công'
+        : productionReportLoai === 'sp_loi'
+          ? 'SP lỗi'
+          : productionReportLoai === 'sp_rac'
+            ? 'SP rác'
+            : '';
+  const showPendingProductionReports =
+    Boolean(productionReportLoai) && slipType === 'nhap' && !isXuatTreoMode && !editSlipCode;
+
+  useEffect(() => {
+    if (editSlipCode) return;
+    if (!loginName) return;
+    setCreatedBy(prev => (prev.trim() ? prev : loginName));
+  }, [editSlipCode, loginName]);
+
+  const loadPendingDamagedReports = async () => {
+    const requestSeq = ++damagedReportsRequestSeqRef.current;
+    if (!productionReportLoai || !slipDate) {
+      setPendingDamagedReports([]);
+      setDamagedReportsError('');
+      setIsLoadingDamagedReports(false);
+      return;
+    }
+    setIsLoadingDamagedReports(true);
+    setDamagedReportsError('');
+    try {
+      const params = new URLSearchParams({ loai: productionReportLoai, ngay: slipDate });
+      const res = await fetch(`/api/bao-cao-san-luong/cho-nhap-kho?${params.toString()}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+          throw new Error(readApiErrorMessage(res, data, 'Không thể tải báo cáo sản lượng chờ nhập kho.'));
+      }
+      if (requestSeq !== damagedReportsRequestSeqRef.current) return;
+      setPendingDamagedReports(Array.isArray(data?.records) ? data.records : []);
+    } catch (error: any) {
+      if (requestSeq !== damagedReportsRequestSeqRef.current) return;
+      setPendingDamagedReports([]);
+      setDamagedReportsError(error?.message || 'Không thể tải báo cáo sản lượng chờ nhập kho.');
+    } finally {
+      if (requestSeq === damagedReportsRequestSeqRef.current) {
+        setIsLoadingDamagedReports(false);
+      }
+    }
+  };
+
+  const handleReviewDamagedReport = (report: PendingDamagedReport) => {
+    clearSavedPrint();
+    setSlipType('nhap');
+    setIsXuatTreoMode(false);
+    // Giữ nguyên kho thủ kho đang chọn; chỉ suy lại loại kho cho chắc.
+    setWarehouseKind(inferWarehouseKindFromName(warehouseName));
+    setSlipDate(report.productionDate || report.reportDate || slipDate || new Date().toISOString().slice(0, 10));
+    setSelectedShifts(report.shift ? [report.shift] : []);
+    setReason(`Nhập kho từ báo cáo sản lượng ${report.documentNo}`);
+    setNote([report.machine, report.note].filter(Boolean).join(' · '));
+    setMachine(report.machine || '');
+    setDeliverer(report.weigher || '');
+    setLines(
+      report.items.map(item => ({
+        ...createWarehouseLineDraft(),
+        code: item.code,
+        name: item.name,
+        unit: item.unit || (productionReportLoai === 'sp_loi' || productionReportLoai === 'sp_rac' ? 'kg' : ''),
+        quantity: String(item.quantity),
+        unitPrice: '',
+        acceptanceReportRowId: item.reportRowId
+      }))
+    );
+    setReviewingDamagedReportKey(report.key);
+    setEditSlipCode(null);
+    setFormError('');
+    setActionMessage(
+      `Đã nạp báo cáo ${report.documentNo}. Kiểm tra dữ liệu rồi bấm Lưu phiếu nhập kho.`
+    );
+    window.setTimeout(() => {
+      document.querySelector('[data-warehouse-slip-form]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+  };
+
+  useEffect(() => {
+    if (!showPendingProductionReports || !slipDate) {
+      damagedReportsRequestSeqRef.current += 1;
+      setPendingDamagedReports([]);
+      setDamagedReportsError('');
+      setIsLoadingDamagedReports(false);
+      return;
+    }
+    void loadPendingDamagedReports();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPendingProductionReports, productionReportLoai, slipDate]);
+
+  useEffect(() => {
+    const loadWarehouses = async () => {
+      try {
+        const res = await fetch('/api/quan-ly-kho');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const records: Array<{ ten_kho?: string }> = Array.isArray(data?.records) ? data.records : [];
+        setWarehouseOptions(
+          Array.from(new Set(records.map(record => String(record.ten_kho ?? '').trim()).filter(Boolean))).sort((a, b) =>
+            a.localeCompare(b, 'vi')
+          )
+        );
+      } catch {
+        setWarehouseOptions([]);
+      }
+    };
+    void loadWarehouses();
+  }, []);
 
   useEffect(() => {
     const loadProductionOrders = async () => {
@@ -1339,6 +1703,35 @@ export function WarehouseSlipPanel({
   }, []);
 
   useEffect(() => {
+    const loadMachines = async () => {
+      setIsLoadingMachines(true);
+      try {
+        const res = await fetch('/api/danh-sach-may');
+        const data = await res.json().catch(() => ({}));
+        const records = Array.isArray(data?.machines) ? data.machines : [];
+        if (!res.ok) throw new Error();
+        setMachineOptions(
+          records
+            .map((record: unknown, index: number) => {
+              if (!record || typeof record !== 'object') return null;
+              const source = record as Record<string, unknown>;
+              const code = String(source.ma_may ?? source.code ?? '').trim();
+              const name = String(source.ten_may ?? source.name ?? '').trim();
+              if (!code && !name) return null;
+              return { id: String(source.id ?? code ?? name ?? index), code, name };
+            })
+            .filter((item): item is WarehouseMachineOption => Boolean(item))
+        );
+      } catch {
+        setMachineOptions([]);
+      } finally {
+        setIsLoadingMachines(false);
+      }
+    };
+    void loadMachines();
+  }, []);
+
+  useEffect(() => {
     const rawDraft = localStorage.getItem(STORAGE_WAREHOUSE_SLIP_DRAFT_KEY);
     if (!rawDraft) return;
 
@@ -1347,27 +1740,54 @@ export function WarehouseSlipPanel({
       if (!draft || !Array.isArray(draft.lines) || draft.lines.length === 0) return;
       if (!draft.createdAt || Date.now() - draft.createdAt > WAREHOUSE_SLIP_DRAFT_MAX_AGE_MS) return;
 
-      setWarehouseKind(draft.warehouseKind === 'san_pham' ? 'san_pham' : 'nvl');
+      {
+        const draftName = String(draft.warehouseName || '').trim();
+        const draftKind: WarehouseKind =
+          draft.warehouseKind === 'san_pham' ||
+          draft.warehouseKind === 'tai_che' ||
+          draft.warehouseKind === 'hang_hong' ||
+          draft.warehouseKind === 'hang_hoa' ||
+          draft.warehouseKind === 'cong_cu_dung_cu' ||
+          draft.warehouseKind === 'gia_cong'
+            ? draft.warehouseKind
+            : draft.warehouseKind === 'nvl'
+              ? 'nvl'
+              : inferWarehouseKindFromName(draftName);
+        const resolvedKind = draftName ? inferWarehouseKindFromName(draftName) : draftKind;
+        const draftAccess = pickWarehouseSlipAccess(warehouseAccess, resolvedKind);
+        const editingCode = String(draft.editSlipCode || '').trim();
+        if (!(editingCode ? draftAccess.canEdit : draftAccess.canCreate)) {
+          setFormError(
+            editingCode
+              ? 'Bạn không có quyền sửa phiếu thuộc kho này.'
+              : 'Bạn không có quyền lập phiếu thuộc kho này.'
+          );
+          return;
+        }
+        setWarehouseName(draftName);
+        setWarehouseKind(resolvedKind);
+      }
+      clearSavedPrint();
       setSlipType(draft.slipType === 'nhap' ? 'nhap' : 'xuat');
+      setIsXuatTreoMode(false);
       if (draft.slipDate) setSlipDate(draft.slipDate);
-      setReason(draft.reason || '');
+      setReason(stripProductionOrderCodesFromReason(draft.reason || ''));
       setNote(draft.note || '');
-      setCreatedBy(draft.createdBy || '');
-      if (Array.isArray(draft.lenhSxDaChon) && draft.lenhSxDaChon.length > 0) {
-        const ownKeys = draft.lenhSxDaChon.map(lenhSxInstanceKey);
-        setProductionOrderCodes(ownKeys);
-        setOwnInstanceKeys(new Set(ownKeys));
-      } else {
-        setProductionOrderCodes(parseWarehouseProductionOrderSelection(draft.productionOrderRef));
-        setOwnInstanceKeys(new Set());
+      setCreatedBy(draft.createdBy?.trim() || loginName);
+      {
+        const fromRef = parseWarehouseProductionOrderSelection(draft.productionOrderRef);
+        const fromText = extractLinkedProductionOrderCodes(draft.reason, draft.note);
+        setProductionOrderCodes(fromRef.length > 0 ? fromRef : fromText);
       }
       setProductionOrderSearch('');
       setMachine(draft.machine || '');
       setSelectedShifts(parseWarehouseShiftSelection(draft.shift));
       setRecipient(draft.recipient || '');
       setDeliverer(draft.deliverer || draft.recipient || '');
-      setWarehouseLocation(draft.warehouseLocation || 'Phú Thọ');
-      setLines(draft.lines.map(createWarehouseLineDraftFromPrefill));
+      setWarehouseLocation(draft.warehouseLocation || 'Đà Nẵng');
+      const draftLines = draft.lines.map(createWarehouseLineDraftFromPrefill);
+      setLines(draft.slipType === 'nhap' ? draftLines : sortWarehouseLinesKgFirst(draftLines));
+      // Catalog Tổng kg có thể chưa kịp load — xếp lại theo khối lượng khi weightCatalog sẵn sàng.
       const editingCode = String(draft.editSlipCode || '').trim();
       if (editingCode) {
         setEditSlipCode(editingCode);
@@ -1383,41 +1803,79 @@ export function WarehouseSlipPanel({
     }
   }, []);
 
+  const reloadWarehouseCatalogRef = useRef<(() => Promise<void>) | null>(null);
+
   useEffect(() => {
     const loadItems = async () => {
       setIsLoadingItems(true);
       try {
-        if (warehouseKind === 'san_pham') {
+        // Kho hàng hóa cũng dùng danh mục sản phẩm làm mã chuẩn để QR sinh ra
+        // luôn giữ đúng `san_pham.ma_sp` (không lấy mã biến thể từ kho NVL).
+        if (warehouseKind === 'san_pham' || warehouseKind === 'hang_hoa') {
           const res = await fetch('/api/san-pham?format=table');
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.error || 'Không thể tải danh sách sản phẩm.');
           const products = normalizeProducts(data);
+          // Chỉ hiển thị sản phẩm đúng nhóm của kho đang chọn.
+          const selectableProducts =
+            warehouseKind === 'hang_hoa'
+              ? products.filter(
+                  product => isGoodsWarehouseName(product.warehouse) || isGoodsWarehouseName(product.nature)
+                )
+              : products.filter(
+                  product =>
+                    !isGoodsWarehouseName(product.warehouse) &&
+                    (isFinishedGoodsWarehouseName(product.nature) ||
+                      isFinishedGoodsWarehouseName(product.warehouse))
+                );
           setItemOptions(
-            products.map(product => ({
-              id: product.id,
+            selectableProducts.map(product => ({
               code: product.code,
               name: product.name,
               unit: product.unit && product.unit !== '-' ? product.unit : ''
             }))
           );
-          setWeightCatalog(products.map(mapProductToWeightCatalogItem));
+          setWeightCatalog(selectableProducts.map(mapProductToWeightCatalogItem));
         } else {
-          const res = await fetch('/api/kho-nvl');
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(data.error || 'Không thể tải kho NVL.');
+          const [khoRes, spRes] = await Promise.all([
+            fetch('/api/kho-nvl'),
+            fetch('/api/san-pham?format=table')
+          ]);
+          const data = await khoRes.json().catch(() => ({}));
+          if (!khoRes.ok) throw new Error(data.error || 'Không thể tải kho NVL.');
           const materials = normalizeMaterialsInventory(data);
+
+          // Mã trong kho_nvl đôi khi bị nhập thiếu dấu cách so với mã gốc bên danh mục sản
+          // phẩm (VD "MT-MN043" vs "MT- MN043") — quy về đúng mã gốc để khớp giữa các kho.
+          const productData = await spRes.json().catch(() => ({}));
+          const canonicalCodeByKey = new Map<string, string>();
+          if (spRes.ok) {
+            for (const product of normalizeProducts(productData)) {
+              const key = normalizeMaterialCodeKey(product.code);
+              if (key) canonicalCodeByKey.set(key, product.code);
+            }
+          }
+
+          const selectedWarehouseKey = normalizeWarehouseNameKey(warehouseName);
+          // Các kho vật tư gợi ý theo tên kho đã chọn trong Quản lý kho; NVL chưa được gán kho
+          // (phần lớn danh mục hiện nay) vẫn hiển thị để không chặn việc chọn mã.
+          const filteredMaterials = selectedWarehouseKey
+            ? materials.filter(material => {
+                const materialWarehouseKey = normalizeWarehouseNameKey(
+                  material.warehouse === '-' ? '' : material.warehouse
+                );
+                return !materialWarehouseKey || materialWarehouseKey === selectedWarehouseKey;
+              })
+            : materials;
+          const selectableMaterials = dedupeWarehouseSlipMaterials(filteredMaterials, warehouseName);
           setItemOptions(
-            materials.map(material => ({
-              id: material.id,
-              code: material.code,
+            selectableMaterials.map(material => ({
+              code: canonicalCodeByKey.get(normalizeMaterialCodeKey(material.code)) || material.code,
               name: material.name,
-              productionName: material.productionName,
-              unit: material.unit && material.unit !== '-' ? material.unit : '',
-              phanLoai: material.phanLoai,
-              nhomVatTuPhu: material.auxiliaryMaterialGroup
+              unit: material.unit && material.unit !== '-' ? material.unit : ''
             }))
           );
-          setWeightCatalog(materials.map(mapMaterialToWeightCatalogItem));
+          setWeightCatalog(selectableMaterials.map(mapMaterialToWeightCatalogItem));
         }
       } catch {
         setItemOptions([]);
@@ -1427,69 +1885,62 @@ export function WarehouseSlipPanel({
       }
     };
 
-    loadItems();
-  }, [warehouseKind]);
+    reloadWarehouseCatalogRef.current = loadItems;
+    void loadItems();
+  }, [warehouseKind, warehouseName]);
 
   useEffect(() => {
-    if (warehouseKind !== 'nvl' || itemOptions.length === 0) return;
-    setLines(current => {
-      let changed = false;
-      const next = current.map(line => {
-        if (!line.code.trim()) return line;
-        const material = itemOptions.find(option => option.code === line.code);
-        if (!material) return line;
-        const materialId = String(material.id || '').trim();
-        const auxiliaryGroup = String(material.nhomVatTuPhu || '').trim();
-        const productionName = line.productionName || material.productionName || '';
-        if (
-          line.materialId === materialId &&
-          line.auxiliaryGroup === auxiliaryGroup &&
-          line.productionName === productionName
-        ) return line;
-        changed = true;
-        return { ...line, materialId, auxiliaryGroup, productionName };
-      });
-      return changed ? next : current;
-    });
-  }, [warehouseKind, itemOptions]);
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void reloadWarehouseCatalogRef.current?.();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
 
-  const handleWarehouseKindChange = (kind: WarehouseKind) => {
-    setWarehouseKind(kind);
-    setLines([createWarehouseLineDraft()]);
-    setAvgInboundPriceByKey({});
+  const handleRefreshWeightCatalog = () => {
+    void reloadWarehouseCatalogRef.current?.();
+    showAppToast('Đã tải lại Tổng kg từ kho NVL — cột Quy đổi kg cập nhật theo dữ liệu mới.');
+  };
+
+  const handleWarehouseNameChange = (name: string) => {
+    const nextName = name.trim();
+    const nextKind = nextName ? inferWarehouseKindFromName(nextName) : warehouseKind;
+    const kindChanged = nextKind !== warehouseKind;
+    setWarehouseName(nextName);
+    if (kindChanged) {
+      setWarehouseKind(nextKind);
+      setLines([createWarehouseLineDraft()]);
+      setAvgInboundPriceByKey({});
+    }
+    if (!nextName || nextKind !== 'nvl') {
+      setSelectedShifts([]);
+      setMachine('');
+    }
     setFormError('');
     setActionMessage('');
-    // Đổi loại kho đổi luôn ý nghĩa của lựa chọn lệnh SX (mã đơn thuần vs mã::ngày::ca) — reset để tránh lẫn.
-    setProductionOrderCodes([]);
-    setOwnInstanceKeys(new Set());
   };
 
-  const handleSlipTypeChange = (type: WarehouseSlipType) => {
-    setSlipType(type);
-    setProductionOrderCodes([]);
-    setOwnInstanceKeys(new Set());
-  };
+  const warehouseSelectOptions = useMemo(() => {
+    // Chỉ gợi ý những kho người dùng có quyền lập phiếu (Vật tư / Thành phẩm đúng người phụ trách).
+    const names = warehouseOptions.filter(
+      name => {
+        const access = pickWarehouseSlipAccess(warehouseAccess, inferWarehouseKindFromName(name));
+        return editSlipCode ? access.canEdit : access.canCreate;
+      }
+    );
+    return names;
+  }, [
+    warehouseOptions,
+    editSlipCode,
+    warehouseAccess.vatTu.canCreate,
+    warehouseAccess.vatTu.canEdit,
+    warehouseAccess.thanhPham.canCreate,
+    warehouseAccess.thanhPham.canEdit
+  ]);
 
   const updateLine = (key: string, patch: Partial<WarehouseSlipLineDraft>) => {
     setLines(current => current.map(line => (line.key === key ? { ...line, ...patch } : line)));
-  };
-
-  /** Cập nhật Nhóm VTHH và tính lại normWeightPerUnitKg theo công thức Băng Dính / Tem */
-  const updateLineNhomVthh = (key: string, nhomVthh: string) => {
-    setLines(current => current.map(line => {
-      if (line.key !== key) return line;
-      const catalog = itemOptions.find(item =>
-        Boolean(line.materialId && item.id === line.materialId) ||
-        normalizeMaterialKey(item.code) === normalizeMaterialKey(line.code) ||
-        normalizeMaterialKey(item.name) === normalizeMaterialKey(line.name)
-      );
-      const groupKey = normalizeNhomVatTuPhuKey(
-        line.auxiliaryGroup || catalog?.nhomVatTuPhu || line.productionName || line.name || line.code
-      );
-      const unit = (catalog?.unit || line.unit || '').trim().toLowerCase();
-      const normWeightPerUnitKg = resolveAuxiliaryWeightPerUnit(groupKey, nhomVthh, unit);
-      return { ...line, nhomVthh, normWeightPerUnitKg, warehouseClass: 'nvl_phu' as const };
-    }));
   };
 
   const formatSuggestedUnitPrice = (avg: number) =>
@@ -1555,42 +2006,50 @@ export function WarehouseSlipPanel({
     }
   };
 
-  const pickItem = (key: string, identity: string) => {
-    const item =
-      itemOptions.find(option => option.id === identity) ||
-      itemOptions.find(option => option.code === identity);
-    const code = item?.code || identity;
-    const isExportNvl = warehouseKind === 'nvl' && slipType === 'xuat';
-    const materialCode = code.trim();
+  /**
+   * Mã có thể mang hậu tố lô/serial (quét QR, VD "L30cm_3701190208G") không khớp đúng danh mục
+   * — tra tên/ĐVT theo tiền tố trước "_", nhưng vẫn lưu nguyên mã đầy đủ vào dòng phiếu.
+   */
+  const resolveLinePatchForCode = (fullCode: string, currentLine?: WarehouseSlipLineDraft) => {
+    const prefixKey = normalizeMaterialCodeKey(warehouseCodePrefix(fullCode));
+    const item = itemOptions.find(option => normalizeMaterialCodeKey(option.code) === prefixKey);
+    // Mã quét mang hậu tố lô/serial chỉ dùng để tra danh mục và chống trùng khi quét — dòng
+    // phiếu (ô Mã NPL/SP) chỉ lưu đúng mã gốc/tiền tố, không mang hậu tố.
+    const canonicalCode = item?.code || warehouseCodePrefix(fullCode);
+    const isExportNvl = (warehouseKind === 'nvl' || warehouseKind === 'tai_che') && slipType === 'xuat';
     const cachedAvg =
-      isExportNvl && materialCode
-        ? avgInboundPriceByKey[avgPriceCacheKey(materialCode, slipDate)]
-        : undefined;
+      isExportNvl && canonicalCode ? avgInboundPriceByKey[avgPriceCacheKey(canonicalCode, slipDate)] : undefined;
     const immediatePrice =
       typeof cachedAvg === 'number' && cachedAvg > 0 ? formatSuggestedUnitPrice(cachedAvg) : '';
 
-    const nhomVatTuPhu = (item as MaterialOption | undefined)?.nhomVatTuPhu || '';
+    const nhomVatTuPhu = item?.nhomVatTuPhu || '';
     const groupKey = normalizeNhomVatTuPhuKey(
-      nhomVatTuPhu || item?.productionName || item?.name || code
+      nhomVatTuPhu || item?.productionName || item?.name || canonicalCode
     );
     const isTapeOrStamp = isTapeOrStampMaterial(groupKey);
-    const phanLoai = (item as MaterialOption | undefined)?.phanLoai || '';
-    const autoWarehouseClass = isTapeOrStamp || normalizeWarehouseMaterialClass(phanLoai) === 'nvl_phu'
-      ? 'nvl_phu'
-      : normalizeWarehouseMaterialClass(phanLoai) === 'nvl_chinh'
-        ? 'nvl_chinh'
-        : undefined;
+    const phanLoai = item?.phanLoai || '';
+    const autoWarehouseClass =
+      isTapeOrStamp || normalizeWarehouseMaterialClass(phanLoai) === 'nvl_phu'
+        ? 'nvl_phu'
+        : normalizeWarehouseMaterialClass(phanLoai) === 'nvl_chinh'
+          ? 'nvl_chinh'
+          : undefined;
+    // Giữ phân loại đã gán từ nút Thêm NVL chính/phụ hoặc từ PTĐM nếu catalog chưa rõ.
+    const currentClass = normalizeWarehouseMaterialClass(currentLine?.warehouseClass);
+    const keepCurrentClass = currentClass === 'nvl_chinh' || currentClass === 'nvl_phu';
 
-    updateLine(key, {
+    return {
       materialId: item?.id || '',
-      code,
+      code: canonicalCode,
       name: item?.name || '',
       productionName: item?.productionName || '',
       unit: item?.unit || '',
-      normWeightPerUnitKg: undefined,
-      auxiliaryGroup: nhomVatTuPhu,
-      ...(isTapeOrStamp ? { nhomVthh: '', warehouseClass: 'nvl_phu' } : {}),
-      ...(autoWarehouseClass && !isTapeOrStamp ? { warehouseClass: autoWarehouseClass } : {}),
+      auxiliaryGroup: nhomVatTuPhu || currentLine?.auxiliaryGroup || '',
+      ...(isTapeOrStamp ? { nhomVthh: currentLine?.nhomVthh || '', warehouseClass: 'nvl_phu' as const } : {}),
+      ...(!isTapeOrStamp && autoWarehouseClass ? { warehouseClass: autoWarehouseClass } : {}),
+      ...(!isTapeOrStamp && !autoWarehouseClass && keepCurrentClass
+        ? { warehouseClass: currentClass }
+        : {}),
       ...(isExportNvl
         ? {
             sourceInboundLineId: '',
@@ -1599,7 +2058,14 @@ export function WarehouseSlipPanel({
             unitPrice: immediatePrice
           }
         : {})
-    });
+    };
+  };
+
+  const pickItem = (key: string, code: string) => {
+    const materialCode = code.trim();
+    const isExportNvl = (warehouseKind === 'nvl' || warehouseKind === 'tai_che') && slipType === 'xuat';
+    const currentLine = lines.find(line => line.key === key);
+    updateLine(key, resolveLinePatchForCode(materialCode, currentLine));
     if (isExportNvl && materialCode) {
       void loadNvlAvgInboundPrice(materialCode, slipDate, {
         lineKey: key,
@@ -1609,7 +2075,312 @@ export function WarehouseSlipPanel({
     }
   };
 
-  const isNvlExport = warehouseKind === 'nvl' && slipType === 'xuat';
+  const [qrScannerOpen, setQrScannerOpen] = useState(false);
+  const [scannerMode, setScannerMode] = useState<'hardware' | 'camera'>('camera');
+  // Theo dõi `lines` bằng ref để quét liên tiếp (nhiều mã trong 1 nhịp camera) không bị đọc dữ
+  // liệu cũ khi state React chưa kịp render lại giữa hai lần quét.
+  const linesRef = useRef(lines);
+  useEffect(() => {
+    linesRef.current = lines;
+  }, [lines]);
+
+  /**
+   * Nhập kho và Xuất kho là hai phiếu độc lập. Không giữ các dòng của form
+   * trước khi người dùng đổi loại phiếu, vì điều này làm NVL vừa tự điền cho
+   * phiếu xuất xuất hiện nhầm trong phiếu nhập (và ngược lại).
+   */
+  const handleSlipModeChange = (nextSlipType: WarehouseSlipType, nextIsXuatTreoMode: boolean) => {
+    const modeChanged = slipType !== nextSlipType || isXuatTreoMode !== nextIsXuatTreoMode;
+    if (!modeChanged) return;
+
+    clearSavedPrint();
+    setSlipType(nextSlipType);
+    setIsXuatTreoMode(nextIsXuatTreoMode);
+    setReason('');
+    setNote('');
+    setProductionOrderCodes([]);
+    setProductionOrderSearch('');
+    setProductionOrderPickerOpen(false);
+    setMachine('');
+    setSelectedShifts([]);
+    setRecipient('');
+    setDeliverer('');
+    setAvgInboundPriceByKey({});
+    setFormError('');
+    setActionMessage('');
+    const emptyLines = [createWarehouseLineDraft()];
+    linesRef.current = emptyLines;
+    setLines(emptyLines);
+  };
+
+  // Ô Mã NPL/SP chỉ lưu tiền tố (mã gốc trong danh mục), không mang hậu tố lô/serial — nên
+  // phải nhớ riêng từng mã đầy đủ (tiền tố+hậu tố) đã quét theo tiền tố để chống quét trùng tem.
+  // Tổng SL trên modal: cộng SL các dòng đã quét (mã chỉ tiền tố quét lại vẫn tăng SL).
+  const scannedFullCodesByPrefixRef = useRef<Map<string, Set<string>>>(new Map());
+  const scannedItemCount = (() => {
+    let total = 0;
+    for (const prefixKey of scannedFullCodesByPrefixRef.current.keys()) {
+      const line = lines.find(
+        entry => entry.code.trim() && normalizeMaterialCodeKey(entry.code.trim()) === prefixKey
+      );
+      if (line) {
+        const parsed = parsePercentInput(line.quantity);
+        total += Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+      } else {
+        total += scannedFullCodesByPrefixRef.current.get(prefixKey)?.size ?? 0;
+      }
+    }
+    return total;
+  })();
+
+  const buildCurrentScanningDraft = (id: string, updatedAt = Date.now()): WarehouseScanningDraft => ({
+    id,
+    updatedAt,
+    owner: loginName,
+    scannedFullCodes: Object.fromEntries(
+      [...scannedFullCodesByPrefixRef.current.entries()].map(([prefix, codes]) => [prefix, [...codes]])
+    ),
+    slipType: 'nhap',
+    warehouseKind,
+    warehouseName,
+    slipDate,
+    reason,
+    note,
+    createdBy: createdBy.trim() || loginName,
+    productionOrderRef: formatWarehouseProductionOrderSelection(productionOrderCodes),
+    machine,
+    shift: formatWarehouseShiftSelection(selectedShifts),
+    recipient,
+    deliverer,
+    warehouseLocation,
+    createdAt: updatedAt,
+    lines: lines.map(line => ({
+      code: line.code,
+      name: line.name,
+      unit: line.unit,
+      quantity: line.quantity,
+      documentQuantity: line.documentQuantity,
+      unitPrice: line.unitPrice,
+      quotaQuantity: line.quotaQuantity,
+      suggestedQuantity: line.suggestedQuantity,
+      lineNote: line.lineNote,
+      sourceInboundLineId: line.sourceInboundLineId,
+      sourceInboundSlipCode: line.sourceInboundSlipCode,
+      damagedReportRowId: line.damagedReportRowId
+    }))
+  });
+
+  const persistScanningDraft = (requestedId?: string | null) => {
+    if (slipType !== 'nhap' || editSlipCode || !lines.some(line => line.code.trim())) return null;
+    const id = requestedId || activeScanningDraftId || createWarehouseScanningDraftId();
+    const updatedAt = Date.now();
+    const draft = buildCurrentScanningDraft(id, updatedAt);
+    setScanningDrafts(current => {
+      const next = [draft, ...current.filter(item => item.id !== id)];
+      writeWarehouseScanningDrafts(next);
+      return next;
+    });
+    setActiveScanningDraftId(id);
+    setLastDraftSavedAt(updatedAt);
+    return id;
+  };
+
+  const loadScanningDraft = (draftId: string) => {
+    if (!draftId) return;
+    if (activeScanningDraftId && activeScanningDraftId !== draftId) {
+      persistScanningDraft(activeScanningDraftId);
+    }
+    const draft = scanningDrafts.find(item => item.id === draftId);
+    if (!draft) return;
+    const draftAccess = pickWarehouseSlipAccess(warehouseAccess, draft.warehouseKind);
+    if (!draftAccess.canCreate) {
+      setFormError('Bạn không có quyền tiếp tục phiếu tạm thuộc kho này.');
+      return;
+    }
+    clearSavedPrint();
+    setSlipType('nhap');
+    setIsXuatTreoMode(false);
+    setWarehouseKind(draft.warehouseKind);
+    setWarehouseName(draft.warehouseName || '');
+    setSlipDate(draft.slipDate || new Date().toISOString().slice(0, 10));
+    setReason(draft.reason || '');
+    setNote(draft.note || '');
+    setCreatedBy(draft.createdBy || loginName);
+    setProductionOrderCodes(parseWarehouseProductionOrderSelection(draft.productionOrderRef));
+    setProductionOrderSearch('');
+    setMachine(draft.machine || '');
+    setSelectedShifts(parseWarehouseShiftSelection(draft.shift));
+    setRecipient(draft.recipient || '');
+    setDeliverer(draft.deliverer || '');
+    setWarehouseLocation(draft.warehouseLocation || 'Đà Nẵng');
+    const restoredLines = draft.lines.map(createWarehouseLineDraftFromPrefill);
+    linesRef.current = restoredLines;
+    setLines(restoredLines);
+    scannedFullCodesByPrefixRef.current = new Map(
+      Object.entries((draft.scannedFullCodes || {}) as Record<string, string[]>).map(([prefix, codes]) => [
+        prefix,
+        new Set(codes)
+      ])
+    );
+    setActiveScanningDraftId(draft.id);
+    setLastDraftSavedAt(draft.updatedAt);
+    setEditSlipCode(null);
+    setFormError('');
+    setActionMessage(`Đã mở phiếu đang quét, lưu tạm lúc ${formatWarehouseDraftUpdatedAt(draft.updatedAt)}.`);
+  };
+
+  const handleSaveScanningDraft = () => {
+    if (!warehouseName.trim()) {
+      setFormError('Vui lòng chọn tên kho trước khi lưu tạm phiếu.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!lines.some(line => line.code.trim())) {
+      setFormError('Vui lòng quét hoặc nhập ít nhất một mã trước khi lưu tạm phiếu.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    const savedDraftId = persistScanningDraft(activeScanningDraftId);
+    if (!savedDraftId) return;
+    const message = 'Đã lưu tạm phiếu. Phiếu chưa ghi lịch sử và chưa cập nhật tồn kho.';
+    setFormError('');
+    setActionMessage(message);
+    showAppToast(message);
+  };
+
+  const deleteActiveScanningDraft = () => {
+    if (!activeScanningDraftId) return;
+    if (!window.confirm('Xóa phiếu đang quét này khỏi danh sách lưu tạm?')) return;
+    const next = scanningDrafts.filter(draft => draft.id !== activeScanningDraftId);
+    writeWarehouseScanningDrafts(next);
+    setScanningDrafts(next);
+    setActiveScanningDraftId(null);
+    setLastDraftSavedAt(null);
+    const emptyLines = [createWarehouseLineDraft()];
+    linesRef.current = emptyLines;
+    scannedFullCodesByPrefixRef.current.clear();
+    setLines(emptyLines);
+    setActionMessage('Đã xóa phiếu lưu tạm.');
+  };
+
+  useEffect(() => {
+    if (slipType !== 'nhap' || editSlipCode || !lines.some(line => line.code.trim())) return;
+    const timer = window.setTimeout(() => persistScanningDraft(), 300);
+    return () => window.clearTimeout(timer);
+  }, [
+    warehouseKind,
+    warehouseName,
+    slipType,
+    slipDate,
+    reason,
+    note,
+    createdBy,
+    productionOrderCodes,
+    machine,
+    selectedShifts,
+    recipient,
+    deliverer,
+    warehouseLocation,
+    lines,
+    editSlipCode
+  ]);
+
+  /**
+   * Quét/nhận một mã: 1 mã = tiền tố (trước "_") + hậu tố lô/serial (nếu có).
+   * - Có hậu tố và trùng đúng mã đầy đủ đã quét → báo lỗi, không cộng.
+   * - Chỉ tiền tố (không hậu tố) → quét lại vẫn cộng dồn SL.
+   * - Cùng tiền tố, khác hậu tố → cộng dồn 1 vào SL thực của dòng đã có, không thêm dòng mới.
+   * - Chưa gặp tiền tố này → thêm dòng mới, SL thực = 1. Ô Mã NPL/SP chỉ lưu tiền tố.
+   */
+  const addLineFromScan = (raw: string): boolean | 'duplicate' => {
+    const fullCode = String(raw ?? '').trim();
+    if (!fullCode) return false;
+    const current = linesRef.current;
+    const prefix = warehouseCodePrefix(fullCode);
+    const prefixKey = normalizeMaterialCodeKey(prefix);
+    const fullCodeKey = normalizeMaterialCodeKey(fullCode);
+    const hasLotSuffix = warehouseScanHasLotSuffix(fullCode);
+
+    const scannedForPrefix = scannedFullCodesByPrefixRef.current.get(prefixKey);
+    // Chỉ chặn trùng khi tem có hậu tố serial. Tem chỉ mã gốc → cho phép quét lại để đếm SL.
+    if (hasLotSuffix && scannedForPrefix?.has(fullCodeKey)) {
+      return 'duplicate';
+    }
+
+    const prefixIndex = current.findIndex(
+      line => line.code.trim() && normalizeMaterialCodeKey(line.code.trim()) === prefixKey
+    );
+
+    if (prefixIndex >= 0) {
+      if (hasLotSuffix) {
+        if (scannedForPrefix) {
+          scannedForPrefix.add(fullCodeKey);
+        } else {
+          scannedFullCodesByPrefixRef.current.set(prefixKey, new Set([fullCodeKey]));
+        }
+      } else if (!scannedFullCodesByPrefixRef.current.has(prefixKey)) {
+        // Đánh dấu tiền tố đã quét để Tổng SL / phiếu tạm vẫn nhận diện dòng này.
+        scannedFullCodesByPrefixRef.current.set(prefixKey, new Set([fullCodeKey]));
+      }
+      const nextLines = current.map((line, idx) => {
+        if (idx !== prefixIndex) return line;
+        const parsed = parsePercentInput(line.quantity);
+        const nextQty = (Number.isFinite(parsed) && parsed > 0 ? parsed : 0) + 1;
+        return { ...line, quantity: formatNumber(nextQty, 3), isScanned: true };
+      });
+      linesRef.current = nextLines;
+      setLines(nextLines);
+      return true;
+    }
+
+    // Mã không thuộc danh mục của kho đang chọn (VD quét nhầm tem NVL trong lúc đang lập
+    // phiếu Kho hàng hóa) — không thêm dòng để tránh lẫn dữ liệu giữa các kho.
+    const belongsToWarehouse = itemOptions.some(
+      option => normalizeMaterialCodeKey(option.code) === prefixKey
+    );
+    if (!belongsToWarehouse) {
+      return false;
+    }
+
+    scannedFullCodesByPrefixRef.current.set(prefixKey, new Set([fullCodeKey]));
+
+    const emptyIndex = current.findIndex(line => !line.code.trim());
+    const currentLine = emptyIndex >= 0 ? current[emptyIndex] : undefined;
+    const patch = {
+      ...resolveLinePatchForCode(fullCode, currentLine),
+      quantity: '1',
+      isScanned: true
+    };
+    const canonicalCode = patch.code;
+    let targetKey: string;
+    let nextLines: WarehouseSlipLineDraft[];
+    if (emptyIndex >= 0 && currentLine) {
+      targetKey = currentLine.key;
+      nextLines = current.map((line, idx) => (idx === emptyIndex ? { ...line, ...patch } : line));
+    } else {
+      const draft = createWarehouseLineDraft();
+      targetKey = draft.key;
+      nextLines = [...current, { ...draft, ...patch }];
+    }
+    linesRef.current = nextLines;
+    setLines(nextLines);
+
+    if ((warehouseKind === 'nvl' || warehouseKind === 'tai_che') && slipType === 'xuat') {
+      void loadNvlAvgInboundPrice(canonicalCode, slipDate, {
+        lineKey: targetKey,
+        applySuggestion: true,
+        forceOverwrite: true
+      });
+    }
+    return true;
+  };
+
+  const isMaterialWarehouse = warehouseKind === 'nvl' || warehouseKind === 'tai_che';
+  const isNvlExport = isMaterialWarehouse && slipType === 'xuat' && !isXuatTreoMode;
+  const isNvlInbound = isMaterialWarehouse && slipType === 'nhap';
+  // Xuất kho NVL (không treo): chọn PTĐM → tự điền dòng NVL từ định mức.
+  // Xuất kho treo dùng báo cáo hàng hỏng, không dùng PTĐM.
+  const showOrderFields = isNvlExport;
 
   type PickerOption = {
     key: string;
@@ -1653,7 +2424,13 @@ export function WarehouseSlipPanel({
           return null;
         }
         const productionOrder = productionOrderByCode.get(normalizeMaterialKey(orderCode));
-        const mayRaw = String(record.may ?? (record as Record<string, unknown>).ma_may ?? (record as Record<string, unknown>).ten_may ?? productionOrder?.machine ?? '').trim();
+        const mayRaw = String(
+          record.may ??
+            (record as Record<string, unknown>).ma_may ??
+            (record as Record<string, unknown>).ten_may ??
+            productionOrder?.machine ??
+            ''
+        ).trim();
         return {
           key: lenhSxInstanceKey({ dinh_muc_id: normId, ma_lenh_sx: orderCode, ngay, ca }),
           normId,
@@ -1686,9 +2463,17 @@ export function WarehouseSlipPanel({
     }));
   }, [isNvlExport, nvlExportInstances, productionOrders]);
 
-  function formatPickerOptionLabel(option: { orderCode: string; ngay: string; ca: string; machine?: string; normName?: string }): string {
+  function formatPickerOptionLabel(option: {
+    orderCode: string;
+    ngay: string;
+    ca: string;
+    machine?: string;
+    normName?: string;
+  }): string {
     if (option.normName) return option.normName;
-    return [option.orderCode, formatPickerDate(option.ngay), option.ca, option.machine].filter(Boolean).join(' · ');
+    return [option.orderCode, formatPickerDate(option.ngay), option.ca, option.machine]
+      .filter(Boolean)
+      .join(' · ');
   }
 
   useEffect(() => {
@@ -1721,6 +2506,107 @@ export function WarehouseSlipPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNvlExport, slipDate, avgInboundPriceByKey]);
 
+  // Tồn đầu ca = tồn cuối sổ trộn ca trước logic (Ngày + Ca form + Máy PTĐM).
+  const lineMaterialFingerprint = lines
+    .map(line => `${line.materialId}|${line.code}|${line.machine}`)
+    .join(';;');
+  useEffect(() => {
+    if (!isNvlExport) {
+      setTonDauCaSource(null);
+      return;
+    }
+    const ca = String(selectedShifts[0] || '').trim();
+    if (!slipDate || !ca) {
+      setTonDauCaSource(null);
+      return;
+    }
+    const machines = [
+      ...new Set(
+        [
+          ...lines.map(line => String(line.machine || '').trim()),
+          ...String(machine || '')
+            .split(',')
+            .map(part => part.trim())
+        ].filter(Boolean)
+      )
+    ];
+    const hasMaterials = lines.some(line => String(line.materialId || line.code || '').trim());
+    if (machines.length === 0 || !hasMaterials) {
+      setTonDauCaSource(null);
+      return;
+    }
+
+    let alive = true;
+    const controller = new AbortController();
+    void (async () => {
+      const mapsByMachine = new Map<string, Map<string, number>>();
+      let source: SoTronPrevTonSource | null = null;
+      for (const may of machines) {
+        try {
+          const result = await fetchSoTronPrevShiftTon({
+            ngay: slipDate,
+            ca,
+            maMay: may,
+            tenMay: may,
+            shiftOptions,
+            shiftSettings,
+            signal: controller.signal
+          });
+          mapsByMachine.set(may.toLowerCase(), result.tonByMaterialKey);
+          if (!source && result.source) source = result.source;
+        } catch {
+          /* bỏ qua lỗi từng máy */
+        }
+      }
+      if (!alive) return;
+      setTonDauCaSource(source);
+      setLines(current => {
+        let changed = false;
+        const next = current.map(line => {
+          const lineMay =
+            String(line.machine || '').trim() ||
+            String(machine || '')
+              .split(',')
+              .map(part => part.trim())
+              .find(Boolean) ||
+            '';
+          let ton: number | undefined;
+          if (lineMay) {
+            const map = mapsByMachine.get(lineMay.toLowerCase());
+            if (map) ton = lookupSoTronPrevTon(map, line.materialId, line.code);
+          }
+          if (ton === undefined) {
+            for (const map of mapsByMachine.values()) {
+              ton = lookupSoTronPrevTon(map, line.materialId, line.code);
+              if (ton !== undefined) break;
+            }
+          }
+          if (ton === undefined) return line;
+          const text = formatNumber(ton, 2);
+          if (line.tonDauCaMay === text) return line;
+          changed = true;
+          return { ...line, tonDauCaMay: text };
+        });
+        return changed ? next : current;
+      });
+    })();
+
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isNvlExport,
+    slipDate,
+    selectedShifts.join('|'),
+    machine,
+    productionOrderCodes.join('|'),
+    lineMaterialFingerprint,
+    shiftOptions,
+    shiftSettings
+  ]);
+
   const applyProductionOrderSelection = async (selectedKeys: string[]) => {
     setProductionOrderCodes(selectedKeys);
 
@@ -1745,7 +2631,11 @@ export function WarehouseSlipPanel({
         else matchedShifts.add(instance.ca);
       }
       if (matchedShifts.size > 0) {
-        setSelectedShifts(isNvlExport ? [[...matchedShifts][0]] : [...matchedShifts]);
+        // Xuất NVL: giữ Ca user đã chọn trên form; chỉ tự điền ca từ PTĐM khi chưa chọn.
+        setSelectedShifts(current => {
+          if (isNvlExport && current.length > 0) return current;
+          return isNvlExport ? [[...matchedShifts][0]] : [...matchedShifts];
+        });
       }
 
       setNormLoadMessage('');
@@ -1757,6 +2647,7 @@ export function WarehouseSlipPanel({
       );
       setLines(merged.length > 0
         ? merged.map(line => createWarehouseLineDraftFromPrefill({
+            materialId: line.materialId,
             code: line.code,
             name: line.name,
             productionName: line.productionName,
@@ -1773,10 +2664,18 @@ export function WarehouseSlipPanel({
               ?? (line.warehouseClass === 'nvl_chinh' && line.documentQuantity > 0 && line.normWeightKg > 0
                 ? Math.round((line.normWeightKg / line.documentQuantity) * 1000000) / 1000000
                 : undefined),
-            nhomVthh: line.nhomVthh
+            nhomVthh: line.nhomVthh,
+            auxiliaryGroup: line.auxiliaryGroup
           }))
         : [createWarehouseLineDraft()]);
-      if (merged.length === 0) setNormLoadMessage('Phiếu trộn định mức đã chọn chưa có dòng NVL hợp lệ.');
+      if (merged.length === 0) {
+        setNormLoadMessage('Phiếu trộn định mức đã chọn chưa có dòng NVL hợp lệ.');
+      } else {
+        setNormLoadMessage('');
+        setActionMessage(
+          `Đã điền ${merged.length} dòng NVL từ ${selectedInstances.length} phiếu trộn định mức (PTĐM).`
+        );
+      }
       return;
     }
 
@@ -1795,7 +2694,12 @@ export function WarehouseSlipPanel({
       if (matched.length > 0) matched.forEach(value => matchedShifts.add(value));
       else matchedShifts.add(order.shift);
     }
-    if (matchedShifts.size > 0) setSelectedShifts([...matchedShifts]);
+    if (matchedShifts.size > 0) {
+      const preferred =
+        [...matchedShifts].find(value => shiftOptions.some(option => option.value === value)) ||
+        [...matchedShifts][0];
+      setSelectedShifts(preferred ? [preferred] : []);
+    }
 
     if (warehouseKind === 'san_pham') {
       const mergedLines = selectedOrders.flatMap(order => order.lines);
@@ -1815,6 +2719,463 @@ export function WarehouseSlipPanel({
       }
     }
   };
+  const fillLinesFromMatchedOrders = async (matchedOrders: WarehouseProductionOrderOption[]) => {
+    if (warehouseKind === 'san_pham') {
+      const productLines = mergeWarehouseProductLinesFromOrders(matchedOrders);
+      if (productLines.length === 0) {
+        throw new Error('Các lệnh SX khớp ngày/ca chưa có sản phẩm để điền.');
+      }
+      setLines(
+        productLines.map(line =>
+          createWarehouseLineDraftFromPrefill({
+            code: line.code,
+            name: line.name,
+            unit: line.unit,
+            quantity: line.quantity > 0 ? formatNumber(line.quantity, 2) : '',
+            documentQuantity: line.quantity > 0 ? formatNumber(line.quantity, 2) : '',
+            unitPrice: ''
+          })
+        )
+      );
+      return productLines.length;
+    }
+
+    const catalog = await loadProductionOrderProductCatalog();
+    const materialMap = new Map<
+      string,
+      { code: string; name: string; unit: string; quantity: number; quotaQuantity: number }
+    >();
+
+    for (const order of matchedOrders) {
+      for (const line of order.lines) {
+        const productCode = line.code.trim();
+        if (!productCode) continue;
+        const product = findProductByCode(catalog, productCode);
+        if (!product || product.nplItems.length === 0) continue;
+        const orderQty = Number(line.quantity);
+        const qty = Number.isFinite(orderQty) && orderQty > 0 ? orderQty : 0;
+        const materials = buildProductionOrderMaterialProposal(qty, product.nplItems, product);
+        for (const material of materials) {
+          const key = material.code.trim().toLowerCase();
+          if (!key) continue;
+          const existing = materialMap.get(key);
+          if (existing) {
+            existing.quantity += material.proposedQuantity;
+            existing.quotaQuantity += material.proposedQuantity;
+            if (!existing.name && material.name) existing.name = material.name;
+            if (!existing.unit && material.unit) existing.unit = material.unit;
+          } else {
+            materialMap.set(key, {
+              code: material.code,
+              name: material.name || material.code,
+              unit: material.unit || 'kg',
+              quantity: material.proposedQuantity,
+              quotaQuantity: material.proposedQuantity
+            });
+          }
+        }
+      }
+    }
+
+    const materialLines = sortWarehouseLinesKgFirst(
+      [...materialMap.values()].filter(line => line.quantity > 0)
+    );
+
+    if (materialLines.length === 0) {
+      const productCodes = [
+        ...new Set(
+          matchedOrders.flatMap(order => order.lines.map(line => line.code.trim()).filter(Boolean))
+        )
+      ];
+      throw new Error(
+        productCodes.length > 0
+          ? `Không tìm được NVL định mức từ SP: ${productCodes.slice(0, 6).join(', ')}${productCodes.length > 6 ? '…' : ''}. Kiểm tra BOM (npl) trong danh mục sản phẩm.`
+          : 'Không tìm được NVL định mức từ sản phẩm trong lệnh SX khớp ngày/ca.'
+      );
+    }
+
+    setLines(
+      reorderExportLinesKgFirst(
+        materialLines.map(line =>
+          createWarehouseLineDraftFromPrefill({
+            code: line.code,
+            name: line.name,
+            unit: line.unit,
+            quantity: String(line.quantity),
+            documentQuantity: String(line.quantity),
+            quotaQuantity: String(line.quotaQuantity),
+            suggestedQuantity: String(line.quantity),
+            unitPrice: ''
+          })
+        )
+      )
+    );
+    return materialLines.length;
+  };
+
+  const fillLinesFromCanTuDongActual = async (
+    matchedOrders: WarehouseProductionOrderOption[],
+    shiftValues: string[]
+  ) => {
+    if (warehouseKind === 'san_pham') {
+      throw new Error('Điền từ cân thực tế chỉ dùng cho phiếu xuất kho NVL.');
+    }
+
+    const ngay = slipDate.trim().slice(0, 10);
+    const params = new URLSearchParams({ from: ngay, to: ngay, limit: '10000', dateBy: 'ngay' });
+    const response = await fetch(`/api/can-tu-dong?${params.toString()}`);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(readApiErrorMessage(response, data, 'Không thể tải phiếu cân thực tế (cân tự động).'));
+    }
+
+    const records = (Array.isArray(data.records) ? data.records : []) as CanTuDongWeightRow[];
+    const machineFilter = machine.trim();
+    const shiftFilters = shiftValues.map(value => String(value || '').trim()).filter(Boolean);
+
+    const matchedRecords = records.filter(record => {
+      if (shiftFilters.length > 0) {
+        const rowCa = String(record.ca ?? '').trim();
+        if (!shiftFilters.some(shift => canTuDongShiftMatches(rowCa, shift))) return false;
+      }
+      if (machineFilter) {
+        const rowMachine = resolveCanTuDongMachine(record) || '';
+        if (rowMachine) {
+          const a = normalizeProductCodeKey(rowMachine);
+          const b = normalizeProductCodeKey(machineFilter);
+          if (
+            a &&
+            b &&
+            a !== b &&
+            !a.includes(b) &&
+            !b.includes(a)
+          ) {
+            return false;
+          }
+        }
+      }
+      return true;
+    });
+
+    if (matchedRecords.length === 0) {
+      throw new Error(
+        `Không có phiếu cân thực tế khớp ngày ${ngay}${
+          shiftFilters.length > 0 ? ` · ca ${shiftFilters.join(', ')}` : ''
+        }${machineFilter ? ` · máy ${machineFilter}` : ''}.`
+      );
+    }
+
+    const byProduct = new Map<string, { code: string; quantity: number; plasticKg: number }>();
+    for (const record of matchedRecords) {
+      const maSp = parseCanTuDongQrProductCode(String(record.qr_code ?? ''));
+      if (!maSp) continue;
+      const key = normalizeProductCodeKey(maSp);
+      if (!key) continue;
+      const current = byProduct.get(key);
+      const plasticKg = resolveTrongLuongNhuaKg(record) ?? 0;
+      byProduct.set(key, {
+        code: maSp,
+        quantity: (current?.quantity ?? 0) + 1,
+        plasticKg: (current?.plasticKg ?? 0) + (Number.isFinite(plasticKg) ? plasticKg : 0)
+      });
+    }
+
+    if (byProduct.size === 0) {
+      throw new Error('Phiếu cân thực tế không có mã SP hợp lệ trong QR.');
+    }
+
+    const catalog = await loadProductionOrderProductCatalog();
+    const materialMap = new Map<
+      string,
+      { code: string; name: string; unit: string; quantity: number; quotaQuantity: number }
+    >();
+
+    const productCodesFromOrders = new Set(
+      matchedOrders.flatMap(order =>
+        order.lines.map(line => normalizeProductCodeKey(line.code)).filter(Boolean)
+      )
+    );
+
+    for (const [productKey, actual] of byProduct.entries()) {
+      if (productCodesFromOrders.size > 0 && !productCodesFromOrders.has(productKey)) continue;
+      const product = findProductByCode(catalog, actual.code);
+      if (!product || product.nplItems.length === 0) continue;
+      const materials = buildProductionOrderMaterialProposalFromActualWeighing(
+        actual.quantity,
+        actual.plasticKg,
+        product.nplItems,
+        product
+      );
+      for (const material of materials) {
+        const key = material.code.trim().toLowerCase();
+        if (!key || !(material.proposedQuantity > 0)) continue;
+        const existing = materialMap.get(key);
+        if (existing) {
+          existing.quantity += material.proposedQuantity;
+          existing.quotaQuantity += material.proposedQuantity;
+          if (!existing.name && material.name) existing.name = material.name;
+          if (!existing.unit && material.unit) existing.unit = material.unit;
+        } else {
+          materialMap.set(key, {
+            code: material.code,
+            name: material.name || material.code,
+            unit: material.unit || 'kg',
+            quantity: material.proposedQuantity,
+            quotaQuantity: material.proposedQuantity
+          });
+        }
+      }
+    }
+
+    // Fallback: lệnh có SP nhưng cân không khớp mã → thử điền theo SP lệnh với qty/kg cân gộp theo ca.
+    if (materialMap.size === 0 && productCodesFromOrders.size > 0) {
+      for (const order of matchedOrders) {
+        for (const line of order.lines) {
+          const productCode = line.code.trim();
+          if (!productCode) continue;
+          const product = findProductByCode(catalog, productCode);
+          if (!product || product.nplItems.length === 0) continue;
+          const key = normalizeProductCodeKey(productCode);
+          const actual = key ? byProduct.get(key) : undefined;
+          if (!actual) continue;
+          const materials = buildProductionOrderMaterialProposalFromActualWeighing(
+            actual.quantity,
+            actual.plasticKg,
+            product.nplItems,
+            product
+          );
+          for (const material of materials) {
+            const mKey = material.code.trim().toLowerCase();
+            if (!mKey || !(material.proposedQuantity > 0)) continue;
+            const existing = materialMap.get(mKey);
+            if (existing) {
+              existing.quantity += material.proposedQuantity;
+              existing.quotaQuantity += material.proposedQuantity;
+            } else {
+              materialMap.set(mKey, {
+                code: material.code,
+                name: material.name || material.code,
+                unit: material.unit || 'kg',
+                quantity: material.proposedQuantity,
+                quotaQuantity: material.proposedQuantity
+              });
+            }
+          }
+        }
+      }
+    }
+
+    const materialLines = sortWarehouseLinesKgFirst(
+      [...materialMap.values()].filter(line => line.quantity > 0)
+    );
+
+    if (materialLines.length === 0) {
+      throw new Error(
+        'Không ghép được NVL định mức với phiếu cân thực tế. Kiểm tra BOM sản phẩm và mã SP trên QR cân.'
+      );
+    }
+
+    setLines(
+      reorderExportLinesKgFirst(
+        materialLines.map(line =>
+          createWarehouseLineDraftFromPrefill({
+            code: line.code,
+            name: line.name,
+            unit: line.unit,
+            quantity: String(line.quantity),
+            documentQuantity: String(line.quantity),
+            quotaQuantity: String(line.quotaQuantity),
+            suggestedQuantity: String(line.quantity),
+            unitPrice: ''
+          })
+        )
+      )
+    );
+    return { lineCount: materialLines.length, weighingCount: matchedRecords.length };
+  };
+
+  const handleAutofillFromProductionOrders = async () => {
+    if (!slipDate.trim()) {
+      setFormError('Vui lòng chọn Ngày phiếu trước khi tự động điền.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (showNvlShiftAndMachine && !isNvlInbound && selectedShifts.length === 0) {
+      setFormError('Vui lòng chọn ca trước khi tự động điền theo lệnh SX.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!warehouseName.trim()) {
+      setFormError('Vui lòng chọn tên kho trước khi tự động điền.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    const matchedOrders = filterWarehouseProductionOrdersByDateShift(
+      productionOrders,
+      slipDate,
+      selectedShifts
+    );
+    if (matchedOrders.length === 0) {
+      const sameDate = productionOrders.filter(order => order.startDate === slipDate.trim().slice(0, 10));
+      setFormError(
+        selectedShifts.length > 0
+          ? sameDate.length > 0
+            ? `Có ${sameDate.length} lệnh SX ngày ${slipDate} nhưng không khớp ca đã chọn.`
+            : `Không có lệnh SX khớp ngày ${slipDate} và ca đã chọn.`
+          : `Không có lệnh SX khớp ngày ${slipDate}.`
+      );
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    const hasExistingLines = lines.some(line => line.code.trim() || line.name.trim() || line.quantity.trim());
+    if (hasExistingLines) {
+      const ok = window.confirm(
+        `Tìm thấy ${matchedOrders.length} lệnh SX theo ngày/ca.\nĐiền lại sẽ thay danh sách dòng hiện tại. Tiếp tục?`
+      );
+      if (!ok) return;
+    }
+
+    setIsAutofillingFromOrders(true);
+    setFormError('');
+    setActionMessage('');
+    try {
+      const orderCodes = matchedOrders.map(order => order.orderCode);
+      setProductionOrderCodes(orderCodes);
+
+      const machines = [...new Set(matchedOrders.map(order => order.machine).filter(Boolean))];
+      if (machines.length > 0) setMachine(machines.join(', '));
+
+      const resolvedShift =
+        selectedShifts[0] ||
+        (() => {
+          for (const order of matchedOrders) {
+            if (!order.shift) continue;
+            const matched = shiftOptions.find(
+              option =>
+                shiftNamesMatch(option.value, order.shift) || shiftNamesMatch(option.label, order.shift)
+            );
+            if (matched) return matched.value;
+          }
+          return matchedOrders.find(order => order.shift)?.shift || '';
+        })();
+      if (resolvedShift) setSelectedShifts([resolvedShift]);
+
+      setReason(
+        stripProductionOrderCodesFromReason(
+          reason.trim() ||
+            (resolvedShift
+              ? `Xuất theo lệnh SX · ${slipDate} · ${resolvedShift}`
+              : `Theo lệnh SX · ${slipDate}`)
+        )
+      );
+      if (!note.trim()) {
+        setNote(`Tự động điền từ ${matchedOrders.length} lệnh SX (${orderCodes.join(', ')}).`);
+      }
+
+      const lineCount = await fillLinesFromMatchedOrders(matchedOrders);
+      const msg = `Đã tự động điền ${lineCount} dòng từ ${matchedOrders.length} lệnh SX theo ngày/ca.`;
+      setActionMessage(msg);
+      showAppToast(msg);
+    } catch (error: any) {
+      setFormError(error?.message || 'Không thể tự động điền từ lệnh SX.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } finally {
+      setIsAutofillingFromOrders(false);
+    }
+  };
+
+  const handleAutofillFromCanTuDong = async () => {
+    if (!isNvlExport) {
+      setFormError('Nút này chỉ dùng cho phiếu xuất kho NVL.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!slipDate.trim()) {
+      setFormError('Vui lòng chọn Ngày phiếu trước khi điền từ cân thực tế.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (showNvlShiftAndMachine && selectedShifts.length === 0) {
+      setFormError('Vui lòng chọn ca trước khi điền NVL từ cân thực tế.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!warehouseName.trim()) {
+      setFormError('Vui lòng chọn tên kho trước khi tự động điền.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    const matchedOrders = filterWarehouseProductionOrdersByDateShift(
+      productionOrders,
+      slipDate,
+      selectedShifts
+    );
+    if (matchedOrders.length === 0) {
+      setFormError(
+        `Không có lệnh SX khớp ngày ${slipDate}${
+          selectedShifts.length > 0 ? ` và ca đã chọn` : ''
+        } — cần lệnh SX để lấy danh sách NVL định mức.`
+      );
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    const hasExistingLines = lines.some(line => line.code.trim() || line.name.trim() || line.quantity.trim());
+    if (hasExistingLines) {
+      const ok = window.confirm(
+        `Điền NVL theo định mức BOM, khối lượng lấy từ phiếu cân thực tế (cân tự động).\n` +
+          `Tìm thấy ${matchedOrders.length} lệnh SX. Thay danh sách dòng hiện tại?`
+      );
+      if (!ok) return;
+    }
+
+    setIsAutofillingFromCanTuDong(true);
+    setFormError('');
+    setActionMessage('');
+    try {
+      const orderCodes = matchedOrders.map(order => order.orderCode);
+      setProductionOrderCodes(orderCodes);
+
+      const machines = [...new Set(matchedOrders.map(order => order.machine).filter(Boolean))];
+      if (machines.length > 0 && !machine.trim()) setMachine(machines.join(', '));
+
+      const resolvedShift =
+        selectedShifts[0] ||
+        matchedOrders.find(order => order.shift)?.shift ||
+        '';
+      if (resolvedShift) setSelectedShifts([resolvedShift]);
+
+      setReason(
+        stripProductionOrderCodesFromReason(
+          reason.trim() ||
+            (resolvedShift
+              ? `Xuất theo cân thực tế · ${slipDate} · ${resolvedShift}`
+              : `Xuất theo cân thực tế · ${slipDate}`)
+        )
+      );
+      if (!note.trim()) {
+        setNote(
+          `Tự động điền NVL theo ĐM · KG từ cân thực tế (${matchedOrders.length} lệnh: ${orderCodes.join(', ')}).`
+        );
+      }
+
+      const { lineCount, weighingCount } = await fillLinesFromCanTuDongActual(
+        matchedOrders,
+        resolvedShift ? [resolvedShift] : selectedShifts
+      );
+      const msg = `Đã điền ${lineCount} NVL theo định mức, kg lấy từ ${weighingCount} phiếu cân thực tế.`;
+      setActionMessage(msg);
+      showAppToast(msg);
+    } catch (error: any) {
+      setFormError(error?.message || 'Không thể điền NVL từ cân thực tế.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } finally {
+      setIsAutofillingFromCanTuDong(false);
+    }
+  };
 
   const toggleProductionOrder = (key: string) => {
     void applyProductionOrderSelection(toggleWarehouseProductionOrderSelection(productionOrderCodes, key));
@@ -1822,18 +3183,30 @@ export function WarehouseSlipPanel({
 
   const filteredProductionOrders = useMemo(() => {
     const query = productionOrderSearch.trim().toLowerCase();
-    if (!query) return pickerOptions;
-    // Xuất kho NVL: tìm theo tên phiếu, ngày, ca hoặc mã lệnh được ghi trên phiếu.
     if (isNvlExport) {
+      if (!query) return pickerOptions;
       return pickerOptions.filter(option =>
         `${option.normName || ''} ${option.ngay} ${option.ca} ${option.orderCode}`.toLowerCase().includes(query)
       );
     }
-    return pickerOptions.filter(option => {
+    const byDateShift = filterWarehouseProductionOrdersByDateShift(
+      productionOrders,
+      slipDate,
+      selectedShifts
+    );
+    const options: PickerOption[] = byDateShift.map(order => ({
+      key: order.orderCode,
+      orderCode: order.orderCode,
+      ngay: order.startDate,
+      ca: order.shift,
+      machine: order.machine
+    }));
+    if (!query) return options;
+    return options.filter(option => {
       const hay = `${option.orderCode} ${option.ca} ${option.machine} ${option.ngay}`.toLowerCase();
       return hay.includes(query);
     });
-  }, [pickerOptions, productionOrderSearch, isNvlExport]);
+  }, [pickerOptions, productionOrderSearch, isNvlExport, productionOrders, slipDate, selectedShifts]);
 
   const productionOrderLabel = useMemo(() => {
     if (!isNvlExport) return formatWarehouseProductionOrderSelection(productionOrderCodes);
@@ -1879,49 +3252,76 @@ export function WarehouseSlipPanel({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [productionOrderPickerOpen]);
 
-  const slipTotal = useMemo(
-    () => lines.reduce((sum, line) => sum + computeWarehouseLineAmount(line.quantity, line.unitPrice), 0),
-    [lines]
-  );
-
   const resolveLineWeightKg = (line: WarehouseSlipLineDraft) => {
     const quantity = parsePercentInput(line.quantity);
-    if (!Number.isFinite(quantity) || quantity <= 0) return null;
-
-    if (isNvlExport) {
-      let perUnit = Number(line.normWeightPerUnitKg);
-      if (!Number.isFinite(perUnit) || perUnit <= 0) {
-        const groupKey = normalizeNhomVatTuPhuKey(
-          line.auxiliaryGroup || line.productionName || line.name || line.code
-        );
-        perUnit = resolveAuxiliaryWeightPerUnit(groupKey, line.nhomVthh, line.unit) ?? 0;
-      }
-      if (perUnit > 0) {
-        return Math.round(quantity * perUnit * 1000) / 1000;
-      }
+    const perUnit = Number(line.normWeightPerUnitKg);
+    if (
+      Number.isFinite(quantity) &&
+      quantity > 0 &&
+      Number.isFinite(perUnit) &&
+      perUnit > 0
+    ) {
+      return Math.round(quantity * perUnit * 1000) / 1000;
     }
     return convertWarehouseQuantityToKg({
       quantity,
       unit: line.unit,
       itemCode: line.code,
-      warehouseKind,
-      materials: warehouseKind === 'nvl' ? weightCatalog : [],
-      products: warehouseKind === 'san_pham' ? weightCatalog : []
+      warehouseKind: warehouseKind === 'san_pham' ? 'san_pham' : 'nvl',
+      materials: warehouseKind === 'san_pham' ? [] : weightCatalog,
+      products: warehouseKind === 'san_pham' ? weightCatalog : [],
+      // ĐVT ≠ kg: chỉ nhân Tổng kg trong danh mục kho NVL (không suy từ tên).
+      preferTongKgOnly: true
     });
   };
 
-  const slipTotalWeightKg = useMemo(() => {
-    let total = 0;
-    let hasWeight = false;
-    for (const line of lines) {
-      const weight = resolveLineWeightKg(line);
-      if (weight !== null) {
-        total += weight;
-        hasWeight = true;
+  /** Xếp xuất kho: ĐVT kg lên đầu, rồi theo quy đổi kg giảm dần. Xuất NVL giữ nhóm chính/phụ. */
+  const reorderExportLinesKgFirst = (list: WarehouseSlipLineDraft[]) => {
+    if (isNvlExport) {
+      const byClass = [...list].sort(
+        (a, b) =>
+          warehouseMaterialClassRank(a.warehouseClass) - warehouseMaterialClassRank(b.warehouseClass)
+      );
+      const groups: WarehouseSlipLineDraft[][] = [];
+      for (const line of byClass) {
+        const cls = normalizeWarehouseMaterialClass(line.warehouseClass);
+        const last = groups[groups.length - 1];
+        if (last && normalizeWarehouseMaterialClass(last[0]?.warehouseClass) === cls) {
+          last.push(line);
+        } else {
+          groups.push([line]);
+        }
       }
+      return groups.flatMap(group =>
+        sortWarehouseLinesKgFirst(group, { getWeightKg: resolveLineWeightKg })
+      );
     }
-    return hasWeight ? total : null;
-  }, [lines, warehouseKind, weightCatalog]);
+    return sortWarehouseLinesKgFirst(list, { getWeightKg: resolveLineWeightKg });
+  };
+
+  const applyExportLineOrder = () => {
+    setLines(current => reorderExportLinesKgFirst(current));
+    setActionMessage(
+      isNvlExport
+        ? 'Đã xếp lại theo NVL chính → NVL phụ, trong nhóm theo khối lượng quy đổi.'
+        : 'Đã xếp lại: ĐVT kg lên đầu, các ĐVT khác theo khối lượng quy đổi.'
+    );
+  };
+
+  // Phiếu xuất: khi đã có catalog Tổng kg thì xếp lại (draft/autofill thường tới trước lúc load catalog).
+  useEffect(() => {
+    if (slipType !== 'xuat') return;
+    if (weightCatalog.length === 0) return;
+    if (lines.length === 0) return;
+    setLines(current => {
+      const next = reorderExportLinesKgFirst(current);
+      const unchanged =
+        next.length === current.length && next.every((line, index) => line.key === current[index]?.key);
+      return unchanged ? current : next;
+    });
+    // Chỉ chạy lại khi catalog/load loại kho đổi — không sort theo từng lần sửa SL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slipType, warehouseKind, weightCatalog, isNvlExport]);
 
   const slipWeightKgByClass = useMemo(() => {
     let chinh = 0;
@@ -1946,31 +3346,106 @@ export function WarehouseSlipPanel({
     };
   }, [lines, warehouseKind, weightCatalog]);
 
-  const shiftLabel = formatWarehouseShiftSelection(selectedShifts);
-  const isNvlInbound = warehouseKind === 'nvl' && slipType === 'nhap';
 
-  const handlePrintPreview = () => {
-    void handleSave();
+  const resolveLineWeightHint = (line: WarehouseSlipLineDraft) => {
+    const quantity = parsePercentInput(line.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) return undefined;
+    const unit = String(line.unit || '').trim();
+    if (!unit || unit === '-') return undefined;
+    if (isWarehouseWeightKgUnit(unit)) {
+      return `ĐVT kg → quy đổi = SL thực (${formatNumber(quantity, 3)} kg)`;
+    }
+    const tongKg = findMaterialTongKgPerUnit(line.code, weightCatalog);
+    if (tongKg === null) {
+      return `ĐVT ${unit}: chưa có Tổng kg trong kho NVL cho mã ${line.code || '—'} → không quy đổi`;
+    }
+    return `ĐVT ${unit} → SL × Tổng kg kho = ${formatNumber(quantity, 3)} × ${formatNumber(tongKg, 6)} = ${formatWarehouseWeightKg(quantity * tongKg)}`;
   };
 
-  const handleSave = async () => {
-    if (isNvlExport && !productionOrderCodes.some(key => nvlExportInstances.some(item => item.key === key))) {
-      setFormError(showSaveFailure('Vui lòng chọn ít nhất một phiếu trộn định mức để xuất kho NVL.'));
+  const shiftLabel = formatWarehouseShiftSelection(selectedShifts);
+  const productionOrderCodesForSave = showOrderFields ? productionOrderCodes : [];
+  const shiftLabelForSave = showNvlShiftAndMachine ? shiftLabel : '';
+  const productionOrderLabelForSave = showOrderFields ? productionOrderLabel : '';
+  const savedReason = composeReasonWithProductionOrderCodes(reason, productionOrderCodesForSave);
+
+  const handlePrintSavedSlip = () => {
+    if (!printSlip) {
+      setFormError(showSaveFailure('Vui lòng lưu phiếu trước khi in.'));
       return;
     }
-    const currentLines = isNvlExport ? consolidateWarehouseLines(lines, itemOptions) : lines;
-    if (isNvlExport) {
-      setLines(currentLines);
+    setFormError('');
+    setPrintAutoTrigger(true);
+    setPrintModalOpen(true);
+  };
+
+  const handleLineActualImageUpload = async (
+    lineKey: string,
+    file?: File | null
+  ) => {
+    if (!file) return;
+
+    setUploadingLineImageKey(`${lineKey}-weight`);
+    setFormError('');
+
+    try {
+      const dataUrl = await fileToOptimizedImageDataUrl(file);
+      const uploaded = await uploadImage(dataUrl, 'phieu_xuat_nhap_kho');
+      updateLine(
+        lineKey,
+        { actualWeightImageUrl: uploaded.imageUrl, actualWeightImagePublicId: uploaded.imagePublicId }
+      );
+      showAppToast('Đã upload ảnh số cân thực tế.');
+    } catch (error: unknown) {
+      const message = error instanceof Error
+        ? error.message
+        : 'Không thể upload ảnh số cân thực tế.';
+      setFormError(message);
+      showAppToast(message, 'error');
+    } finally {
+      setUploadingLineImageKey(null);
     }
+  };
+
+  const handleSave = async (autoPrint = false) => {
+    if (!(editSlipCode ? canEdit : canCreate)) {
+      setFormError(
+        showSaveFailure(
+          editSlipCode
+            ? 'Bạn không có quyền sửa phiếu thuộc kho này.'
+            : 'Bạn không có quyền lập phiếu thuộc kho này.'
+        )
+      );
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (reviewingDamagedReportKey) {
+      if (isXuatTreoMode || slipType !== 'nhap' || !productionReportLoai) {
+        setFormError(
+          showSaveFailure('Báo cáo sản lượng chỉ được nạp bằng phiếu Nhập kho vào đúng kho tương ứng.')
+        );
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+    }
+    if (!warehouseName.trim()) {
+      setFormError(showSaveFailure('Vui lòng chọn tên kho từ danh sách Quản lý kho.'));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    const orderedLines = slipType === 'xuat' ? reorderExportLinesKgFirst(lines) : lines;
+    const mergedLines = isNvlExport ? mergeWarehouseExportLineDrafts(orderedLines) : orderedLines;
+    if (slipType === 'xuat') setLines(mergedLines);
     const linesForSave = isNvlExport
-      ? currentLines.map(line => ({ ...line, sourceInboundLineId: '', sourceInboundSlipCode: '' }))
-      : currentLines;
+      ? mergedLines.map(line => ({ ...line, sourceInboundLineId: '', sourceInboundSlipCode: '' }))
+      : orderedLines;
     const parsed = parseWarehouseSlipPayloadItems(linesForSave, warehouseKind, {
-      allowMissingUnitPrice: false,
-      requireInboundLot: false
+      allowMissingUnitPrice: isNvlExport,
+      requireInboundLot: false,
+      includeDocumentQuantity: slipType === 'xuat'
     });
     if ('error' in parsed) {
       setFormError(showSaveFailure(parsed.error));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
@@ -1978,32 +3453,26 @@ export function WarehouseSlipPanel({
     setIsSaving(true);
     setFormError('');
     setActionMessage('');
+    setPendingQrLabels([]);
+    setQrPrintOpen(false);
+    setQrPrintAutoTrigger(false);
 
     const isEditing = Boolean(editSlipCode);
-    const lenhSxDaChon: WarehouseLenhSxRef[] = isNvlExport
-      ? productionOrderCodes.map(key => {
-          const found = nvlExportInstances.find(item => item.key === key);
-          return found
-            ? {
-                dinh_muc_id: found.normId,
-                ten_phieu: found.normName,
-                ma_lenh_sx: found.orderCode,
-                ngay: found.ngay,
-                ca: found.ca
-              }
-            : parseLenhSxInstanceKey(key);
-        }).filter(item => item.dinh_muc_id && item.ngay)
-      : [];
+    const printSlipType: WarehouseSlipType = slipType === 'xuat' ? 'xuat' : 'nhap';
+    const isXuatTreoFlow = isXuatTreoMode && slipType === 'xuat';
     const slipPayload = {
-      loaiPhieu: slipType,
+      loaiPhieu: printSlipType,
       loaiKho: warehouseKind,
+      tenKho: warehouseName.trim(),
       ngayPhieu: slipDate,
-      lyDo: reason.trim(),
+      lyDo: savedReason,
       ghiChu: note.trim(),
       nguoiLap: createdBy.trim(),
-      ca: shiftLabel || null,
-      items: payloadItems,
-      dinhMucDaChon: lenhSxDaChon
+      ca: shiftLabelForSave || null,
+      may: showNvlShiftAndMachine ? machine.trim() || null : null,
+      // "Xuất kho treo" là form chờ lấy dữ liệu báo cáo hàng hỏng; khi lưu phải thành phiếu xuất chính thức.
+      treo: false,
+      items: payloadItems
     };
 
     try {
@@ -2028,31 +3497,79 @@ export function WarehouseSlipPanel({
       }
 
       const savedSlipCode = String(data.slipCode || editSlipCode || '').trim();
+      if (!savedSlipCode) {
+        throw new Error('Máy chủ chưa xác nhận mã phiếu đã lưu. Phiếu sẽ không được in.');
+      }
+      const savedProductQrLabels: ProductQrPrintLabel[] = Array.isArray(data.qrCodes)
+        ? data.qrCodes
+            .map((record: Record<string, unknown>, index: number) => {
+              const payload = String(record.code ?? record.ma_sp_day_du ?? '').trim();
+              const productCode = String(record.baseCode ?? record.ma_sp_goc ?? '').trim();
+              return {
+                key: `${savedSlipCode}-${index}-${payload}`,
+                payload,
+                productCode,
+                productName: String(record.name ?? record.ten_npl ?? record.ten_sp ?? '').trim(),
+                itemLabel: warehouseKind === 'nvl' ? 'Tên NVL' : undefined
+              };
+            })
+            .filter((label: ProductQrPrintLabel) => Boolean(label.payload))
+        : [];
+      const savedQrLabels = savedProductQrLabels;
+      setPendingQrLabels(savedQrLabels);
 
       setPrintSlip(
         buildWarehouseSlipPrintData(payloadItems, {
-          slipCode: savedSlipCode,
-          slipType,
-          warehouseKind,
-          slipDate,
-          reason: reason.trim(),
-          note: note.trim(),
-          createdBy: createdBy.trim(),
-          productionOrderRef: productionOrderLabel,
-          machine: machine.trim(),
-          shift: shiftLabel,
-          recipient: recipient.trim(),
-          deliverer: deliverer.trim(),
-          warehouseLocation: warehouseLocation.trim()
+            slipCode: savedSlipCode,
+            slipType: printSlipType,
+            warehouseKind,
+            slipDate,
+            reason: savedReason,
+            note: note.trim(),
+            createdBy: createdBy.trim(),
+            productionOrderRef: productionOrderLabelForSave,
+            machine: machine.trim(),
+            shift: shiftLabelForSave,
+            recipient: recipient.trim(),
+            deliverer: deliverer.trim(),
+            warehouseLocation: warehouseLocation.trim(),
+            warehouseName: warehouseName.trim(),
+            materials: warehouseKind === 'san_pham' ? [] : weightCatalog,
+            products: warehouseKind === 'san_pham' ? weightCatalog : []
         })
       );
-      setPrintAutoTrigger(false);
-      setPrintModalOpen(true);
+      setPrintAutoTrigger(autoPrint);
+      if (autoPrint) setPrintModalOpen(true);
+      const savedMessage = autoPrint
+        ? savedQrLabels.length > 0
+          ? `Đã lưu phiếu ${savedSlipCode} và chuẩn bị ${savedQrLabels.length} mã QR. Hệ thống sẽ lần lượt mở phiếu nhập và file tem QR.`
+          : `Đã lưu phiếu ${savedSlipCode} (${warehouseKindLabel(warehouseKind)}) vào lịch sử.`
+        : `Đã lưu phiếu ${savedSlipCode} (${warehouseKindLabel(warehouseKind)}) vào lịch sử. Bấm “In phiếu” để mở bản in.`;
       const okMsg = isEditing
-        ? `Đã cập nhật phiếu ${savedSlipCode} (${warehouseKindLabel(warehouseKind)}). Xem tại Lịch sử xuất nhập kho.`
-        : `Đã lưu phiếu ${savedSlipCode} (${warehouseKindLabel(warehouseKind)}) vào lịch sử.`;
+        ? autoPrint
+          ? `Đã cập nhật phiếu ${savedSlipCode} (${warehouseKindLabel(warehouseKind)}). Xem tại Lịch sử xuất nhập kho.`
+          : `Đã cập nhật phiếu ${savedSlipCode} (${warehouseKindLabel(warehouseKind)}). Bấm “In phiếu” để mở bản in.`
+        : isXuatTreoFlow
+          ? autoPrint
+            ? `Đã lưu phiếu xuất ${savedSlipCode} từ báo cáo hàng hỏng và cập nhật tồn kho.`
+            : `Đã lưu phiếu xuất ${savedSlipCode} từ báo cáo hàng hỏng và cập nhật tồn kho. Bấm “In phiếu” để mở bản in.`
+          : savedMessage;
       setActionMessage(okMsg);
       showAppToast(okMsg);
+      if (reviewingDamagedReportKey) {
+        setPendingDamagedReports(current => current.filter(report => report.key !== reviewingDamagedReportKey));
+        setReviewingDamagedReportKey('');
+        void loadPendingDamagedReports();
+      }
+      if (activeScanningDraftId) {
+        setScanningDrafts(current => {
+          const next = current.filter(draft => draft.id !== activeScanningDraftId);
+          writeWarehouseScanningDrafts(next);
+          return next;
+        });
+        setActiveScanningDraftId(null);
+        setLastDraftSavedAt(null);
+      }
       if (isNvlExport) {
         // Cho phép tạo nhiều phiếu xuất từ cùng 1 PTĐM: giữ PTĐM trong picker,
         // chỉ reset lựa chọn hiện tại để chuẩn bị phiếu tiếp theo.
@@ -2063,38 +3580,127 @@ export function WarehouseSlipPanel({
       setReason('');
       setNote('');
       setDeliverer('');
+      setCreatedBy(loginName);
+      setProductionOrderCodes([]);
+      setProductionOrderSearch('');
+      scannedFullCodesByPrefixRef.current.clear();
+      setLines([createWarehouseLineDraft()]);
     } catch (error: any) {
       setFormError(showSaveFailure(error, 'Không thể lưu phiếu xuất nhập kho.'));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setIsSaving(false);
     }
   };
 
+  const pendingReportsCardConfig = showPendingProductionReports
+    ? {
+        title: `Báo cáo sản lượng (${productionReportLoaiLabel}) chờ nhập ${selectedWarehouseName}`,
+        subtitle:
+          'Chọn đúng kho và Ngày phiếu để xem báo cáo sản lượng của ngày đó. Bấm Kiểm tra để nạp xuống phiếu; lưu phiếu nhập rồi thì báo cáo không hiện lại nữa.',
+        emptyText: `Không có phiếu ${productionReportLoaiLabel} nào của ngày ${slipDate || '—'} đang chờ nhập kho.`
+      }
+    : null;
+
   return (
     <div className="w-full min-w-0 max-w-none space-y-4">
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
-        <div className="bg-white p-3 text-slate-700 border-b border-slate-200">
-          <div className="flex items-start justify-end gap-3">
-            <div className="hidden">
-              <p className="text-xs font-black uppercase tracking-wider text-red-300">Quản lý kho</p>
-              <h2 className="mt-1 text-2xl font-black leading-tight">Phiếu xuất nhập kho</h2>
-              <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
-                Lập phiếu nhập hoặc xuất cho kho NVL hoặc kho Sản phẩm.
-              </p>
+      {pendingReportsCardConfig && (
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+          <div className="border-b border-slate-200 bg-white p-4 text-slate-700">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <ClipboardCheck className="h-5 w-5 text-[#ef1b2d]" />
+                  <h2 className="text-base font-black text-slate-900">{pendingReportsCardConfig.title}</h2>
+                  {!isLoadingDamagedReports && (
+                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-black text-rose-700">
+                      {pendingDamagedReports.length}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-xs font-medium text-slate-500">{pendingReportsCardConfig.subtitle}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void loadPendingDamagedReports()}
+                  disabled={isLoadingDamagedReports}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-rose-300 hover:text-rose-700 disabled:opacity-60"
+                >
+                  <Loader2 className={`h-3.5 w-3.5 ${isLoadingDamagedReports ? 'animate-spin' : ''}`} />
+                  Tải lại
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenHistory}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-[#ef1b2d] hover:text-[#ef1b2d]"
+                >
+                  <History className="h-4 w-4" />
+                  Lịch sử
+                </button>
+              </div>
             </div>
-            <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
-              <button
-                type="button"
-                onClick={onOpenHistory}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-white/15 px-3 text-xs font-bold text-white transition hover:border-[#ef1b2d] hover:bg-[#ef1b2d]"
-              >
-                <History className="h-4 w-4" />
-                Lịch sử
-              </button>
+
+            <div className="mt-3">
+              {isLoadingDamagedReports ? (
+                <div className="flex h-16 items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 text-xs font-bold text-slate-500">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Đang tải danh sách báo cáo...
+                </div>
+              ) : damagedReportsError ? (
+                <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-xs font-bold text-rose-700">
+                  {damagedReportsError}
+                </p>
+              ) : pendingDamagedReports.length === 0 ? (
+                <div className="flex h-16 items-center justify-center rounded-xl border border-dashed border-emerald-200 bg-emerald-50 text-xs font-bold text-emerald-700">
+                  {pendingReportsCardConfig.emptyText}
+                </div>
+              ) : (
+                <div className="scrollbar-hidden grid max-h-72 gap-2 overflow-y-auto pr-1 lg:grid-cols-2 xl:grid-cols-3">
+                  {pendingDamagedReports.map(report => {
+                    const isReviewing = reviewingDamagedReportKey === report.key;
+                    return (
+                      <div
+                        key={report.key}
+                        className={`rounded-xl border p-3 transition ${
+                          isReviewing ? 'border-rose-400 bg-rose-50' : 'border-slate-200 bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-black text-slate-900">{report.documentNo}</p>
+                            <p className="mt-0.5 text-[11px] font-semibold text-slate-500">
+                              {report.productionDate || report.reportDate || 'Chưa có ngày'}
+                              {report.shift ? ` · ${report.shift}` : ''}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleReviewDamagedReport(report)}
+                            className={`shrink-0 rounded-lg px-3 py-2 text-xs font-black transition ${
+                              isReviewing
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-[#ef1b2d] text-white hover:bg-[#d91526]'
+                            }`}
+                          >
+                            {isReviewing ? 'Đang kiểm tra' : 'Kiểm tra'}
+                          </button>
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+                          <span className="truncate text-slate-600">Người báo: <b>{report.weigher || '—'}</b></span>
+                          <span className="truncate text-slate-600">Máy: <b>{report.machine || '—'}</b></span>
+                          <span className="col-span-2 text-slate-600">
+                            {report.items.length} dòng vật tư · {report.items.map(item => `${item.name}: ${formatNumber(item.quantity)} ${item.unit}`).join('; ')}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {(formError || actionMessage) && (
         <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm">
@@ -2117,231 +3723,361 @@ export function WarehouseSlipPanel({
         </section>
       )}
 
-      <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm space-y-4">
-        <div>
-          <p className="text-sm font-black text-zinc-950">Loại kho</p>
-          <p className="mt-0.5 text-xs font-semibold text-zinc-500">Chọn kho NVL hoặc kho Sản phẩm trước khi lập phiếu</p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          {([
-            ['nvl', 'Kho NVL', Boxes],
-            ['san_pham', 'Kho Sản phẩm', Package]
-          ] as const).map(([kind, label, Icon]) => (
+      <section data-warehouse-slip-form className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
+        {slipType === 'nhap' && !editSlipCode ? (
+          <div className="mb-3 flex flex-wrap items-end gap-2 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+            <label className="min-w-[16rem] flex-1 space-y-1">
+              <span className="text-xs font-black uppercase tracking-wide text-amber-900">Phiếu đang quét</span>
+              <SearchableSelect
+                value={activeScanningDraftId || ''}
+                onChange={draftId => loadScanningDraft(draftId)}
+                options={ownedScanningDrafts}
+                placeholder="-- Chọn phiếu lưu tạm để quét tiếp --"
+                searchPlaceholder="Tìm theo kho, mã hàng, người lập..."
+                getLabel={item => warehouseScanningDraftLabel(item as WarehouseScanningDraft)}
+                getValue={item => (item as WarehouseScanningDraft).id}
+                getSearchText={item => warehouseScanningDraftSearchText(item as WarehouseScanningDraft)}
+                inputClassName={warehouseFieldClass}
+                allowEmpty={false}
+                comboboxMode
+                comboboxSearchable
+                desktopAutoFlip
+              />
+            </label>
             <button
-              key={kind}
               type="button"
-              onClick={() => handleWarehouseKindChange(kind)}
-              className={`flex h-11 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-extrabold transition ${
-                warehouseKind === kind
-                  ? 'border-[#ef1b2d] bg-red-50 text-[#ef1b2d]'
-                  : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400'
-              }`}
+              onClick={handleSaveScanningDraft}
+              className="flex h-10 items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 text-xs font-extrabold text-amber-900 transition hover:bg-amber-100"
             >
-              <Icon className="h-4 w-4" />
-              {label}
+              <Save className="h-4 w-4" /> Lưu tạm phiếu
             </button>
-          ))}
+            {activeScanningDraftId ? (
+              <button
+                type="button"
+                onClick={deleteActiveScanningDraft}
+                className="flex h-10 items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 text-xs font-extrabold text-rose-700 transition hover:bg-rose-50"
+              >
+                <Trash2 className="h-4 w-4" /> Xóa phiếu tạm
+              </button>
+            ) : null}
+            <p className="w-full text-[11px] font-semibold text-amber-800">
+              {lastDraftSavedAt
+                ? `Đã tự lưu tạm lúc ${formatWarehouseDraftUpdatedAt(lastDraftSavedAt)}. Có thể đóng trang và mở lại để quét tiếp.`
+                : ownedScanningDrafts.length > 0
+                  ? `Có ${ownedScanningDrafts.length} phiếu đang quét. Chọn một phiếu để tiếp tục.`
+                  : 'Phiếu sẽ tự lưu tạm sau khi quét hoặc nhập mã đầu tiên.'}
+            </p>
+          </div>
+        ) : null}
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <div className="space-y-2">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-zinc-700">Loại phiếu</p>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { key: 'nhap', label: 'Nhập kho', Icon: ArrowDownToLine, slipType: 'nhap' as const, treoMode: false },
+                { key: 'xuat_treo', label: 'Xuất kho treo', Icon: Clock, slipType: 'xuat' as const, treoMode: true },
+                { key: 'xuat', label: 'Xuất kho', Icon: ArrowUpFromLine, slipType: 'xuat' as const, treoMode: false }
+              ] as const).map(option => {
+                const isActive = slipType === option.slipType && isXuatTreoMode === option.treoMode;
+                return (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => handleSlipModeChange(option.slipType, option.treoMode)}
+                    className={`flex h-9 items-center justify-center gap-1.5 rounded-lg border px-2 text-xs font-extrabold transition ${
+                      isActive
+                        ? 'border-[#ef1b2d] bg-red-50 text-[#ef1b2d]'
+                        : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400'
+                    }`}
+                  >
+                    <option.Icon className="h-4 w-4" />
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block space-y-1">
+              <span className="text-xs font-black uppercase tracking-wide text-zinc-700">Tên kho *</span>
+              <SearchableSelect
+                value={warehouseName}
+                onChange={handleWarehouseNameChange}
+                options={warehouseSelectOptions}
+                getLabel={item => String(item)}
+                getValue={item => String(item)}
+                placeholder="-- Chọn tên kho --"
+                inputClassName={warehouseFieldClass}
+                comboboxMode
+                comboboxSearchable={false}
+                matchDropdownWidth
+              />
+              {warehouseName ? (
+                <p className="text-[11px] font-semibold text-zinc-500">
+                  Loại: {warehouseKindLabel(warehouseKind)}
+                  {slipType === 'xuat' &&
+                  !isXuatTreoMode &&
+                  (warehouseKind === 'nvl' || warehouseKind === 'tai_che')
+                    ? ' · Xuất NVL: chọn Ca + Phiếu trộn định mức (PTĐM) bên dưới để tự điền NVL'
+                    : ''}
+                </p>
+              ) : warehouseOptions.length === 0 ? (
+                <p className="text-[11px] font-semibold text-amber-700">
+                  Chưa có tên kho — thêm tại mục Quản lý kho.
+                </p>
+              ) : warehouseSelectOptions.length === 0 ? (
+                <p className="text-[11px] font-semibold text-amber-700">
+                  Bạn chưa được phân quyền lập phiếu cho kho vật tư hoặc kho thành phẩm nào.
+                </p>
+              ) : null}
+            </label>
+          </div>
         </div>
       </section>
 
-      <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-4 shadow-sm space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-[#ef1b2d]/20 bg-red-50 px-4 py-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-wider text-[#ef1b2d]">Tổng tiền phiếu</p>
-              <p className="mt-1 text-2xl font-black text-zinc-950">{formatWarehouseMoney(slipTotal)} đ</p>
-            </div>
-            <p className="text-xs font-semibold text-zinc-500">
-              Tự động cộng thành tiền các dòng (Giá × Số lượng)
-            </p>
-          </div>
-          <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-emerald-600/20 bg-emerald-50 px-4 py-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-wider text-emerald-700">Quy đổi khối lượng</p>
-              {warehouseKind === 'nvl' ? (
-                <>
-                  <p className="mt-1 text-sm font-black text-zinc-950">
-                    NVL chính: {formatWarehouseWeightKg(slipWeightKgByClass.chinh)}
-                  </p>
-                  <p className="text-sm font-black text-zinc-950">
-                    NVL phụ: {formatWarehouseWeightKg(slipWeightKgByClass.phu)}
-                  </p>
-                </>
-              ) : (
-                <p className="mt-1 text-2xl font-black text-zinc-950">{formatWarehouseWeightKg(slipTotalWeightKg)}</p>
-              )}
-            </div>
-            <p className="text-xs font-semibold text-zinc-500">
-              Tự động quy đổi SL × định mức kg (kg, tấn, g hoặc theo danh mục {warehouseKind === 'san_pham' ? 'SP' : 'NVL'})
-            </p>
-          </div>
-        </div>
-
-        <div>
+      {selectedWarehouseName ? (
+        <>
+      <section className="space-y-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
+        <div className="flex items-center gap-2 border-b border-zinc-100 pb-2">
           <p className="text-sm font-black text-zinc-950">Thông tin phiếu</p>
-          <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-            {warehouseSlipTypeLabel(slipType)} · {warehouseKindLabel(warehouseKind)}
+          <p className="text-xs font-semibold text-zinc-400">
+            {slipType === 'xuat' && isXuatTreoMode ? 'Xuất kho treo' : warehouseSlipTypeLabel(slipType)} ·{' '}
+            {warehouseName || warehouseKindLabel(warehouseKind)}
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          {([
-            ['nhap', 'Nhập kho', ArrowDownToLine],
-            ['xuat', 'Xuất kho', ArrowUpFromLine]
-          ] as const).map(([type, label, Icon]) => (
-            <button
-              key={type}
-              type="button"
-              onClick={() => handleSlipTypeChange(type)}
-              className={`flex h-11 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-extrabold transition ${
-                slipType === type
-                  ? 'border-[#ef1b2d] bg-red-50 text-[#ef1b2d]'
-                  : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400'
-              }`}
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="block space-y-1.5">
+        <div
+          className="grid gap-x-2 gap-y-1.5"
+          style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}
+        >
+          <label className="block min-w-0 w-full max-w-full space-y-1 overflow-hidden">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày phiếu *</span>
-            <input type="date" value={slipDate} onChange={event => setSlipDate(event.target.value)} className={warehouseFieldClass} />
+            <div className="relative min-w-0 w-full max-w-full overflow-hidden">
+              <input
+                type="date"
+                value={slipDate}
+                onChange={event => setSlipDate(event.target.value)}
+                className={`${warehouseFieldClass} block min-w-0 max-w-full w-full overflow-hidden`}
+                style={{
+                  minWidth: 0,
+                  width: '100%',
+                  maxWidth: '100%',
+                  boxSizing: 'border-box',
+                  color: 'transparent',
+                  WebkitTextFillColor: 'transparent',
+                  WebkitAppearance: 'none',
+                  appearance: 'none'
+                }}
+              />
+              <span
+                className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center text-xs font-semibold text-zinc-800"
+                aria-hidden="true"
+              >
+                {slipDate
+                  ? (() => {
+                      const [y, m, d] = slipDate.split('-');
+                      return y && m && d ? `${d}/${m}/${y}` : slipDate;
+                    })()
+                  : ''}
+              </span>
+            </div>
           </label>
-          <label className="block space-y-1.5">
+          {showNvlShiftAndMachine ? (
+            <div className="col-span-2 block min-w-0 space-y-1">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                {isNvlInbound ? (
+                  <>
+                    Ca{' '}
+                    <span className="font-semibold normal-case tracking-normal text-zinc-400">
+                      (không bắt buộc)
+                    </span>
+                  </>
+                ) : isNvlExport ? (
+                  <>
+                    Ca{' '}
+                    <span className="font-semibold normal-case tracking-normal text-zinc-400">(chọn 1)</span>
+                  </>
+                ) : (
+                  'Ca'
+                )}
+              </span>
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-2.5">
+                {shiftOptions.length === 0 ? (
+                  <p className="text-xs font-semibold text-zinc-400">Chưa có ca trong cài đặt.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {shiftOptions.map(option => {
+                      const checked = selectedShifts.includes(option.value);
+                      return (
+                        <label
+                          key={option.value}
+                          className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${
+                            checked
+                              ? 'border-[#ef1b2d] bg-red-50 text-[#ef1b2d]'
+                              : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300'
+                          }`}
+                        >
+                          <input
+                            type={isNvlExport ? 'radio' : 'checkbox'}
+                            name={isNvlExport ? 'warehouse-slip-shift' : undefined}
+                            checked={checked}
+                            onChange={() => {
+                              if (isNvlExport) {
+                                setSelectedShifts(current =>
+                                  current.includes(option.value) ? [] : [option.value]
+                                );
+                              } else {
+                                setSelectedShifts(current =>
+                                  toggleWarehouseShiftSelection(current, option.value)
+                                );
+                              }
+                            }}
+                            className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                          />
+                          {option.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                {selectedShifts.length > 0 ? (
+                  <p className="mt-1.5 text-[11px] font-semibold text-zinc-500">
+                    Đã chọn: {formatWarehouseShiftSelection(selectedShifts)}
+                  </p>
+                ) : isNvlInbound ? (
+                  <p className="mt-1.5 text-[11px] font-semibold text-zinc-400">
+                    Có thể bỏ trống ca khi nhập kho NVL.
+                  </p>
+                ) : isNvlExport ? (
+                  <p className="mt-1.5 text-[11px] font-semibold text-zinc-400">
+                    Chọn 1 ca để xuất kho NVL.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+          {showNvlShiftAndMachine ? (
+            <label className="block min-w-0 space-y-1">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Máy</span>
+              <SearchableSelect
+                value={machine}
+                onChange={setMachine}
+                options={machineSelectOptions}
+                getLabel={item => (item as WarehouseMachineSelectOption).label}
+                getValue={item => (item as WarehouseMachineSelectOption).label}
+                getSearchText={item => {
+                  const option = item as WarehouseMachineSelectOption;
+                  return `${option.code} ${option.name} ${option.label}`;
+                }}
+                resolveSelectedItem={(options, value) => {
+                  const normalized = value.trim().toLowerCase();
+                  return (
+                    options.find(item => {
+                      const option = item as WarehouseMachineSelectOption;
+                      return [option.label, option.code, option.name].some(
+                        candidate => candidate.trim().toLowerCase() === normalized
+                      );
+                    }) ?? null
+                  );
+                }}
+                placeholder="Chọn máy..."
+                searchPlaceholder="Tìm máy..."
+                inputClassName={warehouseFieldClass}
+                isLoading={isLoadingMachines}
+                comboboxMode
+                comboboxSearchable={false}
+                desktopAutoFlip
+                matchDropdownWidth
+              />
+            </label>
+          ) : null}
+
+          <label className="block min-w-0 space-y-1">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Người lập</span>
-            <input value={createdBy} onChange={event => setCreatedBy(event.target.value)} className={warehouseFieldClass} placeholder="Tên người lập phiếu" />
+            <input
+              value={createdBy}
+              onChange={event => setCreatedBy(event.target.value)}
+              className={warehouseFieldClass}
+              placeholder={loginName || 'Tên người lập phiếu'}
+              readOnly={Boolean(loginName) && !editSlipCode}
+              title={loginName ? `Theo tài khoản đăng nhập: ${loginName}` : undefined}
+            />
           </label>
           {slipType === 'nhap' ? (
+            <label className="block min-w-0 space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Người giao hàng</span>
+              <input
+                value={deliverer}
+                onChange={event => setDeliverer(event.target.value)}
+                className={warehouseFieldClass}
+                placeholder="Họ tên người giao hàng"
+              />
+            </label>
+          ) : (
+            <label className="block min-w-0 space-y-1.5">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Lý do</span>
+              <input value={reason} onChange={event => setReason(event.target.value)} className={warehouseFieldClass} placeholder="VD: Xuất sản xuất..." />
+            </label>
+          )}
+
+          {slipType === 'nhap' ? (
             <>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Người giao hàng</span>
-                <input
-                  value={deliverer}
-                  onChange={event => setDeliverer(event.target.value)}
-                  className={warehouseFieldClass}
-                  placeholder="Họ tên người giao hàng"
-                />
-              </label>
-              <label className="block space-y-1.5">
+              <label className="block min-w-0 space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Địa điểm</span>
                 <input
                   value={warehouseLocation}
                   onChange={event => setWarehouseLocation(event.target.value)}
                   className={warehouseFieldClass}
-                  placeholder="VD: Phú Thọ"
+                  placeholder="VD: Đà Nẵng"
                 />
               </label>
-            </>
-          ) : (
-            <>
-              <label className="block space-y-1.5">
+              <label className="block min-w-0 space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Lý do</span>
-                <input value={reason} onChange={event => setReason(event.target.value)} className={warehouseFieldClass} placeholder="VD: Xuất sản xuất..." />
+                <input value={reason} onChange={event => setReason(event.target.value)} className={warehouseFieldClass} placeholder="VD: Nhập mua ngoài..." />
               </label>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
-                <input value={note} onChange={event => setNote(event.target.value)} className={warehouseFieldClass} placeholder="Ghi chú thêm (tuỳ chọn)" />
-              </label>
-            </>
-          )}
-          <div className="block space-y-1.5 sm:col-span-2 lg:col-span-4">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
-              {isNvlInbound ? (
-                <>
-                  Ca{' '}
-                  <span className="font-semibold normal-case tracking-normal text-zinc-400">
-                    (không bắt buộc)
-                  </span>
-                </>
-              ) : isNvlExport ? (
-                <>
-                  Ca{' '}
-                  <span className="font-semibold normal-case tracking-normal text-zinc-400">
-                    (chọn 1)
-                  </span>
-                </>
-              ) : (
-                'Ca'
-              )}
-            </span>
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-2.5">
-              {shiftOptions.length === 0 ? (
-                <p className="text-xs font-semibold text-zinc-400">Chưa có ca trong cài đặt.</p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {shiftOptions.map(option => {
-                    const checked = selectedShifts.includes(option.value);
-                    return (
-                      <label
-                        key={option.value}
-                        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${
-                          checked
-                            ? 'border-[#ef1b2d] bg-red-50 text-[#ef1b2d]'
-                            : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300'
-                        }`}
-                      >
-                        <input
-                          type={isNvlExport ? 'radio' : 'checkbox'}
-                          name={isNvlExport ? 'warehouse-slip-shift' : undefined}
-                          checked={checked}
-                          onChange={() => {
-                            if (isNvlExport) {
-                              // Xuất kho NVL: chỉ chọn 1 ca (click lại để bỏ chọn)
-                              setSelectedShifts(current =>
-                                current.includes(option.value) ? [] : [option.value]
-                              );
-                            } else {
-                              setSelectedShifts(current =>
-                                toggleWarehouseShiftSelection(current, option.value)
-                              );
-                            }
-                          }}
-                          className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
-                        />
-                        {option.label}
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-              {selectedShifts.length > 0 ? (
-                <p className="mt-1.5 text-[11px] font-semibold text-zinc-500">
-                  Đã chọn: {shiftLabel}
-                </p>
-              ) : isNvlInbound ? (
-                <p className="mt-1.5 text-[11px] font-semibold text-zinc-400">
-                  Có thể bỏ trống ca khi nhập kho NVL.
-                </p>
-              ) : isNvlExport ? (
-                <p className="mt-1.5 text-[11px] font-semibold text-zinc-400">
-                  Chọn 1 ca để xuất kho NVL.
-                </p>
-              ) : null}
-            </div>
-          </div>
-          {slipType === 'nhap' ? (
-            <>
-              <label className="block space-y-1.5 sm:col-span-2">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Lý do</span>
-                <input value={reason} onChange={event => setReason(event.target.value)} className={warehouseFieldClass} placeholder="VD: Nhập mua ngoài, xuất sản xuất..." />
-              </label>
-              <label className="block space-y-1.5 sm:col-span-2">
+              <label className="block min-w-0 space-y-1">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
                 <input value={note} onChange={event => setNote(event.target.value)} className={warehouseFieldClass} placeholder="Số chứng từ gốc kèm theo..." />
               </label>
             </>
-          ) : null}
-          <div className="relative block space-y-1.5 sm:col-span-2 lg:col-span-4">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
-              {isNvlExport ? 'Phiếu trộn định mức' : 'Mã đơn hàng / Lệnh SX'}{' '}
-              <span className="font-semibold normal-case tracking-normal text-zinc-400">
-                (chọn nhiều)
+          ) : (
+            <label className="block min-w-0 space-y-1">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
+              <input value={note} onChange={event => setNote(event.target.value)} className={warehouseFieldClass} placeholder="Ghi chú thêm (tuỳ chọn)" />
+            </label>
+          )}
+
+          {showOrderFields ? (
+            <div className="relative col-span-2 block min-w-0 space-y-1">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                {isNvlExport ? 'Phiếu trộn định mức' : 'Mã đơn hàng / Lệnh SX'}{' '}
+                <span className="font-semibold normal-case tracking-normal text-zinc-400">
+                  {isNvlExport ? '(tick để tự điền NVL)' : '(chọn nhiều)'}
+                </span>
               </span>
-            </span>
+              {!isNvlExport ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => void handleAutofillFromProductionOrders()}
+                    disabled={isAutofillingFromOrders || isLoadingProductionOrders}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/25 bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    title="Điền máy, lệnh SX và dòng NVL theo định mức BOM × SL lệnh SX"
+                  >
+                    {isAutofillingFromOrders ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <ClipboardCheck className="h-3.5 w-3.5" />
+                    )}
+                    Tự động điền theo lệnh SX
+                  </button>
+                </div>
+              ) : null}
+            </div>
             <button
               type="button"
               ref={productionOrderTriggerRef}
@@ -2351,7 +4087,9 @@ export function WarehouseSlipPanel({
               <span className={`truncate ${productionOrderCodes.length > 0 ? 'text-zinc-800' : 'text-zinc-400'}`}>
                 {productionOrderCodes.length > 0
                   ? `Đã chọn (${productionOrderCodes.length}): ${productionOrderLabel}`
-                  : isNvlExport ? 'Chọn phiếu trộn định mức...' : 'Chọn mã lệnh SX...'}
+                  : isNvlExport
+                    ? 'Chọn phiếu trộn định mức...'
+                    : 'Chọn mã lệnh SX...'}
               </span>
               <ChevronDown
                 className={`h-4 w-4 shrink-0 text-zinc-400 transition-transform ${
@@ -2359,6 +4097,20 @@ export function WarehouseSlipPanel({
                 }`}
               />
             </button>
+            {(editSlipCode ? canEdit : canCreate) ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setScannerMode('hardware');
+                  setQrScannerOpen(true);
+                }}
+                className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-[#ef1b2d] bg-[#ef1b2d] px-5 text-sm font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-[#b30d1c] sm:h-14 sm:text-base"
+                title="Quét máy: mã chỉ tiền tố quét lại vẫn cộng SL; tem có hậu tố trùng đúng mã thì báo lỗi"
+              >
+                <ScanBarcode className="h-5 w-5 sm:h-6 sm:w-6" />
+                Quét máy
+              </button>
+            ) : null}
             {productionOrderPickerOpen && productionOrderMenuStyle
               ? createPortal(
                   <div
@@ -2384,11 +4136,13 @@ export function WarehouseSlipPanel({
                     ) : filteredProductionOrders.length === 0 ? (
                       <p className="text-xs font-semibold text-zinc-400">
                         {pickerOptions.length === 0
-                          ? isNvlExport ? 'Chưa có phiếu trộn định mức (hoặc các PTĐM đều thuộc lệnh đã hoàn thành).' : 'Chưa có lệnh SX.'
+                          ? isNvlExport
+                            ? 'Chưa có phiếu trộn định mức (hoặc các PTĐM đều thuộc lệnh đã hoàn thành).'
+                            : 'Chưa có lệnh SX.'
                           : 'Không khớp bộ lọc.'}
                       </p>
                     ) : (
-                      <div className="max-h-52 overflow-y-auto">
+                      <div className="scrollbar-hidden max-h-52 overflow-y-auto">
                         <div className="flex flex-wrap gap-1.5">
                           {filteredProductionOrders.map(option => {
                             const checked = productionOrderCodes.includes(option.key);
@@ -2422,7 +4176,9 @@ export function WarehouseSlipPanel({
                           ? `Đã chọn ${productionOrderCodes.length} ${isNvlExport ? 'phiếu trộn định mức' : 'lệnh SX'}`
                           : isNvlExport
                             ? 'Tick một hoặc nhiều phiếu trộn định mức để gộp NVL.'
-                            : `Tick nhiều mã lệnh SX${warehouseKind === 'san_pham' ? ' — sẽ gộp dòng sản phẩm' : ''}.`}
+                            : slipDate
+                              ? `Lọc theo ngày ${slipDate}${selectedShifts.length > 0 ? ` · ${selectedShifts.length} ca` : ''}`
+                              : 'Tick nhiều mã lệnh SX.'}
                       </p>
                       <button
                         type="button"
@@ -2436,7 +4192,23 @@ export function WarehouseSlipPanel({
                   document.body
                 )
               : null}
-          </div>
+            </div>
+          ) : (editSlipCode ? canEdit : canCreate) ? (
+            <div className="relative col-span-2 block min-w-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setScannerMode('hardware');
+                  setQrScannerOpen(true);
+                }}
+                className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-[#ef1b2d] bg-[#ef1b2d] px-5 text-sm font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-[#b30d1c] sm:h-14 sm:text-base"
+                title="Quét máy: mã chỉ tiền tố quét lại vẫn cộng SL; tem có hậu tố trùng đúng mã thì báo lỗi"
+              >
+                <ScanBarcode className="h-5 w-5 sm:h-6 sm:w-6" />
+                Quét máy
+              </button>
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -2447,435 +4219,459 @@ export function WarehouseSlipPanel({
               <p className="text-xs font-black uppercase tracking-wider text-zinc-500">
                 Chi tiết {warehouseKind === 'san_pham' ? 'sản phẩm' : 'NVL'}
               </p>
-              <p className="mt-0.5 text-[11px] font-semibold text-zinc-500">
-                {isNvlExport
-                  ? 'Giá tự gợi ý theo BQ nhập trong tháng của ngày phiếu — có thể sửa tay.'
-                  : `Mỗi dòng là một ${warehouseKind === 'san_pham' ? 'mã SP' : 'mã NPL'} trong phiếu`}
-              </p>
+              {normLoadMessage ? (
+                <p className="mt-1 rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                  {normLoadMessage}
+                </p>
+              ) : null}
             </div>
             {(editSlipCode ? canEdit : canCreate) ? (
-              warehouseKind === 'nvl' ? (
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setLines(current => [...current, { ...createWarehouseLineDraft(), warehouseClass: 'nvl_chinh' }])}
-                    className="flex h-8 items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-[11px] font-extrabold text-blue-700 transition hover:bg-blue-100"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Thêm NVL chính
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLines(current => [...current, { ...createWarehouseLineDraft(), warehouseClass: 'nvl_phu', nhomVthh: '' }])}
-                    className="flex h-8 items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2.5 text-[11px] font-extrabold text-violet-700 transition hover:bg-violet-100"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Thêm NVL phụ
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLines(current => consolidateWarehouseLines(current, itemOptions))}
-                    className="flex h-8 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-[11px] font-extrabold text-amber-800 transition hover:bg-amber-100"
-                    title="Gộp các dòng NVL phụ cùng tên + cùng giá (Băng Dính/Tem phải trùng thêm nhóm VTHH)"
-                  >
-                    <Layers className="h-3.5 w-3.5" />
-                    Gộp NVL phụ
-                  </button>
-                </div>
-              ) : (
+              <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto">
                 <button
                   type="button"
-                  onClick={() => setLines(current => [...current, createWarehouseLineDraft()])}
-                  className="flex h-8 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] font-extrabold text-zinc-700 transition hover:bg-zinc-100"
+                  onClick={() => {
+                    setScannerMode('camera');
+                    setQrScannerOpen(true);
+                  }}
+                  className="flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-[#ef1b2d] px-2.5 text-[11px] font-extrabold text-white transition hover:bg-[#b30d1c]"
+                  title="Quét ĐT: mã chỉ tiền tố quét lại vẫn cộng SL; tem có hậu tố trùng đúng mã thì báo lỗi"
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                  Thêm dòng
+                  <ScanBarcode className="h-3.5 w-3.5" />
+                  Quét ĐT
                 </button>
-              )
-            ) : null}
-          </div>
-
-          <div
-            className={
-              warehouseKind === 'nvl' && isNvlExport
-                ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
-                : warehouseKind === 'nvl'
-                ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
-                : slipType === 'nhap' || isNvlExport
-                ? 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
-                : 'hidden xl:grid xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6.5rem_7.5rem_2.5rem] xl:gap-3 xl:border-b xl:border-zinc-200/80 xl:pb-1.5'
-            }
-          >
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
-              {warehouseItemCodeLabel(warehouseKind)} *
-            </span>
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
-              {warehouseItemNameLabel(warehouseKind)}
-            </span>
-            {warehouseKind === 'nvl' ? (
-              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tên sản xuất</span>
-            ) : null}
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Đơn vị</span>
-            {slipType === 'nhap' ? (
-              <>
-                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Theo chứng từ</span>
-                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Thực nhập *</span>
-              </>
-            ) : isNvlExport ? (
-              <>
-                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tồn đầu ca</span>
-                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL CT</span>
-                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">SL Thực *</span>
-              </>
-            ) : (
-              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Số lượng *</span>
-            )}
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Quy đổi kg</span>
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Giá</span>
-            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Thành tiền</span>
-            <span />
-          </div>
-
-          <div className="divide-y divide-zinc-200/80">
-            {normLoadMessage ? <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">{normLoadMessage}</p> : null}
-            {lines.map((line, index) => (
-              <React.Fragment key={line.key}>
-              {isNvlExport && (
-                index === 0 ||
-                normalizeWarehouseMaterialClass(line.warehouseClass) !== normalizeWarehouseMaterialClass(lines[index - 1]?.warehouseClass)
-              ) ? (
-                <div className="flex items-center justify-between gap-2 border-t border-zinc-200 bg-zinc-100 px-2 py-2 text-xs font-black uppercase tracking-wide text-zinc-700">
-                  <span>{warehouseMaterialClassLabel(line.warehouseClass)}</span>
-                  {(() => {
-                    const cls = normalizeWarehouseMaterialClass(line.warehouseClass);
-                    if (cls !== 'nvl_chinh' && cls !== 'nvl_phu') return null;
-                    const total = cls === 'nvl_chinh' ? slipWeightKgByClass.chinh : slipWeightKgByClass.phu;
-                    return <span className="font-mono normal-case">Tổng TL: {formatWarehouseWeightKg(total)}</span>;
-                  })()}
-                </div>
-              ) : null}
-              <div
-                key={line.key}
-                className={
-                  warehouseKind === 'nvl' && isNvlExport
-                    ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
-                    : warehouseKind === 'nvl'
-                    ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
-                    : slipType === 'nhap' || isNvlExport
-                    ? 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_5.5rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
-                    : 'grid grid-cols-1 gap-3 py-2 first:pt-0 last:pb-0 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_6.5rem_7.5rem_2.5rem] xl:items-center xl:gap-3'
-                }
-              >
-                <div className="sm:col-span-2 xl:col-span-1">
-                  <SearchableSelect
-                    value={line.materialId || line.code}
-                    onChange={identity => pickItem(line.key, identity)}
-                    options={
-                      warehouseKind === 'nvl'
-                        ? (() => {
-                            const lineClass = normalizeWarehouseMaterialClass(line.warehouseClass);
-                            if (lineClass === 'nvl_chinh') {
-                              return itemOptions.filter(opt =>
-                                normalizeWarehouseMaterialClass((opt as MaterialOption).phanLoai) === 'nvl_chinh'
-                              );
-                            }
-                            if (lineClass === 'nvl_phu') {
-                              return itemOptions.filter(opt =>
-                                normalizeWarehouseMaterialClass((opt as MaterialOption).phanLoai) === 'nvl_phu'
-                              );
-                            }
-                            return itemOptions;
-                          })()
-                        : itemOptions
-                    }
-                    placeholder={
-                      warehouseKind === 'san_pham'
-                        ? 'Gõ để tìm mã SP'
-                        : normalizeWarehouseMaterialClass(line.warehouseClass) === 'nvl_chinh'
-                          ? 'Gõ tìm NVL chính'
-                          : normalizeWarehouseMaterialClass(line.warehouseClass) === 'nvl_phu'
-                            ? 'Gõ tìm NVL phụ'
-                            : 'Gõ để tìm mã NPL'
-                    }
-                    isLoading={isLoadingItems}
-                    disabled={isLoadingItems}
-                    inputClassName={warehouseFieldClass}
-                    desktopAutoFlip
-                    getLabel={item => {
-                      const option = item as MaterialOption;
-                      return [option.code, option.name, warehouseKind === 'nvl' ? option.productionName : '']
-                        .filter(Boolean)
-                        .join(' · ');
-                    }}
-                    getValue={item => (item as MaterialOption).id || (item as MaterialOption).code}
-                    resolveSelectedItem={(options, value) =>
-                      options.find(item => {
-                        const option = item as MaterialOption;
-                        return option.id === value || option.code === value;
-                      }) ?? null
-                    }
-                  />
-                </div>
-                <div>
-                  <input
-                    value={line.name}
-                    onChange={event => updateLine(line.key, { name: event.target.value })}
-                    className={warehouseFieldClass}
-                  />
-                </div>
-                {warehouseKind === 'nvl' ? (
-                  <div>
-                    <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
-                      Tên sản xuất {line.nhomVthh ? '· Nhóm VTHH' : ''}
-                    </span>
-                    {isTapeOrStampMaterial(
-                      normalizeNhomVatTuPhuKey(line.auxiliaryGroup || line.productionName || line.name || line.code)
-                    ) ? (
-                      <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] gap-1">
-                        <input
-                          value={line.productionName || ''}
-                          readOnly
-                          className={`${warehouseFieldClass} bg-zinc-100 text-xs text-zinc-700`}
-                          placeholder="Tên sản xuất"
-                          title={line.productionName || undefined}
-                        />
-                        <select
-                          value={line.nhomVthh || ''}
-                          onChange={event => updateLineNhomVthh(line.key, event.target.value)}
-                          className={`${warehouseFieldClass} border-amber-300 bg-amber-50 text-xs font-bold text-amber-900`}
-                          title="Nhóm VTHH — ảnh hưởng đến trọng lượng tính"
-                        >
-                          <option value="">-- Chọn VTHH --</option>
-                          <option value="TP; PX Rỗng">TP; PX Rỗng</option>
-                          <option value="TP; PX Đặc">TP; PX Đặc</option>
-                          <option value="TP; PX Sóng">TP; PX Sóng</option>
-                        </select>
-                      </div>
-                    ) : (
-                      <input
-                        value={line.productionName || ''}
-                        readOnly
-                        className={`${warehouseFieldClass} bg-zinc-100 text-zinc-700`}
-                        placeholder="Tên sản xuất"
-                        title={line.productionName || undefined}
-                      />
-                    )}
-                  </div>
-                ) : null}
-                <div>
-                  <input
-                    value={line.unit}
-                    onChange={event => updateLine(line.key, { unit: event.target.value })}
-                    className={warehouseFieldClass}
-                  />
-                </div>
-                {slipType === 'nhap' ? (
+                {warehouseKind === 'nvl' || warehouseKind === 'tai_che' ? (
                   <>
-                    <div>
-                      <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
-                        Theo chứng từ
-                      </span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={line.documentQuantity || ''}
-                        onChange={event => updateLine(line.key, { documentQuantity: event.target.value })}
-                        className={warehouseFieldClass}
-                        placeholder="SL CT"
-                      />
-                    </div>
-                    <div>
-                      <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
-                        Thực nhập *
-                      </span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={line.quantity}
-                        onChange={event => updateLine(line.key, { quantity: event.target.value })}
-                        className={warehouseFieldClass}
-                        placeholder="SL thực"
-                      />
-                    </div>
-                  </>
-                ) : isNvlExport ? (
-                  <>
-                    <div>
-                      <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
-                        Tồn đầu ca
-                      </span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={line.tonDauCaMay || ''}
-                        onChange={event => updateLine(line.key, { tonDauCaMay: event.target.value })}
-                        className={warehouseFieldClass}
-                        placeholder="Tồn ĐC"
-                        title="Tồn đầu ca của máy (nhập tay)"
-                      />
-                    </div>
-                    <div>
-                      <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
-                        SL CT
-                      </span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={line.documentQuantity || ''}
-                        onChange={event => updateLine(line.key, { documentQuantity: event.target.value })}
-                        className={warehouseFieldClass}
-                        placeholder="SL CT"
-                      />
-                    </div>
-                    <div>
-                      <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
-                        SL Thực *
-                      </span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={line.quantity}
-                        onChange={event => updateLine(line.key, { quantity: event.target.value })}
-                        className={warehouseFieldClass}
-                        placeholder="SL thực"
-                      />
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setLines(current => [
+                          ...current,
+                          { ...createWarehouseLineDraft(), warehouseClass: 'nvl_chinh' }
+                        ])
+                      }
+                      className="flex h-8 items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-[11px] font-extrabold text-blue-700 transition hover:bg-blue-100"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Thêm NVL chính
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setLines(current => [
+                          ...current,
+                          { ...createWarehouseLineDraft(), warehouseClass: 'nvl_phu', nhomVthh: '' }
+                        ])
+                      }
+                      className="flex h-8 items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2.5 text-[11px] font-extrabold text-violet-700 transition hover:bg-violet-100"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Thêm NVL phụ
+                    </button>
                   </>
                 ) : (
-                  <div>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={line.quantity}
-                      onChange={event => updateLine(line.key, { quantity: event.target.value })}
-                      className={warehouseFieldClass}
-                      placeholder="VD: 100,00"
-                    />
-                  </div>
-                )}
-                <div>
-                  <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
-                    Quy đổi kg
-                  </span>
-                  <div className={`${warehouseFieldClass} flex items-center whitespace-nowrap bg-emerald-50/60 font-mono font-bold text-emerald-800`}>
-                    {formatWarehouseWeightKg(resolveLineWeightKg(line))}
-                  </div>
-                </div>
-                <div>
-                  <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-zinc-500 xl:hidden">
-                    Giá
-                  </span>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={line.unitPrice}
-                      onChange={event => updateLine(line.key, { unitPrice: sanitizeMoneyInput(event.target.value) })}
-                      onBlur={event => updateLine(line.key, { unitPrice: sanitizeMoneyInput(event.target.value) })}
-                      className={`${warehouseFieldClass} ${
-                        isNvlExport && avgPriceLoadingCode === line.code.trim()
-                          ? 'border-amber-300 bg-amber-50/70'
-                          : isNvlExport && line.unitPrice.trim()
-                            ? 'border-emerald-200 bg-emerald-50/40'
-                            : ''
-                      }`}
-                      title={
-                        isNvlExport
-                          ? `Gợi ý BQ nhập tháng ${formatAvgPriceMonthLabel(slipDate)} — có thể sửa`
-                          : undefined
-                      }
-                      placeholder={
-                        isNvlExport
-                          ? avgPriceLoadingCode === line.code.trim()
-                            ? 'Đang lấy giá BQ...'
-                            : (() => {
-                                const avg = avgInboundPriceByKey[avgPriceCacheKey(line.code, slipDate)];
-                                return avg && avg > 0
-                                  ? `Gợi ý BQ: ${formatWarehouseMoney(avg)}`
-                                  : 'VD: 25.000';
-                              })()
-                          : 'VD: 25.000'
-                      }
-                    />
-                    {isNvlExport && avgPriceLoadingCode === line.code.trim() ? (
-                      <Loader2 className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-amber-600" />
-                    ) : null}
-                  </div>
-                </div>
-                <div>
-                  <div
-                    className={`${warehouseFieldClass} flex items-center justify-end whitespace-nowrap bg-white font-mono font-bold tabular-nums text-zinc-900`}
-                  >
-                    {formatWarehouseMoney(computeWarehouseLineAmount(line.quantity, line.unitPrice))}
-                  </div>
-                </div>
-                {lines.length > 1 && canDelete ? (
                   <button
                     type="button"
-                    onClick={() => setLines(current => current.filter(item => item.key !== line.key))}
-                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-                    title="Xóa dòng"
+                    onClick={() => setLines(current => [...current, createWarehouseLineDraft()])}
+                    className="flex h-8 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] font-extrabold text-zinc-700 transition hover:bg-zinc-100"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Plus className="h-3.5 w-3.5" />
+                    Thêm dòng
+                  </button>
+                )}
+                {slipType === 'xuat' && warehouseKind !== 'san_pham' ? (
+                  <button
+                    type="button"
+                    onClick={handleRefreshWeightCatalog}
+                    disabled={isLoadingItems}
+                    className="flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-[11px] font-extrabold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    title="Tải lại cột Tổng kg từ kho NVL sau khi sửa định lượng"
+                  >
+                    {isLoadingItems ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                    Làm mới Tổng kg
+                  </button>
+                ) : null}
+                {canDelete ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!window.confirm('Xóa hết tất cả các dòng sản phẩm trong phiếu?')) return;
+                      scannedFullCodesByPrefixRef.current.clear();
+                      setLines([createWarehouseLineDraft()]);
+                    }}
+                    className="flex h-8 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] font-extrabold text-zinc-700 transition hover:border-red-200 hover:bg-red-50 hover:text-[#ef1b2d]"
+                    title="Xóa toàn bộ các dòng đã nhập/import"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Xóa hết
                   </button>
                 ) : null}
               </div>
-              </React.Fragment>
-            ))}
+            ) : null}
+            </div>
+
+            {(warehouseKind === 'nvl' || warehouseKind === 'tai_che') &&
+            (slipWeightKgByClass.chinh !== null || slipWeightKgByClass.phu !== null) ? (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] font-black">
+                <span className="uppercase tracking-wide text-zinc-500">Tổng TL phiếu:</span>
+                <span className="text-sky-800">
+                  NVL chính: {formatWarehouseWeightKg(slipWeightKgByClass.chinh)}
+                </span>
+                <span className="text-emerald-800">
+                  NVL phụ: {formatWarehouseWeightKg(slipWeightKgByClass.phu)}
+                </span>
+              </div>
+            ) : null}
+
+            {isNvlExport && tonDauCaSource ? (
+            <p className="mb-2 text-[11px] font-semibold text-zinc-500">
+              Tồn đầu ca lấy từ sổ trộn ca trước: {tonDauCaSource.ngay}
+              {tonDauCaSource.ca ? ` · ${tonDauCaSource.ca}` : ''}.
+            </p>
+          ) : null}
+
+          <div className="scrollbar-hidden -mx-0.5 md:overflow-x-auto">
+            <div
+              className={
+                isNvlExport
+                  ? warehouseXuatNvlHeaderGridClass
+                  : slipType === 'xuat'
+                    ? warehouseXuatHeaderGridClass
+                    : warehouseNhapHeaderGridClass
+              }
+            >
+              <span className={`${warehouseLineHeaderClass} ${warehouseLineMobileHiddenClass} text-center`}>STT</span>
+              <span className={warehouseLineHeaderClass}>
+                <span className="md:hidden">{warehouseKind === 'san_pham' ? 'Mã SP *' : 'Mã NVL *'}</span>
+                <span className="hidden md:inline">{warehouseItemCodeLabel(warehouseKind)} *</span>
+              </span>
+              <span className={`${warehouseLineHeaderClass} ${warehouseLineMobileHiddenClass}`}>
+                {warehouseItemNameLabel(warehouseKind)}
+              </span>
+              <span className={`${warehouseLineHeaderClass} ${warehouseLineMobileHiddenClass}`}>ĐVT</span>
+              {slipType === 'xuat' ? (
+                <>
+                  {isNvlExport ? (
+                    <span className={`${warehouseLineHeaderClass} ${warehouseLineMobileHiddenClass}`}>Tồn đầu ca</span>
+                  ) : null}
+                  <span className={`${warehouseLineHeaderClass} ${warehouseLineMobileHiddenClass}`}>SL CT</span>
+                  <span className={warehouseLineHeaderClass}>
+                    <span className="md:hidden">Số lượng *</span>
+                    <span className="hidden md:inline">SL THỰC *</span>
+                  </span>
+                </>
+              ) : (
+                <span className={warehouseLineHeaderClass}>Số lượng *</span>
+              )}
+              <span className={warehouseLineHeaderClass}>
+                <span className="md:hidden">Trọng lượng</span>
+                <span className="hidden md:inline">Quy đổi kg</span>
+              </span>
+              <span className={`${warehouseLineHeaderClass} ${warehouseLineMobileHiddenClass}`}>Giá</span>
+              <span className={`${warehouseLineHeaderClass} ${warehouseLineMobileHiddenClass} text-right`}>Thành tiền</span>
+              <span className={warehouseLineMobileHiddenClass} />
+            </div>
+
+            <div>
+              {lines.map((line, index) => (
+                <React.Fragment key={line.key}>
+                  {(warehouseKind === 'nvl' || warehouseKind === 'tai_che') &&
+                  (index === 0 ||
+                    normalizeWarehouseMaterialClass(line.warehouseClass) !==
+                      normalizeWarehouseMaterialClass(lines[index - 1]?.warehouseClass)) ? (
+                    <div className="mb-1 mt-2 flex items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-100 px-2 py-1.5 text-[11px] font-black uppercase tracking-wide text-zinc-700 first:mt-0">
+                      <span>{warehouseMaterialClassLabel(line.warehouseClass)}</span>
+                      {(() => {
+                        const cls = normalizeWarehouseMaterialClass(line.warehouseClass);
+                        if (cls !== 'nvl_chinh' && cls !== 'nvl_phu') return null;
+                        const total = cls === 'nvl_chinh' ? slipWeightKgByClass.chinh : slipWeightKgByClass.phu;
+                        return (
+                          <span className="font-mono normal-case tracking-normal text-zinc-600">
+                            Tổng TL: {formatWarehouseWeightKg(total)}
+                          </span>
+                        );
+                      })()}
+                    </div>
+                  ) : null}
+                  <div
+                    className={
+                      isNvlExport
+                        ? warehouseXuatNvlLineGridClass
+                        : slipType === 'xuat'
+                          ? warehouseXuatLineGridClass
+                          : warehouseNhapLineGridClass
+                    }
+                  >
+                  <div className={`hidden min-w-0 items-center justify-center text-xs font-bold text-zinc-500 md:flex`}>
+                    {index + 1}
+                  </div>
+                  <div className="min-w-0">
+                    <SearchableSelect
+                      value={line.code}
+                      onChange={code => pickItem(line.key, code)}
+                      options={
+                        warehouseKind === 'nvl' || warehouseKind === 'tai_che'
+                          ? (() => {
+                              const lineClass = normalizeWarehouseMaterialClass(line.warehouseClass);
+                              if (lineClass === 'nvl_chinh') {
+                                return itemOptions.filter(
+                                  opt =>
+                                    normalizeWarehouseMaterialClass((opt as MaterialOption).phanLoai) ===
+                                    'nvl_chinh'
+                                );
+                              }
+                              if (lineClass === 'nvl_phu') {
+                                return itemOptions.filter(
+                                  opt =>
+                                    normalizeWarehouseMaterialClass((opt as MaterialOption).phanLoai) ===
+                                    'nvl_phu'
+                                );
+                              }
+                              return itemOptions;
+                            })()
+                          : itemOptions
+                      }
+                      placeholder={
+                        warehouseKind === 'san_pham'
+                          ? ''
+                          : normalizeWarehouseMaterialClass(line.warehouseClass) === 'nvl_chinh'
+                            ? 'Gõ tìm NVL chính'
+                            : normalizeWarehouseMaterialClass(line.warehouseClass) === 'nvl_phu'
+                              ? 'Gõ tìm NVL phụ'
+                              : ''
+                      }
+                      emptyInputText=""
+                      isLoading={isLoadingItems}
+                      disabled={isLoadingItems}
+                      inputClassName={warehouseLineFieldClass}
+                      desktopAutoFlip
+                      getLabel={item => {
+                        const option = item as MaterialOption;
+                        return `${option.code} · ${option.name}`;
+                      }}
+                      getValue={item => (item as MaterialOption).code}
+                    />
+                  </div>
+                  <div className={`min-w-0 ${warehouseLineMobileHiddenClass}`}>
+                    <input
+                      value={line.name}
+                      onChange={event => updateLine(line.key, { name: event.target.value })}
+                      className={warehouseLineFieldClass}
+                    />
+                  </div>
+                  <div className={`min-w-0 ${warehouseLineMobileHiddenClass}`}>
+                    <input
+                      value={line.unit}
+                      onChange={event => updateLine(line.key, { unit: event.target.value })}
+                      className={warehouseLineFieldClass}
+                    />
+                  </div>
+                  {slipType === 'xuat' ? (
+                    <>
+                      {isNvlExport ? (
+                        <div className={`min-w-0 ${warehouseLineMobileHiddenClass}`}>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={line.tonDauCaMay || ''}
+                            onChange={event => updateLine(line.key, { tonDauCaMay: event.target.value })}
+                            className={`${warehouseLineFieldClass} ${
+                              line.tonDauCaMay?.trim() ? 'border-sky-200 bg-sky-50/50' : ''
+                            }`}
+                            placeholder="Tồn ĐC"
+                            title="Tồn đầu ca máy — tự lấy từ sổ trộn ca trước, có thể sửa"
+                          />
+                        </div>
+                      ) : null}
+                      <div className={`min-w-0 ${warehouseLineMobileHiddenClass}`}>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={line.documentQuantity || ''}
+                          onChange={event => updateLine(line.key, { documentQuantity: event.target.value })}
+                          className={warehouseLineFieldClass}
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={line.quantity}
+                          onChange={event => updateLine(line.key, { quantity: event.target.value })}
+                          className={warehouseLineFieldClass}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="min-w-0">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={line.quantity}
+                        onChange={event => updateLine(line.key, { quantity: event.target.value })}
+                        className={warehouseLineFieldClass}
+                      />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <div
+                      className={`${warehouseLineFieldClass} flex items-center whitespace-nowrap bg-emerald-50/60 font-mono font-bold text-emerald-800`}
+                      title={resolveLineWeightHint(line)}
+                    >
+                      {(() => {
+                        const weightKg = resolveLineWeightKg(line);
+                        return weightKg === null ? '' : formatWarehouseWeightKg(weightKg);
+                      })()}
+                    </div>
+                  </div>
+                  <div className={`min-w-0 ${warehouseLineMobileHiddenClass}`}>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={line.unitPrice}
+                        onChange={event => updateLine(line.key, { unitPrice: sanitizeMoneyInput(event.target.value) })}
+                        onBlur={event => updateLine(line.key, { unitPrice: sanitizeMoneyInput(event.target.value) })}
+                        className={`${warehouseLineFieldClass} pr-6 ${
+                          isNvlExport && avgPriceLoadingCode === line.code.trim()
+                            ? 'border-amber-300 bg-amber-50/70'
+                            : isNvlExport && line.unitPrice.trim()
+                              ? 'border-emerald-200 bg-emerald-50/40'
+                              : ''
+                        }`}
+                        title={
+                          isNvlExport
+                            ? `Gợi ý BQ nhập tháng ${formatAvgPriceMonthLabel(slipDate)} — có thể sửa`
+                            : undefined
+                        }
+                      />
+                      {isNvlExport && avgPriceLoadingCode === line.code.trim() ? (
+                        <Loader2 className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-amber-600" />
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className={`min-w-0 ${warehouseLineMobileHiddenClass}`}>
+                    <div
+                      className={`${warehouseLineFieldClass} flex items-center justify-end whitespace-nowrap bg-zinc-50 font-mono font-bold tabular-nums text-zinc-900`}
+                    >
+                      {formatWarehouseMoney(computeWarehouseLineAmount(line.quantity, line.unitPrice))}
+                    </div>
+                  </div>
+                  {lines.length > 1 && canDelete ? (
+                    <button
+                      type="button"
+                      onClick={() => setLines(current => current.filter(item => item.key !== line.key))}
+                      className={`hidden h-8 w-8 items-center justify-center rounded-md border border-zinc-200 text-zinc-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 md:flex`}
+                      title="Xóa dòng"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  ) : (
+                    <span className={warehouseLineMobileHiddenClass} />
+                  )}
+                  </div>
+                  {isNvlExport && !line.isScanned ? (
+                    <div className="mb-2 grid grid-cols-1 justify-items-center gap-2 rounded-lg border border-red-100 bg-red-50/40 p-2 md:justify-items-start">
+                      {([
+                        {
+                          type: 'weight' as const,
+                          label: 'Ảnh số cân thực tế',
+                          url: line.actualWeightImageUrl,
+                          title: 'Ảnh số cân thực tế'
+                        }
+                      ]).map(image => {
+                        const inputId = `warehouse-${image.type}-image-${line.key}`;
+                        const isUploading = uploadingLineImageKey === `${line.key}-${image.type}`;
+                        return (
+                          <div key={image.type} className="w-full max-w-2xl min-w-0 space-y-1.5 md:max-w-none">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-zinc-600">
+                                <ImagePlus className="h-3.5 w-3.5 text-[#ef1b2d]" />
+                                {image.label} <span className="text-[#ef1b2d]">*</span>
+                              </span>
+                              {image.url ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingSlipImage({ url: image.url!, title: `${image.title} · ${line.code}` })}
+                                  className="text-[10px] font-bold text-[#ef1b2d] underline"
+                                >
+                                  Xem ảnh
+                                </button>
+                              ) : null}
+                            </div>
+                            <input
+                              id={inputId}
+                              {...CAMERA_IMAGE_INPUT_PROPS}
+                              disabled={isUploading || isSaving}
+                              className="hidden"
+                              onChange={event => {
+                                const file = event.target.files?.[0] || null;
+                                event.target.value = '';
+                                if (file) void handleLineActualImageUpload(line.key, file);
+                              }}
+                            />
+                            <label
+                              htmlFor={inputId}
+                              className="flex h-10 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700 transition hover:border-[#ef1b2d] hover:bg-red-50 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60"
+                            >
+                              {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+                              {isUploading ? 'Đang tải ảnh...' : image.url ? 'Chụp lại' : 'Chụp ảnh'}
+                            </label>
+                            {image.url ? (
+                              <WeighingImageThumbnail
+                                url={image.url}
+                                alt={`${image.title} của ${line.code}`}
+                                title={`${image.title} · ${line.code}`}
+                                onView={() => setViewingSlipImage({ url: image.url!, title: `${image.title} · ${line.code}` })}
+                                className="block h-20 w-full overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 transition hover:border-[#ef1b2d]"
+                              />
+                            ) : (
+                              <p className="text-[10px] font-semibold text-zinc-500">Bắt buộc chụp trước khi lưu phiếu.</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </React.Fragment>
+              ))}
+            </div>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2">
           <p className="mr-auto text-[11px] font-semibold text-zinc-500">
-            Phiếu chỉ xuất hiện trong lịch sử sau khi bấm <strong>Lưu &amp; in</strong> hoặc <strong>In phiếu</strong>.
+            Phiếu chỉ cập nhật tồn kho sau khi bấm nút lưu.
           </p>
-          {isNvlExport ? (
-            <div className="flex w-full flex-wrap items-center gap-x-5 gap-y-1 rounded-xl border-2 border-zinc-900/10 bg-zinc-50 px-4 py-2.5 text-xs font-black">
-              <span className="uppercase tracking-wide text-zinc-500">Tổng phiếu:</span>
-              <span className="text-zinc-950">Tiền: {formatWarehouseMoney(slipTotal)} đ</span>
-              <span className="text-sky-800">TL NVL chính: {formatWarehouseWeightKg(slipWeightKgByClass.chinh)}</span>
-              <span className="text-emerald-800">TL NVL phụ: {formatWarehouseWeightKg(slipWeightKgByClass.phu)}</span>
-            </div>
-          ) : null}
-          {editSlipCode && isNvlExport ? (
+          <>
+            {(editSlipCode ? canEdit : canCreate) ? (
             <button
               type="button"
-              onClick={() => setShowEditHistory(true)}
-              className="flex h-11 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-5 text-xs font-extrabold text-zinc-700 transition hover:border-zinc-400"
-              title="Xem lịch sử các lần sửa phiếu này"
-            >
-              <History className="h-4 w-4" />
-              Lịch sử thay đổi
-            </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={handlePrintPreview}
-            disabled={isSaving}
-            className="flex h-11 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-5 text-xs font-extrabold text-zinc-700 transition hover:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-            In phiếu
-          </button>
-          {(editSlipCode ? canEdit : canCreate) ? (
-            <button
-              type="button"
-              onClick={handleSave}
+              onClick={() => void handleSave(false)}
               disabled={isSaving}
               className="flex h-11 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-5 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {isSaving
-                ? editSlipCode
-                  ? 'Đang cập nhật...'
-                  : 'Đang lưu...'
-                : editSlipCode
-                  ? `Cập nhật phiếu ${editSlipCode}`
-                  : `Lưu & in phiếu ${warehouseSlipTypeLabel(slipType).toLowerCase()}`}
+              {isSaving ? (editSlipCode ? 'Đang cập nhật...' : 'Đang lưu...') : editSlipCode ? 'Cập nhật phiếu' : 'Lưu phiếu'}
             </button>
-          ) : null}
+            ) : null}
+            <button
+              type="button"
+              onClick={handlePrintSavedSlip}
+              disabled={isSaving || !printSlip}
+              className="flex h-11 items-center gap-1.5 rounded-xl border border-[#ef1b2d] bg-white px-5 text-xs font-extrabold text-[#ef1b2d] transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Printer className="h-4 w-4" />
+              In phiếu
+            </button>
+          </>
         </div>
       </section>
+        </>
+      ) : null}
 
       <WarehouseSlipPrintModal
         open={printModalOpen}
@@ -2885,49 +4681,111 @@ export function WarehouseSlipPanel({
           setPrintModalOpen(false);
           setPrintSlip(null);
           setPrintAutoTrigger(false);
+          if (pendingQrLabels.length > 0) {
+            setQrPrintOpen(true);
+            setQrPrintAutoTrigger(true);
+          }
+        }}
+        onAfterPrint={pendingQrLabels.length > 0 ? () => {
+          setPrintModalOpen(false);
+          setPrintSlip(null);
+          setPrintAutoTrigger(false);
+          setQrPrintOpen(true);
+          setQrPrintAutoTrigger(true);
+        } : undefined}
+      />
+
+      <ProductQrPrintModal
+        open={qrPrintOpen}
+        labels={pendingQrLabels}
+        autoPrint={qrPrintAutoTrigger}
+        trackProductPrint={warehouseKind === 'san_pham'}
+        trackMaterialPrint={warehouseKind === 'nvl'}
+        showPayload={false}
+        title={warehouseKind === 'nvl' ? 'Mã QR NVL nhập kho' : warehouseKind === 'hang_hoa' ? 'Mã QR hàng hóa nhập kho' : undefined}
+        description={
+          warehouseKind === 'nvl'
+            ? `${pendingQrLabels.length} tem · mỗi tem là một đơn vị NVL đã lưu trong CSDL`
+            : warehouseKind === 'hang_hoa'
+              ? `${pendingQrLabels.length} tem · mỗi tem là một đơn vị hàng hóa`
+              : undefined
+        }
+        onClose={() => {
+          setQrPrintOpen(false);
+          setQrPrintAutoTrigger(false);
+          setPendingQrLabels([]);
         }}
       />
-      <WarehouseSlipHistoryModal
-        maPhieu={editSlipCode}
-        open={showEditHistory && Boolean(editSlipCode)}
-        onClose={() => setShowEditHistory(false)}
+
+      <ProductQrScanner
+        open={qrScannerOpen}
+        onClose={() => setQrScannerOpen(false)}
+        onScan={addLineFromScan}
+        hardwareOnly={scannerMode === 'hardware'}
+        closeAfterScan={false}
+        requireConfirm={false}
+        scannedCount={scannedItemCount}
       />
+
+      <WeighingImagePreviewModal image={viewingSlipImage} onClose={() => setViewingSlipImage(null)} />
     </div>
   );
 }
 
 export function WarehouseHistoryPanel({
   onBack,
-  onOpenSlip
+  onOpenSlip,
+  initialFilters,
+  initialWarehouseTab = 'nvl',
+  standaloneSlipCode
 }: {
   onBack: () => void;
   onOpenSlip: () => void;
+  initialFilters?: {
+    dateFrom?: string;
+    dateTo?: string;
+    shift?: string;
+  };
+  initialWarehouseTab?: WarehouseKind;
+  /** Khi có: chỉ hiển thị chi tiết đúng 1 phiếu (trang mở ở tab mới), ẩn bộ lọc & danh sách. */
+  standaloneSlipCode?: string;
 }) {
-  const legacyAccess = useTabAccess('warehouse-slip');
-  const vatTuAccess = useTabAccess('warehouse-slip-vat-tu');
-  const thanhPhamAccess = useTabAccess('warehouse-slip-thanh-pham');
-  const canCreate =
-    legacyAccess.canCreate || vatTuAccess.canCreate || thanhPhamAccess.canCreate;
-  const canEdit = legacyAccess.canEdit || vatTuAccess.canEdit || thanhPhamAccess.canEdit;
-  const canDelete =
-    legacyAccess.canDelete || vatTuAccess.canDelete || thanhPhamAccess.canDelete;
-  const [warehouseTab, setWarehouseTab] = useState<WarehouseKind>('nvl');
+  const isStandalone = Boolean(standaloneSlipCode);
+  const warehouseAccess = useWarehouseSlipAccess();
+  const accessibleWarehouseTabs = WAREHOUSE_HISTORY_TABS.filter(([kind]) =>
+    pickWarehouseSlipAccess(warehouseAccess, kind).canView
+  );
+  const [warehouseTab, setWarehouseTab] = useState<WarehouseKind>(() =>
+    accessibleWarehouseTabs.some(([kind]) => kind === initialWarehouseTab)
+      ? initialWarehouseTab
+      : accessibleWarehouseTabs[0]?.[0] ?? initialWarehouseTab
+  );
+  const { canView, canCreate, canEdit, canDelete } = pickWarehouseSlipAccess(warehouseAccess, warehouseTab);
   const [movements, setMovements] = useState<WarehouseMovementRow[]>([]);
   const [searchText, setSearchText] = useState('');
-  const [selectedType, setSelectedType] = useState<'all' | WarehouseSlipType>('all');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  const [selectedType, setSelectedType] = useState<WarehouseSlipType>('xuat');
+  const [fromDate, setFromDate] = useState(() => initialFilters?.dateFrom?.trim() || '');
+  const [toDate, setToDate] = useState(() => initialFilters?.dateTo?.trim() || '');
+  const [filterShift, setFilterShift] = useState(() => {
+    const shift = initialFilters?.shift?.trim() || '';
+    return !shift || shift === 'all' ? '' : shift;
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [viewingSlipCode, setViewingSlipCode] = useState<string | null>(null);
-  const [historySlipCode, setHistorySlipCode] = useState<string | null>(null);
   const [deletingSlipCode, setDeletingSlipCode] = useState<string | null>(null);
   const [selectedSlipCodes, setSelectedSlipCodes] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
-  const [historyPrintSlip, setHistoryPrintSlip] = useState<WarehouseSlipPrintData | null>(null);
+  const [historyPrintSlips, setHistoryPrintSlips] = useState<WarehouseSlipPrintData[]>([]);
   const [historyPrintOpen, setHistoryPrintOpen] = useState(false);
   const [historyPrintAutoTrigger, setHistoryPrintAutoTrigger] = useState(false);
+  const [historyQrLabels, setHistoryQrLabels] = useState<ProductQrPrintLabel[]>([]);
+  const [historyQrPrintOpen, setHistoryQrPrintOpen] = useState(false);
+  const [historyQrTrackMaterial, setHistoryQrTrackMaterial] = useState(false);
+  const [isLoadingHistoryQr, setIsLoadingHistoryQr] = useState(false);
+  const [historyQrError, setHistoryQrError] = useState('');
+  const [viewingHistoryImage, setViewingHistoryImage] = useState<WeighingPreviewImage | null>(null);
   const [weightCatalogMaterials, setWeightCatalogMaterials] = useState<WarehouseWeightCatalogItem[]>([]);
   const [weightCatalogProducts, setWeightCatalogProducts] = useState<WarehouseWeightCatalogItem[]>([]);
 
@@ -2954,49 +4812,82 @@ export function WarehouseHistoryPanel({
     }
   };
 
-  const resolveWarehouseRowWeightKg = (row: WarehouseMovementRow) => {
-    if (Number.isFinite(row.weightKg) && Number(row.weightKg) > 0) return Number(row.weightKg);
-    const converted = convertWarehouseQuantityToKg({
+  const resolveWarehouseRowWeightKg = (row: WarehouseMovementRow) =>
+    convertWarehouseQuantityToKg({
       quantity: row.quantity,
       unit: row.unit,
       itemCode: row.itemCode,
-      warehouseKind: row.warehouseKind,
+      warehouseKind: row.warehouseKind === 'san_pham' ? 'san_pham' : 'nvl',
       materials: weightCatalogMaterials,
-      products: weightCatalogProducts
+      products: weightCatalogProducts,
+      preferTongKgOnly: true
     });
-    if (converted !== null) return converted;
-    if (row.warehouseKind === 'nvl') {
-      const perUnit = resolveAuxiliaryWeightPerUnit(row.itemName || row.itemCode, row.nhomVthh, row.unit);
-      if (perUnit && perUnit > 0) {
-        return Number((Number(row.quantity || 0) * perUnit).toFixed(4));
-      }
-    }
-    return null;
-  };
 
   useEffect(() => {
     void loadWeightCatalog();
   }, []);
 
+  useEffect(() => {
+    if (canView) return;
+    const firstAllowed = accessibleWarehouseTabs[0]?.[0];
+    if (firstAllowed && firstAllowed !== warehouseTab) setWarehouseTab(firstAllowed);
+  }, [canView, warehouseTab, warehouseAccess.vatTu.canView, warehouseAccess.thanhPham.canView]);
+
   const loadMovements = async () => {
+    if (!canView) {
+      setMovements([]);
+      setIsLoading(false);
+      setError('Bạn không có quyền xem dữ liệu kho này.');
+      return;
+    }
     setIsLoading(true);
     setError('');
 
     try {
       const params = new URLSearchParams();
-      params.set('loai_kho', warehouseTab);
-      if (selectedType !== 'all') params.set('loai', selectedType);
-      if (fromDate) params.set('from', fromDate);
-      if (toDate) params.set('to', toDate);
+      if (standaloneSlipCode) {
+        params.set('ma_phieu', standaloneSlipCode);
+        params.set('treo', 'all');
+      } else {
+        params.set('loai_kho', warehouseTab);
+        params.set('loai', selectedType);
+        if (fromDate) params.set('from', fromDate);
+        if (toDate) params.set('to', toDate);
+      }
 
-      const res = await fetch(`/api/phieu-xuat-nhap-kho?${params.toString()}`);
-      const data = await res.json().catch(() => ({}));
+      const [res, orderRes] = await Promise.all([
+        fetch(`/api/phieu-xuat-nhap-kho?${params.toString()}`),
+        fetch('/api/lenh-sx')
+      ]);
+      const [data, orderData] = await Promise.all([
+        res.json().catch(() => ({})),
+        orderRes.json().catch(() => ({}))
+      ]);
 
       if (!res.ok) {
         throw new Error(data.error || 'Không thể tải lịch sử xuất nhập kho.');
       }
 
-      setMovements(normalizeWarehouseMovements(data));
+      const orderMachineByCode = new Map(
+        (orderRes.ok ? normalizeWarehouseProductionOrders(orderData) : [])
+          .map(order => [order.orderCode.trim().toUpperCase(), order.machine] as const)
+      );
+      const rows = normalizeWarehouseMovements(data)
+        .filter(row => (standaloneSlipCode ? row.slipCode === standaloneSlipCode : row.warehouseKind === warehouseTab))
+        .map(row => {
+          if (row.machine) return row;
+          const linkedCodes = extractLinkedProductionOrderCodes(row.reason, row.note);
+          const machines = [...new Set(
+            linkedCodes.map(code => orderMachineByCode.get(code.trim().toUpperCase()) || '').filter(Boolean)
+          )];
+          return machines.length > 0 ? { ...row, machine: machines.join(', ') } : row;
+        });
+      setMovements(rows);
+      if (standaloneSlipCode && rows[0]) {
+        setViewingSlipCode(standaloneSlipCode);
+        if (rows[0].warehouseKind !== warehouseTab) setWarehouseTab(rows[0].warehouseKind);
+        if (rows[0].slipType !== selectedType) setSelectedType(rows[0].slipType);
+      }
     } catch (loadError: any) {
       setMovements([]);
       setError(loadError.message || 'Không thể tải lịch sử xuất nhập kho.');
@@ -3011,28 +4902,53 @@ export function WarehouseHistoryPanel({
     loadMovements();
   }, [warehouseTab, selectedType, fromDate, toDate]);
 
-  const hasActiveFilters = selectedType !== 'all' || Boolean(fromDate) || Boolean(toDate) || Boolean(searchText);
+  const hasActiveFilters = Boolean(fromDate) || Boolean(toDate) || Boolean(filterShift) || Boolean(searchText);
 
   const resetFilters = () => {
-    setSelectedType('all');
     setFromDate('');
     setToDate('');
+    setFilterShift('');
     setSearchText('');
+  };
+
+  const shiftOptions = useMemo(() => {
+    const shifts = new Set<string>();
+    for (const row of movements) {
+      const raw = String(row.shift || '').trim();
+      if (!raw) continue;
+      raw.split(',').forEach(part => {
+        const shift = part.trim();
+        if (shift) shifts.add(shift);
+      });
+    }
+    return [...shifts].sort((a, b) => a.localeCompare(b, 'vi', { numeric: true }));
+  }, [movements]);
+
+  const movementMatchesShiftFilter = (rowShift: string | undefined, shiftFilter: string) => {
+    if (!shiftFilter) return true;
+    const raw = String(rowShift || '').trim();
+    if (!raw) return false;
+    return raw
+      .split(',')
+      .map(part => part.trim())
+      .filter(Boolean)
+      .some(part => shiftNamesMatch(part, shiftFilter));
   };
 
   const normalizedSearch = searchText.trim().toLowerCase();
   const filteredMovements = useMemo(() => {
     return movements.filter(row => {
+      if (!movementMatchesShiftFilter(row.shift, filterShift)) return false;
       if (!normalizedSearch) return true;
-      return `${row.slipCode} ${row.shift} ${row.itemCode} ${row.itemName} ${row.reason} ${row.createdBy}`
+      return `${row.slipCode} ${row.shift} ${row.machine} ${row.itemCode} ${row.itemName} ${row.reason} ${row.createdBy}`
         .toLowerCase()
         .includes(normalizedSearch);
     });
-  }, [movements, normalizedSearch]);
+  }, [movements, filterShift, normalizedSearch]);
 
   useEffect(() => {
     setSelectedSlipCodes(new Set());
-  }, [normalizedSearch]);
+  }, [normalizedSearch, filterShift]);
 
   const slipGroups = useMemo(() => {
     const map = new Map<string, WarehouseMovementRow[]>();
@@ -3047,11 +4963,15 @@ export function WarehouseHistoryPanel({
         slipCode,
         rows,
         header: rows[0],
+        createdAt: rows.reduce(
+          (latest, row) => row.createdAt.localeCompare(latest) > 0 ? row.createdAt : latest,
+          ''
+        ),
         totalAmount: rows.reduce((sum, row) => sum + row.lineAmount, 0)
       }))
       .sort((a, b) => {
-        const byDate = (b.header.slipDate || '').localeCompare(a.header.slipDate || '');
-        if (byDate !== 0) return byDate;
+        const byCreated = b.createdAt.localeCompare(a.createdAt);
+        if (byCreated !== 0) return byCreated;
         return (b.slipCode || '').localeCompare(a.slipCode || '', 'vi');
       });
   }, [filteredMovements]);
@@ -3064,23 +4984,35 @@ export function WarehouseHistoryPanel({
       current.push(group);
       map.set(key, current);
     });
-    return [...map.entries()].map(([slipDate, groups]) => ({
-      slipDate,
-      groups,
-      totalAmount: groups.reduce((sum, group) => sum + group.totalAmount, 0)
-    }));
+    return [...map.entries()]
+      .map(([slipDate, groups]) => ({
+        slipDate,
+        groups,
+        totalAmount: groups.reduce((sum, group) => sum + group.totalAmount, 0)
+      }))
+      .sort((a, b) => b.slipDate.localeCompare(a.slipDate));
   }, [slipGroups]);
 
   const sortedMovementLines = useMemo(
     () =>
       [...filteredMovements].sort((a, b) => {
-        const byDate = (b.slipDate || '').localeCompare(a.slipDate || '');
-        if (byDate !== 0) return byDate;
+        const aKg = isWarehouseKgUnit(a.unit);
+        const bKg = isWarehouseKgUnit(b.unit);
+        if (aKg !== bKg) return aKg ? -1 : 1;
+
+        const aWeight = resolveWarehouseRowWeightKg(a);
+        const bWeight = resolveWarehouseRowWeightKg(b);
+        const aVal = aWeight !== null && Number.isFinite(aWeight) && aWeight > 0 ? aWeight : -1;
+        const bVal = bWeight !== null && Number.isFinite(bWeight) && bWeight > 0 ? bWeight : -1;
+        if (aVal !== bVal) return bVal - aVal;
+
+        const byCreated = b.createdAt.localeCompare(a.createdAt);
+        if (byCreated !== 0) return byCreated;
         const bySlip = (b.slipCode || '').localeCompare(a.slipCode || '', 'vi');
         if (bySlip !== 0) return bySlip;
         return (a.itemCode || '').localeCompare(b.itemCode || '', 'vi');
       }),
-    [filteredMovements]
+    [filteredMovements, weightCatalogMaterials, weightCatalogProducts]
   );
 
   const selectableSlips = useMemo(
@@ -3106,9 +5038,13 @@ export function WarehouseHistoryPanel({
     );
   };
 
-  const viewingRows = viewingSlipCode
-    ? filteredMovements.filter(row => row.slipCode === viewingSlipCode)
-    : [];
+  const viewingRows = useMemo(() => {
+    if (!viewingSlipCode) return [];
+    return sortWarehouseLinesKgFirst(
+      filteredMovements.filter(row => row.slipCode === viewingSlipCode),
+      { getWeightKg: resolveWarehouseRowWeightKg }
+    );
+  }, [viewingSlipCode, filteredMovements, weightCatalogMaterials, weightCatalogProducts]);
 
   const viewingSlipTotal = useMemo(
     () => viewingRows.reduce((sum, row) => sum + row.lineAmount, 0),
@@ -3119,7 +5055,15 @@ export function WarehouseHistoryPanel({
     let total = 0;
     let hasWeight = false;
     for (const row of viewingRows) {
-      const weight = resolveWarehouseRowWeightKg(row);
+      const weight = convertWarehouseQuantityToKg({
+        quantity: row.quantity,
+        unit: row.unit,
+        itemCode: row.itemCode,
+        warehouseKind: row.warehouseKind === 'san_pham' ? 'san_pham' : 'nvl',
+        materials: weightCatalogMaterials,
+        products: weightCatalogProducts,
+        preferTongKgOnly: true
+      });
       if (weight !== null) {
         total += weight;
         hasWeight = true;
@@ -3128,61 +5072,105 @@ export function WarehouseHistoryPanel({
     return hasWeight ? total : 0;
   }, [viewingRows, weightCatalogMaterials, weightCatalogProducts]);
 
-  const viewingSlipWeightKgByClass = useMemo(() => {
-    let chinh = 0;
-    let phu = 0;
-    let hasChinh = false;
-    let hasPhu = false;
-    for (const row of viewingRows) {
-      const weight = resolveWarehouseRowWeightKg(row);
-      if (weight === null) continue;
-      if (row.materialClass === 'nvl_chinh') {
-        chinh += weight;
-        hasChinh = true;
-      } else if (row.materialClass === 'nvl_phu') {
-        phu += weight;
-        hasPhu = true;
-      }
-    }
-    return {
-      chinh: hasChinh ? chinh : null,
-      phu: hasPhu ? phu : null
-    };
-  }, [viewingRows, weightCatalogMaterials, weightCatalogProducts]);
+  const viewingSlipTotalRolls = useMemo(
+    () => sumWarehouseRollQuantity(viewingRows),
+    [viewingRows]
+  );
 
-  const handlePrintSlipByCode = (slipCode: string, autoPrint = false) => {
+  const buildHistoryPrintSlip = (slipCode: string): WarehouseSlipPrintData | null => {
     const rows = filteredMovements.filter(row => row.slipCode === slipCode);
     const header = rows[0];
-    if (!header) return;
+    if (!header) return null;
 
     const totalAmount = rows.reduce((sum, row) => sum + row.lineAmount, 0);
-    setHistoryPrintSlip({
+    const rawLines = rows.map(row => ({
+      code: row.itemCode,
+      name: row.itemName,
+      unit: row.unit,
+      quantity: row.quantity,
+      documentQuantity: row.documentQuantity ?? null,
+      unitPrice: row.unitPrice,
+      lineAmount: row.lineAmount,
+      weightKg: resolveWarehouseRowWeightKg(row),
+      sourceInboundSlipCode: row.sourceInboundSlipCode
+    }));
+    const lines =
+      header.slipType === 'xuat' && header.warehouseKind !== 'san_pham'
+        ? sortWarehouseLinesKgFirst(mergeWarehousePrintLines(rawLines), {
+            getWeightKg: line => line.weightKg ?? null
+          })
+        : sortWarehouseLinesKgFirst(rawLines, {
+            getWeightKg: line => line.weightKg ?? null
+          });
+    return {
       slipCode,
-      slipType: header.slipType,
+      slipType: header.slipType === 'xuat' ? 'xuat' : 'nhap',
       warehouseKind: header.warehouseKind,
       slipDate: header.slipDate,
       shift: header.shift,
+      machine: header.machine,
       reason: header.reason,
       note: header.note,
       createdBy: header.createdBy,
-      machine: [...new Set(rows.map(row => row.machine).filter(Boolean))].join(', '),
-      totalAmount,
-      lines: rows.map(row => ({
-        code: row.itemCode,
-        name: row.itemName,
-        unit: row.unit,
-        quantity: row.quantity,
-        documentQuantity: row.documentQuantity ?? null,
-        tonDauCaMay: row.tonDauCaMay ?? null,
-        unitPrice: row.unitPrice,
-        lineAmount: row.lineAmount,
-        materialClass: row.materialClass,
-        machine: row.machine,
-        weightKg: resolveWarehouseRowWeightKg(row),
-        sourceInboundSlipCode: row.sourceInboundSlipCode,
-        nhomVthh: row.nhomVthh
-      }))
+      warehouseName: header.warehouseName,
+      totalAmount: lines.reduce((sum, line) => sum + line.lineAmount, 0),
+      lines
+    };
+  };
+
+  const markSlipsPrinted = (slipCodes: string[]) => {
+    const codes = [...new Set(slipCodes.filter(Boolean))];
+    if (codes.length === 0) return;
+    setMovements(prev => prev.map(row => (codes.includes(row.slipCode) ? { ...row, daIn: true } : row)));
+    codes.forEach(code => {
+      fetch(`/api/phieu-xuat-nhap-kho/${encodeURIComponent(code)}/danh-dau-da-in`, { method: 'POST' }).catch(() => {});
     });
+  };
+
+  const handlePrintSlipByCode = (slipCode: string, autoPrint = false) => {
+    if (autoPrint) {
+      const alreadyPrinted = movements.some(row => row.slipCode === slipCode && row.daIn);
+      if (!alreadyPrinted) {
+        if (!window.confirm('In phiếu sẽ khóa việc sửa phiếu này. Bạn có chắc chắn muốn in?')) {
+          return;
+        }
+        markSlipsPrinted([slipCode]);
+      }
+    }
+    const slip = buildHistoryPrintSlip(slipCode);
+    if (!slip) return;
+    setHistoryPrintSlips([slip]);
+    setHistoryPrintAutoTrigger(autoPrint);
+    setHistoryPrintOpen(true);
+  };
+
+  const handlePrintSelectedSlips = (autoPrint = true) => {
+    const slips = slipGroups
+      .filter(group => selectedSlipCodes.has(group.slipCode))
+      .map(group => buildHistoryPrintSlip(group.slipCode))
+      .filter((slip): slip is WarehouseSlipPrintData => Boolean(slip));
+    if (slips.length === 0) {
+      setError('Vui lòng tích chọn ít nhất một phiếu để in gộp.');
+      return;
+    }
+
+    if (autoPrint) {
+      const unprintedCodes = slips
+        .map(slip => slip.slipCode)
+        .filter(code => !movements.some(row => row.slipCode === code && row.daIn));
+      if (unprintedCodes.length > 0) {
+        if (!window.confirm('In phiếu sẽ khóa việc sửa các phiếu này. Bạn có chắc chắn muốn in?')) {
+          return;
+        }
+        markSlipsPrinted(unprintedCodes);
+      }
+    }
+
+    // Mọi phiếu xuất/nhập khi in gộp → 1 bảng; trùng mã (+ ĐVT) thì cộng SL.
+    const printSlips = slips.length > 1 ? [mergeWarehousePrintSlips(slips)] : slips;
+
+    setError('');
+    setHistoryPrintSlips(printSlips);
     setHistoryPrintAutoTrigger(autoPrint);
     setHistoryPrintOpen(true);
   };
@@ -3192,22 +5180,72 @@ export function WarehouseHistoryPanel({
     handlePrintSlipByCode(viewingSlipCode, autoPrint);
   };
 
-  const handleEditSlip = async (slipCode: string) => {
+  const handlePrintViewingQrCodes = async () => {
+    if (!viewingSlipCode || !viewingRows[0]) return;
+    setIsLoadingHistoryQr(true);
+    setHistoryQrError('');
+    try {
+      const response = await fetch(
+        `/api/phieu-xuat-nhap-kho/${encodeURIComponent(viewingSlipCode)}/ma-qr`
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Không thể tải mã QR của phiếu nhập.');
+      const records: Array<Record<string, unknown>> = Array.isArray(data.records) ? data.records : [];
+      const labels = records.map((record, index) => {
+        const payload = String(record.ma_qr ?? record.ma_sp_day_du ?? '').trim();
+        const productCode = String(record.ma_npl_goc ?? record.ma_sp_goc ?? '').trim();
+        const movement = viewingRows.find(row => row.itemCode === payload)
+          || viewingRows.find(row => row.itemCode.startsWith(`${productCode}_`));
+        return {
+          key: `${viewingSlipCode}-${index}-${payload}`,
+          payload,
+          productCode,
+          productName: movement?.itemName || String(record.ten_npl ?? record.ten_sp ?? '').trim(),
+          itemLabel: viewingRows[0].warehouseKind === 'nvl' ? 'Tên NVL' : undefined,
+          unit: movement?.unit && movement.unit !== '-' ? movement.unit : undefined
+        };
+      }).filter(label => Boolean(label.payload));
+      if (labels.length === 0) throw new Error('Phiếu nhập này chưa có mã QR chi tiết để in.');
+      setHistoryQrLabels(labels);
+      setHistoryQrTrackMaterial(viewingRows[0].warehouseKind === 'nvl');
+      setHistoryQrPrintOpen(true);
+    } catch (reason: unknown) {
+      setHistoryQrError(reason instanceof Error ? reason.message : 'Không thể tải mã QR của phiếu nhập.');
+    } finally {
+      setIsLoadingHistoryQr(false);
+    }
+  };
+
+  const openSlipDetail = (slipCode: string) => {
+    if (!slipCode) return;
+    // Điện thoại: mở popup như cũ. Máy tính: mở trang chi tiết ở tab mới.
+    const isMobile =
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(max-width: 767px)').matches;
+    if (isMobile) {
+      setViewingSlipCode(slipCode);
+      return;
+    }
+    window.open(
+      `/lich-su-xuat-nhap-kho/phieu?ma_phieu=${encodeURIComponent(slipCode)}`,
+      '_blank',
+      'noopener'
+    );
+  };
+
+  const handleEditSlip = (slipCode: string) => {
+    if (!canEdit) {
+      setError('Bạn không có quyền sửa phiếu thuộc kho này.');
+      return;
+    }
     const rows = filteredMovements.filter(row => row.slipCode === slipCode);
+    if (rows.some(row => row.daIn)) {
+      setError('Phiếu đã in, không thể sửa nữa.');
+      return;
+    }
     const draft = buildWarehouseSlipDraftFromHistoryRows(rows, slipCode);
     if (!draft) return;
-
-    if (draft.warehouseKind === 'nvl' && draft.slipType === 'xuat') {
-      try {
-        const res = await fetch(`/api/phieu-xuat-nhap-kho/dinh-muc-da-xuat?ma_phieu=${encodeURIComponent(slipCode)}`);
-        const data = await res.json().catch(() => ({}));
-        if (res.ok && Array.isArray(data.items)) {
-          draft.lenhSxDaChon = data.items;
-        }
-      } catch {
-        // Bỏ qua — không chặn luồng sửa phiếu nếu API tạm lỗi, ô phiếu trộn định mức sẽ để trống.
-      }
-    }
 
     localStorage.setItem(STORAGE_WAREHOUSE_SLIP_DRAFT_KEY, JSON.stringify({ ...draft, createdAt: Date.now() }));
     setViewingSlipCode(null);
@@ -3215,6 +5253,10 @@ export function WarehouseHistoryPanel({
   };
 
   const handleDeleteSlip = async (slipCode: string, lineCount: number) => {
+    if (!canDelete) {
+      setError('Bạn không có quyền xóa phiếu thuộc kho này.');
+      return;
+    }
     if (!slipCode) return;
     if (!window.confirm(`Xóa toàn bộ phiếu ${slipCode} (${lineCount} dòng)?`)) return;
 
@@ -3241,6 +5283,10 @@ export function WarehouseHistoryPanel({
   };
 
   const handleBulkDelete = async () => {
+    if (!canDelete) {
+      setError('Bạn không có quyền xóa phiếu thuộc kho này.');
+      return;
+    }
     if (selectedCount === 0) return;
     if (!window.confirm(`Bạn có chắc muốn xóa ${selectedCount} phiếu đã chọn?`)) return;
 
@@ -3268,39 +5314,67 @@ export function WarehouseHistoryPanel({
 
   return (
     <div className="w-full min-w-0 max-w-none space-y-4">
-      <section className="overflow-hidden rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
-        <div className="flex gap-1 border-b border-zinc-200 px-4">
-          {([
-            ['nvl', 'Kho NVL', Boxes],
-            ['san_pham', 'Kho Sản phẩm', Package]
-          ] as const).map(([tab, label, Icon]) => (
+      {!isStandalone && (
+      <>
+      <nav
+        aria-label="Loại phiếu xuất nhập kho"
+        className="grid grid-cols-2 gap-1.5 rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-sm sm:gap-2 sm:p-2"
+      >
+        {WAREHOUSE_HISTORY_SLIP_TYPE_TABS.map(tab => {
+          const isActive = selectedType === tab.key;
+          return (
             <button
-              key={tab}
+              key={tab.key}
               type="button"
-              onClick={() => setWarehouseTab(tab)}
-              className={`flex items-center gap-1.5 border-b-2 px-4 py-3 text-xs font-black uppercase tracking-wider transition ${
-                warehouseTab === tab ? 'border-[#ef1b2d] text-[#ef1b2d]' : 'border-transparent text-zinc-500 hover:text-zinc-900'
+              aria-current={isActive ? 'page' : undefined}
+              onClick={() => setSelectedType(tab.key)}
+              className={`group flex min-h-[56px] min-w-0 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-left transition sm:min-h-[64px] sm:justify-start sm:gap-3 sm:px-4 ${
+                isActive
+                  ? 'border-[#ef1b2d] bg-red-50 shadow-sm'
+                  : 'border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50'
               }`}
             >
-              <Icon className="h-4 w-4" />
-              {label}
+              <span
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg sm:h-9 sm:w-9 ${
+                  isActive ? 'bg-[#ef1b2d] text-white' : 'bg-zinc-100 text-zinc-500'
+                }`}
+              >
+                <tab.Icon className="h-4 w-4 sm:h-5 sm:w-5" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-black leading-tight text-zinc-900">{tab.label}</span>
+                <span className="mt-0.5 hidden text-xs font-semibold text-zinc-500 sm:block">{tab.hint}</span>
+              </span>
             </button>
-          ))}
-        </div>
+          );
+        })}
+      </nav>
 
-        <div className="flex justify-end p-3">
-          {canCreate ? (
-            <button
-              type="button"
-              onClick={onOpenSlip}
-              className="flex h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] sm:w-auto"
-            >
-              <Plus className="h-4 w-4" />
-              Lập phiếu
-            </button>
-          ) : null}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <FilterCombobox
+            label="Chọn kho"
+            options={accessibleWarehouseTabs.map(([kind]) => kind)}
+            value={warehouseTab}
+            onChange={value => setWarehouseTab(value as WarehouseKind)}
+            formatOption={value =>
+              WAREHOUSE_HISTORY_TABS.find(([kind]) => kind === value)?.[1] || warehouseKindLabel(value as WarehouseKind)
+            }
+            searchPlaceholder="Tìm kho..."
+            includeAll={false}
+          />
         </div>
-      </section>
+        {canCreate ? (
+          <button
+            type="button"
+            onClick={onOpenSlip}
+            className="flex h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] sm:w-auto"
+          >
+            <Plus className="h-4 w-4" />
+            Lập phiếu
+          </button>
+        ) : null}
+      </div>
 
       <TableToolbar
         isLoading={isLoading}
@@ -3312,38 +5386,65 @@ export function WarehouseHistoryPanel({
         <TableSearchInput
           value={searchText}
           onChange={setSearchText}
-          placeholder={warehouseTab === 'san_pham' ? 'Tìm mã phiếu, SP, lý do...' : 'Tìm mã phiếu, NPL, lý do...'}
+          placeholder={
+            warehouseTab === 'san_pham'
+              ? 'Tìm mã phiếu, SP, lý do...'
+              : warehouseTab === 'hang_hong'
+                ? 'Tìm mã phiếu, hàng hỏng, máy...'
+              : warehouseTab === 'hang_hoa'
+                ? 'Tìm mã phiếu, hàng hóa, lý do...'
+              : warehouseTab === 'cong_cu_dung_cu'
+                ? 'Tìm mã phiếu, công cụ dụng cụ...'
+              : warehouseTab === 'gia_cong'
+                ? 'Tìm mã phiếu, hàng gia công...'
+              : warehouseTab === 'tai_che'
+                ? 'Tìm mã phiếu, NPL tái chế, lý do...'
+                : 'Tìm mã phiếu, NPL, lý do...'
+          }
           disabled={isLoading}
-        />
-
-        <FilterCombobox
-          label="Loại"
-          options={['nhap', 'xuat']}
-          value={selectedType}
-          onChange={value => setSelectedType(value as 'all' | WarehouseSlipType)}
-          formatOption={value => warehouseSlipTypeLabel(value as WarehouseSlipType)}
-          searchable={false}
-          compact
         />
 
         <TableDateFilter label="Từ ngày" value={fromDate} onChange={setFromDate} />
         <TableDateFilter label="Đến ngày" value={toDate} onChange={setToDate} />
+        <FilterCombobox
+          label="Ca"
+          options={shiftOptions}
+          value={filterShift || 'all'}
+          onChange={value => setFilterShift(value === 'all' ? '' : value)}
+          searchPlaceholder="Tìm ca..."
+          compact
+        />
       </TableToolbar>
 
-      {canDelete && selectableSlips.length > 0 && (
+      {selectableSlips.length > 0 && (
         <section className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border-2 border-zinc-900/10 bg-zinc-50 px-4 py-3 shadow-sm">
           <p className="text-xs font-semibold text-zinc-600">
-            {selectedCount > 0 ? `Đã chọn ${selectedCount} phiếu` : 'Chọn phiếu để xóa nhiều'}
+            {selectedCount > 0
+              ? `Đã chọn ${selectedCount} phiếu`
+              : 'Tích chọn phiếu để in gộp' + (canDelete ? ' hoặc xóa nhiều' : '')}
           </p>
-          <button
-            type="button"
-            disabled={selectedCount === 0 || isBulkDeleting || Boolean(deletingSlipCode)}
-            onClick={() => void handleBulkDelete()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isBulkDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-            Xóa đã chọn{selectedCount > 0 ? ` (${selectedCount})` : ''}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={selectedCount === 0 || isBulkDeleting || Boolean(deletingSlipCode)}
+              onClick={() => handlePrintSelectedSlips(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#ef1b2d]/30 bg-red-50 px-3 py-1.5 text-xs font-black text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              In gộp{selectedCount > 0 ? ` (${selectedCount})` : ''}
+            </button>
+            {canDelete ? (
+              <button
+                type="button"
+                disabled={selectedCount === 0 || isBulkDeleting || Boolean(deletingSlipCode)}
+                onClick={() => void handleBulkDelete()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isBulkDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                Xóa đã chọn{selectedCount > 0 ? ` (${selectedCount})` : ''}
+              </button>
+            ) : null}
+          </div>
         </section>
       )}
 
@@ -3354,8 +5455,8 @@ export function WarehouseHistoryPanel({
               {' '}
             </TableHeadCell>
             <TableHeadCell>Mã phiếu</TableHeadCell>
-            <TableHeadCell>Loại</TableHeadCell>
             <TableHeadCell>Ca</TableHeadCell>
+            <TableHeadCell>Máy</TableHeadCell>
             <TableHeadCell>Người lập</TableHeadCell>
             <TableHeadCell align="center">Thao tác</TableHeadCell>
           </TableHead>
@@ -3370,14 +5471,14 @@ export function WarehouseHistoryPanel({
               {' '}
             </TableHeadCell>
             <TableHeadCell>Mã phiếu</TableHeadCell>
-            <TableHeadCell>Loại</TableHeadCell>
             <TableHeadCell>Ca</TableHeadCell>
+            <TableHeadCell>Máy</TableHeadCell>
             <TableHeadCell>Người lập</TableHeadCell>
             <TableHeadCell align="center">Thao tác</TableHeadCell>
           </TableHead>
           <TableBody>
             <TableEmptyRow colSpan={6}>
-              Chưa có lịch sử {warehouseKindLabel(warehouseTab).toLowerCase()}.
+              Chưa có phiếu {warehouseSlipTypeLabel(selectedType).toLowerCase()} tại {warehouseKindLabel(warehouseTab)}.
             </TableEmptyRow>
           </TableBody>
         </TableShell>
@@ -3388,7 +5489,12 @@ export function WarehouseHistoryPanel({
               <div className="flex items-center justify-between gap-2 border-b border-zinc-200 bg-zinc-100/90 px-3 py-2 sm:px-4">
                 <div className="flex items-baseline gap-2">
                   <span className="text-[9px] font-black uppercase tracking-wider text-zinc-400">Ngày</span>
-                  <span className="font-mono text-sm font-black text-zinc-900">{dateGroup.slipDate}</span>
+                  <span className="font-mono text-sm font-black text-zinc-900">
+                    {(() => {
+                      const [y, m, d] = dateGroup.slipDate.split('-');
+                      return y && m && d ? `${d}/${m}/${y}` : dateGroup.slipDate;
+                    })()}
+                  </span>
                   <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-zinc-500 ring-1 ring-zinc-200">
                     {dateGroup.groups.length} phiếu
                   </span>
@@ -3400,23 +5506,76 @@ export function WarehouseHistoryPanel({
                   </p>
                 </div>
               </div>
+              <div className="space-y-2 p-2 md:hidden">
+                {dateGroup.groups.map(group => {
+                  const header = group.header;
+                  const lineCount = group.rows.length;
+                  const isSelected = selectedSlipCodes.has(group.slipCode);
+                  const isDeleting = deletingSlipCode === group.slipCode;
+                  return (
+                    <article
+                      key={group.slipCode}
+                      className={`rounded-xl border border-zinc-200 bg-white p-3 shadow-sm ${isSelected ? 'bg-red-50/40' : ''}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          disabled={!group.slipCode || isBulkDeleting || isDeleting}
+                          onChange={() => toggleSlipSelection(group.slipCode)}
+                          className="mt-1 h-4 w-4 shrink-0 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20 disabled:opacity-40"
+                          title="Chọn phiếu"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <button
+                            type="button"
+                            onClick={() => openSlipDetail(group.slipCode)}
+                            disabled={!group.slipCode}
+                            className="break-words text-left text-sm font-black text-[#ef1b2d] transition hover:text-[#b30d1c] disabled:text-zinc-950"
+                          >
+                            {group.slipCode || '-'}
+                          </button>
+                          <p className="mt-0.5 text-[11px] font-semibold text-zinc-500">
+                            Ca: {header.shift || '-'} · {lineCount} dòng · {formatWarehouseMoney(group.totalAmount)} đ
+                          </p>
+                          <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                            <div><dt className="font-bold text-zinc-400">Máy</dt><dd className="mt-0.5 break-words font-semibold text-zinc-700">{header.machine || '-'}</dd></div>
+                            <div><dt className="font-bold text-zinc-400">Người lập</dt><dd className="mt-0.5 break-words font-semibold text-zinc-700">{header.createdBy || '-'}</dd></div>
+                          </dl>
+                          <div className="mt-3 flex flex-wrap gap-2 border-t border-zinc-100 pt-3">
+                            {canEdit && !header.daIn ? (
+                              <button type="button" onClick={() => handleEditSlip(group.slipCode)} className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-200 px-2 text-xs font-bold text-amber-800"><Pencil className="h-3.5 w-3.5" />Sửa</button>
+                            ) : null}
+                            <button type="button" onClick={() => handlePrintSlipByCode(group.slipCode, true)} className="inline-flex h-8 items-center gap-1 rounded-lg border border-zinc-200 px-2 text-xs font-bold text-[#ef1b2d]"><Printer className="h-3.5 w-3.5" />In</button>
+                            {canDelete ? (
+                              <button type="button" onClick={() => void handleDeleteSlip(group.slipCode, lineCount)} disabled={isDeleting || isBulkDeleting} className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 px-2 text-xs font-bold text-rose-700 disabled:opacity-50">
+                                {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}Xóa
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+
+              <div className="hidden md:block">
               <TableShell minWidthClassName="min-w-[820px]">
                 <TableHead>
                   <TableHeadCell className="w-10" align="center">
-                    {canDelete ? (
-                      <input
-                        type="checkbox"
-                        checked={allSelected}
-                        onChange={toggleSelectAll}
-                        disabled={selectableSlips.length === 0 || isBulkDeleting || Boolean(deletingSlipCode)}
-                        className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
-                        title="Chọn tất cả"
-                      />
-                    ) : null}
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      disabled={selectableSlips.length === 0 || isBulkDeleting || Boolean(deletingSlipCode)}
+                      className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
+                      title="Chọn tất cả"
+                    />
                   </TableHeadCell>
                   <TableHeadCell>Mã phiếu</TableHeadCell>
-                  <TableHeadCell>Loại</TableHeadCell>
                   <TableHeadCell>Ca</TableHeadCell>
+                  <TableHeadCell>Máy</TableHeadCell>
                   <TableHeadCell>Người lập</TableHeadCell>
                   <TableHeadCell align="center">Thao tác</TableHeadCell>
                 </TableHead>
@@ -3431,46 +5590,38 @@ export function WarehouseHistoryPanel({
                       <React.Fragment key={group.slipCode}>
                         <TableRow className={isSelected ? 'bg-red-50/30' : ''}>
                           <td className="px-3 py-3 text-center">
-                            {canDelete ? (
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                disabled={!group.slipCode || isBulkDeleting || isDeleting}
-                                onChange={() => toggleSlipSelection(group.slipCode)}
-                                className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20 disabled:cursor-not-allowed disabled:opacity-40"
-                                title="Chọn phiếu"
-                              />
-                            ) : null}
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              disabled={!group.slipCode || isBulkDeleting || isDeleting}
+                              onChange={() => toggleSlipSelection(group.slipCode)}
+                              className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20 disabled:cursor-not-allowed disabled:opacity-40"
+                              title="Chọn phiếu"
+                            />
                           </td>
                           <td className="px-4 py-3 font-black text-zinc-950">
-                            <div>{group.slipCode || '-'}</div>
+                            <button
+                              type="button"
+                              onClick={() => openSlipDetail(group.slipCode)}
+                              disabled={!group.slipCode}
+                              className="text-left text-[#ef1b2d] transition hover:text-[#b30d1c] disabled:text-zinc-950"
+                            >
+                              {group.slipCode || '-'}
+                            </button>
                             <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
                               {lineCount} dòng · {formatWarehouseMoney(group.totalAmount)} đ
                             </p>
                           </td>
-                          <td className="px-4 py-3">
-                            <StatusBadge
-                              label={warehouseSlipTypeLabel(header.slipType)}
-                              color={header.slipType === 'nhap' ? 'emerald' : 'amber'}
-                            />
-                          </td>
                           <td className="px-4 py-3 font-semibold text-zinc-700">{header.shift || '-'}</td>
+                          <td className="px-4 py-3 font-semibold text-zinc-700">{header.machine || '-'}</td>
                           <td className="px-4 py-3 font-semibold text-zinc-600">{header.createdBy || '-'}</td>
                           <td className="px-4 py-3">
                             <RowActionsMenu label={`Thao tác phiếu ${group.slipCode}`}>
                             <div className="flex items-center justify-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => setViewingSlipCode(group.slipCode)}
-                                title="Xem chi tiết NVL"
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </button>
-                              {canEdit ? (
+                              {canEdit && !header.daIn ? (
                                 <button
                                   type="button"
-                                  onClick={() => void handleEditSlip(group.slipCode)}
+                                  onClick={() => handleEditSlip(group.slipCode)}
                                   title="Sửa phiếu"
                                   className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-amber-700 transition hover:bg-amber-50"
                                 >
@@ -3485,16 +5636,6 @@ export function WarehouseHistoryPanel({
                               >
                                 <Printer className="h-4 w-4" />
                               </button>
-                              {group.header.slipType === 'xuat' && group.header.warehouseKind === 'nvl' ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setHistorySlipCode(group.slipCode)}
-                                  title="Xem lịch sử thay đổi"
-                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-sky-700 transition hover:bg-sky-50"
-                                >
-                                  <History className="h-4 w-4" />
-                                </button>
-                              ) : null}
                               {canDelete ? (
                                 <button
                                   type="button"
@@ -3519,17 +5660,32 @@ export function WarehouseHistoryPanel({
                   })}
                 </TableBody>
               </TableShell>
+              </div>
             </div>
           ))}
         </div>
       )}
 
-      <div className="space-y-2">
+      <div className="hidden space-y-2 md:block">
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3">
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Chi tiết từng dòng</h3>
             <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-              Cuộn để xem {warehouseTab === 'san_pham' ? 'từng dòng SP' : 'từng dòng NVL'} · {sortedMovementLines.length} dòng
+              {warehouseSlipTypeLabel(selectedType)} · cuộn để xem{' '}
+              {warehouseTab === 'san_pham'
+                ? 'từng dòng SP'
+                : warehouseTab === 'hang_hong'
+                  ? 'từng dòng hàng hỏng'
+                : warehouseTab === 'hang_hoa'
+                  ? 'từng dòng hàng hóa'
+                : warehouseTab === 'cong_cu_dung_cu'
+                  ? 'từng dòng công cụ dụng cụ'
+                : warehouseTab === 'gia_cong'
+                  ? 'từng dòng hàng gia công'
+                : warehouseTab === 'tai_che'
+                  ? 'từng dòng NVL tái chế'
+                  : 'từng dòng NVL'}{' '}
+              · {sortedMovementLines.length} dòng
             </p>
           </div>
         </div>
@@ -3537,9 +5693,9 @@ export function WarehouseHistoryPanel({
         <TableShell minWidthClassName="min-w-[1080px]" maxHeightClassName="max-h-[min(70vh,720px)]">
           <TableHead>
             <TableHeadCell>Mã phiếu</TableHeadCell>
-            <TableHeadCell>Loại</TableHeadCell>
             <TableHeadCell>Ngày</TableHeadCell>
             <TableHeadCell>Ca</TableHeadCell>
+            <TableHeadCell>Máy</TableHeadCell>
             <TableHeadCell>{warehouseItemCodeLabel(warehouseTab)}</TableHeadCell>
             <TableHeadCell>{warehouseItemNameLabel(warehouseTab)}</TableHeadCell>
             <TableHeadCell className="text-right">SL</TableHeadCell>
@@ -3552,7 +5708,21 @@ export function WarehouseHistoryPanel({
               <TableEmptyRow colSpan={10}>Đang tải dữ liệu...</TableEmptyRow>
             ) : sortedMovementLines.length === 0 ? (
               <TableEmptyRow colSpan={10}>
-                Chưa có dòng {warehouseTab === 'san_pham' ? 'sản phẩm' : 'NVL'}.
+                Chưa có dòng {warehouseSlipTypeLabel(selectedType).toLowerCase()}{' '}
+                {warehouseTab === 'san_pham'
+                  ? 'sản phẩm'
+                  : warehouseTab === 'hang_hong'
+                    ? 'hàng hỏng'
+                  : warehouseTab === 'hang_hoa'
+                    ? 'hàng hóa'
+                  : warehouseTab === 'cong_cu_dung_cu'
+                    ? 'công cụ dụng cụ'
+                  : warehouseTab === 'gia_cong'
+                    ? 'hàng gia công'
+                  : warehouseTab === 'tai_che'
+                    ? 'NVL tái chế'
+                    : 'NVL'}
+                .
               </TableEmptyRow>
             ) : (
               sortedMovementLines.map((row, index) => (
@@ -3561,23 +5731,18 @@ export function WarehouseHistoryPanel({
                     <td className="px-3 py-2.5">
                       <button
                         type="button"
-                        onClick={() => setViewingSlipCode(row.slipCode)}
-                        className="font-black text-[#ef1b2d] underline-offset-2 hover:underline"
+                        onClick={() => openSlipDetail(row.slipCode)}
+                        className="font-black text-[#ef1b2d] transition hover:text-[#b30d1c]"
                         title="Xem phiếu"
                       >
                         {row.slipCode || '—'}
                       </button>
                     </td>
-                    <td className="px-3 py-2.5">
-                      <StatusBadge
-                        label={warehouseSlipTypeLabel(row.slipType)}
-                        color={row.slipType === 'nhap' ? 'emerald' : 'amber'}
-                      />
-                    </td>
                     <td className="px-3 py-2.5 font-mono text-xs font-semibold text-zinc-700">
                       {row.slipDate || '—'}
                     </td>
                     <td className="px-3 py-2.5 font-semibold text-zinc-600">{row.shift || '—'}</td>
+                    <td className="px-3 py-2.5 font-semibold text-zinc-600">{row.machine || '—'}</td>
                     <td className="px-3 py-2.5 font-bold text-zinc-900">{row.itemCode || '—'}</td>
                     <td className="max-w-[200px] truncate px-3 py-2.5 font-semibold text-zinc-700" title={row.itemName || undefined}>
                       {row.itemName || '—'}
@@ -3599,35 +5764,91 @@ export function WarehouseHistoryPanel({
           </TableBody>
         </TableShell>
       </div>
+      </>
+      )}
+
+      {isStandalone && !(viewingSlipCode && viewingRows[0]) && (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6 text-sm font-bold text-zinc-500">
+          {isLoading ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Đang tải phiếu…
+            </span>
+          ) : error ? (
+            <span className="text-rose-700">{error}</span>
+          ) : (
+            <span>Không tìm thấy phiếu {standaloneSlipCode}.</span>
+          )}
+        </div>
+      )}
 
       {viewingSlipCode && viewingRows[0] && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:max-h-[88vh] sm:rounded-2xl">
+        <div className={isStandalone ? 'w-full' : 'fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 p-4 backdrop-blur-sm'}>
+          <div className={isStandalone
+            ? 'flex w-full flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-card'
+            : 'flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl'}>
             <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
               <div>
                 <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">Chi tiết phiếu</h3>
                 <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-                  {viewingSlipCode} · {viewingRows.length} dòng {warehouseTab === 'san_pham' ? 'SP' : 'NVL'}
+                  {viewingSlipCode} · {viewingRows.length} dòng{' '}
+                  {warehouseTab === 'san_pham' ? 'SP' : warehouseTab === 'hang_hong' ? 'hàng hỏng' : warehouseTab === 'tai_che' ? 'NVL tái chế' : 'NVL'}
                 </p>
               </div>
-              <BackButton onClick={() => setViewingSlipCode(null)} />
+              {isStandalone ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  {canEdit && !viewingRows[0]?.daIn ? (
+                    <button
+                      type="button"
+                      onClick={() => handleEditSlip(viewingSlipCode!)}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-extrabold text-amber-800 transition hover:bg-amber-100"
+                    >
+                      <Pencil className="h-4 w-4" />
+                      Sửa phiếu
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => handlePrintViewingSlip(true)}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+                  >
+                    <Printer className="h-4 w-4" />
+                    In phiếu
+                  </button>
+                  {viewingRows[0].warehouseKind === 'san_pham' && viewingRows[0].slipType === 'nhap' ? (
+                    <button
+                      type="button"
+                      onClick={() => void handlePrintViewingQrCodes()}
+                      disabled={isLoadingHistoryQr}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#ef1b2d] bg-white px-3 text-xs font-extrabold text-[#ef1b2d] transition hover:bg-red-50 disabled:opacity-60"
+                    >
+                      {isLoadingHistoryQr ? <Loader2 className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}
+                      {isLoadingHistoryQr ? 'Đang tải QR...' : 'In mã QR'}
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setViewingSlipCode(null)}
+                  className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
+                >
+                  <X className="h-4 w-4" />
+                  Đóng
+                </button>
+              )}
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-3">
+            <div className={isStandalone ? '' : 'flex min-h-0 flex-1 flex-col overflow-hidden'}>
+              <div className="grid shrink-0 grid-cols-2 gap-2 p-4 sm:grid-cols-3">
                 {[
                   ['Kho', warehouseKindLabel(viewingRows[0].warehouseKind)],
                   ['Loại', warehouseSlipTypeLabel(viewingRows[0].slipType)],
                   ['Ngày', viewingRows[0].slipDate || '-'],
                   ['Ca', viewingRows[0].shift || '-'],
+                  ['Máy', viewingRows[0].machine || '-'],
                   ['Tổng tiền', `${formatWarehouseMoney(viewingSlipTotal)} đ`],
-                  ...(viewingRows[0].warehouseKind === 'nvl'
-                    ? [
-                        ['Tổng TL NVL chính', formatWarehouseWeightKg(viewingSlipWeightKgByClass.chinh)],
-                        ['Tổng TL NVL phụ', formatWarehouseWeightKg(viewingSlipWeightKgByClass.phu)]
-                      ]
-                    : [
-                        ['Tổng trọng lượng', formatWarehouseWeightKg(viewingSlipTotalWeightKg > 0 ? viewingSlipTotalWeightKg : null)]
-                      ]),
+                  ['Tổng cuộn', formatWarehouseRollTotal(viewingSlipTotalRolls)],
+                  ['Tổng trọng lượng', formatWarehouseWeightKg(viewingSlipTotalWeightKg > 0 ? viewingSlipTotalWeightKg : null)],
                   ['Lý do', viewingRows[0].reason || '-'],
                   ['Ghi chú', viewingRows[0].note || '-'],
                   ['Người lập', viewingRows[0].createdBy || '-']
@@ -3638,10 +5859,11 @@ export function WarehouseHistoryPanel({
                   </div>
                 ))}
               </div>
-              <div className="border-t border-zinc-200 px-4 py-3">
-              <table className="min-w-full text-left text-sm">
-                <thead className="bg-zinc-950 text-[10px] uppercase tracking-wider text-white">
+              <div className={`border-t border-zinc-200 px-4 py-3 ${isStandalone ? 'overflow-x-auto' : 'min-h-0 flex-1 overflow-auto'}`}>
+              <table className={`text-left text-sm ${isStandalone ? 'w-full' : 'min-w-[640px]'}`}>
+                <thead className="bg-[#ef1b2d] text-[10px] uppercase tracking-wider text-white">
                   <tr>
+                    <th className="py-2 pr-3 text-center font-black">STT</th>
                     <th className="py-2 pr-3 font-black">{warehouseItemCodeLabel(viewingRows[0].warehouseKind)}</th>
                     <th className="py-2 pr-3 font-black">{warehouseItemNameLabel(viewingRows[0].warehouseKind)}</th>
                     <th className="py-2 pr-3 font-black">SL</th>
@@ -3650,22 +5872,19 @@ export function WarehouseHistoryPanel({
                     {viewingRows[0].slipType === 'xuat' && viewingRows[0].warehouseKind === 'nvl' ? (
                       <th className="py-2 pr-3 font-black">PN nhập</th>
                     ) : null}
+                    {viewingRows[0].slipType === 'xuat' && viewingRows[0].warehouseKind === 'nvl' ? (
+                      <th className="py-2 pr-3 font-black">Ảnh thực tế</th>
+                    ) : null}
                     <th className="py-2 pr-3 font-black">Giá</th>
                     <th className="py-2 font-black">Thành tiền</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
-                  {viewingRows.map(row => (
+                  {viewingRows.map((row, index) => (
                     <tr key={row.id || `${row.itemCode}-${row.quantity}`}>
+                      <td className="py-2 pr-3 text-center font-bold text-zinc-500">{index + 1}</td>
                       <td className="py-2 pr-3 font-bold text-zinc-900">{row.itemCode}</td>
-                      <td className="py-2 pr-3 text-zinc-700">
-                        {row.itemName || '-'}
-                        {row.nhomVthh ? (
-                          <span className="ml-1.5 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
-                            {row.nhomVthh}
-                          </span>
-                        ) : null}
-                      </td>
+                      <td className="py-2 pr-3 text-zinc-700">{row.itemName || '-'}</td>
                       <td className="py-2 pr-3 font-mono font-bold text-zinc-800">{formatNumber(row.quantity, 2)}</td>
                       <td className="py-2 pr-3 text-zinc-700">{row.unit}</td>
                       <td className="py-2 pr-3 text-right font-mono font-bold text-emerald-800">
@@ -3674,6 +5893,22 @@ export function WarehouseHistoryPanel({
                       {viewingRows[0].slipType === 'xuat' && viewingRows[0].warehouseKind === 'nvl' ? (
                         <td className="py-2 pr-3 font-mono text-xs font-bold text-indigo-700">
                           {row.sourceInboundSlipCode || '—'}
+                        </td>
+                      ) : null}
+                      {viewingRows[0].slipType === 'xuat' && viewingRows[0].warehouseKind === 'nvl' ? (
+                        <td className="py-2 pr-3">
+                          <div className="flex flex-wrap gap-1">
+                            {row.actualWeightImageUrl ? (
+                              <button
+                                type="button"
+                                onClick={() => setViewingHistoryImage({ url: row.actualWeightImageUrl!, title: `Ảnh số cân · ${row.itemCode}` })}
+                                className="rounded border border-red-200 bg-red-50 px-1.5 py-1 text-[10px] font-bold text-[#ef1b2d] hover:bg-red-100"
+                              >
+                                Cân
+                              </button>
+                            ) : null}
+                            {!row.actualWeightImageUrl ? <span className="text-zinc-400">—</span> : null}
+                          </div>
                         </td>
                       ) : null}
                       <td className="py-2 pr-3 font-mono font-bold text-zinc-800">{formatWarehouseMoney(row.unitPrice)} đ</td>
@@ -3685,24 +5920,20 @@ export function WarehouseHistoryPanel({
               </div>
             </div>
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[#ef1b2d]/20 bg-red-50 px-4 py-3">
-              <p className="text-sm font-black text-zinc-950">
-                Tổng tiền: <span className="text-[#ef1b2d]">{formatWarehouseMoney(viewingSlipTotal)} đ</span>
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                {viewingRows[0].slipType === 'xuat' && viewingRows[0].warehouseKind === 'nvl' ? (
+              <div>
+                <p className="text-sm font-black text-zinc-950">
+                  Tổng cuộn:{' '}
+                  <span className="text-[#ef1b2d]">{formatWarehouseRollTotal(viewingSlipTotalRolls)}</span>
+                  <span className="mx-2 font-normal text-zinc-400">·</span>
+                  Tổng tiền: <span className="text-[#ef1b2d]">{formatWarehouseMoney(viewingSlipTotal)} đ</span>
+                </p>
+                {historyQrError ? <p className="mt-1 text-xs font-semibold text-rose-700">{historyQrError}</p> : null}
+              </div>
+              <div className={`flex-wrap items-center gap-2 ${isStandalone ? 'hidden' : 'flex'}`}>
+                {canEdit && !viewingRows[0]?.daIn ? (
                   <button
                     type="button"
-                    onClick={() => setHistorySlipCode(viewingSlipCode)}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-extrabold text-sky-800 transition hover:bg-sky-100"
-                  >
-                    <History className="h-4 w-4" />
-                    Lịch sử thay đổi
-                  </button>
-                ) : null}
-                {canEdit ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleEditSlip(viewingSlipCode!)}
+                    onClick={() => handleEditSlip(viewingSlipCode!)}
                     className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-extrabold text-amber-800 transition hover:bg-amber-100"
                   >
                     <Pencil className="h-4 w-4" />
@@ -3717,6 +5948,17 @@ export function WarehouseHistoryPanel({
                   <Printer className="h-4 w-4" />
                   In phiếu
                 </button>
+                {(viewingRows[0].warehouseKind === 'san_pham' || viewingRows[0].warehouseKind === 'nvl') && viewingRows[0].slipType === 'nhap' ? (
+                  <button
+                    type="button"
+                    onClick={() => void handlePrintViewingQrCodes()}
+                    disabled={isLoadingHistoryQr}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#ef1b2d] bg-white px-3 text-xs font-extrabold text-[#ef1b2d] transition hover:bg-red-50 disabled:opacity-60"
+                  >
+                    {isLoadingHistoryQr ? <Loader2 className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}
+                    {isLoadingHistoryQr ? 'Đang tải QR...' : 'In mã QR'}
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>
@@ -3725,19 +5967,31 @@ export function WarehouseHistoryPanel({
 
       <WarehouseSlipPrintModal
         open={historyPrintOpen}
-        data={historyPrintSlip}
+        slips={historyPrintSlips}
         autoPrint={historyPrintAutoTrigger}
         onClose={() => {
           setHistoryPrintOpen(false);
-          setHistoryPrintSlip(null);
+          setHistoryPrintSlips([]);
           setHistoryPrintAutoTrigger(false);
         }}
       />
-      <WarehouseSlipHistoryModal
-        maPhieu={historySlipCode}
-        open={Boolean(historySlipCode)}
-        onClose={() => setHistorySlipCode(null)}
+
+      <ProductQrPrintModal
+        open={historyQrPrintOpen}
+        labels={historyQrLabels}
+        trackProductPrint={!historyQrTrackMaterial}
+        trackMaterialPrint={historyQrTrackMaterial}
+        showPayload={false}
+        title={historyQrTrackMaterial ? 'Mã QR NVL' : undefined}
+        onClose={() => {
+          setHistoryQrPrintOpen(false);
+          setHistoryQrTrackMaterial(false);
+          setHistoryQrLabels([]);
+        }}
       />
+
+      <WeighingImagePreviewModal image={viewingHistoryImage} onClose={() => setViewingHistoryImage(null)} />
     </div>
   );
 }
+

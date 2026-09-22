@@ -706,11 +706,11 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'quan-ly-kho'
   },
   {
-    title: 'Kho nguyên vật liệu',
-    desc: 'Quản lý nguyên phụ liệu, trọng lượng, khổ cuộn và tồn nhập xuất.',
+    title: 'Kho hàng',
+    desc: 'Quản lý nguyên vật liệu, thành phẩm và kho lưu trữ của từng mặt hàng.',
     icon: Boxes,
     icon3d: inventory3d,
-    tab: 'materials'
+    tab: 'inventory-catalog'
   },
   {
     title: 'Phiếu xuất nhập kho',
@@ -727,11 +727,31 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'kiem-kho'
   },
   {
+    title: 'Cân kiểm kho',
+    desc: 'Mở trạm cân kiểm kho để chụp, đọc khối lượng và lưu phiếu kiểm kho.',
+    icon: Scale,
+    icon3d: scale3d,
+    tab: 'can-kiem-kho'
+  },
+  {
+    title: 'Xử lý chênh lệch',
+    desc: 'Đối chiếu số lượng kiểm kê với tồn cuối và tạo phiếu điều chỉnh.',
+    icon: ArrowLeftRight,
+    tab: 'kiem-kho-chenh-lech'
+  },
+  {
     title: 'Lịch sử xuất nhập',
     desc: 'Tra cứu phiếu đã lưu, lọc theo loại và ngày.',
     icon: History,
     icon3d: warehouseHistory3d,
     tab: 'warehouse-history'
+  },
+  {
+    title: 'Tồn kho',
+    desc: 'Xem tổng hợp tồn kho theo kho, loại và khoảng ngày.',
+    icon: BarChart3,
+    icon3d: chartIncreasing3d,
+    tab: 'ton-kho'
   },
   {
     title: 'Chuẩn bị xuất hàng',
@@ -1014,10 +1034,13 @@ export const PRIMARY_NAV_GROUPS: {
     tab: 'factory-kho',
     children: [
       { label: 'Danh mục kho', tab: 'quan-ly-kho' },
-      { label: 'Kho nguyên vật liệu', tab: 'materials' },
+      { label: 'Kho hàng', tab: 'inventory-catalog' },
       { label: 'Phiếu xuất nhập kho', tab: 'warehouse-slip' },
       { label: 'Kiểm kho', tab: 'kiem-kho' },
+      { label: 'Cân kiểm kho', tab: 'can-kiem-kho' },
+      { label: 'Xử lý chênh lệch', tab: 'kiem-kho-chenh-lech' },
       { label: 'Lịch sử xuất nhập', tab: 'warehouse-history' },
+      { label: 'Tồn kho', tab: 'ton-kho' },
       { label: 'Chuẩn bị xuất hàng', tab: 'factory-kho', disabled: true }
     ]
   },
@@ -1054,6 +1077,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'can-tu-dong': { group: 'Sản xuất', sub: 'Danh sách cân' },
   'can-kiem-kho': { group: 'Kho', sub: 'Cân kiểm kho' },
   'kiem-kho': { group: 'Kho', sub: 'Kiểm kho' },
+  'kiem-kho-chenh-lech': { group: 'Kho', sub: 'Xử lý chênh lệch' },
   'quan-ly-kho': { group: 'Kho', sub: 'Danh mục kho' },
   'damaged-goods-report': { group: 'Sản xuất', sub: 'Báo cáo hàng hư' },
   'damaged-goods-report-list': { group: 'QC', sub: 'Kiểm soát hàng hỏng' },

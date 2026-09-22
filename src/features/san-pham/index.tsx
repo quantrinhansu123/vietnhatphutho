@@ -20,7 +20,9 @@ import {
   TableRow,
   TableEmptyRow,
   StatusBadge,
-  RowActionsMenu
+  RowActionsMenu,
+  TablePagination,
+  usePagination
 } from '../../components/shared/table';
 import { Loader2, Save, FlaskConical, Download, Upload, Plus, Eye, Pencil, Trash2, QrCode, X, Warehouse, ClipboardList, RefreshCw } from 'lucide-react';
 import { productFieldClass } from './productFieldClass';
@@ -28,12 +30,28 @@ import type { ProductRow, ProductNplItem, MaterialOption, ProductNplAmountType }
 export type { ProductRow };
 import { downloadBulkProductNplComponentsTemplate, downloadProductNplComponentsTemplate, parseThanhPhanLongFormatExcel, parseBulkProductNplComponentsExcel, parseImportSpExcelRows } from '../../utils/productNplComponentsExcel';
 import type { ImportSpExcelRow } from '../../utils/productNplComponentsExcel';
-import { parseProductNplItems, productNplItemsToJson, formatProductNplSummary, findMaterialOptionByCode, formatProductNplAmount, roundNplNumber, formatNplDecimal, formatNplWeightKg, bulkExcelRowsToProductMap } from './types';
+import { parseProductNplItems, productNplItemsToJson, formatProductNplSummary, findMaterialOptionByCode, formatProductNplAmount, roundNplNumber, formatNplDecimal, formatNplWeightKg, bulkExcelRowsToProductMap, buildProductIdentityKey } from './types';
 import {
   downloadProductCatalogExcelTemplate,
   parseProductCatalogExcel,
   productCatalogRowToPayload
 } from '../../utils/productCatalogExcel';
+import {
+  downloadProductConversionExcelTemplate,
+  parseProductConversionExcel
+} from '../../utils/productConversionExcel';
+import { availableConvertedUnits, convertProductQuantity, type ProductConversionFactors, type ProductConvertedUnit } from '../../utils/productUnitConversion';
+import { calculateProductConversionFormulas } from '../../utils/productConversionCalculation';
+import {
+  FILM_OPTIONS,
+  WASTE_GRADE_OPTIONS,
+  calculateDoLiDm,
+  composeProductionDisplayName,
+  extractDoLiDm,
+  isDiscontinuedWhiteSuProduct,
+  parseDoDaiMLength,
+  seedProductionSpecs
+} from '../../utils/productProductionName';
 import { showAppToast } from '../../lib/appToast';
 import { matchesWarehouseFilter, normalizeWarehouseName, type InventoryBalanceRow } from '../kho-hang';
 import { waitForPrintImagesReady } from '../../utils/printReady';
@@ -621,6 +639,39 @@ export function productAmisDisplayCode(product: Pick<ProductRow, 'amisCode' | 'c
   return product.amisCode && product.amisCode !== '-' ? product.amisCode : product.code || '-';
 }
 
+
+function normalizeProductIdentity(value: string) {
+  return value
+    .trim()
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\s+/g, ' ');
+}
+
+function findDuplicateProductIdentity(
+  products: ProductRow[],
+  form: ProductFormState,
+  currentProductId?: string
+) {
+  const amisCode = normalizeProductIdentity(form.amisCode);
+  const name = normalizeProductIdentity(form.name);
+  const productionName = normalizeProductIdentity(form.productionName);
+  if (!amisCode || !name || !productionName) return '';
+
+  const duplicate = products.find(product =>
+    product.id !== currentProductId &&
+    normalizeProductIdentity(product.amisCode) === amisCode &&
+    normalizeProductIdentity(product.name) === name &&
+    normalizeProductIdentity(product.productionName || '') === productionName
+  );
+  return duplicate
+    ? 'Trùng bộ Mã AMIS, Tên sản phẩm và Tên sản xuất. Vui lòng nhập giá trị khác.'
+    : '';
+}
+
+
 export function ProductViewModal({
   product,
   initialTab = 'info',
@@ -966,7 +1017,10 @@ export function ProductViewModal({
             if (!response.ok) {
               throw new Error(data.error || 'Không thể tải tồn đầu từ kiểm kho.');
             }
-            const qty = Number(data.ton_dau_ky ?? data.tong_so_luong);
+            if (data.found === false) continue;
+            const rawQty = data.ton_dau_ky ?? data.tong_so_luong;
+            if (rawQty === null || rawQty === undefined || rawQty === '') continue;
+            const qty = Number(rawQty);
             if (!Number.isFinite(qty)) continue;
             best = {
               ton_dau_ky: qty,
@@ -2433,11 +2487,21 @@ export function normalizeProducts(data: unknown): ProductRow[] {
         newCode: String(record.ma_sp_moi ?? '').trim(),
         amisCode: String(record.ma_amis ?? '').trim(),
         name,
+        productionName: String(record.ten_san_xuat ?? record.productionName ?? '').trim(),
+        tenGoc: String(record.ten_goc ?? '').trim(),
+        doLi: String(record.do_li ?? '').trim(),
+        doLiDm: String(record.do_li_dm ?? '').trim(),
+        doDayM: String(record.do_day_m ?? '').trim(),
+        doDaiM: String(record.do_dai_m ?? '').trim(),
+        mang: String(record.mang ?? '').trim(),
+        hangPhe: String(record.hang_phe ?? '').trim(),
+        tenGhep: String(record.ten_ghep ?? '').trim(),
         nature: String(record.tinh_chat ?? '').trim() || 'Chưa phân loại',
         group: String(record.nhom_vthh ?? '').trim() || 'Chưa nhóm',
         unit: String(record.don_vi ?? '').trim() || '-',
         warehouse: String(record.ten_kho ?? '').trim(),
         totalWeight: formatCell(record.tong_trong_luong),
+        wastePercent: formatCell(record.ty_le_hao_hut),
         rollWidth: formatCell(record.kho_cuon),
         rollLength: formatCell(record.chieu_dai_cuon),
         coreWeight: formatCell(record.trong_luong_loi),
@@ -2471,11 +2535,20 @@ export type ProductFormState = {
   newCode: string;
   amisCode: string;
   name: string;
+  productionName: string;
+  tenGoc: string;
+  doLi: string;
+  doLiDm: string;
+  doDayM: string;
+  doDaiM: string;
+  mang: string;
+  hangPhe: string;
   nature: string;
   group: string;
   unit: string;
   warehouse: string;
   totalWeight: string;
+  wastePercent: string;
   rollWidth: string;
   rollLength: string;
   coreWeight: string;
@@ -2488,23 +2561,147 @@ export type ProductFormState = {
   minStock: string;
   origin: string;
   description: string;
+  conversions: ProductConversionForm[];
+};
+
+type ProductConversionForm = {
+  khoTamRongM: string;
+  khoTamDaiM: string;
+  khoCuonRongM: string;
+  khoCuonDaiM: string;
+  dienTichM2: string;
+  trongLuongKgMDai: string;
+  trongLuongKgM2: string;
+  trongLuongKgTam: string;
+  trongLuongKgCuon: string;
+};
+
+const PRODUCT_GROUP_RULES = {
+  'TP; PX Rỗng': { units: ['Tấm'], primaryUnit: 'Tấm', wastePercent: '13' },
+  'TP; PX Đặc': { units: ['Tấm', 'Cuộn'], primaryUnit: 'Tấm', wastePercent: '13' },
+  'TP; PX Sóng': { units: ['Tấm', 'Cuộn'], primaryUnit: 'Tấm', wastePercent: '2' },
+  'TP; NVL': { units: [], primaryUnit: '', wastePercent: '' },
+  'NVL': { units: [], primaryUnit: '', wastePercent: '' },
+  'Khác': { units: [], primaryUnit: '', wastePercent: '' }
+} as const;
+
+type ProductGroup = keyof typeof PRODUCT_GROUP_RULES;
+const PRODUCT_GROUPS = Object.keys(PRODUCT_GROUP_RULES) as ProductGroup[];
+export function autoCalculateProductConversion(
+  rawForm: ProductConversionForm,
+  changedKey?: keyof ProductConversionForm
+): ProductConversionForm {
+  const parseNum = (val: unknown) => {
+    if (val === null || val === undefined || val === '') return null;
+    const n = Number(String(val).trim().replace(',', '.'));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const updated = { ...rawForm };
+
+  const formulaInput = () => ({
+    sheetWidthM: parseNum(updated.khoTamRongM),
+    sheetLengthM: parseNum(updated.khoTamDaiM),
+    rollWidthM: parseNum(updated.khoCuonRongM),
+    rollLengthM: parseNum(updated.khoCuonDaiM),
+    areaM2: parseNum(updated.dienTichM2),
+    kgPerLinearM: parseNum(updated.trongLuongKgMDai),
+    kgPerM2: parseNum(updated.trongLuongKgM2)
+  });
+
+  // Diện tích vẫn là ô nhập. Chỉ tự điền khi trống hoặc khi kích thước cuộn thay đổi.
+  const initialFormulas = calculateProductConversionFormulas(formulaInput());
+  const areaDependencyChanged = changedKey === 'khoCuonRongM'
+    || changedKey === 'khoCuonDaiM'
+    || changedKey === 'khoTamRongM';
+  if (initialFormulas.areaM2 !== null && (areaDependencyChanged || !updated.dienTichM2.trim())) {
+    updated.dienTichM2 = String(initialFormulas.areaM2);
+  } else if (changedKey === 'khoCuonDaiM' && initialFormulas.areaM2 === null) {
+    updated.dienTichM2 = '';
+  }
+
+  const formulas = calculateProductConversionFormulas(formulaInput());
+  const kgPerLinearDependencyChanged = changedKey === 'khoTamRongM' || changedKey === 'trongLuongKgM2';
+  if (
+    changedKey !== 'trongLuongKgMDai'
+    && formulas.kgPerLinearM !== null
+    && (kgPerLinearDependencyChanged || !updated.trongLuongKgMDai.trim())
+  ) {
+    updated.trongLuongKgMDai = String(formulas.kgPerLinearM);
+  }
+
+  const applyCalculatedWeight = (
+    key: 'trongLuongKgTam' | 'trongLuongKgCuon',
+    value: number | null
+  ) => {
+    if (value !== null) updated[key] = String(value);
+    else if (changedKey) updated[key] = '';
+  };
+
+  // kg/tấm và kg/cuộn là kết quả chỉ đọc. Khi sửa dữ liệu nguồn, kết quả
+  // không còn đủ điều kiện tính sẽ được xóa để tránh giữ số cũ sai lệch.
+  applyCalculatedWeight('trongLuongKgTam', formulas.kgPerSheet);
+  applyCalculatedWeight('trongLuongKgCuon', formulas.kgPerRoll);
+
+  return updated;
+}
+
+const emptyConversion = (): ProductConversionForm => ({ khoTamRongM: '', khoTamDaiM: '', khoCuonRongM: '', khoCuonDaiM: '', dienTichM2: '', trongLuongKgMDai: '', trongLuongKgM2: '', trongLuongKgTam: '', trongLuongKgCuon: '' });
+const CALCULATED_WEIGHT_FIELDS = new Set<keyof ProductConversionForm>([
+  'trongLuongKgTam',
+  'trongLuongKgCuon'
+]);
+const conversionToForm = (item: ProductConversionFactors): ProductConversionForm => {
+  const base: ProductConversionForm = {
+    khoTamRongM: String(item.khoTamRongM ?? ''), khoTamDaiM: String(item.khoTamDaiM ?? ''),
+    khoCuonRongM: String(item.khoCuonRongM ?? ''), khoCuonDaiM: String(item.khoCuonDaiM ?? ''), dienTichM2: String(item.dienTichM2 ?? ''),
+    trongLuongKgMDai: String(item.trongLuongKgMDai ?? ''), trongLuongKgM2: String(item.trongLuongKgM2 ?? ''), trongLuongKgTam: String(item.trongLuongKgTam ?? ''),
+    trongLuongKgCuon: String(item.trongLuongKgCuon ?? '')
+  };
+  return autoCalculateProductConversion(base);
 };
 
 export function productCellToInput(value: string) {
   return value === '-' ? '' : value;
 }
 
-export function productToForm(product: ProductRow): ProductFormState {
+export function normalizeUnitForForm(unit: string): string {
+  if (!unit) return '';
+  const normalized = unit.trim().toLowerCase();
+  if (normalized === 'm' || normalized === 'm dài' || normalized === 'm dai' || normalized === 'mét' || normalized === 'met') {
+    return 'm';
+  }
+  if (normalized === 'm2' || normalized === 'm²' || normalized === 'mét vuông' || normalized === 'met vuong') {
+    return 'm2';
+  }
+  if (normalized === 'tấm' || normalized === 'tam') {
+    return 'Tấm';
+  }
+  if (normalized === 'cuộn' || normalized === 'cuon') {
+    return 'Cuộn';
+  }
+  return unit; // Trả về giá trị gốc nếu không khớp
+}
+
+export function productToForm(product: ProductRow, conversions: ProductConversionFactors[] = []): ProductFormState {
   return {
     code: productCellToInput(product.code),
     newCode: productCellToInput(product.newCode),
     amisCode: productCellToInput(product.amisCode),
     name: productCellToInput(product.name),
+    productionName: productCellToInput(product.productionName),
+    tenGoc: productCellToInput(product.tenGoc),
+    doLi: productCellToInput(product.doLi),
+    doLiDm: productCellToInput(product.doLiDm),
+    doDayM: productCellToInput(product.doDayM),
+    doDaiM: productCellToInput(product.doDaiM),
+    mang: productCellToInput(product.mang),
+    hangPhe: productCellToInput(product.hangPhe),
     nature: productCellToInput(product.nature),
     group: productCellToInput(product.group),
-    unit: productCellToInput(product.unit),
+    unit: normalizeUnitForForm(product.unit),
     warehouse: productCellToInput(product.warehouse),
     totalWeight: productCellToInput(product.totalWeight),
+    wastePercent: productCellToInput(product.wastePercent),
     rollWidth: productCellToInput(product.rollWidth),
     rollLength: productCellToInput(product.rollLength),
     coreWeight: productCellToInput(product.coreWeight),
@@ -2516,7 +2713,8 @@ export function productToForm(product: ProductRow): ProductFormState {
     stock: productCellToInput(product.stock),
     minStock: productCellToInput(product.minStock),
     origin: productCellToInput(product.origin),
-    description: productCellToInput(product.description)
+    description: productCellToInput(product.description),
+    conversions: conversions.length > 0 ? [conversionToForm(conversions[0])] : [emptyConversion()]
   };
 }
 
@@ -2526,11 +2724,20 @@ export function emptyProductForm(): ProductFormState {
     newCode: '',
     amisCode: '',
     name: '',
+    productionName: '',
+    tenGoc: '',
+    doLi: '',
+    doLiDm: '',
+    doDayM: '',
+    doDaiM: '',
+    mang: '',
+    hangPhe: '',
     nature: '',
     group: '',
     unit: '',
     warehouse: '',
     totalWeight: '',
+    wastePercent: '',
     rollWidth: '',
     rollLength: '',
     coreWeight: '',
@@ -2542,13 +2749,18 @@ export function emptyProductForm(): ProductFormState {
     stock: '',
     minStock: '',
     origin: '',
-    description: ''
+    description: '',
+    conversions: [emptyConversion()]
   };
 }
 
-export function productFormToPayload(form: ProductFormState) {
-  return {
-    code: form.code.trim(),
+export function productFormToPayload(
+  form: ProductFormState,
+  options?: { includeProduction?: boolean }
+) {
+  const includeProduction = options?.includeProduction !== false;
+  const base = {
+    code: includeProduction ? form.amisCode.trim() || form.code.trim() : form.code.trim(),
     newCode: form.newCode.trim(),
     amisCode: form.amisCode.trim(),
     name: form.name.trim(),
@@ -2570,13 +2782,60 @@ export function productFormToPayload(form: ProductFormState) {
     origin: form.origin.trim(),
     description: form.description.trim()
   };
+  if (!includeProduction) return base;
+
+  const doLiDm =
+    form.doLiDm.trim() ||
+    extractDoLiDm(form.productionName) ||
+    calculateDoLiDm(form.doLi, form.group) ||
+    '';
+  const tenGhep = composeProductionDisplayName(
+    {
+      tenGoc: form.tenGoc.trim(),
+      doLi: form.doLi.trim(),
+      doLiDm,
+      doDayM: form.doDayM.trim(),
+      doDaiM: form.doDaiM.trim(),
+      mang: form.mang.trim(),
+      hangPhe: form.hangPhe.trim()
+    },
+    form.group.trim()
+  );
+  return {
+    ...base,
+    code: form.amisCode.trim() || form.code.trim(),
+    productionName: form.productionName.trim(),
+    tenGoc: form.tenGoc.trim(),
+    doLi: form.doLi.trim(),
+    doLiDm,
+    doDayM: form.doDayM.trim(),
+    doDaiM: form.doDaiM.trim(),
+    mang: form.mang.trim(),
+    hangPhe: form.hangPhe.trim(),
+    tenGhep,
+    wastePercent: form.wastePercent.trim().replace(',', '.'),
+    conversions: form.conversions.map(item => ({
+      sheetWidthM: item.khoTamRongM.trim(),
+      sheetLengthM: item.khoTamDaiM.trim(),
+      rollWidthM: item.khoCuonRongM.trim(),
+      rollLengthM: item.khoCuonDaiM.trim(),
+      areaM2: item.dienTichM2.trim(),
+      kgPerLinearM: item.trongLuongKgMDai.trim(),
+      kgPerM2: item.trongLuongKgM2.trim(),
+      kgPerSheet: item.trongLuongKgTam.trim(),
+      kgPerRoll: item.trongLuongKgCuon.trim()
+    }))
+  };
 }
 
 export function ProductEditModal({
   mode,
   product,
+  products = [],
   warehouseOptions,
   defaultWarehouse,
+  enableProductionFields = false,
+  productConversions = [],
   isSaving,
   formError,
   onClose,
@@ -2584,22 +2843,148 @@ export function ProductEditModal({
 }: {
   mode: 'add' | 'edit';
   product: ProductRow | null;
+  products?: ProductRow[];
   warehouseOptions: string[];
   defaultWarehouse?: string;
+  /** Chỉ bật trên `/san-pham` (giống main). Kho hàng giữ form đơn giản. */
+  enableProductionFields?: boolean;
+  productConversions?: ProductConversionFactors[];
   isSaving: boolean;
   formError: string;
   onClose: () => void;
   onSave: (form: ProductFormState) => Promise<void>;
 }) {
+  const productConversionForEdit =
+    mode === 'edit' && product
+      ? productConversions.filter(item => item.sanPhamId === product.id)
+      : [];
+
   const [form, setForm] = useState<ProductFormState>(() =>
-    mode === 'edit' && product ? productToForm(product) : { ...emptyProductForm(), warehouse: defaultWarehouse || '' }
+    mode === 'edit' && product
+      ? productToForm(product, productConversionForEdit)
+      : { ...emptyProductForm(), warehouse: defaultWarehouse || '' }
   );
+  const [amisOpen, setAmisOpen] = useState(false);
+  const prevDoDaiMRef = useRef('');
 
   useEffect(() => {
-    setForm(mode === 'edit' && product ? productToForm(product) : { ...emptyProductForm(), warehouse: defaultWarehouse || '' });
-  }, [defaultWarehouse, mode, product?.id]);
+    const next =
+      mode === 'edit' && product
+        ? productToForm(
+            product,
+            productConversions.filter(item => item.sanPhamId === product.id)
+          )
+        : { ...emptyProductForm(), warehouse: defaultWarehouse || '' };
+    setForm(next);
+    prevDoDaiMRef.current = next.doDaiM;
+  }, [defaultWarehouse, mode, product?.id, productConversions]);
 
-  const fields: Array<{ key: keyof ProductFormState; label: string; required?: boolean; span?: boolean }> = [
+  useEffect(() => {
+    if (!enableProductionFields) return;
+    if (prevDoDaiMRef.current === form.doDaiM) return;
+    prevDoDaiMRef.current = form.doDaiM;
+    const meters = parseDoDaiMLength(form.doDaiM);
+    if (meters === null) return;
+    const nextValue = String(meters);
+    setForm(prev => {
+      const conv = prev.conversions[0] || emptyConversion();
+      if (conv.khoTamDaiM.trim() === nextValue) return prev;
+      return {
+        ...prev,
+        conversions: [
+          autoCalculateProductConversion({ ...conv, khoTamDaiM: nextValue }, 'khoTamDaiM'),
+          ...prev.conversions.slice(1)
+        ]
+      };
+    });
+  }, [enableProductionFields, form.doDaiM]);
+
+  const seedSpecsFromName = (next: Partial<ProductFormState>, base: ProductFormState = form) => {
+    const productionName = next.productionName ?? base.productionName;
+    const amisCode = next.amisCode ?? base.amisCode;
+    const group = next.group ?? base.group;
+    const seeded = seedProductionSpecs({
+      tenSanXuat: productionName,
+      maAmis: amisCode,
+      nhomVthh: group
+    });
+    return {
+      ...next,
+      tenGoc: seeded.tenGoc,
+      doLi: seeded.doLi,
+      doLiDm: seeded.doLiDm || extractDoLiDm(productionName) || '',
+      doDayM: seeded.doDayM,
+      doDaiM: seeded.doDaiM,
+      mang: seeded.mang,
+      hangPhe: seeded.hangPhe || base.hangPhe
+    };
+  };
+
+  const updateConversion = (index: number, key: keyof ProductConversionForm, value: string) => {
+    setForm(prev => ({
+      ...prev,
+      conversions: prev.conversions.map((item, itemIndex) => {
+        if (itemIndex !== index) return item;
+        return autoCalculateProductConversion({ ...item, [key]: value }, key);
+      })
+    }));
+  };
+
+  const applyGroup = (group: string) => {
+    const rule = PRODUCT_GROUP_RULES[group as ProductGroup];
+    setForm(prev => {
+      const withGroup = rule
+        ? {
+            ...prev,
+            group,
+            unit: rule.primaryUnit || prev.unit,
+            wastePercent: rule.wastePercent,
+            conversions: [prev.conversions[0] || emptyConversion()]
+          }
+        : { ...prev, group };
+      const seeded = seedSpecsFromName({ group }, withGroup);
+      return { ...withGroup, ...seeded };
+    });
+  };
+
+  const updateCustomUnit = (unit: string) => setForm(prev => ({ ...prev, unit }));
+
+  const composedName = composeProductionDisplayName(
+    {
+      tenGoc: form.tenGoc.trim(),
+      doLi: form.doLi.trim(),
+      doLiDm:
+        form.doLiDm.trim() ||
+        extractDoLiDm(form.productionName) ||
+        calculateDoLiDm(form.doLi, form.group) ||
+        '',
+      doDayM: form.doDayM.trim(),
+      doDaiM: form.doDaiM.trim(),
+      mang: form.mang.trim(),
+      hangPhe: form.hangPhe.trim()
+    },
+    form.group.trim()
+  );
+
+  const amisOptions = products.filter(item => item.amisCode.trim());
+  const filteredAmisOptions = amisOptions
+    .filter(item =>
+      `${item.amisCode} ${item.name} ${item.productionName || ''}`
+        .toLocaleLowerCase('vi')
+        .includes(form.amisCode.trim().toLocaleLowerCase('vi'))
+    )
+    .slice(0, 20);
+  const selectedGroupRule = PRODUCT_GROUP_RULES[form.group as ProductGroup];
+  const displayedUnit = selectedGroupRule?.units.length
+    ? selectedGroupRule.units.join(', ')
+    : form.unit;
+
+  const warehouseFields: Array<{
+    key: Exclude<keyof ProductFormState, 'conversions'>;
+    label: string;
+    required?: boolean;
+    span?: boolean;
+  }> = [
     { key: 'code', label: 'Mã SP', required: true },
     { key: 'amisCode', label: 'Mã AMIS' },
     { key: 'newCode', label: 'Mã mới' },
@@ -2608,34 +2993,29 @@ export function ProductEditModal({
     { key: 'group', label: 'Nhóm VTHH' },
     { key: 'unit', label: 'Đơn vị tính' },
     { key: 'warehouse', label: 'Kho lưu trữ', required: true },
-    { key: 'totalWeight', label: 'Tổng trọng lượng TP (kg)' },
-    { key: 'rollWidth', label: 'Khổ cuộn (m)' },
-    { key: 'rollLength', label: 'Chiều dài mét/cuộn (m)' },
-    { key: 'coreWeight', label: 'Trọng lượng lõi (kg)' },
-    { key: 'bagWeight', label: 'Trọng lượng túi (kg)' },
-    { key: 'plasticWeight', label: 'Trọng lượng nhựa + phụ gia (kg)' },
-    { key: 'openingStock', label: 'Tồn đầu' },
-    { key: 'inbound', label: 'Nhập' },
-    { key: 'outbound', label: 'Xuất' },
-    { key: 'stock', label: 'Tồn kho' },
-    { key: 'minStock', label: 'Tồn tối thiểu' },
-    { key: 'origin', label: 'Nguồn gốc' },
     { key: 'description', label: 'Mô tả', span: true }
   ];
+
   const handleSave = async () => {
     await onSave(form);
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
+      <div
+        className={`max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl ${
+          enableProductionFields ? 'max-w-3xl' : 'max-w-2xl'
+        }`}
+      >
         <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
               {mode === 'add' ? 'Thêm sản phẩm mới' : 'Sửa sản phẩm'}
             </h3>
             {mode !== 'add' && (
-              <p className="mt-0.5 text-xs font-semibold text-zinc-500">{product?.code || '-'}</p>
+              <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+                {product ? productAmisDisplayCode(product) : '-'}
+              </p>
             )}
           </div>
           <BackButton onClick={onClose} />
@@ -2646,34 +3026,343 @@ export function ProductEditModal({
           </div>
         )}
         <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
-          {fields.map(field => (
-            <label key={field.key} className={`block space-y-1.5 ${field.span ? 'sm:col-span-2' : ''}`}>
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
-                {field.label}{field.required ? ' *' : ''}
-              </span>
-              {field.key === 'warehouse' ? (
-                <SearchableSelect
-                  value={form.warehouse}
-                  onChange={value => setForm(prev => ({ ...prev, warehouse: value }))}
-                  options={warehouseOptions}
-                  placeholder="Chọn kho lưu trữ"
-                  searchPlaceholder="Tìm kho..."
-                  getLabel={item => String(item)}
-                  getValue={item => String(item)}
-                  inputClassName={productFieldClass}
-                  allowEmpty={false}
-                  comboboxMode
-                />
-              ) : (
+          {enableProductionFields ? (
+            <>
+              <label className="relative block space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã AMIS</span>
                 <input
-                  type="text"
-                  value={form[field.key]}
-                  onChange={event => setForm(prev => ({ ...prev, [field.key]: event.target.value }))}
+                  value={form.amisCode}
+                  onChange={event => {
+                    const amisCode = event.target.value;
+                    setForm(prev => ({ ...prev, amisCode }));
+                    setAmisOpen(true);
+                  }}
+                  onFocus={() => setAmisOpen(true)}
+                  onBlur={() => window.setTimeout(() => setAmisOpen(false), 150)}
+                  placeholder="Tìm hoặc nhập Mã AMIS"
                   className={productFieldClass}
                 />
-              )}
-            </label>
-          ))}
+                {amisOpen && filteredAmisOptions.length > 0 ? (
+                  <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-auto rounded-lg border border-zinc-200 bg-white shadow-xl">
+                    {filteredAmisOptions.map(item => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onMouseDown={event => event.preventDefault()}
+                        onClick={() => {
+                          let seededBaseConversion: ProductConversionForm | null = null;
+                          if (mode === 'add') {
+                            const baseConv = productConversions.find(conv => conv.sanPhamId === item.id);
+                            const currentConv = form.conversions[0];
+                            const convEmpty =
+                              !currentConv ||
+                              Object.values(currentConv).every(value => String(value ?? '').trim() === '');
+                            if (baseConv && convEmpty) {
+                              seededBaseConversion = conversionToForm(baseConv);
+                            }
+                          }
+                          setForm(prev => {
+                            const nextGroup = item.group || prev.group;
+                            const rule = PRODUCT_GROUP_RULES[nextGroup as ProductGroup];
+                            const storedUnit = item.unit && item.unit !== '-' ? item.unit : '';
+                            const unit =
+                              rule && rule.units.length > 0
+                                ? (rule.units as readonly string[]).includes(storedUnit)
+                                  ? storedUnit
+                                  : rule.primaryUnit || prev.unit
+                                : storedUnit || prev.unit;
+                            const storedWaste =
+                              item.wastePercent && item.wastePercent !== '-' ? item.wastePercent : '';
+                            const wastePercent = storedWaste || rule?.wastePercent || prev.wastePercent;
+                            const nextBase = {
+                              ...prev,
+                              amisCode: item.amisCode,
+                              name: item.name,
+                              productionName: item.productionName || '',
+                              group: nextGroup,
+                              unit,
+                              wastePercent
+                            };
+                            const seeded = seedProductionSpecs({
+                              tenSanXuat: item.productionName || '',
+                              maAmis: item.amisCode,
+                              nhomVthh: item.group || prev.group
+                            });
+                            return {
+                              ...nextBase,
+                              ...(seededBaseConversion ? { conversions: [seededBaseConversion] } : {}),
+                              tenGoc: seeded.tenGoc,
+                              doLi: seeded.doLi,
+                              doLiDm: seeded.doLiDm,
+                              doDayM: seeded.doDayM,
+                              doDaiM: seeded.doDaiM,
+                              mang: seeded.mang,
+                              hangPhe: seeded.hangPhe || item.hangPhe || ''
+                            };
+                          });
+                          setAmisOpen(false);
+                        }}
+                        className="block w-full px-3 py-2 text-left hover:bg-red-50"
+                      >
+                        <span className="block text-xs font-black text-zinc-900">{item.amisCode}</span>
+                        <span className="block text-[11px] font-semibold text-zinc-500">
+                          {item.name || '—'} · {item.productionName || '—'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Nhóm VTHH *</span>
+                <select
+                  value={form.group}
+                  onChange={event => applyGroup(event.target.value)}
+                  className={productFieldClass}
+                >
+                  <option value="">Chọn Nhóm VTHH</option>
+                  {PRODUCT_GROUPS.map(group => (
+                    <option key={group} value={group}>
+                      {group}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Đơn vị tính *</span>
+                {selectedGroupRule && selectedGroupRule.units.length > 1 ? (
+                  <select
+                    value={form.unit}
+                    onChange={event => updateCustomUnit(event.target.value)}
+                    className={productFieldClass}
+                  >
+                    {selectedGroupRule.units.map(unit => (
+                      <option key={unit} value={unit}>
+                        {unit}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={displayedUnit}
+                    onChange={event => updateCustomUnit(event.target.value)}
+                    readOnly={Boolean(selectedGroupRule?.primaryUnit)}
+                    className={`${productFieldClass} read-only:bg-zinc-100`}
+                    placeholder={form.group ? 'Nhập ĐVT' : 'Chọn Nhóm VTHH trước'}
+                  />
+                )}
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tỷ lệ hàng hỏng (%)</span>
+                <input
+                  value={form.wastePercent}
+                  onChange={event => setForm(prev => ({ ...prev, wastePercent: event.target.value }))}
+                  readOnly={
+                    PRODUCT_GROUP_RULES[form.group as ProductGroup]?.wastePercent !== '' &&
+                    Boolean(PRODUCT_GROUP_RULES[form.group as ProductGroup])
+                  }
+                  className={`${productFieldClass} read-only:bg-zinc-100`}
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tên sản phẩm *</span>
+                <input
+                  value={form.name}
+                  onChange={event => setForm(prev => ({ ...prev, name: event.target.value }))}
+                  className={productFieldClass}
+                />
+              </label>
+              <label className="block space-y-1.5 sm:col-span-2">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mô tả</span>
+                <input
+                  value={form.description}
+                  onChange={event => setForm(prev => ({ ...prev, description: event.target.value }))}
+                  className={productFieldClass}
+                />
+              </label>
+              <label className="block space-y-1.5 sm:col-span-2">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tên sản xuất *</span>
+                <input
+                  value={form.productionName}
+                  onChange={event => {
+                    const productionName = event.target.value;
+                    setForm(prev => {
+                      const seeded = seedSpecsFromName({ productionName }, prev);
+                      return { ...prev, productionName, ...seeded };
+                    });
+                  }}
+                  className={productFieldClass}
+                  placeholder="Nhập tên sản xuất — hệ thống suy luận ĐM / thông số"
+                />
+              </label>
+              <section className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3 sm:col-span-2">
+                <h4 className="text-xs font-black uppercase text-amber-900">Thông số sản xuất</h4>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <label className="space-y-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Tên gốc</span>
+                    <input
+                      value={form.tenGoc}
+                      onChange={event => setForm(prev => ({ ...prev, tenGoc: event.target.value }))}
+                      className={`${productFieldClass} bg-white`}
+                    />
+                  </label>
+                  <label className="space-y-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Độ li / ZEM</span>
+                    <input
+                      value={form.doLi}
+                      onChange={event => setForm(prev => ({ ...prev, doLi: event.target.value }))}
+                      className={`${productFieldClass} bg-white`}
+                      placeholder="5.0li / 6ZEM"
+                    />
+                  </label>
+                  <label className="space-y-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">ĐM (đm li, đm kg)</span>
+                    <input
+                      value={form.doLiDm}
+                      onChange={event => setForm(prev => ({ ...prev, doLiDm: event.target.value }))}
+                      className={`${productFieldClass} bg-white`}
+                      placeholder="(đm 5.7 li)"
+                    />
+                  </label>
+                  <label className="space-y-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Độ dày (m)</span>
+                    <input
+                      value={form.doDayM}
+                      onChange={event => setForm(prev => ({ ...prev, doDayM: event.target.value }))}
+                      className={`${productFieldClass} bg-white`}
+                    />
+                  </label>
+                  <label className="space-y-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Mét dài</span>
+                    <input
+                      value={form.doDaiM}
+                      onChange={event => setForm(prev => ({ ...prev, doDaiM: event.target.value }))}
+                      className={`${productFieldClass} bg-white`}
+                      placeholder="Đặc: 8/9/20/30m; Sóng: theo tên SX"
+                    />
+                  </label>
+                  <label className="space-y-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Màng</span>
+                    <select
+                      value={
+                        FILM_OPTIONS.includes(form.mang as (typeof FILM_OPTIONS)[number]) ? form.mang : ''
+                      }
+                      onChange={event => setForm(prev => ({ ...prev, mang: event.target.value }))}
+                      className={`${productFieldClass} bg-white`}
+                    >
+                      <option value="">— / tự nhập bên dưới</option>
+                      {FILM_OPTIONS.map(opt => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      value={form.mang}
+                      onChange={event => setForm(prev => ({ ...prev, mang: event.target.value }))}
+                      className={`${productFieldClass} mt-1 bg-white`}
+                      placeholder="ECO / STD / SUN PC / HA hoặc nhập tay"
+                    />
+                  </label>
+                  <label className="space-y-1.5 sm:col-span-2">
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Hàng phế</span>
+                    <select
+                      value={form.hangPhe}
+                      onChange={event => setForm(prev => ({ ...prev, hangPhe: event.target.value }))}
+                      className={`${productFieldClass} bg-white`}
+                    >
+                      <option value="">—</option>
+                      {WASTE_GRADE_OPTIONS.map(opt => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-1.5 sm:col-span-2 lg:col-span-3">
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">
+                      Tên ghép (tự động)
+                    </span>
+                    <input
+                      value={composedName}
+                      readOnly
+                      className={`${productFieldClass} bg-zinc-100 font-semibold text-zinc-800`}
+                    />
+                  </label>
+                </div>
+              </section>
+              <section className="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:col-span-2">
+                <div>
+                  <h4 className="text-xs font-black uppercase text-zinc-700">Thông tin quy đổi sản phẩm</h4>
+                  <p className="text-[10px] font-semibold text-zinc-500">
+                    Có thể nhập ngay. Mét dài trong Thông số sản xuất chính là Khổ tấm dài — đổi Mét dài sẽ đồng bộ và tính lại Trọng lượng (kg/Tấm). Chọn SP chính theo AMIS để lấy sẵn quy đổi gốc.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {(
+                    [
+                      ['khoTamRongM', 'Khổ tấm rộng (m rộng)'],
+                      ['khoTamDaiM', 'Khổ tấm dài (m dài / tấm)'],
+                      ['khoCuonRongM', 'Khổ cuộn rộng (m rộng)'],
+                      ['khoCuonDaiM', 'Khổ cuộn dài (m dài)'],
+                      ['dienTichM2', 'Khổ diện tích mét vuông (m2)'],
+                      ['trongLuongKgMDai', 'Trọng lượng (kg/1 m dài)'],
+                      ['trongLuongKgM2', 'Trọng lượng (kg/m2)'],
+                      ['trongLuongKgTam', 'Trọng lượng (kg/Tấm)'],
+                      ['trongLuongKgCuon', 'Trọng lượng (kg/Cuộn)']
+                    ] as Array<[keyof ProductConversionForm, string]>
+                  ).map(([key, label]) => {
+                    const isCalculated = CALCULATED_WEIGHT_FIELDS.has(key);
+                    return (
+                      <label key={key} className="space-y-1.5">
+                        <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">{label}</span>
+                        <input
+                          inputMode="decimal"
+                          value={(form.conversions[0] || emptyConversion())[key]}
+                          onChange={event => updateConversion(0, key, event.target.value)}
+                          readOnly={isCalculated}
+                          aria-readonly={isCalculated}
+                          className={`${productFieldClass} ${
+                            isCalculated ? 'cursor-not-allowed bg-zinc-100 text-zinc-600' : 'bg-white'
+                          }`}
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              </section>
+            </>
+          ) : (
+            warehouseFields.map(field => (
+              <label key={field.key} className={`block space-y-1.5 ${field.span ? 'sm:col-span-2' : ''}`}>
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                  {field.label}
+                  {field.required ? ' *' : ''}
+                </span>
+                {field.key === 'warehouse' ? (
+                  <SearchableSelect
+                    value={form.warehouse}
+                    onChange={value => setForm(prev => ({ ...prev, warehouse: value }))}
+                    options={warehouseOptions}
+                    placeholder="Chọn kho lưu trữ"
+                    searchPlaceholder="Tìm kho..."
+                    getLabel={item => String(item)}
+                    getValue={item => String(item)}
+                    inputClassName={productFieldClass}
+                    allowEmpty={false}
+                    comboboxMode
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={form[field.key]}
+                    onChange={event => setForm(prev => ({ ...prev, [field.key]: event.target.value }))}
+                    className={productFieldClass}
+                  />
+                )}
+              </label>
+            ))
+          )}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
           <BackButton onClick={onClose} className="h-10 rounded-lg bg-white" />
@@ -2692,6 +3381,19 @@ export function ProductEditModal({
   );
 }
 
+function formatConvertedValue(
+  raw: string,
+  unit: ProductConvertedUnit,
+  productUnit: string,
+  conversion: ProductConversionFactors | undefined
+): string {
+  if (!conversion || raw === '-' || raw.trim() === '') return '—';
+  const quantity = Number(raw.replace(',', '.'));
+  if (!Number.isFinite(quantity)) return '—';
+  const value = convertProductQuantity(quantity, productUnit, unit, conversion);
+  return value === null ? '—' : formatNumber(value, 3);
+}
+
 export function ProductsPanel({
   onBack,
   warehouseFilter = '',
@@ -2708,7 +3410,15 @@ export function ProductsPanel({
   topControls?: ReactNode;
 }) {
   const { canCreate, canEdit, canDelete } = useTabAccess('products');
+  /** Trang `/san-pham` (không lọc kho) — UI/CRUD giống main: ten_ghep + san_pham_id. */
+  const isSanPhamCatalog = !warehouseFilter;
   const [products, setProducts] = useState<ProductRow[]>([]);
+  const [productConversions, setProductConversions] = useState<ProductConversionFactors[]>([]);
+  const [productPage, setProductPage] = useState(1);
+  const [productPageSize, setProductPageSize] = useState(100);
+  const [isImportingConversions, setIsImportingConversions] = useState(false);
+  const [isSyncingOpeningStock, setIsSyncingOpeningStock] = useState(false);
+  const conversionFileInputRef = useRef<HTMLInputElement>(null);
   const [searchText, setSearchText] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('all');
   const [selectedNatures, setSelectedNatures] = useState<Set<string>>(() => new Set());
@@ -2801,6 +3511,29 @@ export function ProductsPanel({
     void loadWarehouses();
   }, []);
 
+
+  const loadProductConversions = async () => {
+    if (!isSanPhamCatalog) {
+      setProductConversions([]);
+      return;
+    }
+    try {
+      const all: ProductConversionFactors[] = [];
+      for (let page = 1; ; page += 1) {
+        const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=1000`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error('Không thể tải bảng quy đổi.');
+        const items = Array.isArray(data.items) ? (data.items as ProductConversionFactors[]) : [];
+        all.push(...items);
+        if (all.length >= Number(data.total || 0)) break;
+      }
+      setProductConversions(all);
+    } catch {
+      setProductConversions([]);
+      showAppToast('Không thể tải bảng quy đổi. Dữ liệu sản phẩm gốc vẫn được hiển thị.', 'error');
+    }
+  };
+
   const loadProducts = async () => {
     setIsLoadingProducts(true);
     setProductError('');
@@ -2824,6 +3557,7 @@ export function ProductsPanel({
 
   useEffect(() => {
     loadProducts();
+    void loadProductConversions();
   }, []);
 
   useEffect(() => {
@@ -2901,7 +3635,35 @@ export function ProductsPanel({
       setProductFormError('Vui lòng nhập mã SP hoặc tên sản phẩm.');
       return;
     }
-    if (!form.warehouse.trim()) {
+    if (isSanPhamCatalog) {
+      if (!PRODUCT_GROUPS.includes(form.group as ProductGroup)) {
+        setProductFormError('Vui lòng chọn Nhóm VTHH.');
+        return;
+      }
+      if (!form.unit.trim()) {
+        setProductFormError('Vui lòng nhập đơn vị tính.');
+        return;
+      }
+      if (form.wastePercent.trim() && !/^(?:\d{1,2}(?:[.,]\d{1,2})?|100(?:[.,]0{1,2})?)$/.test(form.wastePercent.trim())) {
+        setProductFormError('Tỷ lệ hàng hỏng phải từ 0 đến 100 và có tối đa 2 chữ số thập phân.');
+        return;
+      }
+      if (
+        isDiscontinuedWhiteSuProduct({
+          group: form.group,
+          maAmis: form.amisCode,
+          names: [form.name, form.productionName, form.tenGoc]
+        })
+      ) {
+        setProductFormError('Sản phẩm nhựa đặc màu trắng sứ (STD01) đã ngừng kinh doanh, không thể thêm mới.');
+        return;
+      }
+      const duplicateError = findDuplicateProductIdentity(products, form);
+      if (duplicateError) {
+        setProductFormError(duplicateError);
+        return;
+      }
+    } else if (!form.warehouse.trim()) {
       setProductFormError('Vui lòng chọn kho lưu trữ.');
       return;
     }
@@ -2913,7 +3675,7 @@ export function ProductsPanel({
       const res = await fetch('/api/san-pham', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(productFormToPayload(form))
+        body: JSON.stringify(productFormToPayload(form, { includeProduction: isSanPhamCatalog }))
       });
       const data = await res.json().catch(() => ({}));
 
@@ -2922,8 +3684,13 @@ export function ProductsPanel({
       }
 
       closeProductForm();
-      setProductActionMessage('Đã thêm sản phẩm mới. Hãy lập phiếu nhập kho thành phẩm để sinh serial và mã QR.');
+      setProductActionMessage(
+        isSanPhamCatalog
+          ? 'Đã thêm sản phẩm mới.'
+          : 'Đã thêm sản phẩm mới. Hãy lập phiếu nhập kho thành phẩm để sinh serial và mã QR.'
+      );
       await loadProducts();
+      if (isSanPhamCatalog) await loadProductConversions();
     } catch (error: any) {
       setProductFormError(error.message || 'Không thể thêm sản phẩm.');
     } finally {
@@ -2933,11 +3700,39 @@ export function ProductsPanel({
 
   const handleSaveProduct = async (form: ProductFormState) => {
     if (!editingProduct) return;
+    if (isSanPhamCatalog && !editingProduct.id) {
+      setProductFormError('Thiếu san_pham_id — không thể cập nhật.');
+      return;
+    }
     if (!form.code.trim() && !form.name.trim()) {
       setProductFormError('Vui lòng nhập mã SP hoặc tên sản phẩm.');
       return;
     }
-    if (!form.warehouse.trim()) {
+    if (isSanPhamCatalog) {
+      if (!PRODUCT_GROUPS.includes(form.group as ProductGroup) || !form.unit.trim()) {
+        setProductFormError('Vui lòng chọn Nhóm VTHH và nhập đơn vị tính hợp lệ.');
+        return;
+      }
+      if (form.wastePercent.trim() && !/^(?:\d{1,2}(?:[.,]\d{1,2})?|100(?:[.,]0{1,2})?)$/.test(form.wastePercent.trim())) {
+        setProductFormError('Tỷ lệ hàng hỏng phải từ 0 đến 100 và có tối đa 2 chữ số thập phân.');
+        return;
+      }
+      if (
+        isDiscontinuedWhiteSuProduct({
+          group: form.group,
+          maAmis: form.amisCode,
+          names: [form.name, form.productionName, form.tenGoc]
+        })
+      ) {
+        setProductFormError('Sản phẩm nhựa đặc màu trắng sứ (STD01) đã ngừng kinh doanh, không thể cập nhật.');
+        return;
+      }
+      const duplicateError = findDuplicateProductIdentity(products, form, editingProduct.id);
+      if (duplicateError) {
+        setProductFormError(duplicateError);
+        return;
+      }
+    } else if (!form.warehouse.trim()) {
       setProductFormError('Vui lòng chọn kho lưu trữ.');
       return;
     }
@@ -2949,7 +3744,7 @@ export function ProductsPanel({
       const res = await fetch(`/api/san-pham/${editingProduct.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(productFormToPayload(form))
+        body: JSON.stringify(productFormToPayload(form, { includeProduction: isSanPhamCatalog }))
       });
       const data = await res.json().catch(() => ({}));
 
@@ -2960,6 +3755,7 @@ export function ProductsPanel({
       closeProductForm();
       setProductActionMessage('Đã cập nhật sản phẩm.');
       await loadProducts();
+      if (isSanPhamCatalog) await loadProductConversions();
     } catch (error: any) {
       setProductFormError(error.message || 'Không thể cập nhật sản phẩm.');
     } finally {
@@ -2999,6 +3795,7 @@ export function ProductsPanel({
       });
       setProductActionMessage('Đã xóa sản phẩm.');
       await loadProducts();
+      if (isSanPhamCatalog) await loadProductConversions();
     } catch (error: any) {
       setProductError(error.message || 'Không thể xóa sản phẩm.');
     } finally {
@@ -3137,6 +3934,186 @@ export function ProductsPanel({
       setIsImportingProductCatalog(false);
       if (catalogFileInputRef.current) catalogFileInputRef.current.value = '';
     }
+  };
+
+  const handleImportConversions = async (file?: File | null) => {
+    if ((!canCreate && !canEdit) || !file) return;
+
+    setIsImportingConversions(true);
+    setProductError('');
+    setProductActionMessage('');
+
+    try {
+      const rows = await parseProductConversionExcel(file);
+      if (rows.length === 0) {
+        throw new Error('File Excel không có dòng quy đổi hợp lệ.');
+      }
+
+      const productsByIdentity = new Map<string, ProductRow>();
+      const productsByAmisName = new Map<string, ProductRow>();
+      const productsByAmis = new Map<string, ProductRow>();
+
+      products.forEach(product => {
+        const identityKey = buildProductIdentityKey(product.code, product.name, product.productionName || '');
+        if (identityKey) productsByIdentity.set(identityKey, product);
+        const amisNameKey = `${product.code.trim().toLowerCase()}|${product.name.trim().toLowerCase()}`;
+        if (amisNameKey) productsByAmisName.set(amisNameKey, product);
+        if (product.code) productsByAmis.set(product.code.trim().toLowerCase(), product);
+      });
+
+      let created = 0;
+      let updated = 0;
+      const failures: string[] = [];
+      const jobs: Array<Record<string, unknown>> = [];
+
+      for (const row of rows) {
+        const amis = row.amisCode.trim();
+        const name = row.productName.trim();
+        const production = row.productionName.trim();
+
+        if (!amis) {
+          failures.push(`dòng ${row.rowNumber}: thiếu mã amis`);
+          continue;
+        }
+
+        let product: ProductRow | undefined;
+        if (amis && name && production) {
+          const identityKey = buildProductIdentityKey(amis, name, production);
+          if (identityKey) product = productsByIdentity.get(identityKey);
+        }
+        if (!product && amis && name) {
+          product = productsByAmisName.get(`${amis.toLowerCase()}|${name.toLowerCase()}`);
+        }
+        if (!product && amis) {
+          product = productsByAmis.get(amis.toLowerCase());
+        }
+        if (!product) {
+          failures.push(`dòng ${row.rowNumber}: không tìm thấy sản phẩm với mã ${amis}`);
+          continue;
+        }
+
+        const validateNum = (val: string) => {
+          if (!val.trim()) return null;
+          const num = Number(val.replace(',', '.'));
+          return Number.isFinite(num) && num > 0 ? num : 'invalid';
+        };
+
+        const fields: Record<string, unknown> = { san_pham_id: product.id };
+        const fieldMaps = [
+          ['sheetWidthM', 'kho_tam_rong_m'],
+          ['sheetLengthM', 'kho_tam_dai_m'],
+          ['rollWidthM', 'kho_cuon_rong_m'],
+          ['rollLengthM', 'kho_cuon_dai_m'],
+          ['areaM2', 'dien_tich_m2'],
+          ['kgPerLinearM', 'trong_luong_kg_m_dai'],
+          ['kgPerM2', 'trong_luong_kg_m2'],
+          ['kgPerSheet', 'trong_luong_kg_tam'],
+          ['kgPerRoll', 'trong_luong_kg_cuon']
+        ] as const;
+
+        let hasError = false;
+        for (const [csvField, dbField] of fieldMaps) {
+          const val = validateNum(row[csvField as keyof typeof row] as string);
+          if (val === 'invalid') {
+            failures.push(`dòng ${row.rowNumber}: ${dbField} phải là số lớn hơn 0 hoặc để trống`);
+            hasError = true;
+            break;
+          }
+          fields[dbField] = val;
+        }
+        if (hasError) continue;
+        jobs.push({ rowNumber: row.rowNumber, ...fields });
+      }
+
+      for (let index = 0; index < jobs.length; index += 200) {
+        const batch = jobs.slice(index, index + 200);
+        const res = await fetch('/api/bang-quy-doi-san-pham/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: batch })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          failures.push(
+            `dòng ${batch[0]?.rowNumber ?? '?'}–${batch[batch.length - 1]?.rowNumber ?? '?'}: ${data.error || 'Không lưu được'}`
+          );
+          continue;
+        }
+        created += Number(data.created) || 0;
+        updated += Number(data.updated) || 0;
+        if (Array.isArray(data.errors)) {
+          for (const err of data.errors as Array<{ rowNumber?: number; error?: string }>) {
+            failures.push(`dòng ${err.rowNumber ?? '?'}: ${err.error || 'Không lưu được'}`);
+          }
+        }
+      }
+
+      const summary = [
+        created > 0 || updated > 0
+          ? `Đã nhập Excel quy đổi: thêm ${created}, cập nhật ${updated}.`
+          : 'Không nhập được dòng nào.',
+        failures.length ? `${failures.length} dòng lỗi (${failures.slice(0, 3).join('; ')}).` : ''
+      ]
+        .filter(Boolean)
+        .join(' ');
+      setProductActionMessage(summary);
+      if (created > 0 || updated > 0) {
+        showAppToast(summary);
+        await loadProductConversions();
+      } else if (failures.length > 0) {
+        setProductError(summary);
+        showAppToast(failures[0], 'error');
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Không thể đọc hoặc nhập Excel quy đổi.';
+      setProductError(message);
+      showAppToast(message, 'error');
+    } finally {
+      setIsImportingConversions(false);
+      if (conversionFileInputRef.current) conversionFileInputRef.current.value = '';
+    }
+  };
+
+  const handleSyncOpeningStock = async () => {
+    setIsSyncingOpeningStock(true);
+    setProductActionMessage('');
+    setProductError('');
+    try {
+      const res = await fetch('/api/kiem-kho/dong-bo-ton-dau', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Không thể đồng bộ dữ liệu kiểm kho vào tồn đầu.');
+      const updated = Number(data.updated) || 0;
+      const unmatched = Number(data.unmatched) || 0;
+      const unmatchedCodes = Array.isArray(data.unmatched_codes) ? data.unmatched_codes.join(', ') : '';
+      const parts = [
+        updated > 0
+          ? `Đã đồng bộ ${updated} sản phẩm kiểm kho vào Tồn đầu.`
+          : 'Không có sản phẩm kiểm kho mới cần đồng bộ.'
+      ];
+      if (unmatched > 0) {
+        parts.push(`Chưa tìm thấy ${unmatched} mã trong danh mục${unmatchedCodes ? `: ${unmatchedCodes}` : ''}.`);
+      }
+      if (data.has_more) parts.push('Vẫn còn dữ liệu; bấm Đồng bộ thêm lần nữa để xử lý tiếp.');
+      if (data.warning) parts.push(String(data.warning));
+      setProductActionMessage(parts.join(' '));
+      await loadProducts();
+    } catch (error: any) {
+      setProductError(error.message || 'Không thể đồng bộ dữ liệu kiểm kho vào tồn đầu.');
+    } finally {
+      setIsSyncingOpeningStock(false);
+    }
+  };
+
+  const togglePaginatedProducts = () => {
+    setSelectedProductIds(prev => {
+      const next = new Set(prev);
+      if (allPaginatedSelected) {
+        paginatedProducts.forEach(product => next.delete(product.id));
+      } else {
+        paginatedProducts.forEach(product => next.add(product.id));
+      }
+      return next;
+    });
   };
 
   const handleDownloadBulkProductComponentsTemplate = () => {
@@ -3374,9 +4351,10 @@ export function ProductsPanel({
       });
       const matchesGroup = selectedGroup === 'all' || product.group === selectedGroup;
       const matchesNature = selectedNatures.size === 0 || selectedNatures.has(product.nature);
+      const row = product as ProductRow;
       const matchesSearch =
         !normalizedSearch ||
-        `${product.code} ${product.newCode} ${product.name} ${product.nature} ${product.group} ${product.origin} ${formatProductNplSummary(product.nplItems)}`
+        `${row.code} ${row.newCode} ${row.amisCode} ${row.name} ${row.productionName || ''} ${row.tenGhep || ''} ${row.nature} ${row.group} ${row.origin} ${formatProductNplSummary(row.nplItems)}`
           .toLowerCase()
           .includes(normalizedSearch);
       return matchesWarehouse && matchesGroup && matchesNature && matchesSearch;
@@ -3396,10 +4374,30 @@ export function ProductsPanel({
     [displayProducts]
   );
 
+  const conversionByProductId = useMemo(() => {
+    const map = new Map<string, ProductConversionFactors>();
+    productConversions.forEach(item => {
+      if (item.sanPhamId && !map.has(item.sanPhamId)) map.set(item.sanPhamId, item);
+    });
+    return map;
+  }, [productConversions]);
+
+  const { paginatedItems: paginatedProducts, totalPages: productTotalPages } = usePagination(
+    filteredProducts,
+    productPage,
+    productPageSize
+  );
+  const allPaginatedSelected =
+    paginatedProducts.length > 0 && paginatedProducts.every(product => selectedProductIds.has(product.id));
+
   const selectedProducts = useMemo(
     () => products.filter(product => selectedProductIds.has(product.id)),
     [products, selectedProductIds]
   );
+
+  useEffect(() => {
+    setProductPage(1);
+  }, [selectedGroup, selectedNatures, normalizedSearch, warehouseFilter]);
   // Ở màn hình tồn theo ngày có thể có dòng chỉ phát sinh từ phiếu kho, chưa có
   // bản ghi danh mục. In QR phải dùng đúng các dòng đang hiển thị để checkbox,
   // ảnh xem trước và nút in luôn đồng nhất.
@@ -3645,6 +4643,7 @@ export function ProductsPanel({
       setSelectedProductIds(new Set());
       setProductActionMessage(`Đã xóa ${data.deleted ?? selectedProducts.length} sản phẩm.`);
       await loadProducts();
+      if (isSanPhamCatalog) await loadProductConversions();
     } catch (error: any) {
       setProductError(error.message || 'Không thể xóa sản phẩm đã chọn.');
     } finally {
@@ -3742,161 +4741,76 @@ export function ProductsPanel({
 
   return (
     <div className="w-full space-y-4">
-      {isInventoryHeader ? (
-        <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            {topControls}
-            {topControls ? <div className="hidden h-8 w-px shrink-0 bg-zinc-200 lg:block" aria-hidden /> : null}
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleDownloadProductCatalogTemplate}
-                disabled={isImportingProductCatalog || isLoadingProducts}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-extrabold text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
-                title="Mẫu Excel danh mục SP khớp cột bảng / form / DB san_pham"
-              >
-                <Download className="h-4 w-4" />
-                Tải mẫu Excel SP
-              </button>
-              {canCreate || canEdit ? (
-                <button
-                  type="button"
-                  onClick={() => catalogFileInputRef.current?.click()}
-                  disabled={isImportingProductCatalog || isLoadingProducts}
-                  className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isImportingProductCatalog ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                  {isImportingProductCatalog ? 'Đang nhập...' : 'Tải Excel SP lên'}
-                </button>
-              ) : null}
-              <input
-                ref={catalogFileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={event => void handleImportProductCatalog(event.target.files?.[0])}
-              />
-              {canCreate ? (
-                <button
-                  type="button"
-                  onClick={openProductCreate}
-                  className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-                >
-                  <Plus className="h-4 w-4" />
-                  Thêm mới
-                </button>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <TableSearchInput
-              value={searchText}
-              onChange={setSearchText}
-              placeholder="Tìm mã, tên, nhóm..."
-              disabled={isLoadingProducts || products.length === 0}
-            />
-
-            <FilterCombobox
-              label="Nhóm"
-              options={productGroups.filter(group => group !== 'all')}
-              value={selectedGroup}
-              onChange={setSelectedGroup}
-              searchPlaceholder="Tìm nhóm..."
-              compact
-            />
-
-            <MultiSelectFilter
-              label="Tính chất"
-              allLabel="Tất cả tính chất"
-              searchPlaceholder="Tìm tính chất..."
-              emptyLabel="Không tìm thấy tính chất"
-              options={productNatures}
-              values={[...selectedNatures]}
-              onChange={values => setSelectedNatures(new Set(values))}
-            />
-
-            {isLoadingProducts ? (
-              <div className="flex h-10 shrink-0 items-center rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs font-bold text-zinc-500">
-                Đang tải...
-              </div>
-            ) : null}
-
-            {hasActiveFilters ? (
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="flex h-10 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs font-black text-zinc-600 transition hover:border-[#ef1b2d] hover:text-[#ef1b2d]"
-              >
-                Xóa lọc
-              </button>
-            ) : null}
-          </div>
-
-          {productError ? (
-            <p className="mt-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
-              {productError}
-            </p>
-          ) : null}
-          {productActionMessage ? (
-            <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
-              {productActionMessage}
-            </p>
-          ) : null}
-        </section>
-      ) : (
+      {isSanPhamCatalog ? (
         <>
-          <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm">
-            <div className="flex flex-wrap items-center justify-end gap-2">
+          <section className="flex flex-wrap items-center justify-end gap-2 rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm">
+            <button
+              type="button"
+              onClick={handleDownloadProductCatalogTemplate}
+              disabled={isImportingProductCatalog || isLoadingProducts}
+              className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-extrabold text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+              title="Mẫu Excel danh mục SP khớp cột bảng / form / DB san_pham"
+            >
+              <Download className="h-4 w-4" />
+              Tải mẫu Excel SP
+            </button>
+            {canCreate || canEdit ? (
               <button
                 type="button"
-                onClick={handleDownloadProductCatalogTemplate}
+                onClick={() => catalogFileInputRef.current?.click()}
                 disabled={isImportingProductCatalog || isLoadingProducts}
-                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-extrabold text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
-                title="Mẫu Excel danh mục SP khớp cột bảng / form / DB san_pham"
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isImportingProductCatalog ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                {isImportingProductCatalog ? 'Đang nhập...' : 'Tải Excel SP lên'}
+              </button>
+            ) : null}
+            <input
+              ref={catalogFileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={event => void handleImportProductCatalog(event.target.files?.[0])}
+            />
+            {canCreate || canEdit ? (
+              <button
+                type="button"
+                onClick={downloadProductConversionExcelTemplate}
+                disabled={isImportingConversions || isLoadingProducts}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 text-xs font-extrabold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Download className="h-4 w-4" />
-                Tải mẫu Excel SP
+                Tải mẫu Quy đổi
               </button>
-              {canCreate || canEdit ? (
-                <button
-                  type="button"
-                  onClick={() => catalogFileInputRef.current?.click()}
-                  disabled={isImportingProductCatalog || isLoadingProducts}
-                  className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isImportingProductCatalog ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                  {isImportingProductCatalog ? 'Đang nhập...' : 'Tải Excel SP lên'}
-                </button>
-              ) : null}
-              <input
-                ref={catalogFileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={event => void handleImportProductCatalog(event.target.files?.[0])}
-              />
-              {canCreate ? (
-                <button
-                  type="button"
-                  onClick={openProductCreate}
-                  className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
-                >
-                  <Plus className="h-4 w-4" />
-                  Thêm mới
-                </button>
-              ) : null}
-            </div>
-
-            <div className="mt-5 grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
-              {summaryStats.map(([label, value]) => (
-                <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <span className="block font-bold text-slate-500">{label}</span>
-                  <span className="mt-1 block text-xl font-black text-slate-900">{value}</span>
-                </div>
-              ))}
-            </div>
+            ) : null}
+            {canCreate || canEdit ? (
+              <button
+                type="button"
+                onClick={() => conversionFileInputRef.current?.click()}
+                disabled={isImportingConversions || isLoadingProducts}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isImportingConversions ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                {isImportingConversions ? 'Đang nhập...' : 'Tải Excel Quy đổi'}
+              </button>
+            ) : null}
+            <input
+              ref={conversionFileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={event => void handleImportConversions(event.target.files?.[0])}
+            />
+            {canCreate ? (
+              <button
+                type="button"
+                onClick={openProductCreate}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+              >
+                <Plus className="h-4 w-4" />
+                Thêm mới
+              </button>
+            ) : null}
           </section>
 
           <TableToolbar
@@ -3906,6 +4820,12 @@ export function ProductsPanel({
             loadError={productError}
             actionMessage={productActionMessage}
           >
+            <TableSearchInput
+              value={searchText}
+              onChange={setSearchText}
+              placeholder="Tìm mã, tên, nhóm, nguồn gốc..."
+              disabled={isLoadingProducts || products.length === 0}
+            />
             <FilterCombobox
               label="Nhóm"
               options={productGroups.filter(group => group !== 'all')}
@@ -3914,7 +4834,6 @@ export function ProductsPanel({
               searchPlaceholder="Tìm nhóm..."
               compact
             />
-
             <MultiSelectFilter
               label="Tính chất"
               allLabel="Tất cả tính chất"
@@ -3925,266 +4844,592 @@ export function ProductsPanel({
               onChange={values => setSelectedNatures(new Set(values))}
             />
           </TableToolbar>
-        </>
-      )}
 
-      <section className="flex flex-wrap items-center gap-2 rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm">
-        {isInventoryHeader ? null : (
-          <TableSearchInput
-            value={searchText}
-            onChange={setSearchText}
-            placeholder="Tìm mã, tên, nhóm..."
-            disabled={isLoadingProducts || products.length === 0}
-          />
-        )}
-        <button
-          type="button"
-          onClick={handlePrintSelectedProductQr}
-          disabled={selectedPrintProducts.length === 0 || isLoadingProducts}
-          className="flex h-10 items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-black text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
-          title="Nhập số tem QR cần in cho các sản phẩm đã chọn; không thay đổi dữ liệu"
-        >
-          <QrCode className="h-4 w-4" />
-          In mã QR
-        </button>
-        <button
-          type="button"
-          onClick={handleDownloadProductCatalogTemplate}
-          disabled={isLoadingProducts || isImportingProductCatalog}
-          className="flex h-10 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-black text-zinc-700 transition hover:border-zinc-950 disabled:cursor-not-allowed disabled:opacity-50"
-          title="Mẫu cột bảng /san-pham — ô trống vẫn đẩy lên được"
-        >
-          <Download className="h-4 w-4" />
-          Tải mẫu Excel
-        </button>
-        {canCreate || canEdit ? (
-          <button
-            type="button"
-            onClick={() => catalogFileInputRef.current?.click()}
-            disabled={isLoadingProducts || isImportingProductCatalog}
-            className="flex h-10 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-black text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isImportingProductCatalog ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            {isImportingProductCatalog ? 'Đang nhập...' : 'Tải Excel lên'}
-          </button>
-        ) : null}
-        <button
-          type="button"
-          onClick={handleDownloadBulkProductComponentsTemplate}
-          disabled={isLoadingProducts}
-          className="flex h-10 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-black text-zinc-700 transition hover:border-zinc-950 disabled:cursor-not-allowed disabled:opacity-50"
-          title="Mẫu định mức theo Mã SP + Mã NVL (tên NVL tự khớp từ kho)"
-        >
-          <Download className="h-4 w-4" />
-          Mẫu định mức NVL
-        </button>
-        {canEdit ? (
-          <button
-            type="button"
-            onClick={() => bulkComponentsFileInputRef.current?.click()}
-            disabled={isLoadingProducts || isImportingBulkProductComponents}
-            className="flex h-10 items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-black text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
-            title="Đổ Excel định mức NVL vào bảng import_sp"
-          >
-            {isImportingBulkProductComponents ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            {isImportingBulkProductComponents ? 'Đang nhập...' : 'Nhập định mức NVL'}
-          </button>
-        ) : null}
-        <button
-          type="button"
-          onClick={openImportSpView}
-          disabled={isLoadingImportSp}
-          className="flex h-10 items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-black text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
-          title="Xem dữ liệu đã đổ vào bảng import_sp"
-        >
-          {isLoadingImportSp ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
-          Xem import_sp
-        </button>
-        {canEdit ? (
-          <button
-            type="button"
-            onClick={() => void handleSyncImportSp()}
-            disabled={isLoadingProducts || isSyncingImportSp || isImportingBulkProductComponents}
-            className="flex h-10 items-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 px-3 text-xs font-black text-violet-800 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
-            title="Đồng bộ import_sp → Thành phần NVL theo mã SP"
-          >
-            {isSyncingImportSp ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            {isSyncingImportSp ? 'Đang đồng bộ...' : 'Đồng bộ Thành phần'}
-          </button>
-        ) : null}
-        <input
-          ref={bulkComponentsFileInputRef}
-          type="file"
-          accept=".xlsx,.xls"
-          className="hidden"
-          onChange={event => handleImportBulkProductComponents(event.target.files?.[0])}
-        />
-        {canEdit && filteredCatalogProducts.length > 0 ? (
-          <button
-            type="button"
-            onClick={openWarehouseReassignModal}
-            disabled={isReassigningWarehouse || isLoadingProducts || warehouseOptions.length === 0}
-            className="flex h-10 items-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 px-3 text-xs font-black text-violet-800 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
-            title={`Đổi cột Kho của ${filteredCatalogProducts.length} sản phẩm đang lọc`}
-          >
-            {isReassigningWarehouse ? <Loader2 className="h-4 w-4 animate-spin" /> : <Warehouse className="h-4 w-4" />}
-            {isReassigningWarehouse ? 'Đang đổi kho...' : 'Đổi kho theo bộ lọc'}
-          </button>
-        ) : null}
-        {canDelete ? (
-          <button
-            type="button"
-            onClick={handleBulkDeleteProducts}
-            disabled={selectedProducts.length === 0 || isDeletingProducts}
-            className="flex h-10 items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isDeletingProducts ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-            {isDeletingProducts ? 'Đang xóa...' : 'Xóa đã chọn'}
-          </button>
-        ) : null}
-      </section>
+          <section className="flex w-full flex-wrap items-center gap-2 justify-end">
+            <div className="flex flex-wrap items-center gap-2">
+              {canEdit ? (
+                <button
+                  type="button"
+                  onClick={() => void handleSyncOpeningStock()}
+                  disabled={isSyncingOpeningStock}
+                  className="flex h-11 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-xs font-black text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isSyncingOpeningStock ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  {isSyncingOpeningStock ? 'Đang đồng bộ...' : 'Đồng bộ'}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={handleDownloadProductCatalogTemplate}
+                disabled={isLoadingProducts || isImportingProductCatalog}
+                className="flex h-11 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-black text-zinc-700 transition hover:border-zinc-950 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Mẫu cột bảng /san-pham — ô trống vẫn đẩy lên được"
+              >
+                <Download className="h-4 w-4" />
+                Tải mẫu Excel
+              </button>
+              {canCreate || canEdit ? (
+                <button
+                  type="button"
+                  onClick={() => catalogFileInputRef.current?.click()}
+                  disabled={isLoadingProducts || isImportingProductCatalog}
+                  className="flex h-11 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-xs font-black text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isImportingProductCatalog ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  {isImportingProductCatalog ? 'Đang nhập...' : 'Tải Excel lên'}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={handleDownloadBulkProductComponentsTemplate}
+                disabled={isLoadingProducts}
+                className="flex h-11 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-black text-zinc-700 transition hover:border-zinc-950 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Mẫu định mức thành phần NVL (không phải danh mục SP)"
+              >
+                <Download className="h-4 w-4" />
+                Mẫu định mức NVL
+              </button>
+              {canEdit ? (
+                <button
+                  type="button"
+                  onClick={() => bulkComponentsFileInputRef.current?.click()}
+                  disabled={isLoadingProducts || isImportingBulkProductComponents}
+                  className="flex h-11 items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-4 text-xs font-black text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isImportingBulkProductComponents ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  {isImportingBulkProductComponents ? 'Đang nhập...' : 'Nhập định mức NVL'}
+                </button>
+              ) : null}
+              <input
+                ref={bulkComponentsFileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={event => handleImportBulkProductComponents(event.target.files?.[0])}
+              />
+              <button
+                type="button"
+                onClick={togglePaginatedProducts}
+                disabled={paginatedProducts.length === 0}
+                className="h-11 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-black text-zinc-700 transition hover:border-zinc-950 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {allPaginatedSelected ? 'Bỏ chọn trang này' : 'Chọn trang này'}
+              </button>
+              {canDelete ? (
+                <button
+                  type="button"
+                  onClick={handleBulkDeleteProducts}
+                  disabled={selectedProducts.length === 0 || isDeletingProducts}
+                  className="flex h-11 items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-4 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isDeletingProducts ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  {isDeletingProducts ? 'Đang xóa...' : 'Xóa đã chọn'}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={handlePrintSelectedProductQr}
+                disabled={selectedProducts.length === 0}
+                className="flex h-11 items-center gap-1.5 rounded-xl bg-[#ef1b2d] px-5 text-xs font-black text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <QrCode className="h-4 w-4" />
+                In QR đã chọn
+              </button>
+            </div>
+          </section>
 
-      <TableShell minWidthClassName={isCatalogMode ? 'min-w-[1400px]' : 'min-w-[1250px]'}>
-        <TableHead>
-          <TableHeadCell align="center" className="w-14">
-            <input
-              type="checkbox"
-              checked={allFilteredSelected}
-              onChange={toggleFilteredProducts}
-              className="h-4 w-4 accent-[#ef1b2d]"
-              aria-label="Chọn tất cả sản phẩm đang lọc"
-            />
-          </TableHeadCell>
-          <TableHeadCell>Mã SP</TableHeadCell>
-          <TableHeadCell align="center">Mã QR</TableHeadCell>
-          <TableHeadCell>Tên sản phẩm</TableHeadCell>
-          <TableHeadCell>Tính chất</TableHeadCell>
-          <TableHeadCell align="center">Nhóm</TableHeadCell>
-          <TableHeadCell align="center">Đơn vị</TableHeadCell>
-          <TableHeadCell align="center">Kho</TableHeadCell>
-          <TableHeadCell align="center">Tổng TL (kg)</TableHeadCell>
-          {isCatalogMode ? (
-            <>
-              <TableHeadCell align="center">Tồn đầu</TableHeadCell>
-              <TableHeadCell align="center">Nhập</TableHeadCell>
-              <TableHeadCell align="center">Xuất</TableHeadCell>
-              <TableHeadCell align="center">Tồn</TableHeadCell>
-              <TableHeadCell align="center">Tồn tối thiểu</TableHeadCell>
-            </>
-          ) : (
-            <TableHeadCell align="center">Tổng SL</TableHeadCell>
-          )}
-          <TableHeadCell align="center" className="sticky right-0 z-10 bg-[#ef1b2d]">
-            Thao tác
-          </TableHeadCell>
-        </TableHead>
-        <TableBody>
-          {filteredProducts.map(product => (
-            <React.Fragment key={`${product.code}-${product.name}`}>
-              <TableRow className="group">
-                <td className="px-3 py-3.5 text-center">
+          <div className="relative">
+            {isLoadingProducts && (
+              <div className="absolute inset-0 z-40 flex items-center justify-center rounded-2xl bg-gradient-to-br from-zinc-950/10 via-zinc-950/5 to-transparent backdrop-blur-md transition-opacity duration-300">
+                <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-zinc-200/50 bg-white px-8 py-6 shadow-lg">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-[#ef1b2d]/10 to-[#ef1b2d]/5">
+                    <Loader2 className="h-7 w-7 animate-spin text-[#ef1b2d]" />
+                  </div>
+                  <p className="text-sm font-bold text-zinc-900">Đang tải dữ liệu...</p>
+                  <p className="text-[11px] font-medium text-zinc-500">Vui lòng chờ</p>
+                </div>
+              </div>
+            )}
+            <TableShell minWidthClassName="min-w-[1400px]">
+              <TableHead>
+                <TableHeadCell align="center" className="w-14">
                   <input
                     type="checkbox"
-                    checked={selectedProductIds.has(product.id)}
-                    onChange={() => toggleProduct(product.id)}
+                    checked={allPaginatedSelected}
+                    onChange={togglePaginatedProducts}
                     className="h-4 w-4 accent-[#ef1b2d]"
-                    aria-label={`Chọn in QR ${product.code}`}
+                    aria-label="Chọn tất cả sản phẩm đang lọc"
                   />
-                </td>
-                <td className="px-4 py-3.5 font-black text-zinc-950">{product.code || '-'}</td>
-                <td className="px-3 py-3.5">
-                  {qrImages[product.id] ? (
-                    <div className="relative mx-auto h-14 w-14 rounded-lg border border-zinc-200 bg-white p-1">
-                      <img src={qrImages[product.id]} alt={`QR ${product.code}`} className="h-full w-full" />
-                    </div>
-                  ) : (
-                    <span className="text-xs font-semibold text-zinc-300">Đang tạo</span>
-                  )}
-                </td>
-                <td className="px-4 py-3.5">
-                  <div className="font-black text-zinc-950">{product.name || '-'}</div>
-                  {product.description && (
-                    <div className="mt-0.5 max-w-sm truncate text-xs font-semibold text-zinc-400">{product.description}</div>
-                  )}
-                </td>
-                <td className="px-4 py-3.5">
-                  <StatusBadge label={product.nature} color="rose" />
-                </td>
-                <td className="px-4 py-3.5 text-center font-bold text-zinc-700">{product.group}</td>
-                <td className="px-4 py-3.5 text-center font-bold text-zinc-700">{product.unit}</td>
-                <td className="px-4 py-3.5 text-center font-bold text-zinc-700">{product.warehouse || '—'}</td>
-                <td className="px-3 py-3.5 text-center font-mono font-bold text-emerald-800">
-                  {formatProductSpecDisplay(product.totalWeight)}
-                </td>
-                {isCatalogMode ? (
-                  <>
-                    <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.openingStock}</td>
-                    <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.inbound}</td>
-                    <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.outbound}</td>
-                    <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.stock}</td>
-                    <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.minStock}</td>
-                  </>
-                ) : (
-                  <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.stock}</td>
+                </TableHeadCell>
+                <TableHeadCell>Mã AMIS</TableHeadCell>
+                <TableHeadCell align="center">Mã QR</TableHeadCell>
+                <TableHeadCell>Tên sản phẩm</TableHeadCell>
+                <TableHeadCell>Tên sản xuất</TableHeadCell>
+                <TableHeadCell>ĐM</TableHeadCell>
+                <TableHeadCell>Tên ghép</TableHeadCell>
+                <TableHeadCell>Tính chất</TableHeadCell>
+                <TableHeadCell align="center">Nhóm</TableHeadCell>
+                <TableHeadCell align="center">Đơn vị</TableHeadCell>
+                <TableHeadCell align="center">Tổng TL (kg)</TableHeadCell>
+                <TableHeadCell align="center">Tồn đầu</TableHeadCell>
+                <TableHeadCell align="center">Nhập</TableHeadCell>
+                <TableHeadCell align="center">Xuất</TableHeadCell>
+                <TableHeadCell align="center">Tồn</TableHeadCell>
+                <TableHeadCell align="center">Tồn tối thiểu</TableHeadCell>
+                <TableHeadCell align="center" className="sticky right-0 z-10 border-l border-zinc-800 bg-zinc-950">
+                  Thao tác
+                </TableHeadCell>
+              </TableHead>
+              <TableBody>
+                {paginatedProducts.map(product => {
+                  const row = product as ProductRow;
+                  const conversion = conversionByProductId.get(row.id);
+                  const convertedUnits: ProductConvertedUnit[] =
+                    row.group === 'TP; PX Đặc'
+                      ? ['kg', 'm2']
+                      : row.group === 'TP; PX Sóng'
+                        ? ['m', 'kg']
+                        : row.group === 'TP; PX Rỗng'
+                          ? ['kg']
+                          : conversion
+                            ? availableConvertedUnits(row.unit, conversion)
+                            : [];
+                  const rowSpan = 1 + convertedUnits.length;
+                  const quantityFields = [
+                    row.openingStock,
+                    row.inbound,
+                    row.outbound,
+                    row.stock,
+                    row.minStock
+                  ];
+                  return (
+                    <React.Fragment key={row.id || `${row.code}-${row.name}`}>
+                      <tr className="border-t-2 border-zinc-300 bg-white transition-colors hover:bg-emerald-50/40">
+                        <td rowSpan={rowSpan} className="px-3 py-3.5 text-center align-middle">
+                          <input
+                            type="checkbox"
+                            checked={selectedProductIds.has(row.id)}
+                            onChange={() => toggleProduct(row.id)}
+                            className="h-4 w-4 accent-[#ef1b2d]"
+                            aria-label={`Chọn in QR ${productAmisDisplayCode(row)}`}
+                          />
+                        </td>
+                        <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle font-black text-zinc-950">
+                          {productAmisDisplayCode(row)}
+                        </td>
+                        <td rowSpan={rowSpan} className="px-3 py-3.5 align-middle">
+                          {qrImages[row.id] ? (
+                            <div className="relative mx-auto h-14 w-14 rounded-lg border border-zinc-200 bg-white p-1">
+                              <img src={qrImages[row.id]} alt={`QR ${row.code}`} className="h-full w-full" />
+                            </div>
+                          ) : (
+                            <span className="text-xs font-semibold text-zinc-300">Đang tạo</span>
+                          )}
+                        </td>
+                        <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle">
+                          <div className="font-black text-zinc-950">{row.name || '-'}</div>
+                          {row.description ? (
+                            <div className="mt-0.5 max-w-sm truncate text-xs font-semibold text-zinc-400">
+                              {row.description}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle font-bold text-zinc-700">
+                          {row.productionName || '-'}
+                        </td>
+                        <td rowSpan={rowSpan} className="px-3 py-3.5 align-middle font-mono text-xs font-bold text-amber-800">
+                          {row.doLiDm || '-'}
+                        </td>
+                        <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle text-xs font-semibold text-zinc-700">
+                          {composeProductionDisplayName(
+                            {
+                              tenGoc: row.tenGoc || row.productionName,
+                              doLi: row.doLi,
+                              doLiDm: row.doLiDm,
+                              doDayM: row.doDayM,
+                              doDaiM: row.doDaiM,
+                              mang: row.mang,
+                              hangPhe: row.hangPhe
+                            },
+                            row.group
+                          )}
+                        </td>
+                        <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle">
+                          <StatusBadge label={row.nature} color="rose" />
+                        </td>
+                        <td rowSpan={rowSpan} className="px-4 py-3.5 text-center align-middle font-bold text-zinc-700">
+                          {row.group}
+                        </td>
+                        <td className="px-4 py-3.5 text-center font-bold text-zinc-700">{row.unit}</td>
+                        <td className="px-3 py-3.5 text-center font-mono font-bold text-emerald-800">
+                          {formatProductSpecDisplay(row.totalWeight)}
+                        </td>
+                        <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{row.openingStock}</td>
+                        <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{row.inbound}</td>
+                        <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{row.outbound}</td>
+                        <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{row.stock}</td>
+                        <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{row.minStock}</td>
+                        <td
+                          rowSpan={rowSpan}
+                          className="sticky right-0 z-10 border-l border-zinc-100 bg-white px-3 py-3.5 align-middle"
+                        >
+                          <RowActionsMenu label={`Thao tác ${row.code || row.name}`}>
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => openProductView(row)}
+                                title="Xem"
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </button>
+                              {canEdit ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openProductEdit(row)}
+                                  title="Sửa"
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                              ) : null}
+                              {canDelete ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteProduct(row)}
+                                  disabled={deletingProductId === row.id}
+                                  title="Xóa"
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {deletingProductId === row.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-4 w-4" />
+                                  )}
+                                </button>
+                              ) : null}
+                            </div>
+                          </RowActionsMenu>
+                        </td>
+                      </tr>
+                      {convertedUnits.map(unit => (
+                        <tr key={`${row.id}-${unit}`} className="border-t border-zinc-100 bg-zinc-50/70 text-zinc-700">
+                          <td className="px-4 py-2.5 text-center font-bold text-zinc-700">
+                            {unit === 'm' ? 'm dài' : unit}
+                          </td>
+                          <td className="px-3 py-2.5 text-center font-mono font-bold text-zinc-400">—</td>
+                          {quantityFields.map((raw, index) => {
+                            const formatted = formatConvertedValue(raw, unit, row.unit, conversion);
+                            return (
+                              <td
+                                key={index}
+                                title={formatted === '—' ? 'Chưa đủ hệ số quy đổi' : undefined}
+                                className="px-3 py-2.5 text-center font-mono font-bold"
+                              >
+                                {formatted}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
+                {!isLoadingProducts && filteredProducts.length === 0 && (
+                  <TableEmptyRow colSpan={17}>Không có sản phẩm phù hợp bộ lọc.</TableEmptyRow>
                 )}
-                <td className="sticky right-0 z-[1] bg-white px-3 py-3.5 transition group-hover:bg-red-50/40">
-                  <RowActionsMenu label={`Thao tác ${product.code || product.name}`}>
-                  <div className="flex items-center justify-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => openProductView(product)}
-                      title="Xem"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
-                    >
-                      <Eye className="h-4 w-4" />
-                    </button>
-                    {canEdit && !product.inventoryBalanceOnly ? (
-                      <button
-                        type="button"
-                        onClick={() => openProductEdit(product)}
-                        title="Sửa"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                    ) : null}
-                    {canDelete && !product.inventoryBalanceOnly ? (
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteProduct(product)}
-                        disabled={deletingProductId === product.id}
-                        title="Xóa"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {deletingProductId === product.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                      </button>
-                    ) : null}
-                  </div>
-                  </RowActionsMenu>
-                </td>
-              </TableRow>
-            </React.Fragment>
-          ))}
+              </TableBody>
+            </TableShell>
+          </div>
 
-          {!isLoadingProducts && filteredProducts.length === 0 && (
-            <TableEmptyRow colSpan={isCatalogMode ? 15 : 11}>
-              {isCatalogMode
-                ? 'Không có sản phẩm phù hợp bộ lọc.'
-                : asOfDate
-                  ? 'Không có thành phẩm còn tồn đến ngày đã chọn.'
-                  : 'Vui lòng chọn ngày để xem hàng còn trong kho.'}
-            </TableEmptyRow>
+          {filteredProducts.length > 0 && (
+            <div className="mt-4 flex justify-center rounded-2xl border-2 border-zinc-900/10 bg-white shadow-sm">
+              <TablePagination
+                totalRecords={filteredProducts.length}
+                currentPage={productPage}
+                totalPages={productTotalPages}
+                pageSize={productPageSize}
+                onPageChange={setProductPage}
+                onPageSizeChange={size => {
+                  setProductPageSize(size);
+                  setProductPage(1);
+                }}
+                noBorderTop={true}
+              />
+            </div>
           )}
-        </TableBody>
-      </TableShell>
+        </>
+      ) : (
+        <>
+          {/* Kho hàng / tồn theo ngày — giữ layout hiện tại */}
+          <section className="rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              {topControls}
+              {topControls ? <div className="hidden h-8 w-px shrink-0 bg-zinc-200 lg:block" aria-hidden /> : null}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadProductCatalogTemplate}
+                  disabled={isImportingProductCatalog || isLoadingProducts}
+                  className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-extrabold text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Download className="h-4 w-4" />
+                  Tải mẫu Excel SP
+                </button>
+                {canCreate || canEdit ? (
+                  <button
+                    type="button"
+                    onClick={() => catalogFileInputRef.current?.click()}
+                    disabled={isImportingProductCatalog || isLoadingProducts}
+                    className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isImportingProductCatalog ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    {isImportingProductCatalog ? 'Đang nhập...' : 'Tải Excel SP lên'}
+                  </button>
+                ) : null}
+                <input
+                  ref={catalogFileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={event => void handleImportProductCatalog(event.target.files?.[0])}
+                />
+                {canCreate ? (
+                  <button
+                    type="button"
+                    onClick={openProductCreate}
+                    className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-3 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Thêm mới
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <TableSearchInput
+                value={searchText}
+                onChange={setSearchText}
+                placeholder="Tìm mã, tên, nhóm..."
+                disabled={isLoadingProducts || products.length === 0}
+              />
+              <FilterCombobox
+                label="Nhóm"
+                options={productGroups.filter(group => group !== 'all')}
+                value={selectedGroup}
+                onChange={setSelectedGroup}
+                searchPlaceholder="Tìm nhóm..."
+                compact
+              />
+              <MultiSelectFilter
+                label="Tính chất"
+                allLabel="Tất cả tính chất"
+                searchPlaceholder="Tìm tính chất..."
+                emptyLabel="Không tìm thấy tính chất"
+                options={productNatures}
+                values={[...selectedNatures]}
+                onChange={values => setSelectedNatures(new Set(values))}
+              />
+              {hasActiveFilters ? (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="flex h-10 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs font-black text-zinc-600 transition hover:border-[#ef1b2d] hover:text-[#ef1b2d]"
+                >
+                  Xóa lọc
+                </button>
+              ) : null}
+            </div>
+            {productError ? (
+              <p className="mt-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{productError}</p>
+            ) : null}
+            {productActionMessage ? (
+              <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                {productActionMessage}
+              </p>
+            ) : null}
+          </section>
+
+          <section className="flex flex-wrap items-center gap-2 rounded-2xl border-2 border-zinc-900/10 bg-white p-3 shadow-sm">
+            <button
+              type="button"
+              onClick={handlePrintSelectedProductQr}
+              disabled={selectedPrintProducts.length === 0 || isLoadingProducts}
+              className="flex h-10 items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-black text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <QrCode className="h-4 w-4" />
+              In mã QR
+            </button>
+            {canEdit && filteredCatalogProducts.length > 0 ? (
+              <button
+                type="button"
+                onClick={openWarehouseReassignModal}
+                disabled={isReassigningWarehouse || isLoadingProducts || warehouseOptions.length === 0}
+                className="flex h-10 items-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 px-3 text-xs font-black text-violet-800 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isReassigningWarehouse ? <Loader2 className="h-4 w-4 animate-spin" /> : <Warehouse className="h-4 w-4" />}
+                {isReassigningWarehouse ? 'Đang đổi kho...' : 'Đổi kho theo bộ lọc'}
+              </button>
+            ) : null}
+            {canDelete ? (
+              <button
+                type="button"
+                onClick={handleBulkDeleteProducts}
+                disabled={selectedProducts.length === 0 || isDeletingProducts}
+                className="flex h-10 items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isDeletingProducts ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                {isDeletingProducts ? 'Đang xóa...' : 'Xóa đã chọn'}
+              </button>
+            ) : null}
+          </section>
+
+          <TableShell minWidthClassName={isCatalogMode ? 'min-w-[1400px]' : 'min-w-[1250px]'}>
+            <TableHead>
+              <TableHeadCell align="center" className="w-14">
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  onChange={toggleFilteredProducts}
+                  className="h-4 w-4 accent-[#ef1b2d]"
+                  aria-label="Chọn tất cả sản phẩm đang lọc"
+                />
+              </TableHeadCell>
+              <TableHeadCell>Mã SP</TableHeadCell>
+              <TableHeadCell align="center">Mã QR</TableHeadCell>
+              <TableHeadCell>Tên sản phẩm</TableHeadCell>
+              <TableHeadCell>Tính chất</TableHeadCell>
+              <TableHeadCell align="center">Nhóm</TableHeadCell>
+              <TableHeadCell align="center">Đơn vị</TableHeadCell>
+              <TableHeadCell align="center">Kho</TableHeadCell>
+              <TableHeadCell align="center">Tổng TL (kg)</TableHeadCell>
+              {isCatalogMode ? (
+                <>
+                  <TableHeadCell align="center">Tồn đầu</TableHeadCell>
+                  <TableHeadCell align="center">Nhập</TableHeadCell>
+                  <TableHeadCell align="center">Xuất</TableHeadCell>
+                  <TableHeadCell align="center">Tồn</TableHeadCell>
+                  <TableHeadCell align="center">Tồn tối thiểu</TableHeadCell>
+                </>
+              ) : (
+                <TableHeadCell align="center">Tổng SL</TableHeadCell>
+              )}
+              <TableHeadCell align="center" className="sticky right-0 z-10 bg-[#ef1b2d]">
+                Thao tác
+              </TableHeadCell>
+            </TableHead>
+            <TableBody>
+              {filteredProducts.map(product => (
+                <React.Fragment key={`${product.code}-${product.name}`}>
+                  <TableRow className="group">
+                    <td className="px-3 py-3.5 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedProductIds.has(product.id)}
+                        onChange={() => toggleProduct(product.id)}
+                        className="h-4 w-4 accent-[#ef1b2d]"
+                        aria-label={`Chọn in QR ${product.code}`}
+                      />
+                    </td>
+                    <td className="px-4 py-3.5 font-black text-zinc-950">{product.code || '-'}</td>
+                    <td className="px-3 py-3.5">
+                      {qrImages[product.id] ? (
+                        <div className="relative mx-auto h-14 w-14 rounded-lg border border-zinc-200 bg-white p-1">
+                          <img src={qrImages[product.id]} alt={`QR ${product.code}`} className="h-full w-full" />
+                        </div>
+                      ) : (
+                        <span className="text-xs font-semibold text-zinc-300">Đang tạo</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <div className="font-black text-zinc-950">{product.name || '-'}</div>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <StatusBadge label={product.nature} color="rose" />
+                    </td>
+                    <td className="px-4 py-3.5 text-center font-bold text-zinc-700">{product.group}</td>
+                    <td className="px-4 py-3.5 text-center font-bold text-zinc-700">{product.unit}</td>
+                    <td className="px-4 py-3.5 text-center font-bold text-zinc-700">{product.warehouse || '—'}</td>
+                    <td className="px-3 py-3.5 text-center font-mono font-bold text-emerald-800">
+                      {formatProductSpecDisplay(product.totalWeight)}
+                    </td>
+                    {isCatalogMode ? (
+                      <>
+                        <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.openingStock}</td>
+                        <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.inbound}</td>
+                        <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.outbound}</td>
+                        <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.stock}</td>
+                        <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.minStock}</td>
+                      </>
+                    ) : (
+                      <td className="px-3 py-3.5 text-center font-mono font-bold text-zinc-700">{product.stock}</td>
+                    )}
+                    <td className="sticky right-0 z-[1] bg-white px-3 py-3.5 transition group-hover:bg-red-50/40">
+                      <RowActionsMenu label={`Thao tác ${product.code || product.name}`}>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openProductView(product)}
+                            title="Xem"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          {canEdit ? (
+                            <button
+                              type="button"
+                              onClick={() => openProductEdit(product)}
+                              title="Sửa"
+                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-[#ef1b2d] transition hover:bg-red-50"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                          ) : null}
+                          {canDelete ? (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteProduct(product)}
+                              disabled={deletingProductId === product.id}
+                              title="Xóa"
+                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {deletingProductId === product.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </button>
+                          ) : null}
+                        </div>
+                      </RowActionsMenu>
+                    </td>
+                  </TableRow>
+                </React.Fragment>
+              ))}
+              {!isLoadingProducts && filteredProducts.length === 0 && (
+                <TableEmptyRow colSpan={isCatalogMode ? 15 : 11}>
+                  {isCatalogMode
+                    ? 'Không có sản phẩm phù hợp bộ lọc.'
+                    : asOfDate
+                      ? 'Không có thành phẩm còn tồn đến ngày đã chọn.'
+                      : 'Vui lòng chọn ngày để xem hàng còn trong kho.'}
+                </TableEmptyRow>
+              )}
+            </TableBody>
+          </TableShell>
+        </>
+      )}
 
 
       {productFormMode && (
         <ProductEditModal
           mode={productFormMode}
           product={editingProduct}
+          products={products}
           warehouseOptions={warehouseOptions}
           defaultWarehouse={warehouseFilter}
+          enableProductionFields={isSanPhamCatalog}
+          productConversions={productConversions}
           isSaving={isSavingProduct}
           formError={productFormError}
           onClose={closeProductForm}

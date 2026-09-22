@@ -4,7 +4,7 @@
 |---|---|
 | **Bảng** | `phieu_xuat_nhap_kho` |
 | **Tab** | `warehouse-slip`, `warehouse-history` |
-| **SQL** | `supabase-phieu-xuat-nhap-kho.sql` + migrate `supabase-phieu-xuat-nhap-kho-*.sql` (gồm `supabase-phieu-xuat-nhap-kho-lo-ton.sql`, `supabase-phieu-xuat-nhap-kho-lenh-sx.sql`, `supabase-phieu-xuat-nhap-kho-phan-loai-may.sql`, `supabase-phieu-xuat-nhap-kho-trong-luong-kg.sql`, `supabase-phieu-xuat-nhap-kho-ton-dau-ca-may.sql`, `supabase-phieu-xuat-nhap-kho-lich-su.sql`) |
+| **SQL** | `supabase-phieu-xuat-nhap-kho.sql` (gồm cột `may`, `phan_loai_nvl`, `trong_luong_kg`, `nhom_vthh`) + migrate `supabase-phieu-xuat-nhap-kho-*.sql` (gồm `…-lo-ton.sql`, `…-lenh-sx.sql`, `…-phan-loai-may.sql`, `…-trong-luong-kg.sql`, `…-nhom-vthh.sql`, `…-ton-dau-ca-may.sql`, `…-lich-su.sql`) |
 
 ## API (`server.ts`)
 
@@ -24,7 +24,7 @@
 Bảng phụ `phieu_xuat_nhap_kho_lenh_sx` giữ tên cũ để tương thích, nhưng luồng **xuất kho NVL** liên kết trực tiếp bằng `dinh_muc_id` và lưu kèm `ten_phieu`.
 Picker tải từ `bang_tron_vat_tu_dinh_muc`, hiển thị tên PTĐM (`ten_phieu` dạng `PTĐM - tên máy - mã lệnh`, nhiều mã nối ` - `), không sinh lựa chọn từ lệnh sản xuất. Một lệnh SX có nhiều phiếu định mức vẫn chọn/xuất độc lập; cho phép tạo nhiều phiếu xuất từ cùng 1 PTĐM.
 PTĐM chỉ ẩn khỏi picker khi tất cả lệnh SX trong đó đã `Hoàn thành`/`Hủy`; không còn ẩn theo "đã xuất".
-Chi tiết NVL được đọc trực tiếp từ JSON `chi_tiet` của các phiếu định mức đã chọn. Màn hình nhập giữ cách chia nhóm NVL chính/NVL phụ như cũ, không chia nhóm hay hiển thị theo máy; lịch sử cũng không thêm cột máy/phân loại.
+Chi tiết NVL được đọc trực tiếp từ JSON `chi_tiet` của các phiếu định mức đã chọn. Màn hình nhập **chia nhóm NVL chính / NVL phụ** (header + tổng TL từng nhóm); nút **Thêm NVL chính** / **Thêm NVL phụ** thêm dòng trống đúng phân loại. Combobox mã lọc theo `phan_loai` danh mục kho NVL.
 Mỗi dòng lưu `may` và `phan_loai_nvl` (`nvl_chinh`, `nvl_phu`, `chua_phan_loai`) chỉ để bản in và luồng in lại từ lịch sử giữ đúng nhóm. Phiếu cũ không suy luận ngược: để máy trống và backfill `chua_phan_loai`.
 Cột `phan_loai_nvl` không dùng CHECK constraint trong database; các file SQL chủ động gỡ constraint `phieu_xuat_nhap_kho_phan_loai_nvl_check` nếu database cũ đã có.
 Payload lưu dòng NVL gửi đồng thời `materialClass`, `warehouseClass` và `phan_loai_nvl`; server ưu tiên `phan_loai_nvl` để bảo toàn đúng `nvl_chinh`, `nvl_phu` hoặc `chua_phan_loai` từ phiếu trộn định mức.
@@ -33,18 +33,19 @@ Trọng lượng quy đổi được lưu tại `trong_luong_kg` (cả NVL chín
 Khi nạp nhiều dòng NVL phụ, hệ thống gộp và cộng SL định mức/thực xuất/trọng lượng theo cùng máy + cùng tên (+mã khi tên trống) + cùng ĐVT + cùng giá. Riêng **Băng Dính** và **Tem** chỉ gộp khi đồng thời trùng `nhom_vthh`; các NVL phụ khác không tách theo VTHH. Dữ liệu cũ thiếu ID dùng mã/tên làm khóa dự phòng.
 Danh sách **Chi tiết NVL** hiển thị thêm **Tên sản xuất**, ưu tiên tên trên phiếu định mức rồi đối chiếu `kho_nvl.ten_nvl_sx` theo mã NPL; trường tên sản xuất chỉ hiển thị, không tạo thêm cột lưu trữ trên phiếu.
 Bản in phiếu xuất NVL tách mỗi máy thành một trang; trong mỗi trang in riêng bảng NVL chính, NVL phụ và Chưa phân loại nếu có dữ liệu. Cuối bản in luôn có 1 trang **TỔNG HỢP** gộp dòng toàn bộ máy/ca (cùng tên + cùng ĐVT + cùng giá; Băng Dính/Tem trùng thêm VTHH) với 2 bảng riêng và 2 tổng **TỔNG TL NVL CHÍNH TOÀN PHIẾU** / **TỔNG TL NVL PHỤ TOÀN PHIẾU**. Màn nhập hiển thị tổng TL ngay tại header nhóm NVL chính/phụ và hộp tổng cuối bảng.
-Mỗi dòng NVL xuất có thêm **Tồn đầu ca** (`ton_dau_ca_may`, nhập tay, không bắt buộc) hiển thị trước cột **SL CT** trên màn lập phiếu và trước cột **SL định mức xuất** trên bản in (kèm tổng cột). Gộp dòng NVL phụ cộng dồn tồn đầu ca theo cùng khóa gộp.
+Mỗi dòng NVL xuất có thêm **Tồn đầu ca** (`ton_dau_ca_may`). Khi xuất kho NVL, cột này **tự điền** từ sổ trộn: lấy **tồn cuối ca** (`bang_ban_giao.ton_cuoi_ca`) của **ca trước logic** theo Ngày phiếu + Ca đã chọn + Máy (từ PTĐM), cùng quy tắc `resolveLogicalPreviousShiftSlot` như màn Sổ trộn. Vẫn cho sửa tay.
 Mỗi lần **sửa** phiếu xuất kho NVL (PUT) lưu 1 row vào `phieu_xuat_nhap_kho_lich_su` gồm người sửa + snapshot toàn bộ dòng cũ/mới (best-effort, không chặn lưu phiếu nếu chưa chạy migration). Nút **Lịch sử thay đổi** (icon History) có ở: menu thao tác từng phiếu xuất NVL + modal chi tiết phiếu trong `warehouse-history`, và khi đang sửa phiếu xuất NVL trong `warehouse-slip`. Modal hiển thị từng lần sửa (mới nhất trước): thời gian, người sửa, thông tin phiếu đổi + diff dòng (thêm/xóa/sửa Tồn đầu ca, SL CT, SL thực, giá, thành tiền...).
 
 ## Frontend
 
 | File | Nội dung |
 |------|----------|
-| `src/features/phieu-xuat-nhap-kho/index.tsx` | Panel / logic chính (UI Kho NVL = main: Loại kho NVL/SP, Nhập/Xuất, Ca chip, PTĐM, Thêm NVL chính/phụ) |
+| `src/features/phieu-xuat-nhap-kho/index.tsx` | Panel / logic chính (**UI feature/module-kho**: Tên kho, Xuất kho treo…; **logic xuất NVL giống main**: PTĐM + `mergeNormMaterialLines` + Tồn đầu ca từ sổ trộn) |
 | `src/App.tsx` | Shell routing — import panel, không chứa logic bảng |
 | `src/features/_shared/` | Helper dùng chung (storage, hr, recordHelpers) |
+| `src/utils/soTronPrevShiftTon.ts` | Tồn đầu ca = tồn cuối ca trước logic (`bang_ban_giao.ton_cuoi_ca`) |
 
-**UI Kho NVL (giống main):** Loại kho `nvl` \| `san_pham` → Nhập/Xuất → card Tổng tiền + Quy đổi kg → Ca (checkbox nhập / radio 1 ca xuất) → PTĐM (xuất) hoặc Lệnh SX (nhập) → Chi tiết NVL. Tick PTĐM tự điền NVL qua `mergeNormMaterialLines`. Phân quyền: chấp nhận `warehouse-slip` cũ hoặc `warehouse-slip-vat-tu` / `warehouse-slip-thanh-pham`.
+**UI:** Form feature (Tên kho / treo / lịch sử…) + khi **Xuất kho NVL** dùng luồng main: Ca radio 1 · PTĐM tick điền NVL · cột Tồn đầu ca / SL CT / SL thực · giá BQ nhập. Tick PTĐM → `mergeNormMaterialLines`. Tồn đầu ca tự điền từ sổ trộn ca trước theo Ngày + Ca form + Máy PTĐM.
 
 
 ## Script

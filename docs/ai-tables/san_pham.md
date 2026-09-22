@@ -10,11 +10,12 @@
 
 | Method | Path | Dòng |
 |--------|------|------|
-| GET | `/api/san-pham` | 3507 |
-| POST | `/api/san-pham` | 3564 |
+| GET | `/api/san-pham` | ~7394 |
+| POST | `/api/san-pham` | ~7460 |
 | POST | `/api/san-pham/import-batch` | batch insert `creates` + upsert `updates` (chunk phía client ~150) |
-| PATCH | `/api/san-pham/:id` | 3629 |
-| DELETE | `/api/san-pham` | 3592 |
+| PATCH | `/api/san-pham/:id` | ~7663 |
+| GET | `/api/san-pham/:id/phieu-kho?loai=nhap\|xuat` | Nhật ký phiếu SP — khối Tồn kho + tab Nhập/Xuất kho trên `/kho-hang` & `/san-pham` |
+| DELETE | `/api/san-pham` | ~7626 |
 | POST | `/api/kiem-kho/dong-bo-ton-dau` | Đồng bộ phiếu kiểm kho vào `ton_dau_ky` |
 
 ## Frontend

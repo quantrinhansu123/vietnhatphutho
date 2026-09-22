@@ -37,8 +37,10 @@ import ProductQrPrintModal, {
 import type { WeighingPreviewImage } from '../../components/WeighingImagePreviewModal';
 import { productFieldClass } from '../san-pham/productFieldClass';
 import { readUnitSuggestions, saveUnitSuggestion } from '../_shared/orderHelpers';
-import { matchesWarehouseFilter, type InventoryBalanceRow } from '../kho-hang';
+import { matchesWarehouseFilter } from '../kho-hang';
+import { getCatalogCache, hasFreshCatalogCache, invalidateCatalogCache } from '../kho-hang/catalogCache';
 import {
+  FilterCombobox,
   TableSearchInput,
   TableShell,
   TableHead,
@@ -54,7 +56,7 @@ export interface MaterialRow {
   id: string;
   code: string;
   name: string;
-  productionName?: string;
+  productionName: string;
   unit: string;
   warehouse: string;
   totalWeight: string;
@@ -66,11 +68,22 @@ export interface MaterialRow {
   openingStock: string;
   inbound: string;
   outbound: string;
-  phanLoai?: string;
-  auxiliaryMaterialGroup?: string;
+  phanLoai: string;
+  auxiliaryMaterialGroup: string;
   /** Dòng tồn phát sinh từ phiếu kho nhưng chưa có bản ghi riêng trong danh mục kho_nvl. */
   inventoryBalanceOnly?: boolean;
 }
+
+export const AUXILIARY_MATERIAL_GROUPS = [
+  'Băng Dính',
+  'Bạt Bọc',
+  'Dây Đai',
+  'Dung Môi',
+  'Màng',
+  'Mực In',
+  'Tem',
+  'Kẹp Sắt'
+] as const;
 
 export type MaterialIssuedQrCode = {
   id: string;
@@ -121,6 +134,7 @@ export function normalizeMaterialsInventory(data: unknown): MaterialRow[] {
           : code || rawId || name,
         code,
         name,
+        productionName: String(record.ten_nvl_sx ?? '').trim(),
         unit: formatCell(record.don_vi),
         warehouse: formatCell(record.ten_kho),
         totalWeight: formatCell(record.tong_trong_luong),
@@ -131,7 +145,11 @@ export function normalizeMaterialsInventory(data: unknown): MaterialRow[] {
         unitLength: formatCell(record.chieu_dai_don_vi),
         openingStock: formatCell(record.ton_dau_ky),
         inbound: formatCell(record.nhap_trong_ky),
-        outbound: formatCell(record.xuat_trong_ky)
+        outbound: formatCell(record.xuat_trong_ky),
+        phanLoai: formatCell(record.phan_loai ?? record.kho_ngam_dinh),
+        auxiliaryMaterialGroup: formatCell(
+          record.nhom_vat_tu_phu === 'Bạt Dọc' ? 'Bạt Bọc' : record.nhom_vat_tu_phu
+        )
       };
     })
     .filter((material): material is MaterialRow => Boolean(material));
@@ -140,6 +158,7 @@ export function normalizeMaterialsInventory(data: unknown): MaterialRow[] {
 export type MaterialFormState = {
   code: string;
   name: string;
+  productionName: string;
   unit: string;
   warehouse: string;
   totalWeight: string;
@@ -151,11 +170,14 @@ export type MaterialFormState = {
   openingStock: string;
   inbound: string;
   outbound: string;
+  phanLoai: string;
+  auxiliaryMaterialGroup: string;
 };
 
 const emptyMaterialForm = (): MaterialFormState => ({
   code: '',
   name: '',
+  productionName: '',
   unit: '',
   warehouse: '',
   totalWeight: '',
@@ -166,7 +188,9 @@ const emptyMaterialForm = (): MaterialFormState => ({
   unitLength: '',
   openingStock: '',
   inbound: '',
-  outbound: ''
+  outbound: '',
+  phanLoai: '',
+  auxiliaryMaterialGroup: ''
 });
 
 export function materialCellToInput(value: string) {
@@ -177,6 +201,7 @@ export function materialToForm(material: MaterialRow): MaterialFormState {
   return {
     code: materialCellToInput(material.code),
     name: materialCellToInput(material.name),
+    productionName: materialCellToInput(material.productionName),
     unit: materialCellToInput(material.unit),
     warehouse: materialCellToInput(material.warehouse),
     totalWeight: materialCellToInput(material.totalWeight),
@@ -187,7 +212,11 @@ export function materialToForm(material: MaterialRow): MaterialFormState {
     unitLength: materialCellToInput(material.unitLength),
     openingStock: materialCellToInput(material.openingStock),
     inbound: materialCellToInput(material.inbound),
-    outbound: materialCellToInput(material.outbound)
+    outbound: materialCellToInput(material.outbound),
+    phanLoai: materialCellToInput(material.phanLoai),
+    auxiliaryMaterialGroup: materialCellToInput(
+      material.auxiliaryMaterialGroup === 'Bạt Dọc' ? 'Bạt Bọc' : material.auxiliaryMaterialGroup
+    )
   };
 }
 
@@ -1028,20 +1057,17 @@ export function MaterialsInventoryPanel({
   onBack,
   warehouseFilter = '',
   includeUnassigned = false,
-  asOfDate = '',
-  balanceRows = [],
   topControls = null
 }: {
   onBack: () => void;
   warehouseFilter?: string;
   includeUnassigned?: boolean;
-  asOfDate?: string;
-  balanceRows?: InventoryBalanceRow[];
   topControls?: ReactNode;
 }) {
   const { canCreate, canEdit, canDelete } = useTabAccess('materials');
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
   const [searchText, setSearchText] = useState('');
+  const [selectedUnit, setSelectedUnit] = useState('all');
   const [isLoadingMaterials, setIsLoadingMaterials] = useState(true);
   const [materialsError, setMaterialsError] = useState('');
   const [formMode, setFormMode] = useState<'add' | 'edit' | null>(null);
@@ -1071,13 +1097,14 @@ export function MaterialsInventoryPanel({
   useEffect(() => {
     const loadWarehouses = async () => {
       try {
-        const res = await fetch('/api/quan-ly-kho');
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) return;
-        const records: Array<{ ten_kho?: string }> = Array.isArray(data?.records) ? data.records : [];
-        setWarehouseOptions(
-          Array.from(new Set(records.map(r => String(r.ten_kho ?? '').trim()).filter(Boolean)))
-        );
+        const names = await getCatalogCache('warehouses', async () => {
+          const res = await fetch('/api/quan-ly-kho');
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || 'Không thể tải danh sách kho.');
+          const records: Array<{ ten_kho?: string }> = Array.isArray(data?.records) ? data.records : [];
+          return Array.from(new Set(records.map(r => String(r.ten_kho ?? '').trim()).filter(Boolean)));
+        });
+        setWarehouseOptions(names);
       } catch {
         setWarehouseOptions([]);
       }
@@ -1085,19 +1112,26 @@ export function MaterialsInventoryPanel({
     void loadWarehouses();
   }, []);
 
-  const loadMaterials = async () => {
-    setIsLoadingMaterials(true);
+  const loadMaterials = async (options?: { force?: boolean }) => {
+    if (options?.force) invalidateCatalogCache('materials');
+    const cacheHit = !options?.force && hasFreshCatalogCache('materials');
+    if (!cacheHit) setIsLoadingMaterials(true);
     setMaterialsError('');
 
     try {
-      const res = await fetch('/api/kho-nvl');
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Không thể tải nguyên phụ liệu từ Supabase.');
-      }
-
-      setMaterials(normalizeMaterialsInventory(data));
+      const list = await getCatalogCache(
+        'materials',
+        async () => {
+          const res = await fetch('/api/kho-nvl');
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(data.error || 'Không thể tải nguyên phụ liệu từ Supabase.');
+          }
+          return normalizeMaterialsInventory(data);
+        },
+        { force: options?.force }
+      );
+      setMaterials(list);
     } catch (error: any) {
       setMaterials([]);
       setMaterialsError(error.message || 'Không thể tải nguyên phụ liệu từ Supabase.');
@@ -1123,81 +1157,43 @@ export function MaterialsInventoryPanel({
     loadMaterials();
   }, []);
 
-  const datedMaterials = useMemo(() => {
-    if (!asOfDate) return [];
-    const balanceByCode = new Map<string, InventoryBalanceRow>();
-    for (const balance of balanceRows) {
-      const key = normalizeMaterialCodeKey(balance.ma);
-      if (!key || key === '-') continue;
-      balanceByCode.set(key, balance);
-    }
-    const seenKeys = new Set<string>();
-
-    // Hiện hết danh mục thuộc kho (kể cả tồn 0 / chưa có phiếu).
-    const fromCatalog = materials.flatMap(material => {
-      if (
-        !matchesWarehouseFilter(material.warehouse, warehouseFilter, {
-          includeUnassigned
-        })
-      ) {
-        return [];
-      }
-      const key = normalizeMaterialCodeKey(material.code);
-      if (!key || key === '-') return [];
-      seenKeys.add(key);
-      const balance = balanceByCode.get(key);
-      return [{
-        ...material,
-        // Cột Kho luôn theo bộ lọc đang chọn trên /kho-hang.
-        warehouse: warehouseFilter || balance?.ten_kho || material.warehouse,
-        openingStock: balance ? String(balance.ton_dau_ky) : material.openingStock && material.openingStock !== '-' ? material.openingStock : '0',
-        inbound: balance ? String(balance.nhap_trong_ky) : '0',
-        outbound: balance ? String(balance.xuat_trong_ky) : '0'
-      }];
-    });
-
-    // Bổ sung mã chỉ có trên phiếu kho, chưa có trong danh mục.
-    const fromBalancesOnly = balanceRows.flatMap(balance => {
-      const key = normalizeMaterialCodeKey(balance.ma);
-      if (!key || key === '-' || seenKeys.has(key)) return [];
-      return [{
-        id: `inventory-balance:${key}`,
-        code: balance.ma,
-        name: balance.ten || balance.ma,
-        unit: balance.don_vi || '-',
-        warehouse: warehouseFilter || balance.ten_kho,
-        totalWeight: '-',
-        plasticWeight: '-',
-        bagWeight: '-',
-        coreWeight: '-',
-        rollWidth: '-',
-        unitLength: '-',
-        openingStock: String(balance.ton_dau_ky),
-        inbound: String(balance.nhap_trong_ky),
-        outbound: String(balance.xuat_trong_ky),
-        inventoryBalanceOnly: true
-      }];
-    });
-
-    return [...fromCatalog, ...fromBalancesOnly];
-  }, [asOfDate, balanceRows, includeUnassigned, materials, warehouseFilter]);
-
+  const units = useMemo(
+    () =>
+      [
+        'all',
+        ...Array.from(new Set(materials.map(material => material.unit).filter(unit => unit !== '-'))).sort((a, b) =>
+          String(a).localeCompare(String(b), 'vi')
+        )
+      ],
+    [materials]
+  );
   const materialUnitSuggestions = useMemo(() => {
     const fromMaterials = materials.map(material => material.unit).filter(unit => unit && unit !== '-');
     return [...new Set([...fromMaterials, ...readUnitSuggestions()])].sort((a, b) => a.localeCompare(b, 'vi'));
   }, [materials]);
+  const unitFilterOptions = useMemo(() => units.filter(unit => unit !== 'all'), [units]);
   const normalizedSearch = searchText.trim().toLowerCase();
   const filteredMaterials = useMemo(() => {
-    return datedMaterials.filter(material => {
+    return materials.filter(material => {
       const matchesWarehouse = matchesWarehouseFilter(material.warehouse, warehouseFilter, {
-        includeUnassigned
+        includeUnassigned,
+        skipFilter: !warehouseFilter
       });
+      const matchesUnit = selectedUnit === 'all' || material.unit === selectedUnit;
       const matchesSearch =
         !normalizedSearch ||
-        `${material.code} ${material.name} ${material.unit}`.toLowerCase().includes(normalizedSearch);
-      return matchesWarehouse && matchesSearch;
+        `${material.code} ${material.name} ${material.productionName} ${material.unit} ${material.auxiliaryMaterialGroup} ${material.warehouse}`
+          .toLowerCase()
+          .includes(normalizedSearch);
+      return matchesWarehouse && matchesUnit && matchesSearch;
     });
-  }, [asOfDate, datedMaterials, includeUnassigned, normalizedSearch, warehouseFilter]);
+  }, [includeUnassigned, materials, normalizedSearch, selectedUnit, warehouseFilter]);
+
+  const hasActiveFilters = selectedUnit !== 'all' || Boolean(searchText);
+  const resetFilters = () => {
+    setSelectedUnit('all');
+    setSearchText('');
+  };
 
   const selectableFilteredMaterials = useMemo(
     () => filteredMaterials.filter(material => !material.inventoryBalanceOnly && Boolean(material.id)),
@@ -1313,11 +1309,6 @@ export function MaterialsInventoryPanel({
     }
   };
 
-  const hasActiveFilters = Boolean(searchText);
-  const resetFilters = () => {
-    setSearchText('');
-  };
-
   const handleDownloadTotalWeightTemplate = () => {
     downloadBulkMaterialTotalWeightTemplate(
       materials.map(material => ({
@@ -1398,7 +1389,7 @@ export function MaterialsInventoryPanel({
       }
 
       if (created > 0 || updated > 0) {
-        await loadMaterials();
+        await loadMaterials({ force: true });
       }
 
       const summary = [
@@ -1457,7 +1448,7 @@ export function MaterialsInventoryPanel({
       setFormError('Vui lòng nhập tên nguyên phụ liệu.');
       return;
     }
-    if (!materialForm.warehouse.trim()) {
+    if (warehouseFilter && !materialForm.warehouse.trim()) {
       setFormError('Vui lòng chọn kho lưu trữ.');
       return;
     }
@@ -1490,7 +1481,7 @@ export function MaterialsInventoryPanel({
 
       closeForm();
       setActionMessage(isEdit ? 'Đã cập nhật nguyên phụ liệu.' : 'Đã thêm nguyên phụ liệu mới.');
-      await loadMaterials();
+      await loadMaterials({ force: true });
     } catch (error: any) {
       setFormError(error.message || 'Không thể lưu nguyên phụ liệu.');
     } finally {
@@ -1524,7 +1515,7 @@ export function MaterialsInventoryPanel({
         return next;
       });
       setActionMessage('Đã xóa nguyên phụ liệu.');
-      await loadMaterials();
+      await loadMaterials({ force: true });
     } catch (error: any) {
       setMaterialsError(error.message || 'Không thể xóa nguyên phụ liệu.');
     } finally {
@@ -1565,7 +1556,7 @@ export function MaterialsInventoryPanel({
       }
       setSelectedMaterialIds(new Set());
       setActionMessage(`Đã xóa ${data.deleted ?? selectedMaterials.length} nguyên phụ liệu.`);
-      await loadMaterials();
+      await loadMaterials({ force: true });
     } catch (error: any) {
       setMaterialsError(error.message || 'Không thể xóa nguyên phụ liệu đã chọn.');
     } finally {
@@ -1574,13 +1565,19 @@ export function MaterialsInventoryPanel({
   };
 
   const materialFormFields: Array<{ key: keyof MaterialFormState; label: string; required?: boolean; placeholder?: string }> = [
-    { key: 'name', label: 'Tên nguyên phụ liệu', required: true, placeholder: 'VD: Màng PE' },
+    { key: 'name', label: 'Tên nguyên vật liệu', required: true, placeholder: 'VD: Màng PE' },
+    { key: 'productionName', label: 'Tên nguyên vật liệu sản xuất', placeholder: 'Tên dùng trong sản xuất' },
+    { key: 'phanLoai', label: 'Phân loại' },
+    { key: 'auxiliaryMaterialGroup', label: 'Nhóm vật tư phụ' },
     { key: 'totalWeight', label: 'Tổng kg' },
     { key: 'plasticWeight', label: 'Kg nhựa' },
     { key: 'bagWeight', label: 'Kg túi' },
     { key: 'coreWeight', label: 'Kg lõi' },
     { key: 'rollWidth', label: 'Khổ cuộn' },
-    { key: 'unitLength', label: 'Chiều dài ĐV' }
+    { key: 'unitLength', label: 'Chiều dài ĐV' },
+    { key: 'openingStock', label: 'Tồn đầu kỳ' },
+    { key: 'inbound', label: 'Nhập trong kỳ' },
+    { key: 'outbound', label: 'Xuất trong kỳ' }
   ];
 
   return (
@@ -1679,6 +1676,15 @@ export function MaterialsInventoryPanel({
             disabled={isLoadingMaterials}
           />
 
+          <FilterCombobox
+            label="Đơn vị"
+            options={unitFilterOptions}
+            value={selectedUnit}
+            onChange={setSelectedUnit}
+            searchPlaceholder="Tìm đơn vị..."
+            compact
+          />
+
           {isLoadingMaterials ? (
             <div className="flex h-10 shrink-0 items-center rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs font-bold text-zinc-500">
               Đang tải...
@@ -1756,7 +1762,9 @@ export function MaterialsInventoryPanel({
                 </datalist>
               </label>
               <label className="space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Kho lưu trữ *</span>
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                  Kho lưu trữ{warehouseFilter ? ' *' : ''}
+                </span>
                 <SearchableSelect
                   value={materialForm.warehouse}
                   onChange={value => setMaterialForm(prev => ({ ...prev, warehouse: value }))}
@@ -1766,7 +1774,7 @@ export function MaterialsInventoryPanel({
                   getLabel={item => String(item)}
                   getValue={item => String(item)}
                   inputClassName={materialFieldClass}
-                  allowEmpty={false}
+                  allowEmpty={!warehouseFilter}
                   comboboxMode
                 />
               </label>
@@ -1775,12 +1783,37 @@ export function MaterialsInventoryPanel({
                   <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
                     {field.label}{field.required ? ' *' : ''}
                   </span>
-                  <input
-                    value={materialForm[field.key]}
-                    onChange={e => setMaterialForm(prev => ({ ...prev, [field.key]: e.target.value }))}
-                    className={materialFieldClass}
-                    placeholder={field.placeholder}
-                  />
+                  {field.key === 'phanLoai' ? (
+                    <select
+                      value={materialForm[field.key]}
+                      onChange={e => setMaterialForm(prev => ({ ...prev, [field.key]: e.target.value }))}
+                      className={materialFieldClass}
+                    >
+                      <option value="">-- Chọn phân loại --</option>
+                      <option value="Nguyên vật liệu phụ">Nguyên vật liệu phụ</option>
+                      <option value="Nguyên vật liệu chính">Nguyên vật liệu chính</option>
+                    </select>
+                  ) : field.key === 'auxiliaryMaterialGroup' ? (
+                    <select
+                      value={materialForm[field.key]}
+                      onChange={e => setMaterialForm(prev => ({ ...prev, [field.key]: e.target.value }))}
+                      className={materialFieldClass}
+                    >
+                      <option value="">-- Chọn nhóm vật tư phụ --</option>
+                      {AUXILIARY_MATERIAL_GROUPS.map(group => (
+                        <option key={group} value={group}>
+                          {group}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={materialForm[field.key]}
+                      onChange={e => setMaterialForm(prev => ({ ...prev, [field.key]: e.target.value }))}
+                      className={materialFieldClass}
+                      placeholder={field.placeholder}
+                    />
+                  )}
                 </label>
               ))}
             </div>
@@ -1955,11 +1988,11 @@ export function MaterialsInventoryPanel({
         onClose={() => setShowBulkTotalWeight(false)}
         onApplied={message => {
           setActionMessage(message);
-          void loadMaterials();
+          void loadMaterials({ force: true });
         }}
       />
 
-      <TableShell minWidthClassName="min-w-[850px]">
+      <TableShell minWidthClassName="min-w-[1250px]">
         <TableHead>
           <TableHeadCell align="center" className="w-14">
             <input
@@ -1972,11 +2005,17 @@ export function MaterialsInventoryPanel({
             />
           </TableHeadCell>
           <TableHeadCell>Mã NPL</TableHeadCell>
-          <TableHeadCell>Tên nguyên phụ liệu</TableHeadCell>
+          <TableHeadCell>Tên nguyên vật liệu</TableHeadCell>
+          <TableHeadCell>Phân loại</TableHeadCell>
+          <TableHeadCell>Nhóm vật tư phụ</TableHeadCell>
+          <TableHeadCell>Tên NVL sản xuất</TableHeadCell>
           <TableHeadCell>ĐV</TableHeadCell>
-          <TableHeadCell>Kho</TableHeadCell>
+          {warehouseFilter ? <TableHeadCell>Kho</TableHeadCell> : null}
           <TableHeadCell align="center">Tổng kg</TableHeadCell>
-          <TableHeadCell align="center">Tổng SL</TableHeadCell>
+          <TableHeadCell>Tồn đầu</TableHeadCell>
+          <TableHeadCell>Nhập</TableHeadCell>
+          <TableHeadCell>Xuất</TableHeadCell>
+          <TableHeadCell>Tồn cuối</TableHeadCell>
           <TableHeadCell align="center">Thao tác</TableHeadCell>
         </TableHead>
         <TableBody>
@@ -2001,10 +2040,18 @@ export function MaterialsInventoryPanel({
                 </td>
                 <td className="px-4 py-3 font-black text-zinc-950">{material.code || '-'}</td>
                 <td className="px-4 py-3 font-semibold text-zinc-900">{material.name || '-'}</td>
+                <td className="px-4 py-3 text-xs font-semibold text-zinc-600">{material.phanLoai || '-'}</td>
+                <td className="px-4 py-3 text-xs font-semibold text-zinc-700">{material.auxiliaryMaterialGroup || '-'}</td>
+                <td className="px-4 py-3 font-semibold text-zinc-700">{material.productionName || '-'}</td>
                 <td className="px-4 py-3 text-zinc-700">{material.unit}</td>
-                <td className="px-4 py-3 text-zinc-700">{material.warehouse || '—'}</td>
+                {warehouseFilter ? (
+                  <td className="px-4 py-3 text-zinc-700">{material.warehouse || '—'}</td>
+                ) : null}
                 <td className="px-4 py-3 text-right font-mono font-bold text-zinc-800">{material.totalWeight}</td>
-                <td className="px-4 py-3 text-right font-mono font-bold text-zinc-800">
+                <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.openingStock}</td>
+                <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.inbound}</td>
+                <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.outbound}</td>
+                <td className="px-4 py-3 font-mono font-bold text-zinc-900">
                   {computeClosingStock(material.openingStock, material.inbound, material.outbound)}
                 </td>
                 <td className="px-4 py-3 text-center">
@@ -2052,8 +2099,10 @@ export function MaterialsInventoryPanel({
           })}
 
           {!isLoadingMaterials && filteredMaterials.length === 0 && (
-            <TableEmptyRow colSpan={8}>
-              {asOfDate ? 'Không có mã hàng trong kho này.' : 'Vui lòng chọn ngày để xem hàng còn trong kho.'}
+            <TableEmptyRow colSpan={warehouseFilter ? 14 : 13}>
+              {warehouseFilter
+                ? 'Không có mã hàng trong kho này.'
+                : 'Chưa có nguyên vật liệu trong danh mục.'}
             </TableEmptyRow>
           )}
         </TableBody>

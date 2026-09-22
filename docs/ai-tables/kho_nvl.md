@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Bảng** | `kho_nvl` |
-| **Tab** | `inventory-catalog` → `/kho-hang` (route cũ: `materials` → `/kho-nvl`) |
+| **Tab** | `materials` → `/kho-nvl` (danh mục); tồn theo kho/ngày qua `inventory-catalog` → `/kho-hang` |
 | **SQL** | `supabase-kho-nvl.sql`, `supabase-kho-nvl-ten-kho.sql` |
 | **Fix precision** | `supabase-kho-nvl-precision.sql` (giữ số lẻ, không bị làm tròn) |
 | **Ảnh thực tế** | `supabase-kho-nvl-anh-thuc-te.sql` — link Cloudinary số cân / số bao thực tế |
@@ -27,12 +27,12 @@
 
 | File | Nội dung |
 |------|----------|
-| `src/features/kho-nvl/index.tsx` | Panel / logic chính |
-| `src/features/kho-hang/index.tsx` | Màn hình gộp Kho hàng, chọn Nguyên vật liệu / Thành phẩm |
+| `src/features/kho-nvl/index.tsx` | Danh mục NVL tại `/kho-nvl` (CRUD giống main); Kho hàng truyền `warehouseFilter` để lọc theo kho |
+| `src/features/kho-hang/index.tsx` | Kho hàng — chọn kho rồi mở cùng panel danh mục NVL/TP (thêm/sửa/xóa như `/kho-nvl` / `/san-pham`) |
 | `src/App.tsx` | Shell routing — import panel, không chứa logic bảng |
 | `src/features/_shared/` | Helper dùng chung (storage, hr, recordHelpers) |
 
-UI danh sách có cột tick chọn + nút **Xóa đã chọn** (bulk `DELETE /api/kho-nvl` body `{ ids }`). Không hiển thị các cột Tồn đầu / Nhập / Xuất / Tồn cuối; thay bằng một cột **Tổng SL** lấy từ `ton_cuoi_ky` đã tính theo phiếu kho đến ngày đang chọn. Form thêm và sửa không hiển thị Tồn đầu kỳ / Nhập trong kỳ / Xuất trong kỳ; các cột DB cũ vẫn được giữ để tương thích dữ liệu và nghiệp vụ tồn kho. Ảnh số cân / số bao thực tế thuộc **phiếu xuất kho** (`phieu_xuat_nhap_kho`), không lưu trên `kho_nvl`.
+**Hai lối vào:** `/kho-nvl` & `/san-pham` = danh mục CRUD. `/kho-hang` = cùng UI danh mục, lọc theo tên kho đã chọn.
 
 
 ## Liên kết
