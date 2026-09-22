@@ -103,19 +103,11 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
       if (bg.ma_nvl) banGiaoMap.set(bg.ma_nvl, bg);
     });
 
-    // Tra định mức mẫu nếu có trong coi_tron_mau
-    const dinhMucMap = new Map<string, string>();
-    (report.coi_tron_mau || []).forEach(coi => {
-      (coi.nvl || []).forEach(n => {
-        const k = str(n.material_id) || str(n.ma_nvl);
-        if (k && n.gia_tri) dinhMucMap.set(k, str(n.gia_tri));
-        if (n.ma_nvl && n.gia_tri) dinhMucMap.set(n.ma_nvl, str(n.gia_tri));
-      });
-    });
-
+    // Không tự load định mức từ cối mẫu — người dùng nhập tay "Định mức vật tư".
+    // Chỉ lấy giá trị đã lưu trên bang_nvl (nếu có).
     const combinedVatTu: PhieuGiaoCaVatTuRow[] = (report.bang_nvl || []).map(nvl => {
       const bg = banGiaoMap.get(nvl.material_id) || banGiaoMap.get(nvl.ma_nvl);
-      const dm = dinhMucMap.get(nvl.material_id) || dinhMucMap.get(nvl.ma_nvl) || '';
+      const dm = str((nvl as { dinh_muc?: unknown }).dinh_muc);
 
       const lanArr = Array.from({ length: 10 }, (_, i) => {
         const val = nvl.lan?.[i];
@@ -129,6 +121,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
 
       return {
         key: uid(),
+        material_id: nvl.material_id || '',
         ma_nvl: nvl.ma_nvl || '',
         ten_nvl: nvl.ten_nvl || '',
         ten_nvl_sx: nvl.ten_nvl_sx || '',
@@ -144,7 +137,11 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
 
     // Thêm các vật tư chỉ có trong bang_ban_giao mà chưa có trong bang_nvl
     (report.bang_ban_giao || []).forEach(bg => {
-      const exists = combinedVatTu.some(v => (v.ma_nvl && v.ma_nvl === bg.ma_nvl) || (bg.material_id && v.ma_nvl === bg.ma_nvl));
+      const exists = combinedVatTu.some(
+        v =>
+          (v.material_id && bg.material_id && v.material_id === bg.material_id) ||
+          (v.ma_nvl && bg.ma_nvl && v.ma_nvl === bg.ma_nvl)
+      );
       if (!exists && (bg.ma_nvl || bg.ten_nvl)) {
         const tonDau = bg.ton_dau_ca ? String(bg.ton_dau_ca) : '';
         const layKho = bg.lay_trong_kho ? String(bg.lay_trong_kho) : '';
@@ -152,6 +149,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
         const tonCuoi = round2(num(tonDau) + num(layKho) - tongSd);
         combinedVatTu.push({
           key: uid(),
+          material_id: bg.material_id || '',
           ma_nvl: bg.ma_nvl || '',
           ten_nvl: bg.ten_nvl || '',
           ten_nvl_sx: bg.ten_nvl_sx || '',
@@ -249,6 +247,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
       ...prev,
       {
         key: uid(),
+        material_id: '',
         ma_nvl: '',
         ten_nvl: '',
         ten_nvl_sx: '',
@@ -267,50 +266,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
     setVatTuRows(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Handler thành phẩm
-  const updateThanhPhamRow = (index: number, patch: Partial<PhieuGiaoCaThanhPhamRow>) => {
-    setThanhPhamRows(prev =>
-      prev.map((row, i) => {
-        if (i !== index) return row;
-        const updated = { ...row, ...patch };
-        // Tự động tính số lượng nếu có lan_1, lan_2, lan_3
-        const hasLan = updated.lan_1 || updated.lan_2 || updated.lan_3;
-        let sl = updated.so_luong;
-        if (hasLan) {
-          const sumLan = num(updated.lan_1) + num(updated.lan_2) + num(updated.lan_3);
-          if (sumLan > 0) sl = String(sumLan);
-        }
-        // Tính trọng lượng
-        let tl = updated.trong_luong;
-        if (num(sl) > 0 && num(updated.dinh_muc) > 0) {
-          tl = fmt(round2(num(sl) * num(updated.dinh_muc)));
-        }
-        return { ...updated, so_luong: sl, trong_luong: tl };
-      })
-    );
-  };
-
-  const addThanhPhamRow = () => {
-    setThanhPhamRows(prev => [
-      ...prev,
-      {
-        key: uid(),
-        ma_sp: '',
-        ten_sp: '',
-        dinh_muc: '',
-        lan_1: '',
-        lan_2: '',
-        lan_3: '',
-        so_luong: '',
-        trong_luong: '',
-        ghi_chu: ''
-      }
-    ]);
-  };
-
-  const removeThanhPhamRow = (index: number) => {
-    setThanhPhamRows(prev => prev.filter((_, i) => i !== index));
-  };
+  // Thành phẩm chỉ xem trên phiếu giao ca — sửa tại sổ trộn.
 
   // Handler hàng lỗi
   const updateHangLoiRow = (index: number, patch: Partial<PhieuGiaoCaHangLoiRow>) => {
@@ -374,37 +330,53 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
     setSaveSuccess(false);
 
     try {
-      // Map ngược lại bang_nvl và bang_ban_giao
-      const nextBangNvl = vatTuRows.map(r => ({
-        material_id: '',
-        ma_nvl: r.ma_nvl,
-        ten_nvl: r.ten_nvl,
-        ten_nvl_sx: r.ten_nvl_sx || '',
-        dvt: r.dvt,
-        lan: r.lan.map(v => num(v)),
-        tong: r.tong_su_dung,
-        lenh_sx: []
-      }));
+      // Map ngược lại bang_nvl và bang_ban_giao — giữ material_id / lenh_sx gốc khi khớp.
+      const origNvlByKey = new Map<string, (typeof report.bang_nvl)[0]>();
+      for (const nvl of report.bang_nvl || []) {
+        const k = str(nvl.material_id) || str(nvl.ma_nvl);
+        if (k) origNvlByKey.set(k.toLowerCase(), nvl);
+        if (nvl.ma_nvl) origNvlByKey.set(str(nvl.ma_nvl).toLowerCase(), nvl);
+      }
 
-      const nextBangBanGiao = vatTuRows.map(r => ({
-        material_id: '',
-        ma_nvl: r.ma_nvl,
-        ten_nvl: r.ten_nvl,
-        ten_nvl_sx: r.ten_nvl_sx || '',
-        lay_trong_kho: num(r.lay_trong_kho),
-        ton_dau_ca: num(r.ton_dau_ca),
-        tong_su_dung: r.tong_su_dung,
-        ton_cuoi_ca: r.ton_cuoi_ca
-      }));
+      const nextBangNvl = vatTuRows.map(r => {
+        const key = (str(r.material_id) || str(r.ma_nvl)).toLowerCase();
+        const orig = key ? origNvlByKey.get(key) : undefined;
+        return {
+          material_id: r.material_id || orig?.material_id || '',
+          ma_nvl: r.ma_nvl,
+          ten_nvl: r.ten_nvl,
+          ten_nvl_sx: r.ten_nvl_sx || '',
+          dvt: r.dvt,
+          dinh_muc: str(r.dinh_muc),
+          lan: r.lan.map(v => num(v)),
+          tong: r.tong_su_dung,
+          lenh_sx: Array.isArray(orig?.lenh_sx) ? orig!.lenh_sx : ([] as string[])
+        };
+      });
 
-      const nextBangSanPham = thanhPhamRows.map(r => ({
-        ma_lenh_sx: '',
-        ma_sp: r.ma_sp,
-        ten_sp: r.ten_sp,
-        so_luong: str(r.so_luong),
-        dinh_muc: str(r.dinh_muc),
-        trong_luong: str(r.trong_luong),
-        ghi_chu: r.ghi_chu || ''
+      const nextBangBanGiao = vatTuRows
+        .filter(r => str(r.ma_nvl) || str(r.ten_nvl))
+        .map(r => ({
+          material_id: r.material_id || '',
+          ma_nvl: r.ma_nvl,
+          ten_nvl: r.ten_nvl,
+          ten_nvl_sx: r.ten_nvl_sx || '',
+          lay_trong_kho: num(r.lay_trong_kho),
+          ton_dau_ca: num(r.ton_dau_ca),
+          tong_su_dung: r.tong_su_dung,
+          ton_cuoi_ca: r.ton_cuoi_ca
+        }));
+
+      // Thành phẩm: chỉ đọc từ sổ trộn — không ghi đè khi lưu phiếu giao ca.
+      const nextBangSanPham = (report.bang_san_pham || []).map(sp => ({
+        ma_lenh_sx: sp.ma_lenh_sx || '',
+        ma_sp: sp.ma_sp || '',
+        ten_sp: sp.ten_sp || '',
+        mang: (sp as { mang?: string }).mang || '',
+        so_luong: str(sp.so_luong),
+        dinh_muc: str(sp.dinh_muc),
+        trong_luong: str(sp.trong_luong),
+        ghi_chu: sp.ghi_chu || ''
       }));
 
       const nextBangHangLoi = hangLoiRows.map(r => ({
@@ -469,9 +441,12 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
   if (!open || !report) return null;
 
   const inputStyle =
-    'w-full bg-transparent border-b border-dotted border-slate-400 focus:border-solid focus:border-indigo-600 focus:bg-indigo-50/50 outline-none px-1 py-0.5 text-[11px] text-slate-800 transition font-sans';
+    'w-full bg-transparent border-b border-dotted border-slate-400 focus:border-solid focus:border-indigo-600 focus:bg-indigo-50/50 outline-none px-1 py-0.5 text-[11px] text-slate-800 transition';
   const numInputStyle = `${inputStyle} text-right tabular-nums`;
   const centerInputStyle = `${inputStyle} text-center`;
+  const readOnlyCell =
+    'block w-full px-1 py-0.5 text-[11px] text-slate-800 min-h-[22px]';
+  const paperFontStyle = { fontFamily: '"Times New Roman", Times, serif' } as const;
 
   const dateParts = (() => {
     const m = String(header.ngay || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -572,8 +547,8 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
         
         {/* ===================== TRANG 1: ẢNH 1 (I. VẬT TƯ) ===================== */}
         {(activeTab === 'all' || activeTab === 'p1') && (
-          <div className="relative rounded-sm border border-slate-300 bg-white p-6 sm:p-8 font-serif text-slate-900 shadow-2xl">
-            <div className="mb-1 text-[10px] font-sans font-bold uppercase tracking-wider text-indigo-700">
+          <div className="relative rounded-sm border border-slate-300 bg-white p-6 sm:p-8 text-slate-900 shadow-2xl" style={paperFontStyle}>
+            <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-indigo-700">
               Trang 1 / 2 — Nhật ký vật tư &amp; sử dụng (Ảnh 1)
             </div>
 
@@ -599,7 +574,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
               </div>
 
               <div className="w-[25%] flex justify-end">
-                <div className="border border-slate-800 p-1.5 text-[9px] font-sans leading-tight">
+                <div className="border border-slate-800 p-1.5 text-[9px] leading-tight">
                   <div>
                     Ký hiệu:{' '}
                     <input
@@ -629,7 +604,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
             </div>
 
             {/* Meta bar */}
-            <div className="mt-2.5 space-y-1 text-xs font-serif">
+            <div className="mt-2.5 space-y-1 text-xs">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <div className="flex items-baseline gap-1">
                   <span>Ca sản xuất từ:</span>
@@ -691,7 +666,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                 <button
                   type="button"
                   onClick={addVatTuRow}
-                  className="flex items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-[11px] font-sans font-bold text-slate-700 hover:bg-slate-100"
+                  className="flex items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-100"
                 >
                   <Plus className="h-3 w-3" /> Thêm dòng vật tư
                 </button>
@@ -706,7 +681,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                         Tên vật tư (Kế hoạch chi tiết kể vật tư cần sử dụng, mã vật tư và định mức sử dụng (Kg))
                       </th>
                       <th rowSpan={2} className="border border-slate-800 p-0.5 w-[4%]">ĐVT</th>
-                      <th rowSpan={2} className="border border-slate-800 p-1 w-[6%]">Định mức 1 SP</th>
+                      <th rowSpan={2} className="border border-slate-800 p-1 w-[6%]">Định mức vật tư</th>
                       <th rowSpan={2} className="border border-slate-800 p-1 w-[6%]">Tồn đầu ca</th>
                       <th rowSpan={2} className="border border-slate-800 p-1 w-[6%]">Lấy kho</th>
                       <th colSpan={10} className="border border-slate-800 p-0.5">SỬ DỤNG</th>
@@ -725,7 +700,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                   <tbody>
                     {vatTuRows.length === 0 && (
                       <tr>
-                        <td colSpan={19} className="border border-slate-800 p-4 text-center text-slate-400 font-sans italic">
+                        <td colSpan={19} className="border border-slate-800 p-4 text-center text-slate-400 italic">
                           Chưa có dữ liệu vật tư. Hãy bấm "Thêm dòng vật tư".
                         </td>
                       </tr>
@@ -825,7 +800,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
               </div>
 
               {/* Dòng bàn giao dưới bảng */}
-              <div className="mt-2.5 flex items-center justify-between text-xs font-serif font-bold">
+              <div className="mt-2.5 flex items-center justify-between text-xs font-bold">
                 <div className="flex items-center gap-2">
                   <span>Giao ca:</span>
                   <input
@@ -845,24 +820,18 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
 
         {/* ===================== TRANG 2: ẢNH 2 (THÀNH PHẨM, HÀNG LỖI, SỰ CỐ, CHỮ KÝ) ===================== */}
         {(activeTab === 'all' || activeTab === 'p2') && (
-          <div className="relative rounded-sm border border-slate-300 bg-white p-6 sm:p-8 font-serif text-slate-900 shadow-2xl">
-            <div className="mb-1 text-[10px] font-sans font-bold uppercase tracking-wider text-indigo-700">
+          <div className="relative rounded-sm border border-slate-300 bg-white p-6 sm:p-8 text-slate-900 shadow-2xl" style={paperFontStyle}>
+            <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-indigo-700">
               Trang 2 / 2 — Thành phẩm, Hàng lỗi hỏng, Sự cố &amp; Chữ ký (Ảnh 2)
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 mt-2">
               
-              {/* CỘT TRÁI: BẢNG II. THÀNH PHẨM */}
+              {/* CỘT TRÁI: BẢNG II. THÀNH PHẨM — chỉ xem, sửa ở sổ trộn */}
               <div className="lg:col-span-7">
                 <div className="flex items-center justify-between mb-1">
                   <h4 className="text-xs font-bold uppercase tracking-wide">II. THÀNH PHẨM</h4>
-                  <button
-                    type="button"
-                    onClick={addThanhPhamRow}
-                    className="flex items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-[11px] font-sans font-bold text-slate-700 hover:bg-slate-100"
-                  >
-                    <Plus className="h-3 w-3" /> Thêm TP
-                  </button>
+                  <span className="text-[10px] text-slate-500 italic">Chỉ xem — sửa tại sổ trộn</span>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -877,7 +846,6 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                         <th colSpan={3} className="border border-slate-800 p-0.5">TP Nhập kho</th>
                         <th rowSpan={2} className="border border-slate-800 p-1 w-[10%]">Tổng nhập</th>
                         <th rowSpan={2} className="border border-slate-800 p-1 w-[12%]">Tổng TL (Kg)</th>
-                        <th rowSpan={2} className="border border-slate-800 p-0.5 w-[4%]" />
                       </tr>
                       <tr className="bg-slate-100 text-[9px]">
                         <th className="border border-slate-800 p-0.5 w-[6%]">Lần 1</th>
@@ -888,88 +856,38 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                     <tbody>
                       {thanhPhamRows.length === 0 && (
                         <tr>
-                          <td colSpan={9} className="border border-slate-800 p-4 text-center text-slate-400 font-sans italic">
-                            Chưa có dữ liệu thành phẩm. Bấm "Thêm TP".
+                          <td colSpan={8} className="border border-slate-800 p-4 text-center text-slate-400 italic">
+                            Chưa có dữ liệu thành phẩm trên sổ trộn.
                           </td>
                         </tr>
                       )}
-                      {thanhPhamRows.map((row, ri) => (
-                        <tr key={row.key} className="hover:bg-slate-50/80">
+                      {thanhPhamRows.map(row => (
+                        <tr key={row.key} className="bg-slate-50/40">
                           <td className="border border-slate-800 p-0.5">
-                            <input
-                              value={row.ma_sp}
-                              onChange={e => updateThanhPhamRow(ri, { ma_sp: e.target.value })}
-                              className={centerInputStyle}
-                              placeholder="02"
-                            />
+                            <span className={`${readOnlyCell} text-center`}>{row.ma_sp}</span>
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <input
-                              value={row.ten_sp}
-                              onChange={e => updateThanhPhamRow(ri, { ten_sp: e.target.value })}
-                              className={inputStyle}
-                              placeholder="1.12 li x 6m"
-                            />
+                            <span className={`${readOnlyCell} text-left`}>{row.ten_sp}</span>
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <input
-                              inputMode="decimal"
-                              value={row.dinh_muc}
-                              onChange={e => updateThanhPhamRow(ri, { dinh_muc: e.target.value })}
-                              className={numInputStyle}
-                              placeholder="9.5"
-                            />
+                            <span className={`${readOnlyCell} text-right tabular-nums`}>{row.dinh_muc}</span>
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <input
-                              inputMode="decimal"
-                              value={row.lan_1}
-                              onChange={e => updateThanhPhamRow(ri, { lan_1: e.target.value })}
-                              className={centerInputStyle}
-                            />
+                            <span className={`${readOnlyCell} text-center`}>{row.lan_1}</span>
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <input
-                              inputMode="decimal"
-                              value={row.lan_2}
-                              onChange={e => updateThanhPhamRow(ri, { lan_2: e.target.value })}
-                              className={centerInputStyle}
-                            />
+                            <span className={`${readOnlyCell} text-center`}>{row.lan_2}</span>
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <input
-                              inputMode="decimal"
-                              value={row.lan_3}
-                              onChange={e => updateThanhPhamRow(ri, { lan_3: e.target.value })}
-                              className={centerInputStyle}
-                            />
+                            <span className={`${readOnlyCell} text-center`}>{row.lan_3}</span>
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <input
-                              inputMode="decimal"
-                              value={row.so_luong}
-                              onChange={e => updateThanhPhamRow(ri, { so_luong: e.target.value })}
-                              className={`${numInputStyle} font-bold`}
-                              placeholder="22"
-                            />
+                            <span className={`${readOnlyCell} text-right tabular-nums font-bold`}>{row.so_luong}</span>
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <input
-                              inputMode="decimal"
-                              value={row.trong_luong}
-                              onChange={e => updateThanhPhamRow(ri, { trong_luong: e.target.value })}
-                              className={`${numInputStyle} font-bold text-indigo-900`}
-                              placeholder="209"
-                            />
-                          </td>
-                          <td className="border border-slate-800 p-0.5 text-center">
-                            <button
-                              type="button"
-                              onClick={() => removeThanhPhamRow(ri)}
-                              className="text-slate-400 hover:text-rose-600"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
+                            <span className={`${readOnlyCell} text-right tabular-nums font-bold text-indigo-900`}>
+                              {row.trong_luong}
+                            </span>
                           </td>
                         </tr>
                       ))}
@@ -983,7 +901,6 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                         <td className="border border-slate-800 p-1 text-right tabular-nums text-indigo-700">
                           {tongTrongLuongThanhPham > 0 ? fmt(tongTrongLuongThanhPham) : ''}
                         </td>
-                        <td className="border border-slate-800"></td>
                       </tr>
                     </tbody>
                   </table>
@@ -998,7 +915,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                     <button
                       type="button"
                       onClick={addHangLoiRow}
-                      className="flex items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-[11px] font-sans font-bold text-slate-700 hover:bg-slate-100"
+                      className="flex items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-100"
                     >
                       <Plus className="h-3 w-3" /> Thêm lỗi
                     </button>
@@ -1016,7 +933,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                     <tbody>
                       {hangLoiRows.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="border border-slate-800 p-3 text-center text-slate-400 font-sans italic">
+                          <td colSpan={4} className="border border-slate-800 p-3 text-center text-slate-400 italic">
                             Không có hàng lỗi hỏng / phế.
                           </td>
                         </tr>
@@ -1078,7 +995,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                     rows={4}
                     value={suCoLuuY}
                     onChange={e => setSuCoLuuY(e.target.value)}
-                    className="w-full rounded border border-slate-800 bg-slate-50/50 p-2 text-xs font-serif leading-relaxed outline-none focus:bg-white focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded border border-slate-800 bg-slate-50/50 p-2 text-xs leading-relaxed outline-none focus:bg-white focus:ring-1 focus:ring-indigo-500"
                     placeholder="+ Máy chạy ổn định&#10;+ Đổi màu 1 lần..."
                   />
                 </div>
@@ -1087,7 +1004,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
             </div>
 
             {/* 4 Khối chữ ký ở chân trang 2 */}
-            <div className="mt-10 grid grid-cols-4 gap-2 border-t border-slate-300 pt-3 text-center font-serif">
+            <div className="mt-10 grid grid-cols-4 gap-2 border-t border-slate-300 pt-3 text-center">
               <div>
                 <div className="text-xs font-bold">Thủ kho vật tư</div>
                 <div className="text-[10.5px] italic text-slate-500">(Ký, họ tên)</div>

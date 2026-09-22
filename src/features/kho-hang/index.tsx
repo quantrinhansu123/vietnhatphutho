@@ -4,6 +4,7 @@ import { FilterCombobox } from '../../components/shared/table';
 import { MaterialsInventoryPanel } from '../kho-nvl';
 import { ProductsPanel } from '../san-pham';
 import { getCatalogCache } from './catalogCache';
+import { ThanhPhamStockPanel } from './ThanhPhamStockPanel';
 
 export type InventoryCatalogKind = 'materials' | 'products';
 export {
@@ -144,6 +145,15 @@ export function InventoryCatalogPanel({ onBack }: { onBack: () => void }) {
         topControls={warehousePicker}
       />
     );
+  }
+
+  // Kho thành phẩm / sản phẩm → một màn: SP từ nhap_kho + tồn kỳ từ phiếu NX.
+  const isFinishedGoods =
+    normalizeWarehouseName(selectedWarehouse).includes('thanh pham') ||
+    normalizeWarehouseName(selectedWarehouse).includes('san pham');
+
+  if (isFinishedGoods) {
+    return <ThanhPhamStockPanel warehouseName={selectedWarehouse} topControls={warehousePicker} />;
   }
 
   return (

@@ -55,6 +55,15 @@ Mỗi lần **sửa** phiếu xuất kho NVL (PUT) lưu 1 row vào `phieu_xuat_n
 - UI (`src/features/phieu-xuat-nhap-kho/index.tsx`): `LOAI_NHAP_KHO_OPTIONS` (4 gợi ý + tự nhập), ô Máy ẩn với phiếu nhập thường (chỉ hiện khi Nhập lại VTSX / Tạo hạt), `validateShiftsSameLoaiCa`, tên SX NVL read-only theo dòng từ `kho_nvl` / PTĐM, nút **Thêm NVL chính/phụ** (chính trên · phụ dưới), xuất NVL có **Ngày tồn + Ca trước trên từng dòng** để lấy tồn đầu ca.
 
 
+## Kho thành phẩm (chốt 22/09/2026)
+
+- SQL: `supabase-nhap-kho.sql` + `supabase-phieu-xuat-nhap-kho-thanh-pham.sql` (`so_m2`, `so_m_dai`, `dia_chi`, `so_tron_ids`).
+- Logic: `src/features/phieu-xuat-nhap-kho/thanhPham.ts` + `thanhPhamInbound.ts` (+ unit `tests/unit/thanhPham.test.ts`).
+- API: `GET /api/nhap-kho?from=&to=` — danh sách từ `nhap_kho` (`thanh_pham`); tồn đầu/nhập/xuất từ phiếu NX. **Không** đọc/ghi `ton_kho_thanh_pham`.
+- Ghi sổ SP: sau phiếu nhập TP → `nhap_kho` với `loai_kho='thanh_pham'` (xem [nhap_kho.md](./nhap_kho.md)).
+- UI phiếu (`warehouseKind=san_pham`): **nhập** — Ngày phiếu riêng; khối viền vàng **Lọc lệnh sản xuất** (ngày lọc lệnh + chọn nhiều máy) → tick lệnh → nạp **mã SP + tên sản xuất (tên ghép)** + quy đổi **kg / m² / m dài**; ghi `nhap_kho` (`ma_sp`, `ten_sp` = tên ghép, quy đổi); **không dùng ca**. **Xuất** — trong **Chi tiết sản phẩm** mỗi dòng `SearchableSelect` chọn **1 SP** từ tồn (`/api/nhap-kho`); cột Mã · Tên · ĐVT · SL CT · SL thực · kg · m² · m dài · Giá · Thành tiền (**không** khối multi-select “Thêm từ tồn kho hệ thống”; **không dùng ca**).
+- `/kho-hang` → Kho thành phẩm: `ThanhPhamStockPanel` gọi `/api/nhap-kho` (chọn từ–đến ngày mới hiện list).
+
 ## Script
 
 `scripts/sync-kho-nvl-from-phieu.mjs` — đồng bộ tồn kho từ phiếu.

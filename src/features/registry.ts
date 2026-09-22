@@ -32,6 +32,8 @@ export type TableId =
   | 'bao_cao_nghiem_thu'
   | 'bao_cao_may_nvl_ton'
   | 'so_tron'
+  | 'ton_kho_thanh_pham'
+  | 'nhap_kho'
   | 'so_test_mau_nhua'
   | 'bao_cao_hang_loi_khach_hang'
   | 'so_giao_ca_mmtb'
@@ -411,6 +413,28 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appLines: 'src/features/so-tron/index.tsx (SoTronPanel + SoTronListView)',
     components: [],
     utils: []
+  },
+  ton_kho_thanh_pham: {
+    table: 'ton_kho_thanh_pham',
+    label: 'Tồn kho thành phẩm (deprecated — dùng nhap_kho)',
+    sql: ['supabase-ton-kho-thanh-pham.sql'],
+    apiPrefix: '/api/ton-kho-thanh-pham',
+    serverLines: 'alias → loadNhapKhoThanhPhamPeriodRows (không đọc bảng này)',
+    appTab: 'inventory-catalog',
+    appLines: '(redirect docs → nhap_kho)',
+    components: [],
+    utils: ['src/features/phieu-xuat-nhap-kho/thanhPham.ts']
+  },
+  nhap_kho: {
+    table: 'nhap_kho',
+    label: 'Sổ SP nhập kho thành phẩm + tồn kỳ /kho-hang',
+    sql: ['supabase-nhap-kho.sql'],
+    apiPrefix: '/api/nhap-kho',
+    serverLines: 'GET /api/nhap-kho (+ from/to) + insertNhapKhoThanhPhamRows',
+    appTab: 'inventory-catalog | warehouse-slip',
+    appLines: 'src/features/kho-hang/ThanhPhamStockPanel.tsx, src/features/kho-hang/index.tsx',
+    components: [],
+    utils: ['src/features/phieu-xuat-nhap-kho/thanhPham.ts']
   },
   bao_cao_ngay: {
     table: 'bao_cao_ngay',

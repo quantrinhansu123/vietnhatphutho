@@ -27,8 +27,6 @@ import { normalizeWarehouseMovements } from '../phieu-xuat-nhap-kho';
 const CHI_NHANH_MAC_DINH = 'Phú Thọ';
 const SO_LAN_TRON_MAC_DINH = 5;
 const SO_LAN_TRON_TOI_DA = 20;
-/** Gợi ý màng SP (cho sửa tay cột Màng) — khớp cột `mang` danh mục sản phẩm. */
-const MANG_SUGGESTIONS = ['ECO', 'STD', 'SUN PC', 'HA', 'LUX'];
 
 type CoiMauNvl = {
   material_id: string;
@@ -65,6 +63,8 @@ type NvlRow = {
   ten_nvl: string;
   ten_nvl_sx: string;
   dvt: string;
+  /** Định mức vật tư (nhập trên phiếu giao ca; sổ trộn giữ nguyên khi lưu) */
+  dinh_muc: string;
   lan: string[];
   /** Các lệnh SX mà NVL này thuộc về (gộp khi trùng mã giữa nhiều lệnh) */
   nguon: string[];
@@ -74,7 +74,7 @@ type SanPhamRow = {
   ma_lenh_sx: string;
   ma_sp: string;
   ten_sp: string;
-  /** Màng SP (ECO/STD/...) — tự tra theo mã SP từ danh mục, cho sửa tay; rỗng = không màng */
+  /** Màng SP (ECO/STD/...) — tự tra theo mã SP từ danh mục; không cho chọn/sửa tay */
   mang: string;
   so_luong: string;
   dinh_muc: string;
@@ -90,6 +90,8 @@ type BanGiaoRow = {
   ten_nvl_sx: string;
   lay_trong_kho: string;
   ton_dau_ca: string;
+  /** true = cho phép effect xuất kho ghi đè Nhập Trong Ngày; false = giữ giá trị đã lưu/sửa tay */
+  lay_kho_tu_dong: boolean;
   ton_dau_tu_dong: boolean;
 };
 type PhanCongItem = { ma_nhan_su: string; ten: string; vai_tro: string };
@@ -105,7 +107,18 @@ export type SoTronSavedReport = {
   nhan_su_chi_tiet: unknown[];
   lenh_sx: { id: string; ma_lenh: string }[];
   coi_tron_mau: CoiMauItem[];
-  bang_nvl: { material_id: string; ma_nvl: string; ten_nvl: string; ten_nvl_sx: string; dvt: string; lan: number[]; tong: number; lenh_sx: string[] }[];
+  bang_nvl: {
+    material_id: string;
+    ma_nvl: string;
+    ten_nvl: string;
+    ten_nvl_sx: string;
+    dvt: string;
+    lan: number[];
+    tong: number;
+    lenh_sx: string[];
+    /** Định mức vật tư (người dùng nhập tay trên phiếu giao ca) */
+    dinh_muc?: string;
+  }[];
   bang_san_pham: {
     ma_lenh_sx: string;
     ma_sp: string;
@@ -1160,6 +1173,7 @@ export function SoTronPanel({
             ten_nvl: meta.ten,
             ten_nvl_sx: meta.sx,
             dvt: meta.dvt,
+            dinh_muc: '',
             lan: Array(numLan).fill(''),
             nguon
           });
@@ -1171,6 +1185,10 @@ export function SoTronPanel({
       );
     });
     setBanGiaoRows(prev => {
+      // Cối mẫu đang tải / trống nhưng vẫn còn lệnh → giữ bàn giao đã lưu, tránh xóa mất.
+      if (desired.size === 0) {
+        return selectedLenh.length === 0 ? [] : prev;
+      }
       const prevMap = new Map(
         prev.map(row => {
           const disp = resolveNvlDisplay(row.material_id, row.ma_nvl, row.ten_nvl, row.ten_nvl_sx);
@@ -1178,16 +1196,21 @@ export function SoTronPanel({
         })
       );
       const next: BanGiaoRow[] = [];
+      const used = new Set<string>();
       for (const [key, meta] of desired) {
         const old = prevMap.get(key);
         if (old) {
+          used.add(key);
           next.push({
             ...old,
             material_id: meta.material_id || old.material_id,
             ten_nvl: old.ten_nvl || meta.ten,
-            ten_nvl_sx: old.ten_nvl_sx || meta.sx
+            ten_nvl_sx: old.ten_nvl_sx || meta.sx,
+            lay_kho_tu_dong: old.lay_kho_tu_dong !== false,
+            ton_dau_tu_dong: old.ton_dau_tu_dong !== false
           });
         } else {
+          used.add(key);
           next.push({
             key: uid(),
             material_id: meta.material_id,
@@ -1196,9 +1219,16 @@ export function SoTronPanel({
             ten_nvl_sx: meta.sx,
             lay_trong_kho: nhapTrongNgayMap.has(key) ? formatQty(nhapTrongNgayMap.get(key) || 0) : '',
             ton_dau_ca: prevTonMap.has(key) ? formatQty(prevTonMap.get(key) || 0) : '',
+            lay_kho_tu_dong: true,
             ton_dau_tu_dong: true
           });
         }
+      }
+      // Giữ dòng bàn giao đã lưu / thêm tay không còn trong cối mẫu (tránh mất Nhựa Bàn Giao Ca Sau).
+      for (const [key, old] of prevMap) {
+        if (used.has(key)) continue;
+        if (!old.ma_nvl.trim() && !old.ten_nvl.trim()) continue;
+        next.push(old);
       }
       return next;
     });
@@ -1398,9 +1428,11 @@ export function SoTronPanel({
         }
         if (!alive) return;
         setNhapTrongNgayMap(map);
-        // Tự điền lay_trong_kho (Nhập Trong Ngày) nếu có giá trị
+        // Chỉ tự điền Nhập Trong Ngày khi dòng còn cho phép (phiếu mới / chưa sửa tay).
+        // Phiếu đã lưu hoặc người dùng sửa tay: giữ nguyên để không mất dữ liệu bàn giao.
         setBanGiaoRows(rows =>
           rows.map(row => {
+            if (!row.lay_kho_tu_dong) return row;
             const key = (row.material_id || row.ma_nvl).toLowerCase();
             const val = map.get(key);
             if (val === undefined) return row;
@@ -1472,6 +1504,7 @@ export function SoTronPanel({
           ten_nvl: m.ten_nvl,
           ten_nvl_sx: m.ten_nvl_sx,
           dvt: m.dvt,
+          dinh_muc: '',
           lan: Array(numLan).fill('') as string[],
           nguon: [] as string[]
         }))
@@ -1491,6 +1524,7 @@ export function SoTronPanel({
           ten_nvl_sx: m.ten_nvl_sx,
           lay_trong_kho: nhapTrongNgayMap.has(m.key) ? formatQty(nhapTrongNgayMap.get(m.key) || 0) : '',
           ton_dau_ca: prevTonMap.has(m.key) ? formatQty(prevTonMap.get(m.key) || 0) : '',
+          lay_kho_tu_dong: true,
           ton_dau_tu_dong: true
         }))
       ];
@@ -1613,6 +1647,7 @@ export function SoTronPanel({
           ...row,
           lay_trong_kho: nhapTrongNgayMap.has(key) ? formatQty(nhapTrongNgayMap.get(key) || 0) : row.lay_trong_kho,
           ton_dau_ca: prevTonMap.has(key) ? formatQty(prevTonMap.get(key) || 0) : row.ton_dau_ca,
+          lay_kho_tu_dong: true,
           ton_dau_tu_dong: true
         };
       })
@@ -1678,6 +1713,7 @@ export function SoTronPanel({
         ten_nvl: str(line.ten_nvl),
         ten_nvl_sx: str((line as { ten_nvl_sx?: unknown }).ten_nvl_sx),
         dvt: str(line.dvt) || 'kg',
+        dinh_muc: str((line as { dinh_muc?: unknown }).dinh_muc),
         lan: Array.from({ length: Math.min(SO_LAN_TRON_TOI_DA, maxLan) }, (_, i) =>
           Array.isArray(line.lan) && line.lan[i] !== undefined && line.lan[i] !== null
             ? String(line.lan[i])
@@ -1715,6 +1751,8 @@ export function SoTronPanel({
         ten_nvl_sx: str(line.ten_nvl_sx),
         lay_trong_kho: line.lay_trong_kho !== undefined && line.lay_trong_kho !== null ? String(line.lay_trong_kho) : '',
         ton_dau_ca: line.ton_dau_ca !== undefined && line.ton_dau_ca !== null ? String(line.ton_dau_ca) : '',
+        // Phiếu đã lưu: khóa không để effect xuất kho / ca trước ghi đè mất dữ liệu bàn giao.
+        lay_kho_tu_dong: false,
         ton_dau_tu_dong: false
       }))
     );
@@ -1765,6 +1803,7 @@ export function SoTronPanel({
             ten_nvl: row.ten_nvl.trim(),
             ten_nvl_sx: row.ten_nvl_sx.trim(),
             dvt: row.dvt.trim() || 'kg',
+            dinh_muc: row.dinh_muc.trim(),
             lan,
             tong: round2(lan.reduce((s, v) => s + v, 0)),
             lenh_sx: row.nguon
@@ -2895,7 +2934,9 @@ export function SoTronPanel({
                             value={row.lay_trong_kho}
                             onChange={e =>
                               setBanGiaoRows(rows =>
-                                rows.map((r, i) => (i === ri ? { ...r, lay_trong_kho: e.target.value } : r))
+                                rows.map((r, i) =>
+                                  i === ri ? { ...r, lay_trong_kho: e.target.value, lay_kho_tu_dong: false } : r
+                                )
                               )
                             }
                             className={numInputClass}
@@ -3112,7 +3153,7 @@ export function SoTronPanel({
                             <tr>
                               <th className={`${paperTh} w-[140px] min-w-[130px]`}>Lệnh SX</th>
                               <th className={`${paperTh} min-w-[180px]`}>Tên hàng hóa</th>
-                              <th className={`${paperTh} w-[92px] min-w-[86px]`} title="Màng SP: tự tra theo mã SP từ danh mục, sửa tay được">Màng</th>
+                              <th className={`${paperTh} w-[92px] min-w-[86px]`} title="Màng SP: tự tra theo mã SP từ danh mục (không chọn/sửa tay)">Màng</th>
                               <th className={`${paperTh} w-[56px] min-w-[50px]`}>Số Lượng</th>
                               <th className={`${paperTh} w-[62px] min-w-[56px]`}>Định mức</th>
                               <th className={`${paperTh} w-[68px] min-w-[60px]`}>Trọng lượng</th>
@@ -3183,21 +3224,14 @@ export function SoTronPanel({
                                   </datalist>
                                 </td>
                                 <td className={`${paperTd} w-[92px] min-w-[86px]`}>
-                                  <input
-                                    value={row.mang}
-                                    list={`so-tron-paper-mang-${row.key}`}
-                                    onChange={e =>
-                                      setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, mang: e.target.value } : r)))
-                                    }
-                                    placeholder="Không màng"
-                                    className={`${paperCellInput} ${row.mang ? 'text-emerald-700' : 'text-slate-400'}`}
-                                    title={row.mang ? `Có màng ${row.mang}` : 'Không màng (để trống)'}
-                                  />
-                                  <datalist id={`so-tron-paper-mang-${row.key}`}>
-                                    {MANG_SUGGESTIONS.map(m => (
-                                      <option key={m} value={m} />
-                                    ))}
-                                  </datalist>
+                                  <span
+                                    className={`block px-1 py-1 text-center text-[12.5px] font-semibold ${
+                                      row.mang ? 'text-emerald-700' : 'text-slate-400'
+                                    }`}
+                                    title={row.mang ? `Có màng ${row.mang}` : 'Không màng'}
+                                  >
+                                    {row.mang || '—'}
+                                  </span>
                                 </td>
                                 <td className={`${paperTd} w-[56px] min-w-[50px]`}>
                                   <input
@@ -3447,7 +3481,9 @@ export function SoTronPanel({
                                     value={row.lay_trong_kho}
                                     onChange={e =>
                                       setBanGiaoRows(rows =>
-                                        rows.map((r, i) => (i === ri ? { ...r, lay_trong_kho: e.target.value } : r))
+                                        rows.map((r, i) =>
+                                          i === ri ? { ...r, lay_trong_kho: e.target.value, lay_kho_tu_dong: false } : r
+                                        )
                                       )
                                     }
                                     className={paperCellInput}
@@ -3538,6 +3574,7 @@ export function SoTronPanel({
                         ten_nvl: row.ten_nvl.trim(),
                         ten_nvl_sx: row.ten_nvl_sx.trim(),
                         dvt: row.dvt.trim() || 'kg',
+                        dinh_muc: row.dinh_muc.trim(),
                         lan,
                         tong: round2(lan.reduce((s, v) => s + v, 0)),
                         lenh_sx: row.nguon

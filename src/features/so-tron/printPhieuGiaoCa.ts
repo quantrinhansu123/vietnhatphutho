@@ -22,6 +22,7 @@ export interface PhieuGiaoCaHeader {
 
 export interface PhieuGiaoCaVatTuRow {
   key: string;
+  material_id?: string;
   ma_nvl: string;
   ten_nvl: string;
   ten_nvl_sx?: string;
@@ -426,7 +427,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
           <th rowspan="2" style="width: 8.5%;">Mã vật tư</th>
           <th rowspan="2" style="width: 22.5%;">Tên vật tư (Kế hoạch chi tiết kể vật tư cần sử dụng, mã vật tư và định mức vật tư sử dụng (Kg))</th>
           <th rowspan="2" style="width: 3.5%;">ĐVT</th>
-          <th rowspan="2" style="width: 6.5%;">Định mức 1 SP vật tư</th>
+          <th rowspan="2" style="width: 6.5%;">Định mức vật tư</th>
           <th rowspan="2" style="width: 6.5%;">Tồn đầu ca</th>
           <th rowspan="2" style="width: 6.5%;">Lấy trong kho</th>
           <th colspan="10" style="width: 33%;">SỬ DỤNG</th>
