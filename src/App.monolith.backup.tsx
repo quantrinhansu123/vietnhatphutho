@@ -95,13 +95,13 @@ function VietNhatLogo({ className = '' }: { className?: string }) {
   return (
     <img
       src={vietNhatLogoUrl}
-      alt="Công ty Việt Nhật - Đà Nẵng"
+      alt="Công ty Việt Nhật - Phú Thọ"
       className={`brand-logo h-9 md:h-10 w-auto max-h-full object-contain ${className}`}
     />
   );
 }
 
-const PRINT_COMPANY_NAME = 'CÔNG TY VIỆT NHẬT – ĐÀ NẴNG';
+const PRINT_COMPANY_NAME = 'CÔNG TY VIỆT NHẬT – PHÚ THỌ';
 
 interface HrMember {
   id: string;
@@ -2577,7 +2577,7 @@ const emptyMachineForm = (): MachineFormState => ({
   code: '',
   name: '',
   type: '',
-  branch: 'Đà Nẵng',
+  branch: 'Phú Thọ',
   location: '',
   status: 'Đang dùng',
   note: ''
@@ -5283,7 +5283,7 @@ function WarehouseSlipPanel({
   const [selectedShifts, setSelectedShifts] = useState<string[]>([]);
   const [recipient, setRecipient] = useState('');
   const [deliverer, setDeliverer] = useState('');
-  const [warehouseLocation, setWarehouseLocation] = useState('Đà Nẵng');
+  const [warehouseLocation, setWarehouseLocation] = useState('Phú Thọ');
   const [lines, setLines] = useState<WarehouseSlipLineDraft[]>(() => [createWarehouseLineDraft()]);
   const [itemOptions, setItemOptions] = useState<MaterialOption[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
@@ -5332,7 +5332,7 @@ function WarehouseSlipPanel({
       setSelectedShifts(parseWarehouseShiftSelection(draft.shift));
       setRecipient(draft.recipient || '');
       setDeliverer(draft.deliverer || draft.recipient || '');
-      setWarehouseLocation(draft.warehouseLocation || 'Đà Nẵng');
+      setWarehouseLocation(draft.warehouseLocation || 'Phú Thọ');
       setLines(draft.lines.map(createWarehouseLineDraftFromPrefill));
       const editingCode = String(draft.editSlipCode || '').trim();
       if (editingCode) {
@@ -5704,7 +5704,7 @@ function WarehouseSlipPanel({
                   value={warehouseLocation}
                   onChange={event => setWarehouseLocation(event.target.value)}
                   className={warehouseFieldClass}
-                  placeholder="VD: Đà Nẵng"
+                  placeholder="VD: Phú Thọ"
                 />
               </label>
             </>
@@ -11926,7 +11926,7 @@ function AddProductionOrderModal({
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Nhân sự (chọn nhiều)</span>
             <div className="max-h-40 overflow-y-auto rounded-xl border border-zinc-200 bg-zinc-50 p-2">
               {staffOptions.length === 0 && (
-                <p className="px-2 py-3 text-xs font-semibold text-zinc-400">Chưa có nhân sự Sản xuất · Đà Nẵng.</p>
+                <p className="px-2 py-3 text-xs font-semibold text-zinc-400">Chưa có nhân sự Sản xuất · Phú Thọ.</p>
               )}
               {staffOptions.map(member => {
                 const checked = form.selectedStaffIds.includes(member.id);
@@ -13648,7 +13648,7 @@ function OrdersPanel({ onBack }: { onBack: () => void }) {
                   value={orderForm.staffName}
                   onChange={staffName => setOrderForm(prev => ({ ...prev, staffName }))}
                   options={staffOptions}
-                  placeholder="Chọn nhân viên KD Đà Nẵng"
+                  placeholder="Chọn nhân viên KD Phú Thọ"
                   isLoading={isLoadingLookups}
                   getValue={item => (item as StaffOption).name}
                   getLabel={item => (item as StaffOption).name}
@@ -16110,7 +16110,7 @@ function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
               <p className="text-xs font-black uppercase tracking-wider text-red-300">Quản lý nhân sự</p>
               <h2 className="mt-1 text-2xl font-black leading-tight">Chi nhánh & Phòng ban</h2>
               <p className="mt-2 text-sm font-medium leading-6 text-zinc-300">
-                Phòng ban Sản xuất · Chi nhánh Đà Nẵng.
+                Phòng ban Sản xuất · Chi nhánh Phú Thọ.
               </p>
             </div>
             <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
@@ -16283,7 +16283,7 @@ function emptyStaffForm(defaults?: { branch?: string; department?: string }): St
   return {
     name: '',
     code: '',
-    branch: defaults?.branch || 'Đà Nẵng',
+    branch: defaults?.branch || 'Phú Thọ',
     department: defaults?.department || 'Sản xuất',
     role: 'Nhân sự',
     shift: STANDARD_SHIFTS[0] || 'Ca 1',
@@ -16314,12 +16314,12 @@ function AddStaffModal({
 
   const branchOptions = useMemo(() => {
     const names = branches.map(branch => branch.name).filter(Boolean);
-    return names.length > 0 ? names : ['Đà Nẵng'];
+    return names.length > 0 ? names : ['Phú Thọ'];
   }, [branches]);
 
   useEffect(() => {
     if (!open) return;
-    const branchName = branches.find(branch => branch.id === defaultBranchId)?.name || branchOptions[0] || 'Đà Nẵng';
+    const branchName = branches.find(branch => branch.id === defaultBranchId)?.name || branchOptions[0] || 'Phú Thọ';
     setForm(emptyStaffForm({ branch: branchName, department: defaultDepartment || departmentOptions[0] || 'Sản xuất' }));
     setFormError('');
   }, [open, defaultBranchId, defaultDepartment, branches, branchOptions, departmentOptions]);
@@ -17171,7 +17171,7 @@ export default function App() {
 
         if (res.ok) {
           const newRep = await res.json();
-          addNotification('Lưu báo cáo lên database Đà Nẵng thành công!', 'success');
+          addNotification('Lưu báo cáo lên database Phú Thọ thành công!', 'success');
           // Update local list
           setReports(prev => [newRep, ...prev]);
           // Reset form draft
@@ -17255,7 +17255,7 @@ export default function App() {
         if (res.ok) {
           const resJson = await res.json();
           setReports(resJson.data);
-          addNotification('Khôi phục database mẫu Đà Nẵng thành công!', 'success');
+          addNotification('Khôi phục database mẫu Phú Thọ thành công!', 'success');
         }
       } catch (e) {
         addNotification('Lỗi khi khôi phục database.', 'error');
@@ -17688,7 +17688,7 @@ export default function App() {
                   <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="p-5 bg-white rounded-2xl shadow-xl flex items-center gap-3.5 text-slate-800 font-bold max-w-sm">
                       <Loader2 className="w-6 h-6 text-emerald-600 animate-spin shrink-0" />
-                      <span>Đang mã hóa & đồng bộ dữ liệu Đà Nẵng...</span>
+                      <span>Đang mã hóa & đồng bộ dữ liệu Phú Thọ...</span>
                     </div>
                   </div>
                 )}
