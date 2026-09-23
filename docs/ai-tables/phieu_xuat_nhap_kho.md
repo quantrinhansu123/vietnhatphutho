@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Bảng** | `phieu_xuat_nhap_kho` |
+| **Bảng** | `phieu_xuat_nhap_kho` (bảng cũ — giữ làm fallback; đã tách thành `phieu_nhap_kho` + `phieu_xuat_kho`, xem [phieu_nhap_kho.md](./phieu_nhap_kho.md), [phieu_xuat_kho.md](./phieu_xuat_kho.md)) |
 | **Tab** | `warehouse-slip`, `warehouse-history` |
 | **SQL** | `supabase-phieu-xuat-nhap-kho.sql` (gồm cột `may`, `phan_loai_nvl`, `trong_luong_kg`, `nhom_vthh`) + migrate `supabase-phieu-xuat-nhap-kho-*.sql` (gồm `…-lo-ton.sql`, `…-lenh-sx.sql`, `…-phan-loai-may.sql`, `…-trong-luong-kg.sql`, `…-nhom-vthh.sql`, `…-ton-dau-ca-may.sql`, `…-lich-su.sql`) |
 

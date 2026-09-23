@@ -108,6 +108,13 @@ const SUPABASE_PRODUCTION_PLAN_LINES_TABLE =
 const SUPABASE_PRODUCTION_PLAN_DETAILS_TABLE =
   process.env.SUPABASE_PRODUCTION_PLAN_DETAILS_TABLE || 'ke_hoach_san_xuat_chi_tiet';
 const SUPABASE_WAREHOUSE_MOVEMENTS_TABLE = process.env.SUPABASE_WAREHOUSE_MOVEMENTS_TABLE || 'phieu_xuat_nhap_kho';
+/**
+ * Tach bang: phieu_nhap_kho + phieu_xuat_kho (thay cho 1 bang chung phieu_xuat_nhap_kho).
+ * Bang cu giu lai lam fallback cho DB chua chay migration
+ * (supabase-phieu-nhap-kho.sql + supabase-phieu-xuat-kho.sql + backfill).
+ */
+const SUPABASE_WAREHOUSE_NHAP_TABLE = process.env.SUPABASE_WAREHOUSE_NHAP_TABLE || 'phieu_nhap_kho';
+const SUPABASE_WAREHOUSE_XUAT_TABLE = process.env.SUPABASE_WAREHOUSE_XUAT_TABLE || 'phieu_xuat_kho';
 const SUPABASE_WAREHOUSE_LENH_SX_LINKS_TABLE =
   process.env.SUPABASE_WAREHOUSE_LENH_SX_LINKS_TABLE || 'phieu_xuat_nhap_kho_lenh_sx';
 const SUPABASE_WAREHOUSE_HISTORY_TABLE =
@@ -235,6 +242,8 @@ if (useSupabase) {
     productionPlans: SUPABASE_PRODUCTION_PLANS_TABLE,
     productionPlanLines: SUPABASE_PRODUCTION_PLAN_LINES_TABLE,
     warehouseMovements: SUPABASE_WAREHOUSE_MOVEMENTS_TABLE,
+    warehouseNhap: SUPABASE_WAREHOUSE_NHAP_TABLE,
+    warehouseXuat: SUPABASE_WAREHOUSE_XUAT_TABLE,
     mixingReports: SUPABASE_MIXING_REPORTS_TABLE,
     mixingNormMaterials: SUPABASE_MIXING_NORM_TABLE,
     acceptanceReports: SUPABASE_ACCEPTANCE_REPORTS_TABLE,
@@ -1921,6 +1930,112 @@ function isMissingTableError(error: { code?: string; message?: string } | null) 
   if (!error) return false;
   if (error.code === 'PGRST205') return true;
   return /could not find the table/i.test(error.message || '');
+}
+
+/**
+ * ---- Tach bang phieu nhap/xuat (phieu_nhap_kho + phieu_xuat_kho) ----
+ * Bang cu phieu_xuat_nhap_kho giu lai lam fallback cho DB chua chay migration.
+ * Backfill giu NGUYEN id nen doc gop dedupe theo id se khong dem trung.
+ */
+const warehouseSplitTableExistsCache = new Map<string, boolean>();
+
+async function warehouseSplitTableExists(table: string): Promise<boolean> {
+  if (!supabase) return false;
+  const cached = warehouseSplitTableExistsCache.get(table);
+  if (cached !== undefined) return cached;
+  const { error } = await supabase.from(table).select('id').limit(1);
+  const exists = !error || !isMissingTableError(error);
+  warehouseSplitTableExistsCache.set(table, exists);
+  return exists;
+}
+
+/** Bang ghi theo loai phieu: nhap -> phieu_nhap_kho, xuat -> phieu_xuat_kho. */
+function warehouseTableForSlipType(loaiPhieu: 'nhap' | 'xuat'): string {
+  return loaiPhieu === 'nhap' ? SUPABASE_WAREHOUSE_NHAP_TABLE : SUPABASE_WAREHOUSE_XUAT_TABLE;
+}
+
+/** Bang ghi thuc te: uu tien bang moi, fallback bang cu khi DB chua migrate. */
+async function resolveWarehouseWriteTable(loaiPhieu: 'nhap' | 'xuat'): Promise<string> {
+  const table = warehouseTableForSlipType(loaiPhieu);
+  if (await warehouseSplitTableExists(table)) return table;
+  return SUPABASE_WAREHOUSE_MOVEMENTS_TABLE;
+}
+
+/**
+ * Cac bang can doc theo filter loai: co loai -> [bang moi] (+ bang cu de hung du lieu
+ * chua backfill); khong loc loai -> [nhap, xuat] (+ bang cu). Chi gom bang da ton tai.
+ */
+async function resolveWarehouseReadTables(loaiFilter: 'nhap' | 'xuat' | null): Promise<string[]> {
+  const tables: string[] = [];
+  const pushIfExists = async (table: string) => {
+    if (await warehouseSplitTableExists(table)) tables.push(table);
+  };
+  if (loaiFilter === 'nhap') {
+    await pushIfExists(SUPABASE_WAREHOUSE_NHAP_TABLE);
+  } else if (loaiFilter === 'xuat') {
+    await pushIfExists(SUPABASE_WAREHOUSE_XUAT_TABLE);
+  } else {
+    await pushIfExists(SUPABASE_WAREHOUSE_NHAP_TABLE);
+    await pushIfExists(SUPABASE_WAREHOUSE_XUAT_TABLE);
+  }
+  // Luon doc them bang cu (dedupe theo id o duoi) de khong mat du lieu
+  // trong cua so chua chay backfill; sau backfill cac id da ton tai o bang moi
+  // nen khong bi dem trung.
+  tables.push(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE);
+  return tables;
+}
+
+/** Gop nhieu list dong phieu, dedupe theo id (backfill giu nguyen id). */
+function mergeWarehouseMovementRows(...lists: Array<any[] | null | undefined>): any[] {
+  const seen = new Set<string>();
+  const out: any[] = [];
+  const keyOf = (row: any) => {
+    const id = String(row?.id ?? '').trim();
+    if (id) return `id:${id}`;
+    return `noid:${String(row?.ma_phieu ?? '')}||${String(row?.ma_npl ?? '')}||${String(row?.ma_sp ?? '')}||${String(row?.so_luong ?? '')}||${String(row?.ngay_phieu ?? '')}||${String(row?.don_vi ?? '')}`;
+  };
+  for (const list of lists) {
+    for (const row of list || []) {
+      if (!row || typeof row !== 'object') continue;
+      const key = keyOf(row);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(row);
+    }
+  }
+  return out;
+}
+
+/** Loai phieu cua 1 dong: uu tien cot loai_phieu, fallback theo bang nguon. */
+function warehouseSlipTypeOfRow(row: any, sourceTable?: string): 'nhap' | 'xuat' {
+  const raw = String(row?.loai_phieu ?? '').trim().toLowerCase();
+  if (raw === 'xuat') return 'xuat';
+  if (raw === 'nhap') return 'nhap';
+  if (sourceTable === SUPABASE_WAREHOUSE_XUAT_TABLE) return 'xuat';
+  if (sourceTable === SUPABASE_WAREHOUSE_NHAP_TABLE) return 'nhap';
+  return 'nhap';
+}
+
+/**
+ * Chay cung 1 query tren cac bang tach (nhap/xuat theo filter + bang cu fallback),
+ * gop + dedupe theo id. Bang moi giu cot loai_phieu (CHECK dung loai) nen filter
+ * loai_phieu cu van chay dung tren ca 3 bang.
+ */
+async function queryWarehouseSplitRows<T = any>(
+  loaiFilter: 'nhap' | 'xuat' | null,
+  runOnTable: (table: string) => PromiseLike<{ data: T[] | null; error: any }>
+): Promise<{ data: T[]; error: any | null }> {
+  const tables = await resolveWarehouseReadTables(loaiFilter);
+  const lists: T[][] = [];
+  for (const table of tables) {
+    const { data, error } = await runOnTable(table);
+    if (error) {
+      if (isMissingTableError(error)) continue;
+      return { data: mergeWarehouseMovementRows(...lists) as T[], error };
+    }
+    lists.push((data || []) as T[]);
+  }
+  return { data: mergeWarehouseMovementRows(...lists) as T[], error: null };
 }
 
 type SupabaseDbRef = { client: SupabaseClient; label: string };
@@ -4701,14 +4816,16 @@ async function buildNvlInboundAvgPriceForMonth(
     return { don_gia: 0, thang: range.thang, so_dong: 0, tong_sl: 0, price_source: 'none' };
   }
 
-  const { data, error } = await supabase
-    .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-    .select('don_gia, so_luong, ngay_phieu, loai_phieu, loai_kho, ma_npl')
-    .ilike('ma_npl', code)
-    .eq('loai_phieu', 'nhap')
-    .or('loai_kho.eq.nvl,loai_kho.is.null')
-    .gte('ngay_phieu', range.from)
-    .lte('ngay_phieu', range.to);
+  const { data, error } = await queryWarehouseSplitRows('nhap', table =>
+    supabase
+      .from(table)
+      .select('don_gia, so_luong, ngay_phieu, loai_phieu, loai_kho, ma_npl')
+      .ilike('ma_npl', code)
+      .eq('loai_phieu', 'nhap')
+      .or('loai_kho.eq.nvl,loai_kho.is.null')
+      .gte('ngay_phieu', range.from)
+      .lte('ngay_phieu', range.to)
+  );
 
   if (error) {
     console.error('Supabase gia-tb-nhap query error:', error);
@@ -4726,12 +4843,14 @@ async function buildNvlInboundAvgPriceForMonth(
   let priceSource: 'month' | 'all' | 'none' = agg.don_gia > 0 ? 'month' : 'none';
 
   if (agg.don_gia <= 0) {
-    const { data: allData, error: allError } = await supabase
-      .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-      .select('don_gia, so_luong, ngay_phieu, loai_phieu, loai_kho, ma_npl')
-      .ilike('ma_npl', code)
-      .eq('loai_phieu', 'nhap')
-      .or('loai_kho.eq.nvl,loai_kho.is.null');
+    const { data: allData, error: allError } = await queryWarehouseSplitRows('nhap', table =>
+      supabase
+        .from(table)
+        .select('don_gia, so_luong, ngay_phieu, loai_phieu, loai_kho, ma_npl')
+        .ilike('ma_npl', code)
+        .eq('loai_phieu', 'nhap')
+        .or('loai_kho.eq.nvl,loai_kho.is.null')
+    );
 
     if (allError) {
       console.error('Supabase gia-tb-nhap fallback query error:', allError);
@@ -4758,27 +4877,31 @@ async function buildNvlInboundLots(
   const code = String(maNpl || '').trim();
   if (!code) return { lots: [] };
 
-  const { data: inboundRows, error: inboundError } = await supabase
-    .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-    .select('id, ma_phieu, ngay_phieu, ma_npl, ten_npl, don_vi, don_gia, so_luong, loai_phieu, loai_kho')
-    .eq('ma_npl', code)
-    .eq('loai_phieu', 'nhap')
-    .or('loai_kho.eq.nvl,loai_kho.is.null')
-    .order('ngay_phieu', { ascending: true })
-    .order('created_at', { ascending: true });
+  const { data: inboundRows, error: inboundError } = await queryWarehouseSplitRows('nhap', table =>
+    supabase
+      .from(table)
+      .select('id, ma_phieu, ngay_phieu, ma_npl, ten_npl, don_vi, don_gia, so_luong, loai_phieu, loai_kho')
+      .eq('ma_npl', code)
+      .eq('loai_phieu', 'nhap')
+      .or('loai_kho.eq.nvl,loai_kho.is.null')
+      .order('ngay_phieu', { ascending: true })
+      .order('created_at', { ascending: true })
+  );
 
   if (inboundError) {
     console.error('Supabase lo-ton inbound query error:', inboundError);
     return { error: `Không thể tải lô nhập. ${inboundError.message}`, lots: [] };
   }
 
-  const { data: outboundRows, error: outboundError } = await supabase
-    .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-    .select('id, ma_phieu, so_luong, id_dong_nhap_nguon, loai_phieu, loai_kho')
-    .eq('ma_npl', code)
-    .eq('loai_phieu', 'xuat')
-    .or('loai_kho.eq.nvl,loai_kho.is.null')
-    .not('id_dong_nhap_nguon', 'is', null);
+  const { data: outboundRows, error: outboundError } = await queryWarehouseSplitRows('xuat', table =>
+    supabase
+      .from(table)
+      .select('id, ma_phieu, so_luong, id_dong_nhap_nguon, loai_phieu, loai_kho')
+      .eq('ma_npl', code)
+      .eq('loai_phieu', 'xuat')
+      .or('loai_kho.eq.nvl,loai_kho.is.null')
+      .not('id_dong_nhap_nguon', 'is', null)
+  );
 
   if (outboundError) {
     if (isMissingColumnError(outboundError)) {
@@ -5389,10 +5512,12 @@ async function buildMaterialMovementTotals(): Promise<Map<string, { nhap: number
   const totals = new Map<string, { nhap: number; xuat: number }>();
   if (!supabase) return totals;
 
-  const { data, error } = await supabase
-    .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-    .select('ma_npl, loai_phieu, so_luong')
-    .or('loai_kho.eq.nvl,loai_kho.is.null');
+  const { data, error } = await queryWarehouseSplitRows(null, table =>
+    supabase
+      .from(table)
+      .select('ma_npl, loai_phieu, so_luong')
+      .or('loai_kho.eq.nvl,loai_kho.is.null')
+  );
 
   if (error) {
     console.error('Supabase material movement totals error:', error);
@@ -5432,12 +5557,16 @@ function applyMaterialMovementTotals<T extends Record<string, unknown>>(
   });
 }
 
-function warehouseSlipWriteErrorMessage(error: { code?: string; message?: string; details?: string }) {
+function warehouseSlipWriteErrorMessage(
+  error: { code?: string; message?: string; details?: string },
+  table?: string
+) {
+  const target = table || SUPABASE_WAREHOUSE_MOVEMENTS_TABLE;
   if (isMissingTableError(error)) {
-    return `Bảng ${SUPABASE_WAREHOUSE_MOVEMENTS_TABLE} chưa tồn tại trên Supabase. Hãy chạy supabase-phieu-xuat-nhap-kho.sql.`;
+    return `Bảng ${target} chưa tồn tại trên Supabase. Hãy chạy supabase-phieu-nhap-kho.sql + supabase-phieu-xuat-kho.sql (hoặc supabase-phieu-xuat-nhap-kho.sql cho DB cũ).`;
   }
   if (isMissingColumnError(error)) {
-    return `Bảng ${SUPABASE_WAREHOUSE_MOVEMENTS_TABLE} đang thiếu cột (${error.message}).`;
+    return `Bảng ${target} đang thiếu cột (${error.message}).`;
   }
   if (String(error.message || '').includes('invalid input syntax for type integer')) {
     return 'Không thể lưu phiếu xuất nhập kho: cột số lượng trên Supabase đang là kiểu integer (chỉ nhận số nguyên). Hãy chạy file supabase-phieu-xuat-nhap-kho-so-luong-numeric.sql trong Supabase SQL Editor, hoặc đặt SUPABASE_DB_PASSWORD trong .env rồi chạy npm run migrate:warehouse-numeric.';
@@ -5463,6 +5592,7 @@ const WAREHOUSE_SLIP_MODULE1_COLUMNS = [
 const WAREHOUSE_SLIP_THANH_PHAM_COLUMNS = ['so_m2', 'so_m_dai', 'dia_chi', 'so_tron_ids'];
 
 async function insertWarehouseSlipRecordsResilient(
+  table: string,
   records: Record<string, unknown>[]
 ): Promise<{ data: any[] | null; error: { code?: string; message?: string; details?: string } | null }> {
   if (!supabase) {
@@ -5471,7 +5601,7 @@ async function insertWarehouseSlipRecordsResilient(
   let attempt = records;
   for (let round = 0; round < 3; round += 1) {
     const { data, error } = await supabase
-      .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
+      .from(table)
       .insert(attempt)
       .select('*');
     if (!error) return { data: (data as any[]) || [], error: null };
@@ -5483,7 +5613,7 @@ async function insertWarehouseSlipRecordsResilient(
         ? WAREHOUSE_SLIP_THANH_PHAM_COLUMNS
         : WAREHOUSE_SLIP_MODULE1_COLUMNS;
       console.warn(
-        `Bảng ${SUPABASE_WAREHOUSE_MOVEMENTS_TABLE} thiếu cột (${error.message}). Strip ${stripCols.join(', ')} rồi thử lại.`
+        `Bảng ${table} thiếu cột (${error.message}). Strip ${stripCols.join(', ')} rồi thử lại.`
       );
       attempt = attempt.map(row => {
         const clone: Record<string, unknown> = { ...row };
@@ -5495,6 +5625,62 @@ async function insertWarehouseSlipRecordsResilient(
     return { data: null, error };
   }
   return { data: null, error: { message: 'Không thể lưu phiếu xuất nhập kho.' } };
+}
+
+/**
+ * Liet ke toan bo dong cua 1 phieu tren TAT CA bang (moi + cu), dedupe theo id.
+ * Dung cho PUT/DELETE de snapshot + tinh ma NVL bi anh huong day du.
+ */
+async function listWarehouseSlipRowsEverywhere(slipCode: string, selectCols = '*'): Promise<any[]> {
+  if (!supabase || !slipCode) return [];
+  const tables = [
+    SUPABASE_WAREHOUSE_NHAP_TABLE,
+    SUPABASE_WAREHOUSE_XUAT_TABLE,
+    SUPABASE_WAREHOUSE_MOVEMENTS_TABLE
+  ];
+  const lists: any[][] = [];
+  for (const table of tables) {
+    if (table !== SUPABASE_WAREHOUSE_MOVEMENTS_TABLE && !(await warehouseSplitTableExists(table))) {
+      continue;
+    }
+    const { data, error } = await supabase.from(table).select(selectCols).eq('ma_phieu', slipCode);
+    if (error) {
+      if (isMissingTableError(error)) continue;
+      console.error(`Supabase ${table} list slip error:`, error);
+      continue;
+    }
+    lists.push((data || []) as any[]);
+  }
+  return mergeWarehouseMovementRows(...lists);
+}
+
+/**
+ * Xoa phieu khoi TAT CA bang chua no (moi + cu). Can thiet vi backfill giu nguyen
+ * ma_phieu o ca 2 noi: PUT (delete+insert sinh id moi) phai don ca ban legacy,
+ * neu khong doc gop se hien 2 ban (id khac nhau).
+ */
+async function deleteWarehouseSlipEverywhere(
+  slipCode: string
+): Promise<{ tables: string[]; error?: { message?: string } }> {
+  const touched: string[] = [];
+  if (!supabase) return { tables: touched };
+  const tables = [
+    SUPABASE_WAREHOUSE_NHAP_TABLE,
+    SUPABASE_WAREHOUSE_XUAT_TABLE,
+    SUPABASE_WAREHOUSE_MOVEMENTS_TABLE
+  ];
+  for (const table of tables) {
+    if (table !== SUPABASE_WAREHOUSE_MOVEMENTS_TABLE && !(await warehouseSplitTableExists(table))) {
+      continue;
+    }
+    const { data, error } = await supabase.from(table).delete().eq('ma_phieu', slipCode).select('id');
+    if (error) {
+      if (isMissingTableError(error)) continue;
+      return { tables: touched, error: { message: error.message } };
+    }
+    if (Array.isArray(data) && data.length > 0) touched.push(table);
+  }
+  return { tables: touched };
 }
 
 /**
@@ -5659,9 +5845,10 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
     'ma_sp, ten_sp, don_vi, nhom_vthh, ten_kho, loai_phieu, ngay_phieu, so_luong, trong_luong_kg';
 
   // Phiếu NX: không .eq ten_kho (phiếu thường để trống ten_kho) — khớp tồn theo mã + tên.
-  const buildQuery = (selectCols: string) => {
+  // Doc gop bang tach (nhap + xuat) + bang cu fallback, dedupe theo id.
+  const buildQueryOnTable = (table: string, selectCols: string) => {
     let query = supabase
-      .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
+      .from(table)
       .select(selectCols)
       .eq('loai_kho', 'san_pham')
       .order('ngay_phieu', { ascending: true })
@@ -5670,14 +5857,30 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
     return query;
   };
 
-  let { data: movements, error: movementError } = await buildQuery(selectFull);
-  if (movementError && isMissingColumnError(movementError)) {
-    console.warn(
-      `[nhap-kho] thiếu cột thành phẩm (${movementError.message}) — fallback không so_m2/so_m_dai. Chạy supabase-phieu-xuat-nhap-kho-thanh-pham.sql.`
-    );
-    const fallback = await buildQuery(selectCompat);
-    movements = fallback.data;
-    movementError = fallback.error;
+  let movements: any[] = [];
+  let movementError: any = null;
+  for (const slipTable of await resolveWarehouseReadTables(null)) {
+    let tableRows: any[] = [];
+    const full = await buildQueryOnTable(slipTable, selectFull);
+    if (full.error && isMissingTableError(full.error)) continue;
+    if (full.error && isMissingColumnError(full.error)) {
+      console.warn(
+        `[nhap-kho] ${slipTable} thiếu cột thành phẩm (${full.error.message}) — fallback không so_m2/so_m_dai.`
+      );
+      const fallback = await buildQueryOnTable(slipTable, selectCompat);
+      if (fallback.error) {
+        if (isMissingTableError(fallback.error)) continue;
+        movementError = fallback.error;
+        break;
+      }
+      tableRows = (fallback.data || []) as any[];
+    } else if (full.error) {
+      movementError = full.error;
+      break;
+    } else {
+      tableRows = (full.data || []) as any[];
+    }
+    movements = mergeWarehouseMovementRows(movements, tableRows);
   }
   if (movementError) {
     return {
@@ -8262,34 +8465,48 @@ export function createApp() {
       const codeKeys = new Set(codes.map(code => normalizeKiemKhoMaGoc(code)).filter(Boolean));
       const tenKho = String(product.ten_kho ?? '').trim();
 
-      let query = supabase
-        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-        .select('*')
-        .eq('loai_phieu', loai)
-        .eq('loai_kho', 'san_pham')
-        .order('ngay_phieu', { ascending: false })
-        .order('created_at', { ascending: false })
-        .limit(5000);
+      // Doc gop bang tach (nhap/xuat theo ?loai) + bang cu fallback, dedupe theo id.
+      const slipTables = await resolveWarehouseReadTables(loai);
+      const slipLists: any[][] = [];
+      let slipError: any = null;
+      for (const slipTable of slipTables) {
+        let query = supabase
+          .from(slipTable)
+          .select('*')
+          .eq('loai_phieu', loai)
+          .eq('loai_kho', 'san_pham')
+          .order('ngay_phieu', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(5000);
 
-      if (tenKho) {
-        query = query.eq('ten_kho', tenKho);
+        if (tenKho) {
+          query = query.eq('ten_kho', tenKho);
+        }
+
+        // Lọc gần đúng theo tiền tố mã để giảm payload; khớp chính xác ở JS.
+        const orParts = codes.flatMap(code => {
+          const escaped = code.replace(/[,%()]/g, '').replace(/"/g, '');
+          if (!escaped) return [];
+          return [`ma_sp.eq."${escaped}"`, `ma_sp.ilike."${escaped}%"`];
+        });
+        if (orParts.length > 0) {
+          query = query.or(orParts.join(','));
+        }
+
+        const { data, error } = await query;
+        if (error) {
+          if (isMissingTableError(error)) continue;
+          slipError = error;
+          break;
+        }
+        slipLists.push((data || []) as any[]);
       }
 
-      // Lọc gần đúng theo tiền tố mã để giảm payload; khớp chính xác ở JS.
-      const orParts = codes.flatMap(code => {
-        const escaped = code.replace(/[,%()]/g, '').replace(/"/g, '');
-        if (!escaped) return [];
-        return [`ma_sp.eq."${escaped}"`, `ma_sp.ilike."${escaped}%"`];
-      });
-      if (orParts.length > 0) {
-        query = query.or(orParts.join(','));
-      }
-
-      const { data, error } = await query;
+      const { data, error } = { data: mergeWarehouseMovementRows(...slipLists), error: slipError };
       if (error) {
         console.error('Supabase san-pham phieu-kho query error:', error);
         return res.status(500).json({
-          error: `Không thể tải phiếu kho từ ${SUPABASE_WAREHOUSE_MOVEMENTS_TABLE}. ${error.message}`
+          error: `Không thể tải phiếu kho từ phieu_nhap_kho/phieu_xuat_kho. ${error.message}`
         });
       }
 
@@ -11179,7 +11396,7 @@ export function createApp() {
     }
   });
 
-  app.get('/api/phieu-xuat-nhap-kho/gia-tb-nhap', async (req, res) => {
+  app.get(['/api/phieu-xuat-nhap-kho/gia-tb-nhap', '/api/phieu-nhap-kho/gia-tb-nhap', '/api/phieu-xuat-kho/gia-tb-nhap'], async (req, res) => {
     if (!supabase) {
       return res.json({ don_gia: 0, thang: '', so_dong: 0, tong_sl: 0, source: 'local' });
     }
@@ -11211,7 +11428,7 @@ export function createApp() {
     }
   });
 
-  app.get('/api/phieu-xuat-nhap-kho/lo-ton', async (req, res) => {
+  app.get(['/api/phieu-xuat-nhap-kho/lo-ton', '/api/phieu-nhap-kho/lo-ton', '/api/phieu-xuat-kho/lo-ton'], async (req, res) => {
     if (!supabase) {
       return res.json({ lots: [], total: 0, source: 'local' });
     }
@@ -11240,7 +11457,7 @@ export function createApp() {
     }
   });
 
-  app.get(['/api/phieu-xuat-nhap-kho/dinh-muc-da-xuat', '/api/phieu-xuat-nhap-kho/lenh-sx-da-xuat'], async (req, res) => {
+  app.get(['/api/phieu-xuat-nhap-kho/dinh-muc-da-xuat', '/api/phieu-xuat-nhap-kho/lenh-sx-da-xuat', '/api/phieu-xuat-kho/dinh-muc-da-xuat', '/api/phieu-xuat-kho/lenh-sx-da-xuat'], async (req, res) => {
     if (!supabase) {
       return res.json({ items: [], total: 0, source: 'local' });
     }
@@ -11303,7 +11520,7 @@ export function createApp() {
     }
   });
 
-  app.get('/api/phieu-xuat-nhap-kho/:slipCode/lich-su', async (req, res) => {
+  app.get(['/api/phieu-xuat-nhap-kho/:slipCode/lich-su', '/api/phieu-nhap-kho/:slipCode/lich-su', '/api/phieu-xuat-kho/:slipCode/lich-su'], async (req, res) => {
     if (!supabase) {
       return res.json({ history: [], total: 0, source: 'local' });
     }
@@ -11340,13 +11557,18 @@ export function createApp() {
     }
   });
 
-  app.get('/api/phieu-xuat-nhap-kho', async (req, res) => {
+  /**
+   * Danh sach phieu kho (facade gop 2 bang tach + bang cu).
+   * forcedLoPhieu: null = giu filter ?loai (endpoint cu), 'nhap'/'xuat' = endpoint moi.
+   */
+  async function handleWarehouseList(req: any, res: any, forcedLoPhieu: 'nhap' | 'xuat' | null) {
     if (!supabase) {
       return res.json({ movements: [], total: 0, source: 'local' });
     }
 
     try {
-      const loaiFilter = parseWarehouseSlipType(req.query.loai ?? req.query.type ?? req.query.loai_phieu);
+      const queryLoai = parseWarehouseSlipType(req.query.loai ?? req.query.type ?? req.query.loai_phieu);
+      const loaiFilter = forcedLoPhieu || queryLoai;
       const khoFilter = parseWarehouseStorageType(req.query.loai_kho ?? req.query.kho ?? req.query.warehouseKind);
       const fromDate = parseWarehouseSlipDate(req.query.from ?? req.query.tu_ngay ?? req.query.ngay ?? req.query.ngay_phieu);
       const toDate = parseWarehouseSlipDate(req.query.to ?? req.query.den_ngay ?? req.query.ngay ?? req.query.ngay_phieu);
@@ -11354,44 +11576,65 @@ export function createApp() {
       const maNpl = String(req.query.ma_npl ?? req.query.materialCode ?? '').trim();
       const maSp = String(req.query.ma_sp ?? req.query.productCode ?? '').trim();
 
-      let query = supabase
-        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-        .select('*')
-        .order('ngay_phieu', { ascending: false })
-        .order('created_at', { ascending: false });
+      const tables = await resolveWarehouseReadTables(loaiFilter);
+      const lists: any[][] = [];
+      for (const table of tables) {
+        let query = supabase
+          .from(table)
+          .select('*')
+          .order('ngay_phieu', { ascending: false })
+          .order('created_at', { ascending: false });
 
-      if (loaiFilter) query = query.eq('loai_phieu', loaiFilter);
-      if (khoFilter === 'san_pham') {
-        query = query.eq('loai_kho', 'san_pham');
-      } else if (khoFilter === 'nvl') {
-        query = query.or('loai_kho.eq.nvl,loai_kho.is.null');
+        if (loaiFilter) query = query.eq('loai_phieu', loaiFilter);
+        if (khoFilter === 'san_pham') {
+          query = query.eq('loai_kho', 'san_pham');
+        } else if (khoFilter === 'nvl') {
+          query = query.or('loai_kho.eq.nvl,loai_kho.is.null');
+        }
+        if (fromDate) query = query.gte('ngay_phieu', fromDate);
+        if (toDate) query = query.lte('ngay_phieu', toDate);
+        if (slipCode) query = query.eq('ma_phieu', slipCode);
+        if (maNpl) query = query.eq('ma_npl', maNpl);
+        if (maSp) query = query.eq('ma_sp', maSp);
+
+        const { data, error } = await query;
+        if (error) {
+          if (isMissingTableError(error)) continue;
+          console.error(`Supabase ${table} query error:`, error);
+          return res.status(500).json({
+            error: `Không thể tải lịch sử xuất nhập kho từ ${table}. ${error.message}`
+          });
+        }
+        lists.push((data || []) as any[]);
       }
-      if (fromDate) query = query.gte('ngay_phieu', fromDate);
-      if (toDate) query = query.lte('ngay_phieu', toDate);
-      if (slipCode) query = query.eq('ma_phieu', slipCode);
-      if (maNpl) query = query.eq('ma_npl', maNpl);
-      if (maSp) query = query.eq('ma_sp', maSp);
 
-      const { data, error } = await query;
-
-      if (error) {
-        console.error('Supabase phieu_xuat_nhap_kho query error:', error);
-        return res.status(500).json({
-          error: `Không thể tải lịch sử xuất nhập kho từ ${SUPABASE_WAREHOUSE_MOVEMENTS_TABLE}. ${error.message}`
-        });
-      }
+      const merged = mergeWarehouseMovementRows(...lists);
+      merged.sort((a, b) => {
+        const dateCmp = String(b?.ngay_phieu ?? '').localeCompare(String(a?.ngay_phieu ?? ''));
+        if (dateCmp !== 0) return dateCmp;
+        return String(b?.created_at ?? '').localeCompare(String(a?.created_at ?? ''));
+      });
 
       return res.json({
-        movements: data || [],
-        total: data?.length || 0,
+        movements: merged,
+        total: merged.length,
         source: 'supabase'
       });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi tải lịch sử xuất nhập kho.' });
     }
-  });
+  }
 
-  app.post('/api/phieu-xuat-nhap-kho', async (req, res) => {
+  app.get('/api/phieu-xuat-nhap-kho', async (req, res) => handleWarehouseList(req, res, null));
+  app.get('/api/phieu-nhap-kho', async (req, res) => handleWarehouseList(req, res, 'nhap'));
+  app.get('/api/phieu-xuat-kho', async (req, res) => handleWarehouseList(req, res, 'xuat'));
+
+  /**
+   * Tao phieu kho (ghi dung bang tach theo loai).
+   * forcedLoPhieu: null = lay theo body (endpoint cu), 'nhap'/'xuat' = endpoint moi
+   * (body gui loai khac se bi 400 — cam doi loai phieu).
+   */
+  async function handleWarehouseCreate(req: any, res: any, forcedLoPhieu: 'nhap' | 'xuat' | null) {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     }
@@ -11400,6 +11643,13 @@ export function createApp() {
       const parsed = parseWarehouseSlipBody(req.body);
       if ('error' in parsed) {
         return res.status(400).json({ error: parsed.error });
+      }
+      if (forcedLoPhieu && parsed.loaiPhieu !== forcedLoPhieu) {
+        return res.status(400).json({
+          error: forcedLoPhieu === 'nhap'
+            ? 'Endpoint phiếu nhập chỉ tạo được phiếu nhập.'
+            : 'Endpoint phiếu xuất chỉ tạo được phiếu xuất.'
+        });
       }
 
       if (parsed.loaiPhieu === 'xuat' && parsed.loaiKho === 'nvl') {
@@ -11411,12 +11661,13 @@ export function createApp() {
 
       const maPhieu = generateWarehouseSlipCode(parsed.loaiPhieu);
       const records = buildWarehouseSlipInsertRecords(parsed, maPhieu);
+      const writeTable = await resolveWarehouseWriteTable(parsed.loaiPhieu);
 
-      const { data, error } = await insertWarehouseSlipRecordsResilient(records);
+      const { data, error } = await insertWarehouseSlipRecordsResilient(writeTable, records);
 
       if (error) {
-        console.error('Supabase phieu_xuat_nhap_kho insert error:', error);
-        return res.status(500).json({ error: warehouseSlipWriteErrorMessage(error) });
+        console.error(`Supabase ${writeTable} insert error:`, error);
+        return res.status(500).json({ error: warehouseSlipWriteErrorMessage(error, writeTable) });
       }
 
       if (parsed.loaiKho === 'nvl') {
@@ -11450,7 +11701,11 @@ export function createApp() {
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi tạo phiếu xuất nhập kho.' });
     }
-  });
+  }
+
+  app.post('/api/phieu-xuat-nhap-kho', async (req, res) => handleWarehouseCreate(req, res, null));
+  app.post('/api/phieu-nhap-kho', async (req, res) => handleWarehouseCreate(req, res, 'nhap'));
+  app.post('/api/phieu-xuat-kho', async (req, res) => handleWarehouseCreate(req, res, 'xuat'));
 
   app.post('/api/phieu-xuat-nhap-kho/remap-shift', async (req, res) => {
     if (!supabase) {
@@ -11468,22 +11723,32 @@ export function createApp() {
         return res.status(400).json({ error: 'Ca nguồn và ca đích phải khác nhau.' });
       }
 
-      const { data, error } = await supabase
-        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-        .update({ ca: toShift })
-        .eq('ca', fromShift)
-        .select('id');
+      const tables = await resolveWarehouseReadTables(null);
+      const updatedIds = new Set<string>();
+      for (const table of tables) {
+        const { data, error } = await supabase
+          .from(table)
+          .update({ ca: toShift })
+          .eq('ca', fromShift)
+          .select('id');
 
-      if (error) {
-        console.error('Supabase phieu_xuat_nhap_kho remap-shift error:', error);
-        return res.status(500).json({ error: warehouseSlipWriteErrorMessage(error) });
+        if (error) {
+          if (isMissingTableError(error)) continue;
+          console.error(`Supabase ${table} remap-shift error:`, error);
+          return res.status(500).json({ error: warehouseSlipWriteErrorMessage(error, table) });
+        }
+        // Dedupe id vi backfill giu nguyen id o ca bang moi + cu.
+        for (const row of (data || []) as any[]) {
+          const id = String((row as any)?.id ?? '').trim();
+          if (id) updatedIds.add(id);
+        }
       }
 
       return res.json({
         success: true,
         from: fromShift,
         to: toShift,
-        updated: Array.isArray(data) ? data.length : 0,
+        updated: updatedIds.size,
         mode: 'supabase'
       });
     } catch (err: any) {
@@ -11491,7 +11756,12 @@ export function createApp() {
     }
   });
 
-  app.put('/api/phieu-xuat-nhap-kho/:slipCode', async (req, res) => {
+  /**
+   * Cap nhat phieu (delete + insert, cam doi loai phieu).
+   * forcedLoPhieu: null = endpoint cu (loai theo body phai khop phieu cu),
+   * 'nhap'/'xuat' = endpoint moi.
+   */
+  async function handleWarehouseUpdate(req: any, res: any, forcedLoPhieu: 'nhap' | 'xuat' | null) {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     }
@@ -11506,6 +11776,9 @@ export function createApp() {
       if ('error' in parsed) {
         return res.status(400).json({ error: parsed.error });
       }
+      if (forcedLoPhieu && parsed.loaiPhieu !== forcedLoPhieu) {
+        return res.status(400).json({ error: 'Không được đổi phiếu nhập thành phiếu xuất (và ngược lại).' });
+      }
 
       if (parsed.loaiPhieu === 'xuat' && parsed.loaiKho === 'nvl') {
         const lotError = await validateNvlExportLots(parsed.items, slipCode);
@@ -11514,20 +11787,17 @@ export function createApp() {
         }
       }
 
-      const { data: existing, error: fetchError } = await supabase
-        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-        .select('*')
-        .eq('ma_phieu', slipCode);
-
-      if (fetchError) {
-        console.error('Supabase phieu_xuat_nhap_kho fetch for update error:', fetchError);
-        return res.status(500).json({
-          error: `Không thể tải phiếu cần cập nhật từ ${SUPABASE_WAREHOUSE_MOVEMENTS_TABLE}. ${fetchError.message}`
-        });
-      }
+      // Doc phieu cu tren TAT CA bang (moi + cu) de snapshot + doi chieu loai.
+      const existing = await listWarehouseSlipRowsEverywhere(slipCode);
 
       if (!existing || existing.length === 0) {
         return res.status(404).json({ error: 'Không tìm thấy phiếu cần cập nhật.' });
+      }
+
+      // Cam doi loai phieu khi sua: loai body phai khop loai phieu cu.
+      const oldTypes = new Set(existing.map(row => warehouseSlipTypeOfRow(row)));
+      if (oldTypes.size > 1 || !oldTypes.has(parsed.loaiPhieu)) {
+        return res.status(400).json({ error: 'Không được đổi phiếu nhập thành phiếu xuất (và ngược lại).' });
       }
 
       // Snapshot toàn bộ dòng cũ để lưu lịch sử sửa (chỉ áp dụng phiếu xuất kho NVL).
@@ -11547,23 +11817,22 @@ export function createApp() {
         });
       }
 
-      const { error: deleteError } = await supabase
-        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-        .delete()
-        .eq('ma_phieu', slipCode);
+      // Xoa phieu cu khoi TAT CA bang (don ca ban legacy trung ma_phieu sau backfill).
+      const { error: deleteError } = await deleteWarehouseSlipEverywhere(slipCode);
 
       if (deleteError) {
-        console.error('Supabase phieu_xuat_nhap_kho delete for update error:', deleteError);
+        console.error('Supabase warehouse delete for update error:', deleteError);
         return res.status(500).json({ error: `Không thể xóa dữ liệu phiếu cũ. ${deleteError.message}` });
       }
 
       const records = buildWarehouseSlipInsertRecords(parsed, slipCode);
+      const writeTable = await resolveWarehouseWriteTable(parsed.loaiPhieu);
 
-      const { data, error } = await insertWarehouseSlipRecordsResilient(records);
+      const { data, error } = await insertWarehouseSlipRecordsResilient(writeTable, records);
 
       if (error) {
-        console.error('Supabase phieu_xuat_nhap_kho update insert error:', error);
-        return res.status(500).json({ error: warehouseSlipWriteErrorMessage(error) });
+        console.error(`Supabase ${writeTable} update insert error:`, error);
+        return res.status(500).json({ error: warehouseSlipWriteErrorMessage(error, writeTable) });
       }
 
       if (affectedNvlCodes.size > 0) {
@@ -11611,9 +11880,14 @@ export function createApp() {
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật phiếu xuất nhập kho.' });
     }
-  });
+  }
 
-  app.delete('/api/phieu-xuat-nhap-kho/slip/:slipCode', async (req, res) => {
+  app.put('/api/phieu-xuat-nhap-kho/:slipCode', async (req, res) => handleWarehouseUpdate(req, res, null));
+  app.put('/api/phieu-nhap-kho/:slipCode', async (req, res) => handleWarehouseUpdate(req, res, 'nhap'));
+  app.put('/api/phieu-xuat-kho/:slipCode', async (req, res) => handleWarehouseUpdate(req, res, 'xuat'));
+
+  /** Xoa ca phieu theo ma (tim + xoa tren TAT CA bang moi/cu). */
+  async function handleWarehouseDeleteSlip(req: any, res: any) {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     }
@@ -11624,15 +11898,10 @@ export function createApp() {
         return res.status(400).json({ error: 'Thiếu mã phiếu.' });
       }
 
-      const { data: existing, error: fetchError } = await supabase
-        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-        .select('id, ma_npl, ma_sp, loai_kho, ten_kho')
-        .eq('ma_phieu', slipCode);
-
-      if (fetchError) {
-        console.error('Supabase phieu_xuat_nhap_kho fetch for slip delete error:', fetchError);
-        return res.status(500).json({ error: `Không thể tải phiếu cần xóa. ${fetchError.message}` });
-      }
+      const existing = await listWarehouseSlipRowsEverywhere(
+        slipCode,
+        'id, ma_npl, ma_sp, loai_kho, ten_kho'
+      );
 
       if (!existing || existing.length === 0) {
         return res.status(404).json({ error: 'Không tìm thấy phiếu cần xóa.' });
@@ -11646,13 +11915,10 @@ export function createApp() {
         if (code) affectedNvlCodes.add(code);
       });
 
-      const { error: deleteError } = await supabase
-        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-        .delete()
-        .eq('ma_phieu', slipCode);
+      const { error: deleteError } = await deleteWarehouseSlipEverywhere(slipCode);
 
       if (deleteError) {
-        console.error('Supabase phieu_xuat_nhap_kho slip delete error:', deleteError);
+        console.error('Supabase warehouse slip delete error:', deleteError);
         return res.status(500).json({ error: `Không thể xóa phiếu. ${deleteError.message}` });
       }
 
@@ -11666,9 +11932,14 @@ export function createApp() {
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa phiếu xuất nhập kho.' });
     }
-  });
+  }
 
-  app.delete('/api/phieu-xuat-nhap-kho/:id', async (req, res) => {
+  app.delete('/api/phieu-xuat-nhap-kho/slip/:slipCode', async (req, res) => handleWarehouseDeleteSlip(req, res));
+  app.delete('/api/phieu-nhap-kho/slip/:slipCode', async (req, res) => handleWarehouseDeleteSlip(req, res));
+  app.delete('/api/phieu-xuat-kho/slip/:slipCode', async (req, res) => handleWarehouseDeleteSlip(req, res));
+
+  /** Xoa 1 dong phieu theo id (tim tren TAT CA bang moi/cu). */
+  async function handleWarehouseDeleteLine(req: any, res: any) {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     }
@@ -11679,31 +11950,51 @@ export function createApp() {
         return res.status(400).json({ error: 'Thiếu ID dòng phiếu.' });
       }
 
-      const { data, error } = await supabase
-        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-        .delete()
-        .eq('id', id)
-        .select('id, ma_npl, loai_kho')
-        .maybeSingle();
+      const tables = [
+        SUPABASE_WAREHOUSE_NHAP_TABLE,
+        SUPABASE_WAREHOUSE_XUAT_TABLE,
+        SUPABASE_WAREHOUSE_MOVEMENTS_TABLE
+      ];
+      let deleted: any | null = null;
+      for (const table of tables) {
+        if (table !== SUPABASE_WAREHOUSE_MOVEMENTS_TABLE && !(await warehouseSplitTableExists(table))) {
+          continue;
+        }
+        const { data, error } = await supabase
+          .from(table)
+          .delete()
+          .eq('id', id)
+          .select('id, ma_npl, loai_kho')
+          .maybeSingle();
 
-      if (error) {
-        console.error('Supabase phieu_xuat_nhap_kho delete error:', error);
-        return res.status(500).json({ error: `Không thể xóa dòng phiếu. ${error.message}` });
+        if (error) {
+          if (isMissingTableError(error)) continue;
+          console.error(`Supabase ${table} delete error:`, error);
+          return res.status(500).json({ error: `Không thể xóa dòng phiếu. ${error.message}` });
+        }
+        if (data) {
+          deleted = data;
+          break;
+        }
       }
 
-      if (!data) {
+      if (!deleted) {
         return res.status(404).json({ error: 'Không tìm thấy dòng phiếu cần xóa.' });
       }
 
-      if (data.ma_npl && String(data.loai_kho || 'nvl') !== 'san_pham') {
-        await syncMaterialInventoryFromMovements(String(data.ma_npl));
+      if (deleted.ma_npl && String(deleted.loai_kho || 'nvl') !== 'san_pham') {
+        await syncMaterialInventoryFromMovements(String(deleted.ma_npl));
       }
 
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa dòng phiếu.' });
     }
-  });
+  }
+
+  app.delete('/api/phieu-xuat-nhap-kho/:id', async (req, res) => handleWarehouseDeleteLine(req, res));
+  app.delete('/api/phieu-nhap-kho/:id', async (req, res) => handleWarehouseDeleteLine(req, res));
+  app.delete('/api/phieu-xuat-kho/:id', async (req, res) => handleWarehouseDeleteLine(req, res));
 
   app.get('/api/nhan-su', async (req, res) => {
     const format = typeof req.query.format === 'string' ? req.query.format : 'list';
@@ -14742,26 +15033,50 @@ async function loadKiemKhoLiveTongHopForDot(
       ? 'ma_sp, ten_sp, don_vi, ten_kho, ton_dau_ky'
       : 'ma_npl, ten_npl, don_vi, ten_kho, ton_dau_ky';
 
+    const buildMovementQueryForTable = (table: string) => (from: number, to: number) => {
+      let query = supabase!
+        .from(table)
+        .select('ma_npl, ten_npl, ma_sp, ten_sp, don_vi, so_luong, ngay_phieu, loai_phieu, loai_kho, ten_kho');
+      query = isProduct
+        ? query.eq('loai_kho', 'san_pham')
+        : loaiKho === 'nvl'
+          ? query.or('loai_kho.eq.nvl,loai_kho.is.null')
+          : query.eq('loai_kho', loaiKho);
+      query = query.eq('treo', false);
+      if (tenKho) query = query.eq('ten_kho', tenKho);
+      if (denNgay) query = query.lte('ngay_phieu', denNgay);
+      return query.range(from, to);
+    };
+
     const [catalogRows, movementRows] = await Promise.all([
       loadAllTonKhoRows((from, to) => {
         let query = supabase!.from(catalogTable).select(catalogSelect);
         if (tenKho) query = query.eq('ten_kho', tenKho);
         return query.range(from, to);
       }),
-      loadAllTonKhoRows((from, to) => {
-        let query = supabase!
-          .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-          .select('ma_npl, ten_npl, ma_sp, ten_sp, don_vi, so_luong, ngay_phieu, loai_phieu, loai_kho, ten_kho');
-        query = isProduct
-          ? query.eq('loai_kho', 'san_pham')
-          : loaiKho === 'nvl'
-            ? query.or('loai_kho.eq.nvl,loai_kho.is.null')
-            : query.eq('loai_kho', loaiKho);
-        query = query.eq('treo', false);
-        if (tenKho) query = query.eq('ten_kho', tenKho);
-        if (denNgay) query = query.lte('ngay_phieu', denNgay);
-        return query.range(from, to);
-      })
+      // Doc phieu gop tu bang tach (nhap + xuat) + bang cu, dedupe theo id.
+      (async () => {
+        const tables = await resolveWarehouseReadTables(null);
+        const lists = await Promise.all(
+          tables.map(async table => {
+            if (
+              table !== SUPABASE_WAREHOUSE_MOVEMENTS_TABLE &&
+              !(await warehouseSplitTableExists(table))
+            ) {
+              return [] as Record<string, unknown>[];
+            }
+            try {
+              return await loadAllTonKhoRows(buildMovementQueryForTable(table));
+            } catch (err: any) {
+              if (/could not find the table/i.test(String(err?.message || ''))) {
+                return [] as Record<string, unknown>[];
+              }
+              throw err;
+            }
+          })
+        );
+        return mergeWarehouseMovementRows(...lists) as Record<string, unknown>[];
+      })()
     ]);
 
     const totals = new Map<string, TonKhoGopRow>();
@@ -14978,21 +15293,35 @@ async function loadKiemKhoLiveTongHopForDot(
       const maNpl = String(req.query.ma_npl ?? req.query.materialCode ?? '').trim() || null;
       const keyword = String(req.query.q ?? req.query.keyword ?? '').trim().toLowerCase() || null;
 
-      let query = supabase
-        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-        .select('*')
-        .or('loai_kho.eq.nvl,loai_kho.is.null')
-        .order('ngay_phieu', { ascending: true })
-        .limit(20000);
-      if (tuNgay) query = query.gte('ngay_phieu', tuNgay);
-      if (denNgay) query = query.lte('ngay_phieu', denNgay);
-      if (maNpl) query = query.eq('ma_npl', maNpl);
+      // Doc gop bang tach (nhap + xuat) + bang cu fallback, dedupe theo id.
+      // Loai phieu lay theo tung dong (warehouseSlipTypeOfRow) thay vi filter query.
+      const slipTables = await resolveWarehouseReadTables(null);
+      const movementLists: any[][] = [];
+      let movementError: any = null;
+      for (const slipTable of slipTables) {
+        let query = supabase
+          .from(slipTable)
+          .select('*')
+          .or('loai_kho.eq.nvl,loai_kho.is.null')
+          .order('ngay_phieu', { ascending: true })
+          .limit(20000);
+        if (tuNgay) query = query.gte('ngay_phieu', tuNgay);
+        if (denNgay) query = query.lte('ngay_phieu', denNgay);
+        if (maNpl) query = query.eq('ma_npl', maNpl);
 
-      const { data: movements, error: movementError } = await query;
+        const { data, error } = await query;
+        if (error) {
+          if (isMissingTableError(error)) continue;
+          movementError = error;
+          break;
+        }
+        movementLists.push((data || []) as any[]);
+      }
       if (movementError) {
         console.error('Supabase ton-kho-nvl query error:', movementError);
         return res.status(500).json({ error: `Không thể tải tồn kho NVL. ${movementError.message}` });
       }
+      const movements = mergeWarehouseMovementRows(...movementLists);
 
       const { data: catalog } = await supabase
         .from(SUPABASE_MATERIALS_TABLE)
@@ -19221,15 +19550,17 @@ async function loadKiemKhoLiveTongHopForDot(
       }
 
       // 2) Phiếu xuất kho NVL trong khoảng ngày và khớp máy (mã hoặc tên, xét theo từng dòng).
-      let slipQuery = supabase
-        .from(SUPABASE_WAREHOUSE_MOVEMENTS_TABLE)
-        .select('ma_phieu, ngay_phieu, ca, may, phan_loai_nvl, loai_kho, ma_npl, ten_npl, don_vi, so_luong, don_gia, thanh_tien, trong_luong_kg')
-        .eq('loai_phieu', 'xuat')
-        .gte('ngay_phieu', tuNgay)
-        .lte('ngay_phieu', denNgay)
-        .order('ngay_phieu', { ascending: true })
-        .limit(5000);
-      const { data: slipRows, error: slipError } = await slipQuery;
+      // Doc gop bang tach (xuat) + bang cu fallback, dedupe theo id.
+      const { data: slipRows, error: slipError } = await queryWarehouseSplitRows('xuat', table =>
+        supabase
+          .from(table)
+          .select('ma_phieu, ngay_phieu, ca, may, phan_loai_nvl, loai_kho, ma_npl, ten_npl, don_vi, so_luong, don_gia, thanh_tien, trong_luong_kg')
+          .eq('loai_phieu', 'xuat')
+          .gte('ngay_phieu', tuNgay)
+          .lte('ngay_phieu', denNgay)
+          .order('ngay_phieu', { ascending: true })
+          .limit(5000)
+      );
       if (slipError) return res.status(500).json({ error: `Không thể tải phiếu xuất kho. ${slipError.message}` });
       const slipNvl = (slipRows || []).filter((row: Record<string, unknown>) => {
         const loaiKho = String(row.loai_kho ?? 'nvl');
