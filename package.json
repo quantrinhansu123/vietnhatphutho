@@ -11,7 +11,8 @@
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "migrate:warehouse-numeric": "node scripts/migrate-warehouse-numeric.mjs"
+    "migrate:warehouse-numeric": "node scripts/migrate-warehouse-numeric.mjs",
+    "backfill:ma-kho": "node scripts/backfill-ma-kho.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

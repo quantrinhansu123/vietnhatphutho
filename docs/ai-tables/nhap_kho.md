@@ -4,11 +4,12 @@
 |---|---|
 | **Bảng** | `nhap_kho` |
 | **Tab** | `/kho-hang` → Kho thành phẩm; ghi sau phiếu nhập TP |
-| **SQL** | `supabase-nhap-kho.sql` |
+| **SQL** | `supabase-nhap-kho.sql` + `supabase-nhap-kho-cat-le.sql` (7 cột thông số) + `supabase-nhap-kho-loai-kho.sql` (backfill `loai_kho`) |
 
 ## Vai trò
 
-Sổ **danh sách sản phẩm** kho thành phẩm (`loai_kho = 'thanh_pham'`).  
+Sổ **danh sách sản phẩm** các kho thành phẩm (`loai_kho` = mã kho từ `quan_ly_kho.ma_kho`:
+TP `kho_thanh_pham` | cắt lẻ `kho_cat_le` | tái chế `kho_tai_che`; mã cũ `thanh_pham/cat_le/tai_che` đọc tương thích).  
 **Không** dùng bảng `ton_kho_thanh_pham` cho màn Kho hàng.
 
 - Danh sách SP: gộp theo `ma_sp` + `ten_sp` + `trong_luong_kg_mot_sp|so_m2_mot_sp|so_m_dai_mot_sp`. Cùng mã và tên nhưng khác quy đổi là hai dòng.
@@ -22,7 +23,7 @@ SL và tổng kg / m² / mét dài của dòng phiếu nằm ở `phieu_xuat_nha
 
 | Method | Path | Ghi chú |
 |--------|------|---------|
-| GET | `/api/nhap-kho` | Không `from`/`to`: raw records. Có `from`+`to`: rows tồn kỳ (catalog `nhap_kho` + số liệu phiếu NX) |
+| GET | `/api/nhap-kho` | Không `from`/`to`: raw records. Có `from`+`to`: rows tồn kỳ (catalog `nhap_kho` + số liệu phiếu NX). `strictKho=1` + `ten_kho`: chỉ hàng đúng kho (lọc catalog theo `ten_kho` hoặc `loai_kho`, phiếu qua `ten_kho`) — `/kho-hang`, Lệnh cắt, Chuyển kho dùng |
 | GET | `/api/ton-kho-thanh-pham` | Alias cũ → cùng `loadNhapKhoThanhPhamPeriodRows` (không đọc/ghi `ton_kho_thanh_pham`) |
 | (ghi) | Sau `POST`/`PUT` phiếu nhập TP | `insertNhapKhoThanhPhamRows` |
 

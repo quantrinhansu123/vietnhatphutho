@@ -98,6 +98,8 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
       { tab: 'can-kiem-kho', label: 'Cân kiểm kho' },
       { tab: 'kiem-kho-chenh-lech', label: 'Xử lý chênh lệch' },
       { tab: 'warehouse-history', label: 'Lịch sử xuất nhập' },
+      { tab: 'lenh-cat-le', label: 'Lệnh cắt lẻ' },
+      { tab: 'chuyen-kho', label: 'Chuyển kho' },
       { tab: 'ton-kho', label: 'Tồn kho' }
     ]
   },

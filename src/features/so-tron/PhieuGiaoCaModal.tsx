@@ -11,6 +11,11 @@ import {
   printPhieuGiaoCaSlip
 } from './printPhieuGiaoCa';
 import type { SoTronSavedReport } from './index';
+import {
+  auxiliaryNormWeightIndex,
+  formatNormWeight,
+  lookupAuxiliaryNormWeight
+} from './dinhMucVatTu';
 
 interface Props {
   open: boolean;
@@ -103,8 +108,8 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
       if (bg.ma_nvl) banGiaoMap.set(bg.ma_nvl, bg);
     });
 
-    // Không tự load định mức từ cối mẫu — người dùng nhập tay "Định mức vật tư".
-    // Chỉ lấy giá trị đã lưu trên bang_nvl (nếu có).
+    // Định mức vật tư được điền sau từ tổng trọng lượng NVL phụ của phiếu trộn định mức.
+    // Tạm giữ giá trị đã lưu để vẫn hiện nếu chưa tải được phiếu định mức.
     const combinedVatTu: PhieuGiaoCaVatTuRow[] = (report.bang_nvl || []).map(nvl => {
       const bg = banGiaoMap.get(nvl.material_id) || banGiaoMap.get(nvl.ma_nvl);
       const dm = str((nvl as { dinh_muc?: unknown }).dinh_muc);
@@ -204,6 +209,64 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
     setSaveSuccess(false);
     setErrorMessage('');
   }, [report, open]);
+
+  // Định mức vật tư = Tổng trọng lượng (kg) từng NVL trên phiếu trộn định mức của lệnh SX.
+  useEffect(() => {
+    if (!open || !report) return;
+    const codes = (report.lenh_sx || []).map(item => str(item.ma_lenh)).filter(Boolean);
+    if (codes.length === 0) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/bang-tron-vat-tu-dinh-muc?ma_lenh_sx=${encodeURIComponent(codes.join(','))}&limit=200`
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!alive || !res.ok) return;
+        const records = Array.isArray(data?.records) ? data.records : [];
+        const index = auxiliaryNormWeightIndex(records);
+        setVatTuRows(prev => {
+          const next = prev.map(row => {
+            const formatted = formatNormWeight(
+              lookupAuxiliaryNormWeight(index, row.material_id, row.ma_nvl)
+            );
+            if (!formatted) return row;
+            return { ...row, dinh_muc: formatted };
+          });
+          for (const line of index.lines.filter(item => item.source === 'phu')) {
+            const exists = next.some(
+              row =>
+                (line.materialId && row.material_id && row.material_id === line.materialId) ||
+                (line.code && str(row.ma_nvl).toLowerCase() === line.code.toLowerCase())
+            );
+            if (exists) continue;
+            const formatted = formatNormWeight(line.weightKg);
+            if (!formatted) continue;
+            next.push({
+              key: uid(),
+              material_id: line.materialId,
+              ma_nvl: line.code,
+              ten_nvl: line.name,
+              ten_nvl_sx: '',
+              dvt: line.unit || 'Kg',
+              dinh_muc: formatted,
+              ton_dau_ca: '',
+              lay_trong_kho: '',
+              lan: Array(10).fill(''),
+              tong_su_dung: 0,
+              ton_cuoi_ca: 0
+            });
+          }
+          return next;
+        });
+      } catch {
+        /* giữ định mức đã lưu */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [open, report]);
 
   // Handler cập nhật bảng vật tư
   const updateVatTuRow = (index: number, patch: Partial<PhieuGiaoCaVatTuRow>) => {
@@ -558,7 +621,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
 
       {/* Thông báo lỗi / thành công */}
       {errorMessage && (
-        <div className="mx-auto mt-2 w-full max-w-[950px] rounded-lg border border-rose-500 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-300">
+        <div className="mx-auto mt-2 w-full max-w-[1180px] rounded-lg border border-rose-500 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-300">
           {errorMessage}
         </div>
       )}
@@ -569,11 +632,11 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
       )}
 
       {/* VÙNG HIỂN THỊ CÁC TỜ PHIẾU GIẤY (CHUẨN FORM ẢNH 1 & 2) */}
-      <div className="mx-auto my-4 flex w-full max-w-[950px] flex-col gap-6">
+      <div className="mx-auto my-4 flex w-full max-w-[1180px] flex-col gap-6">
         
         {/* ===================== TRANG 1: ẢNH 1 (I. VẬT TƯ) ===================== */}
         {(activeTab === 'all' || activeTab === 'p1') && (
-          <div className="relative rounded-sm border border-slate-300 bg-white p-6 sm:p-8 text-slate-900 shadow-2xl" style={paperFontStyle}>
+          <div className="relative rounded-sm border border-slate-300 bg-white p-5 text-slate-900 shadow-2xl sm:p-6" style={paperFontStyle}>
             <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-indigo-700">
               Trang 1 / 2 — Nhật ký vật tư &amp; sử dụng (Ảnh 1)
             </div>
@@ -699,25 +762,25 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse border border-slate-800 text-center text-[10.5px]">
+                <table className="w-full table-fixed border-collapse border border-slate-800 text-center text-[12px] [&_tbody_td]:h-7 [&_tbody_td]:px-1.5 [&_tbody_td]:py-0 [&_th]:px-1.5 [&_th]:py-1">
                   <thead>
                     <tr className="bg-slate-100 text-[10px]">
-                      <th rowSpan={2} className="border border-slate-800 p-1 w-[8%]">Mã VT</th>
-                      <th rowSpan={2} className="border border-slate-800 p-1 w-[22%]">
+                      <th rowSpan={2} className="border border-slate-800 w-[9%]">Mã VT</th>
+                      <th rowSpan={2} className="border border-slate-800 w-[16%]">
                         Tên vật tư (Kế hoạch chi tiết kể vật tư cần sử dụng, mã vật tư và định mức sử dụng (Kg))
                       </th>
-                      <th rowSpan={2} className="border border-slate-800 p-0.5 w-[4%]">ĐVT</th>
-                      <th rowSpan={2} className="border border-slate-800 p-1 w-[6%]">Định mức vật tư</th>
-                      <th rowSpan={2} className="border border-slate-800 p-1 w-[6%]">Tồn đầu ca</th>
-                      <th rowSpan={2} className="border border-slate-800 p-1 w-[6%]">Lấy kho</th>
-                      <th colSpan={10} className="border border-slate-800 p-0.5">SỬ DỤNG</th>
-                      <th rowSpan={2} className="border border-slate-800 p-1 w-[6.5%]">Tổng SD</th>
-                      <th rowSpan={2} className="border border-slate-800 p-1 w-[6.5%]">Tồn cuối</th>
-                      <th rowSpan={2} className="border border-slate-800 p-0.5 w-[3%] no-print" />
+                      <th rowSpan={2} className="border border-slate-800 w-[4.5%]">ĐVT</th>
+                      <th rowSpan={2} className="border border-slate-800 w-[8%]">Định mức vật tư</th>
+                      <th rowSpan={2} className="border border-slate-800 w-[7.5%]">Tồn đầu ca</th>
+                      <th rowSpan={2} className="border border-slate-800 w-[7.5%]">Lấy kho</th>
+                      <th colSpan={10} className="border border-slate-800">SỬ DỤNG</th>
+                      <th rowSpan={2} className="border border-slate-800 w-[7.5%]">Tổng SD</th>
+                      <th rowSpan={2} className="border border-slate-800 w-[7.5%]">Tồn cuối</th>
+                      <th rowSpan={2} className="border border-slate-800 w-[3%] no-print" />
                     </tr>
                     <tr className="bg-slate-100 text-[9px]">
                       {Array.from({ length: 10 }, (_, i) => (
-                        <th key={i} className="border border-slate-800 p-0.5 w-[2.8%]">
+                        <th key={i} className="border border-slate-800 w-[3.2%]">
                           L{i + 1}
                         </th>
                       ))}
@@ -757,6 +820,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                         </td>
                         <td className="border border-slate-800 p-0.5">
                           <input
+                            title="Tổng trọng lượng (kg) của NVL trên phiếu trộn định mức"
                             value={row.dinh_muc}
                             onChange={e => updateVatTuRow(ri, { dinh_muc: e.target.value })}
                             className={centerInputStyle}
@@ -807,6 +871,15 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                       </tr>
                     ))}
 
+                    {Array.from({ length: Math.max(0, 30 - vatTuRows.length) }, (_, i) => (
+                      <tr key={`vt-blank-${i}`} aria-hidden>
+                        {Array.from({ length: 18 }, (_, ci) => (
+                          <td key={ci} className="border border-slate-800" />
+                        ))}
+                        <td className="border border-slate-800" />
+                      </tr>
+                    ))}
+
                     {/* Dòng tổng */}
                     <tr className="bg-slate-100 font-bold">
                       <td colSpan={6} className="border border-slate-800 p-1 text-right pr-2">
@@ -846,37 +919,37 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
 
         {/* ===================== TRANG 2: ẢNH 2 (THÀNH PHẨM, HÀNG LỖI, SỰ CỐ, CHỮ KÝ) ===================== */}
         {(activeTab === 'all' || activeTab === 'p2') && (
-          <div className="relative rounded-sm border border-slate-300 bg-white p-6 sm:p-8 text-slate-900 shadow-2xl" style={paperFontStyle}>
+          <div className="relative rounded-sm border border-slate-300 bg-white p-5 text-slate-900 shadow-2xl sm:p-6" style={paperFontStyle}>
             <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-indigo-700">
               Trang 2 / 2 — Thành phẩm, Hàng lỗi hỏng, Sự cố &amp; Chữ ký (Ảnh 2)
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 mt-2">
+            <div className="mt-2 grid grid-cols-1 items-start gap-5 lg:grid-cols-12">
               
               {/* CỘT TRÁI: BẢNG II. THÀNH PHẨM — chỉ xem, sửa ở sổ trộn */}
-              <div className="lg:col-span-7">
+              <div className="lg:col-span-8">
                 <div className="flex items-center justify-between mb-1">
                   <h4 className="text-xs font-bold uppercase tracking-wide">II. THÀNH PHẨM</h4>
                   <span className="text-[10px] text-slate-500 italic">Chỉ xem — sửa tại sổ trộn</span>
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="w-full border-collapse border border-slate-800 text-center text-[10.5px]">
+                  <table className="w-full table-fixed border-collapse border border-slate-800 text-center text-[12px] [&_tbody_td]:h-7 [&_tbody_td]:px-1.5 [&_tbody_td]:py-0 [&_th]:px-1.5 [&_th]:py-1">
                     <thead>
-                      <tr className="bg-slate-100 text-[10px]">
-                        <th rowSpan={2} className="border border-slate-800 p-1 w-[12%]">Mã TP</th>
-                        <th rowSpan={2} className="border border-slate-800 p-1 w-[38%]">
+                      <tr className="bg-slate-100 text-[11px]">
+                        <th rowSpan={2} className="border border-slate-800 w-[12%]">Mã TP</th>
+                        <th rowSpan={2} className="border border-slate-800 w-[28%]">
                           THÀNH PHẨM (Kế hoạch sản xuất liệt kê các thành phẩm trừ khi dự kiến...)
                         </th>
-                        <th rowSpan={2} className="border border-slate-800 p-1 w-[14%]">TL định mức / tấm (Kg)</th>
-                        <th colSpan={3} className="border border-slate-800 p-0.5">TP Nhập kho</th>
-                        <th rowSpan={2} className="border border-slate-800 p-1 w-[10%]">Tổng nhập</th>
-                        <th rowSpan={2} className="border border-slate-800 p-1 w-[12%]">Tổng TL (Kg)</th>
+                        <th rowSpan={2} className="border border-slate-800 w-[14%]">TL định mức / tấm (Kg)</th>
+                        <th colSpan={3} className="border border-slate-800">TP Nhập kho</th>
+                        <th rowSpan={2} className="border border-slate-800 w-[12%]">Tổng nhập</th>
+                        <th rowSpan={2} className="border border-slate-800 w-[12%]">Tổng TL (Kg)</th>
                       </tr>
-                      <tr className="bg-slate-100 text-[9px]">
-                        <th className="border border-slate-800 p-0.5 w-[6%]">Lần 1</th>
-                        <th className="border border-slate-800 p-0.5 w-[6%]">Lần 2</th>
-                        <th className="border border-slate-800 p-0.5 w-[6%]">Lần 3</th>
+                      <tr className="bg-slate-100 text-[10px]">
+                        <th className="border border-slate-800 w-[8%]">Lần 1</th>
+                        <th className="border border-slate-800 w-[8%]">Lần 2</th>
+                        <th className="border border-slate-800 w-[8%]">Lần 3</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -917,6 +990,13 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                           </td>
                         </tr>
                       ))}
+                      {Array.from({ length: Math.max(0, 30 - thanhPhamRows.length) }, (_, i) => (
+                        <tr key={`tp-blank-${i}`} aria-hidden>
+                          {Array.from({ length: 8 }, (_, ci) => (
+                            <td key={ci} className="border border-slate-800" />
+                          ))}
+                        </tr>
+                      ))}
                       <tr className="bg-slate-100 font-bold">
                         <td colSpan={6} className="border border-slate-800 p-1 text-right pr-2">
                           Cộng:
@@ -934,7 +1014,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
               </div>
 
               {/* CỘT PHẢI: BẢNG III. HÀNG LỖI/PHẾ & IV. SỰ CỐ SẢN XUẤT */}
-              <div className="lg:col-span-5 flex flex-col justify-between">
+              <div className="lg:col-span-4">
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <h4 className="text-xs font-bold uppercase tracking-wide">III. HÀNG LỖI HỎNG/PHẾ</h4>
@@ -947,7 +1027,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                     </button>
                   </div>
 
-                  <table className="w-full border-collapse border border-slate-800 text-center text-[10.5px]">
+                  <table className="w-full table-fixed border-collapse border border-slate-800 text-center text-[12px] [&_tbody_td]:h-7 [&_tbody_td]:px-1.5 [&_tbody_td]:py-0 [&_th]:px-1.5 [&_th]:py-1">
                     <thead>
                       <tr className="bg-slate-100 text-[10px]">
                         <th className="border border-slate-800 p-1 w-[55%]">TÊN LỖI/PHẾ</th>
@@ -1001,6 +1081,13 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                           </td>
                         </tr>
                       ))}
+                      {Array.from({ length: Math.max(0, 7 - hangLoiRows.length) }, (_, i) => (
+                        <tr key={`hl-blank-${i}`} aria-hidden>
+                          {Array.from({ length: 4 }, (_, ci) => (
+                            <td key={ci} className="border border-slate-800" />
+                          ))}
+                        </tr>
+                      ))}
                       <tr className="bg-slate-100 font-bold">
                         <td colSpan={2} className="border border-slate-800 p-1 text-right pr-2">
                           Cộng:
@@ -1015,10 +1102,10 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                 </div>
 
                 {/* Bảng IV: Sự cố */}
-                <div className="mt-4 flex-1">
+                <div className="mt-4">
                   <h4 className="text-xs font-bold uppercase tracking-wide mb-1">IV. SỰ CỐ SẢN XUẤT / LƯU Ý KHÁC</h4>
                   <textarea
-                    rows={4}
+                    rows={6}
                     value={suCoLuuY}
                     onChange={e => setSuCoLuuY(e.target.value)}
                     className="w-full rounded border border-slate-800 bg-slate-50/50 p-2 text-xs leading-relaxed outline-none focus:bg-white focus:ring-1 focus:ring-indigo-500"
@@ -1030,7 +1117,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
             </div>
 
             {/* 4 Khối chữ ký ở chân trang 2 */}
-            <div className="mt-10 grid grid-cols-4 gap-2 border-t border-slate-300 pt-3 text-center">
+            <div className="mt-8 grid grid-cols-4 gap-3 border-t border-slate-300 pt-4 text-center break-inside-avoid">
               <div>
                 <div className="text-xs font-bold">Thủ kho vật tư</div>
                 <div className="text-[10.5px] italic text-slate-500">(Ký, họ tên)</div>

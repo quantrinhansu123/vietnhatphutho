@@ -19,6 +19,8 @@ import {
 export type QuanLyKhoRecord = {
   id: number | string;
   ten_kho?: string | null;
+  /** Mã kho ngầm tự sinh từ tên (không dấu, nối _) — nguồn cho nhap_kho.loai_kho. */
+  ma_kho?: string | null;
   vi_tri?: string | null;
   ten_vi_tri?: string | null;
   nguoi_phu_trach?: string | null;
@@ -103,7 +105,7 @@ export function QuanLyKhoPanel({ onBack }: { onBack: () => void }) {
     const q = query.trim().toLowerCase();
     if (!q) return records;
     return records.filter(row =>
-      [row.ten_kho, row.vi_tri, row.ten_vi_tri, row.nguoi_phu_trach]
+      [row.ten_kho, row.ma_kho, row.vi_tri, row.ten_vi_tri, row.nguoi_phu_trach]
         .map(v => String(v ?? '').toLowerCase())
         .some(v => v.includes(q))
     );
@@ -215,15 +217,16 @@ export function QuanLyKhoPanel({ onBack }: { onBack: () => void }) {
         <TableSearchInput
           value={query}
           onChange={setQuery}
-          placeholder="Tìm tên kho / vị trí / phụ trách"
+          placeholder="Tìm tên kho / mã kho / vị trí / phụ trách"
           disabled={loading}
         />
       </TableToolbar>
 
-      <TableShell minWidthClassName="min-w-[720px]">
+      <TableShell minWidthClassName="min-w-[800px]">
         <TableHead>
           <TableHeadCell>ID</TableHeadCell>
           <TableHeadCell>Tên kho</TableHeadCell>
+          <TableHeadCell>Mã kho (tự động)</TableHeadCell>
           <TableHeadCell>Vị trí</TableHeadCell>
           <TableHeadCell>Tên vị trí</TableHeadCell>
           <TableHeadCell>Người phụ trách</TableHeadCell>
@@ -231,14 +234,14 @@ export function QuanLyKhoPanel({ onBack }: { onBack: () => void }) {
         </TableHead>
         <TableBody>
           {loading ? (
-            <TableEmptyRow colSpan={6}>
+            <TableEmptyRow colSpan={7}>
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Đang tải…
               </span>
             </TableEmptyRow>
           ) : filtered.length === 0 ? (
-            <TableEmptyRow colSpan={6}>
+            <TableEmptyRow colSpan={7}>
               Chưa có kho nào. Bấm <span className="text-[#ef1b2d]">Thêm</span> để tạo.
             </TableEmptyRow>
           ) : (
@@ -247,6 +250,7 @@ export function QuanLyKhoPanel({ onBack }: { onBack: () => void }) {
                 <TableRow>
                   <td className="px-4 py-3 font-mono font-semibold text-zinc-500">{row.id}</td>
                   <td className="px-4 py-3 font-bold text-zinc-900">{row.ten_kho || '—'}</td>
+                  <td className="px-4 py-3 font-mono text-xs font-semibold text-zinc-600">{row.ma_kho || '—'}</td>
                   <td className="px-4 py-3 text-zinc-700">{row.vi_tri || '—'}</td>
                   <td className="px-4 py-3 text-zinc-700">{row.ten_vi_tri || '—'}</td>
                   <td className="px-4 py-3 text-zinc-700">{row.nguoi_phu_trach || '—'}</td>
@@ -316,6 +320,9 @@ export function QuanLyKhoPanel({ onBack }: { onBack: () => void }) {
                         placeholder="VD: Kho thành phẩm"
                         autoFocus
                       />
+                      <span className="mt-1 block font-semibold normal-case tracking-normal text-zinc-400">
+                        Mã kho tự sinh từ tên (không dấu, nối _) và giữ ổn định khi đổi tên.
+                      </span>
                     </label>
                     <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400">
                       Người phụ trách

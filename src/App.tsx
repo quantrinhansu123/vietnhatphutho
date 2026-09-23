@@ -69,6 +69,8 @@ import { InventoryCatalogPanel } from './features/kho-hang';
 import { MachinesPanel } from './features/danh-sach-may';
 import { MaterialsInventoryPanel } from './features/kho-nvl';
 import { WarehouseSlipPanel, WarehouseHistoryPanel } from './features/phieu-xuat-nhap-kho';
+import { LenCatLePanel } from './features/lenh-cat-le';
+import { ChuyenKhoPanel } from './features/chuyen-kho';
 import { CustomersPanel } from './features/khach-hang';
 import { ShippingOrdersPanel } from './features/lenh-xuat-hang';
 import { OrdersPanel } from './features/don-hang';
@@ -1680,6 +1682,26 @@ export default function App() {
                   onBack={() => goBack('factory-kho')}
                   onOpenSlip={() => navigateToTab('warehouse-slip')}
                 />
+              </motion.div>
+            ) : activeTab === 'lenh-cat-le' ? (
+              <motion.div
+                key="lenh-cat-le"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <LenCatLePanel onBack={() => goBack('factory-kho')} />
+              </motion.div>
+            ) : activeTab === 'chuyen-kho' ? (
+              <motion.div
+                key="chuyen-kho"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <ChuyenKhoPanel onBack={() => goBack('factory-kho')} />
               </motion.div>
             ) : activeTab === 'orders' ? (
               <motion.div

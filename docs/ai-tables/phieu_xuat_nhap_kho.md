@@ -6,6 +6,12 @@
 | **Tab** | `warehouse-slip`, `warehouse-history` |
 | **SQL** | `supabase-phieu-xuat-nhap-kho.sql` (gồm cột `may`, `phan_loai_nvl`, `trong_luong_kg`, `nhom_vthh`) + migrate `supabase-phieu-xuat-nhap-kho-*.sql` (gồm `…-lo-ton.sql`, `…-lenh-sx.sql`, `…-phan-loai-may.sql`, `…-trong-luong-kg.sql`, `…-nhom-vthh.sql`, `…-ton-dau-ca-may.sql`, `…-lich-su.sql`) |
 
+## Quy ước `loai_kho` (từ đợt mã kho)
+
+- Ghi: `loai_kho` = `quan_ly_kho.ma_kho` (tra theo `ten_kho`, slug dự phòng) — VD `kho_thanh_pham`, `kho_cat_le`, `kho_nvl`.
+- Đọc: mọi filter nhóm đều gồm mã cũ (`san_pham`/`nvl`) + mã kho (`loaiKhoLists()`), nên phiếu cũ vẫn hiện đủ. Nhóm suy từ tên kho (vật tư khi chứa nvl/nguyên vật liệu/vật tư).
+- Kho vật lý tra cứu theo `ten_kho`; nhóm nghiệp vụ request (`nvl`/`san_pham`) giữ nguyên ở API boundary.
+
 ## API (`server.ts`)
 
 | Method | Path | Dòng |

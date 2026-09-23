@@ -70,9 +70,10 @@ export interface PhieuGiaoCaInput {
   };
 }
 
-const VAT_TU_MIN_ROWS = 15;
-const THANH_PHAM_MIN_ROWS = 12;
-const HANG_LOI_MIN_ROWS = 6;
+/** Số dòng dữ liệu (chưa kể dòng Cộng) để lưới ô trắng kín một trang A4, mỗi ô cao cố định. */
+const VAT_TU_GRID_ROWS = 30;
+const THANH_PHAM_GRID_ROWS = 30;
+const HANG_LOI_GRID_ROWS = 7;
 
 function esc(value: unknown): string {
   return String(value ?? '')
@@ -122,7 +123,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
   const tongCongSuDungVatTu = input.vatTu.reduce((sum, r) => sum + (r.tong_su_dung || 0), 0);
 
   // Pad vật tư
-  const paddedVatTu = padList(input.vatTu, VAT_TU_MIN_ROWS);
+  const paddedVatTu = padList(input.vatTu, Math.max(input.vatTu.length, VAT_TU_GRID_ROWS));
   const vatTuRowsHtml = paddedVatTu
     .map((row) => {
       const lanCells = Array.from({ length: 10 }, (_, li) => {
@@ -149,7 +150,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
   // Thành phẩm
   const tongNhapKhoThanhPham = input.thanhPham.reduce((sum, r) => sum + num(r.so_luong), 0);
   const tongTrongLuongThanhPham = input.thanhPham.reduce((sum, r) => sum + num(r.trong_luong), 0);
-  const paddedThanhPham = padList(input.thanhPham, THANH_PHAM_MIN_ROWS);
+  const paddedThanhPham = padList(input.thanhPham, Math.max(input.thanhPham.length, THANH_PHAM_GRID_ROWS));
   const thanhPhamRowsHtml = paddedThanhPham
     .map(row => {
       return `
@@ -169,7 +170,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
 
   // Hàng lỗi
   const tongHangLoi = input.hangLoi.reduce((sum, r) => sum + num(r.so_luong), 0);
-  const paddedHangLoi = padList(input.hangLoi, HANG_LOI_MIN_ROWS);
+  const paddedHangLoi = padList(input.hangLoi, Math.max(input.hangLoi.length, HANG_LOI_GRID_ROWS));
   const hangLoiRowsHtml = paddedHangLoi
     .map(row => {
       return `
@@ -190,7 +191,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
   <style>
     @page {
       size: A4 portrait;
-      margin: 8mm 9mm 8mm 9mm;
+      margin: 6mm 7mm 6mm 7mm;
     }
     * {
       box-sizing: border-box;
@@ -208,13 +209,14 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
     }
     .page {
       width: 100%;
-      min-height: 277mm;
-      position: relative;
     }
     .page-break {
       page-break-before: always;
       break-before: page;
       clear: both;
+    }
+    .sheet-body {
+      display: block;
     }
     
     /* Header layout */
@@ -289,12 +291,13 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
     table.data-table th,
     table.data-table td {
       border: 1px solid #000;
-      padding: 2px 2px;
-      font-size: 7.5pt;
+      padding: 0 4px;
+      font-size: 8pt;
       line-height: 1.15;
-      height: 16px;
+      height: 6.4mm;
       vertical-align: middle;
       overflow: hidden;
+      white-space: nowrap;
       text-overflow: ellipsis;
     }
     table.data-table th {
@@ -302,12 +305,16 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       font-weight: bold;
       text-align: center;
       font-size: 7pt;
+      height: auto;
+      white-space: normal;
+      line-height: 1.15;
+      padding: 2px 3px;
     }
     table.data-table td.c { text-align: center; }
     table.data-table td.l { text-align: left; }
     table.data-table td.r { text-align: right; font-variant-numeric: tabular-nums; }
     table.data-table td.b, table.data-table th.b { font-weight: bold; }
-    .font-mono { font-family: monospace, Courier, monospace; font-size: 7.5pt; }
+    .font-mono { font-family: monospace, Courier, monospace; font-size: 8pt; }
     .sub { font-size: 6.5pt; color: #444; font-style: italic; }
 
     .bottom-note-row {
@@ -324,33 +331,39 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       display: flex;
       gap: 8px;
       width: 100%;
+      flex: 1 1 auto;
+      align-items: stretch;
     }
     .p2-left {
-      width: 63%;
-    }
-    .p2-right {
-      width: 37%;
+      width: 64%;
       display: flex;
       flex-direction: column;
+      min-height: 0;
+    }
+    .p2-right {
+      width: 36%;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
     }
 
     .notes-box {
       border: 1px solid #000;
-      min-height: 140px;
+      min-height: 32mm;
       padding: 6px;
-      font-size: 8pt;
+      font-size: 8.5pt;
       white-space: pre-wrap;
       line-height: 1.35;
-      flex: 1;
       background: #fafafa;
     }
 
-    /* Signatures */
+    /* Chữ ký luôn một khối ở cuối trang 2. Nếu thành phẩm tràn, cả khối sang trang sau. */
     .signatures-row {
-      margin-top: 18px;
+      margin-top: 6mm;
       display: flex;
       justify-content: space-between;
       text-align: center;
+      break-inside: avoid;
       page-break-inside: avoid;
     }
     .sig-col {
@@ -367,7 +380,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       color: #444;
     }
     .sig-space {
-      height: 48px;
+      height: 16mm;
     }
     .sig-name {
       font-size: 8pt;
@@ -420,31 +433,32 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       </div>
     </div>
 
+    <div class="sheet-body">
     <div class="sec-title">I. VẬT TƯ</div>
     <table class="data-table">
       <thead>
         <tr>
-          <th rowspan="2" style="width: 8.5%;">Mã vật tư</th>
-          <th rowspan="2" style="width: 22.5%;">Tên vật tư (Kế hoạch chi tiết kể vật tư cần sử dụng, mã vật tư và định mức vật tư sử dụng (Kg))</th>
-          <th rowspan="2" style="width: 3.5%;">ĐVT</th>
-          <th rowspan="2" style="width: 6.5%;">Định mức vật tư</th>
-          <th rowspan="2" style="width: 6.5%;">Tồn đầu ca</th>
-          <th rowspan="2" style="width: 6.5%;">Lấy trong kho</th>
-          <th colspan="10" style="width: 33%;">SỬ DỤNG</th>
-          <th rowspan="2" style="width: 6.5%;">Tổng sử dụng</th>
-          <th rowspan="2" style="width: 6.5%;">Tồn cuối ca</th>
+          <th rowspan="2" style="width: 9%;">Mã vật tư</th>
+          <th rowspan="2" style="width: 16%;">Tên vật tư (Kế hoạch chi tiết kể vật tư cần sử dụng, mã vật tư và định mức vật tư sử dụng (Kg))</th>
+          <th rowspan="2" style="width: 4.5%;">ĐVT</th>
+          <th rowspan="2" style="width: 8%;">Định mức vật tư</th>
+          <th rowspan="2" style="width: 7.5%;">Tồn đầu ca</th>
+          <th rowspan="2" style="width: 7.5%;">Lấy trong kho</th>
+          <th colspan="10" style="width: 32%;">SỬ DỤNG</th>
+          <th rowspan="2" style="width: 7.5%;">Tổng sử dụng</th>
+          <th rowspan="2" style="width: 7.5%;">Tồn cuối ca</th>
         </tr>
         <tr>
-          <th style="width: 3.3%;">Lần 1</th>
-          <th style="width: 3.3%;">Lần 2</th>
-          <th style="width: 3.3%;">Lần 3</th>
-          <th style="width: 3.3%;">Lần 4</th>
-          <th style="width: 3.3%;">Lần 5</th>
-          <th style="width: 3.3%;">Lần 6</th>
-          <th style="width: 3.3%;">Lần 7</th>
-          <th style="width: 3.3%;">Lần 8</th>
-          <th style="width: 3.3%;">Lần 9</th>
-          <th style="width: 3.3%;">Lần 10</th>
+          <th style="width: 3.2%;">Lần 1</th>
+          <th style="width: 3.2%;">Lần 2</th>
+          <th style="width: 3.2%;">Lần 3</th>
+          <th style="width: 3.2%;">Lần 4</th>
+          <th style="width: 3.2%;">Lần 5</th>
+          <th style="width: 3.2%;">Lần 6</th>
+          <th style="width: 3.2%;">Lần 7</th>
+          <th style="width: 3.2%;">Lần 8</th>
+          <th style="width: 3.2%;">Lần 9</th>
+          <th style="width: 3.2%;">Lần 10</th>
         </tr>
       </thead>
       <tbody>
@@ -459,6 +473,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
         </tr>
       </tbody>
     </table>
+    </div>
 
     <div class="bottom-note-row">
       <div>
@@ -480,17 +495,17 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
         <table class="data-table">
           <thead>
             <tr>
-              <th rowspan="2" style="width: 12%;">Mã TP</th>
-              <th rowspan="2" style="width: 36%;">THÀNH PHẨM (Kế hoạch sản xuất liệt kê các thành phẩm trừ khi dự kiến, dự kiến số lượng thành phẩm trừ khi thu kho)</th>
-              <th rowspan="2" style="width: 14%;">Trọng lượng định mức/tấm (Kg)</th>
-              <th colspan="3" style="width: 18%;">TP Nhập kho</th>
-              <th rowspan="2" style="width: 10%;">Tổng nhập kho</th>
-              <th rowspan="2" style="width: 10%;">Tổng TL (Kg)</th>
+              <th rowspan="2" style="width: 11%;">Mã TP</th>
+              <th rowspan="2" style="width: 28%;">THÀNH PHẨM (Kế hoạch sản xuất liệt kê các thành phẩm trừ khi dự kiến, dự kiến số lượng thành phẩm trừ khi thu kho)</th>
+              <th rowspan="2" style="width: 13%;">TL định mức/tấm (Kg)</th>
+              <th colspan="3" style="width: 24%;">TP Nhập kho</th>
+              <th rowspan="2" style="width: 12%;">Tổng nhập kho</th>
+              <th rowspan="2" style="width: 12%;">Tổng TL (Kg)</th>
             </tr>
             <tr>
-              <th style="width: 6%;">Lần 1</th>
-              <th style="width: 6%;">Lần 2</th>
-              <th style="width: 6%;">Lần 3</th>
+              <th style="width: 8%;">Lần 1</th>
+              <th style="width: 8%;">Lần 2</th>
+              <th style="width: 8%;">Lần 3</th>
             </tr>
           </thead>
           <tbody>
@@ -511,8 +526,8 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
           <table class="data-table">
             <thead>
               <tr>
-                <th style="width: 50%;">TÊN LỖI/PHẾ</th>
-                <th style="width: 20%;">ĐVT</th>
+                <th style="width: 48%;">TÊN LỖI/PHẾ</th>
+                <th style="width: 22%;">ĐVT</th>
                 <th style="width: 30%;">SỐ LƯỢNG</th>
               </tr>
             </thead>
