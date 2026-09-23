@@ -38,6 +38,12 @@ import {
 } from '../san-pham';
 import type { ProductRow, ProductNplItem } from '../san-pham/types';
 import { roundNplNumber } from '../san-pham/types';
+import {
+  conversionRatesForEntry,
+  productionEntryConversionValue,
+  scaleProductionEntryQuantity,
+  type ProductionConversionRates
+} from './entryConversion';
 import { normalizeMaterialsInventory, parseInventoryNumber, type MaterialRow } from '../kho-nvl';
 import {
   parseOrderProductsFromRecord,
@@ -5103,15 +5109,31 @@ export function buildProductionEntryLine(
     productionName
   );
   const sourceProductId = line?.productId?.trim() || '';
-  return {
+  const metadata = productionEntryMetadataFromOrderLine(line);
+  const sourceQty = parseProductionOrderQuantity(String(line?.quantity ?? ''));
+  const shownQty = remaining > 0 ? String(remaining) : '';
+  const draft: ProductionOrderEntryLine = {
+    key: '',
+    orderRef,
     productCode,
     productName,
     productionName: productionName || line?.productionName || '',
-    quantity: remaining > 0 ? String(remaining) : '',
+    quantity: sourceQty > 0 ? String(sourceQty) : shownQty,
     unit: unit || getOrderProductUnit(orders, orderRef, productCode, productId, productionName),
+    productId: sourceProductId || undefined,
+    ...metadata
+  };
+  const rates = conversionRatesForEntry(draft, sourceQty);
+  const scaled = scaleProductionEntryQuantity({ ...draft, quyDoiMotDonVi: rates }, shownQty);
+  return {
+    productCode,
+    productName,
+    productionName: draft.productionName,
+    unit: draft.unit,
     // Chỉ lấy ID thật trên dòng don_hang.san_pham; không fallback từ catalog/ô chọn.
     productId: sourceProductId || undefined,
-    ...productionEntryMetadataFromOrderLine(line),
+    ...metadata,
+    ...scaled,
     ...buildSalesOrderRegionFields(sourceOrder, line, remaining)
   };
 }
@@ -5353,6 +5375,8 @@ export type ProductionOrderEntryLine = {
   slBac?: string;
   slTrung?: string;
   slNam?: string;
+  /** Quy đổi cho 1 đơn vị SL. Giữ cố định để mỗi lần đổi SL tính lại KG / M2 / M dài. */
+  quyDoiMotDonVi?: ProductionConversionRates;
 };
 
 function productionEntryMetadataFromOrderLine(line?: OrderProductLine): Partial<ProductionOrderEntryLine> {
@@ -5406,15 +5430,6 @@ function emptyProductionEntryMetadata(): Partial<ProductionOrderEntryLine> {
     slTrung: undefined,
     slNam: undefined
   };
-}
-
-function productionEntryConversionValue(line: ProductionOrderEntryLine, unit: 'kg' | 'm2' | 'm dài'): number | null {
-  const normalizeUnit = (value: string) => value.trim().toLocaleLowerCase('vi').replace(/\s+/g, ' ');
-  const result = line.conversionResults?.find(item => normalizeUnit(item.unit) === normalizeUnit(unit));
-  if (result && Number.isFinite(result.value)) return result.value;
-  const fallback = unit === 'kg' ? line.tongKg : unit === 'm2' ? line.m2 : line.mDai;
-  const parsed = fallback ? parseProductionOrderQuantity(fallback) : 0;
-  return parsed > 0 ? parsed : null;
 }
 
 export { formatProductionNameWithLength };
@@ -5998,15 +6013,18 @@ export function AddProductionOrderModal({
       selectedProduct?.remainingQty
     );
 
-    const newLine: ProductionOrderEntryLine = {
+    const drafted: ProductionOrderEntryLine = {
       key: `entry-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       orderRef,
       ...built,
       productCode: resolvedProductCode || productCode,
       productName: built.productName || built.productCode,
       productionName: built.productionName || '',
-      quantity: String(quantity),
       unit: built.unit
+    };
+    const newLine: ProductionOrderEntryLine = {
+      ...drafted,
+      ...scaleProductionEntryQuantity(drafted, String(quantity))
     };
 
     setForm(prev => ({
@@ -6129,7 +6147,7 @@ export function AddProductionOrderModal({
 
     if (isSameProduct) {
       if (!currentLine?.quantity.trim() && product.orderQty > 0) {
-        updateEntryLine(key, { quantity: String(product.orderQty) });
+        updateEntryLine(key, scaleProductionEntryQuantity(currentLine, String(product.orderQty)));
       }
       return;
     }
@@ -6682,7 +6700,7 @@ export function AddProductionOrderModal({
                               min="0"
                               step="any"
                               value={line.quantity}
-                              onChange={e => updateEntryLine(line.key, { quantity: e.target.value })}
+                              onChange={e => updateEntryLine(line.key, scaleProductionEntryQuantity(line, e.target.value))}
                               className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-bold tabular-nums text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                               placeholder="0"
                             />
@@ -7755,7 +7773,7 @@ export function EditProductionOrderModal({
                 (product.productionName && product.productionName !== '-' ? product.productionName : '') ||
                 catalogProduct?.productionName ||
                 '';
-              return {
+              const entry: ProductionOrderEntryLine = {
                 key: `edit-${row.id}-${index}`,
                 orderRef: product.orderRef || (row.orderRef === '-' ? '' : row.orderRef),
                 productCode: resolvedProductCode === '-' ? '' : resolvedProductCode,
@@ -7765,6 +7783,10 @@ export function EditProductionOrderModal({
                 unit: product.unit === '-' ? '' : (product.unit || catalogProduct?.unit || ''),
                 productId: sourceProductId || catalogProduct?.id || undefined,
                 ...productionEntryMetadataFromOrderLine(product)
+              };
+              return {
+                ...entry,
+                quyDoiMotDonVi: conversionRatesForEntry(entry, parseProductionOrderQuantity(entry.quantity))
               };
             })
           : [newProductionOrderEntryLine()],
@@ -7953,7 +7975,7 @@ export function EditProductionOrderModal({
     if (isSameProduct) {
       // Chọn lại đúng SP: giữ SL đã nhập tay; nếu đang trống thì khôi phục SL đơn hàng.
       if (!currentLine?.quantity.trim() && product.orderQty > 0) {
-        updateEntryLine(key, { quantity: String(product.orderQty) });
+        updateEntryLine(key, scaleProductionEntryQuantity(currentLine, String(product.orderQty)));
       }
       return;
     }
@@ -8439,7 +8461,7 @@ export function EditProductionOrderModal({
                               min="0"
                               step="any"
                               value={line.quantity}
-                              onChange={e => updateEntryLine(line.key, { quantity: e.target.value })}
+                              onChange={e => updateEntryLine(line.key, scaleProductionEntryQuantity(line, e.target.value))}
                               className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-bold tabular-nums text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                               placeholder="0"
                             />

@@ -21,6 +21,7 @@
 |------|----------|
 | `src/features/lenh-sx/index.tsx` | Panel / logic chính |
 | `src/features/ke-hoach-san-xuat/index.tsx` | Form thêm / sửa lệnh SX |
+| `src/features/ke-hoach-san-xuat/entryConversion.ts` | Đổi SL thì tính lại KG / M2 / M dài theo suất 1 SP |
 | `src/App.tsx` | Shell routing — import panel, không chứa logic bảng |
 | `src/features/_shared/` | Helper dùng chung (storage, hr, recordHelpers) |
 
@@ -57,7 +58,7 @@ Gộp dòng tiến độ (`buildProductionProgressForOrder` trong `src/utils/pro
 - `lenh_sx.san_pham[].san_pham_id` phải giữ nguyên ID từ đúng dòng `don_hang.san_pham[]`; frontend và backend không được fallback/dò lại theo mã hoặc tên sản phẩm vì có thể trỏ sang một dòng danh mục khác.
 - Sản phẩm luôn lưu và hiển thị **tên ghép** (`ten_ghep` lấy từ dòng đơn hàng; có mét cắt thì thay mét cuối bằng `replaceCutLengthMeters`; thiếu mới ghép lại từ `ten_san_xuat` + mét cắt nếu có).
 - Xem trước/in lệnh SX hiển thị đúng `ten_ghep` trong JSON `san_pham` (thiếu thì tên SX thô) — **không tự ghép lại**.
-- Các cột KG / M2 / M dài và JSON `lenh_sx.san_pham` lấy trực tiếp dữ liệu quy đổi từ dòng đơn hàng (`ket_qua_quy_doi` và các trường liên quan), không tải lại `san_pham_quy_doi` trong form lệnh SX.
+- Các cột KG / M2 / M dài và JSON `lenh_sx.san_pham` lấy trực tiếp dữ liệu quy đổi từ dòng đơn hàng (`ket_qua_quy_doi` và các trường liên quan), không tải lại `san_pham_quy_doi` trong form lệnh SX. Đổi ô **SL** thì tính lại KG / M2 / M dài = suất 1 SP × SL mới (gõ thêm chữ số vẫn cập nhật; suất lấy từ tổng đơn ÷ SL đơn, fallback `kg_1_sp`).
 
 ### Mã lệnh SX
 
