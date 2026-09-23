@@ -216,29 +216,30 @@ function perUnitFromOrderTotal(total: unknown, quantity: unknown): string {
   return String(round2(totalNum / qtyNum));
 }
 
-/** Tự tính Trọng lượng = Số lượng × KG/1 SP khi ô Trọng lượng đang trống. */
+/** Tự tính Trọng lượng = Số lượng × KG/1 SP mỗi lần đổi số lượng (kể cả khi ô đã có số). */
 function withAutoTrongLuong(row: SanPhamRow, soLuong: string): SanPhamRow {
   const next: SanPhamRow = { ...row, so_luong: soLuong };
-  if (str(row.trong_luong)) return next;
-  const qtyNum = Number(str(soLuong).replace(',', '.'));
   const kgNum = Number(str(row.kg_1_sp).replace(',', '.'));
-  if (Number.isFinite(qtyNum) && qtyNum > 0 && Number.isFinite(kgNum) && kgNum > 0) {
+  if (!Number.isFinite(kgNum) || kgNum <= 0) return next;
+  const qtyNum = Number(str(soLuong).replace(',', '.'));
+  if (Number.isFinite(qtyNum) && qtyNum > 0) {
     next.trong_luong = String(round2(qtyNum * kgNum));
+  } else if (!str(soLuong)) {
+    next.trong_luong = '';
   }
   return next;
 }
 
 type SpMetricKey = 'kg_1_sp' | 'm2_1_sp' | 'm_dai_1_sp';
 
-/** Sửa tay 1 chỉ số quy đổi → đánh dấu nguồn 'tay'; đổi KG/1 SP thì tính lại Trọng lượng nếu đang trống. */
+/** Sửa tay 1 chỉ số quy đổi → đánh dấu nguồn 'tay'; đổi KG/1 SP thì tính lại Trọng lượng theo số lượng hiện tại. */
 function updateSpMetric(row: SanPhamRow, key: SpMetricKey, value: string): SanPhamRow {
   const next: SanPhamRow = { ...row, [key]: value, nguon_quy_doi: 'tay' };
-  if (key === 'kg_1_sp' && !str(row.trong_luong)) {
-    const qtyNum = Number(str(row.so_luong).replace(',', '.'));
-    const kgNum = Number(str(value).replace(',', '.'));
-    if (Number.isFinite(qtyNum) && qtyNum > 0 && Number.isFinite(kgNum) && kgNum > 0) {
-      next.trong_luong = String(round2(qtyNum * kgNum));
-    }
+  if (key !== 'kg_1_sp') return next;
+  const qtyNum = Number(str(row.so_luong).replace(',', '.'));
+  const kgNum = Number(str(value).replace(',', '.'));
+  if (Number.isFinite(qtyNum) && qtyNum > 0 && Number.isFinite(kgNum) && kgNum > 0) {
+    next.trong_luong = String(round2(qtyNum * kgNum));
   }
   return next;
 }
