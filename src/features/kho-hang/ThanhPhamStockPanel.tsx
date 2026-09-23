@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { SoTronDatePicker } from '../so-tron/SoTronDatePicker';
 
 export type ThanhPhamStockMetric = {
@@ -15,6 +15,9 @@ export type ThanhPhamStockRow = {
   ten_sp: string;
   tinh_chat?: string;
   don_vi: string;
+  trong_luong_kg_mot_sp?: number;
+  so_m2_mot_sp?: number;
+  so_m_dai_mot_sp?: number;
   nhom_vthh: string;
   loai_kho: string;
   ten_kho: string;
@@ -35,6 +38,71 @@ function formatKg(value: number | undefined) {
   return `${value}`;
 }
 
+type StockUnitKind = 'base' | 'm_dai' | 'm2' | 'kg';
+
+type StockUnitLine = {
+  unit: string;
+  kind: StockUnitKind;
+};
+
+function normalizeUnitLabel(unit: string) {
+  return String(unit || '')
+    .trim()
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+}
+
+function isM2Unit(unit: string) {
+  const n = normalizeUnitLabel(unit);
+  return n === 'm2' || n.includes('met vuong');
+}
+
+function isLengthUnit(unit: string) {
+  const n = normalizeUnitLabel(unit);
+  return n === 'm' || n === 'm dai' || n === 'met' || n === 'met dai';
+}
+
+function isKgUnit(unit: string) {
+  const n = normalizeUnitLabel(unit);
+  return n === 'kg' || n === 'kilogram';
+}
+
+function hasAmount(values: Array<number | undefined>) {
+  return values.some(value => Number.isFinite(value) && Number(value) > 0);
+}
+
+/** Dòng gốc theo ĐVT, rồi m dài / m² / kg khi sổ có hệ số hoặc phiếu có số. */
+function stockUnitLines(row: ThanhPhamStockRow): StockUnitLine[] {
+  const lines: StockUnitLine[] = [{ unit: row.don_vi || '—', kind: 'base' }];
+  const metrics = [row.ton_dau, row.nhap, row.xuat, row.ton_cuoi];
+  if (
+    !isLengthUnit(row.don_vi) &&
+    hasAmount([row.so_m_dai_mot_sp, ...metrics.map(metric => metric?.m_dai)])
+  ) {
+    lines.push({ unit: 'm dài', kind: 'm_dai' });
+  }
+  if (!isM2Unit(row.don_vi) && hasAmount([row.so_m2_mot_sp, ...metrics.map(metric => metric?.m2)])) {
+    lines.push({ unit: 'm²', kind: 'm2' });
+  }
+  if (
+    !isKgUnit(row.don_vi) &&
+    hasAmount([row.trong_luong_kg_mot_sp, row.tong_tl_kg, ...metrics.map(metric => metric?.kg)])
+  ) {
+    lines.push({ unit: 'kg', kind: 'kg' });
+  }
+  return lines;
+}
+
+function metricAmount(metric: ThanhPhamStockMetric | undefined, kind: StockUnitKind) {
+  if (!metric) return undefined;
+  if (kind === 'm2') return metric.m2;
+  if (kind === 'm_dai') return metric.m_dai;
+  if (kind === 'kg') return metric.kg;
+  return metric.sl;
+}
+
 type Props = {
   warehouseName: string;
   topControls?: React.ReactNode;
@@ -43,8 +111,8 @@ type Props = {
 
 /**
  * /kho-hang → Kho thành phẩm (một màn).
- * Từ ngày → Đến ngày → danh sách SP từ nhap_kho (thanh_pham) gộp mã+tên;
- * Tồn đầu / Nhập / Xuất lấy từ phiếu nhập xuất kho.
+ * Từ ngày → Đến ngày → danh sách SP từ nhap_kho.
+ * Mỗi SP một nhóm dòng giống /san-pham: ĐVT gốc, thêm m dài / m² / kg khi có quy đổi.
  */
 export function ThanhPhamStockPanel({ warehouseName, topControls, onBack }: Props) {
   const [fromDate, setFromDate] = useState('');
@@ -170,7 +238,7 @@ export function ThanhPhamStockPanel({ warehouseName, topControls, onBack }: Prop
           Kho: <span className="text-zinc-800">{warehouseName || '—'}</span>
           {' · '}
           Danh sách SP lấy từ sổ nhập kho thành phẩm (không theo ngày). Chọn Từ ngày → Đến ngày để
-          tính Tồn đầu / Nhập / Xuất từ phiếu nhập xuất kho (khớp theo mã + tên SP).
+          tính Tồn đầu / Nhập / Xuất từ phiếu nhập xuất kho. Có m² hoặc m dài thì hiện thêm dòng đơn vị, giống danh sách sản phẩm.
         </p>
       </div>
 
@@ -189,13 +257,13 @@ export function ThanhPhamStockPanel({ warehouseName, topControls, onBack }: Prop
               <th className="px-3 py-2">Tên sản phẩm</th>
               <th className="px-3 py-2">Tính chất</th>
               <th className="px-3 py-2">Nhóm</th>
-              <th className="px-3 py-2">Đơn vị</th>
               <th className="px-3 py-2">Kho</th>
-              <th className="px-3 py-2 text-right">Tổng TL (kg)</th>
-              <th className="px-3 py-2 text-right">Tồn đầu</th>
-              <th className="px-3 py-2 text-right">Nhập</th>
-              <th className="px-3 py-2 text-right">Xuất</th>
-              <th className="px-3 py-2 text-right">Tồn</th>
+              <th className="px-3 py-2 text-center">Đơn vị</th>
+              <th className="px-3 py-2 text-center">Tổng TL (kg)</th>
+              <th className="px-3 py-2 text-center">Tồn đầu</th>
+              <th className="px-3 py-2 text-center">Nhập</th>
+              <th className="px-3 py-2 text-center">Xuất</th>
+              <th className="px-3 py-2 text-center">Tồn</th>
             </tr>
           </thead>
           <tbody>
@@ -224,37 +292,70 @@ export function ThanhPhamStockPanel({ warehouseName, topControls, onBack }: Prop
                 </td>
               </tr>
             ) : (
-              filtered.map(row => (
-                <tr
-                  key={`${row.ma_sp_full || row.ma_sp}||${row.ten_sp}||${row.ten_kho}`}
-                  className="border-b border-zinc-100 last:border-0"
-                >
-                  <td className="px-3 py-2 font-bold text-zinc-900">{row.ma_sp || '—'}</td>
-                  <td className="px-3 py-2 font-mono text-[11px] font-semibold text-zinc-700">
-                    {row.ma_qr || '—'}
-                  </td>
-                  <td className="px-3 py-2 font-semibold text-zinc-800">{row.ten_sp || '—'}</td>
-                  <td className="px-3 py-2 text-zinc-700">{row.tinh_chat || '—'}</td>
-                  <td className="px-3 py-2 text-zinc-700">{row.nhom_vthh || '—'}</td>
-                  <td className="px-3 py-2 text-zinc-700">{row.don_vi || '—'}</td>
-                  <td className="px-3 py-2 text-zinc-700">{row.ten_kho || warehouseName || '—'}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-zinc-800">
-                    {formatKg(row.tong_tl_kg ?? row.ton_cuoi?.kg)}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-zinc-800">
-                    {formatQty(row.ton_dau?.sl)}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-emerald-700">
-                    {formatQty(row.nhap?.sl)}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-rose-700">
-                    {formatQty(row.xuat?.sl)}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums font-bold text-zinc-950">
-                    {formatQty(row.ton_cuoi?.sl)}
-                  </td>
-                </tr>
-              ))
+              filtered.map(row => {
+                const lines = stockUnitLines(row);
+                const rowSpan = lines.length;
+                const groupKey = `${row.ma_sp_full || row.ma_sp}||${row.ten_sp}||${row.trong_luong_kg_mot_sp || 0}|${row.so_m2_mot_sp || 0}|${row.so_m_dai_mot_sp || 0}||${row.ten_kho}`;
+                const quantityClass = (id: string, muted: boolean) => {
+                  if (muted) return 'font-bold text-zinc-700';
+                  if (id === 'nhap') return 'font-bold text-emerald-700';
+                  if (id === 'xuat') return 'font-bold text-rose-700';
+                  if (id === 'ton_cuoi') return 'font-bold text-zinc-950';
+                  return 'font-bold text-zinc-800';
+                };
+                const quantityCells = (line: StockUnitLine, muted: boolean) =>
+                  (
+                    [
+                      ['ton_dau', row.ton_dau],
+                      ['nhap', row.nhap],
+                      ['xuat', row.xuat],
+                      ['ton_cuoi', row.ton_cuoi]
+                    ] as const
+                  ).map(([id, metric]) => (
+                    <td
+                      key={id}
+                      className={`px-3 py-2.5 text-center font-mono tabular-nums ${quantityClass(id, muted)}`}
+                    >
+                      {formatQty(metricAmount(metric, line.kind))}
+                    </td>
+                  ));
+                return (
+                  <Fragment key={groupKey}>
+                    <tr className="border-t-2 border-zinc-300 bg-white">
+                      <td rowSpan={rowSpan} className="px-3 py-2.5 align-middle font-bold text-zinc-900">
+                        {row.ma_sp || '—'}
+                      </td>
+                      <td rowSpan={rowSpan} className="px-3 py-2.5 align-middle font-mono text-[11px] font-semibold text-zinc-700">
+                        {row.ma_qr || '—'}
+                      </td>
+                      <td rowSpan={rowSpan} className="px-3 py-2.5 align-middle font-semibold text-zinc-800">
+                        {row.ten_sp || '—'}
+                      </td>
+                      <td rowSpan={rowSpan} className="px-3 py-2.5 align-middle text-zinc-700">
+                        {row.tinh_chat || '—'}
+                      </td>
+                      <td rowSpan={rowSpan} className="px-3 py-2.5 align-middle text-zinc-700">
+                        {row.nhom_vthh || '—'}
+                      </td>
+                      <td rowSpan={rowSpan} className="px-3 py-2.5 align-middle text-zinc-700">
+                        {row.ten_kho || warehouseName || '—'}
+                      </td>
+                      <td className="px-3 py-2.5 text-center font-bold text-zinc-800">{lines[0].unit}</td>
+                      <td className="px-3 py-2.5 text-center font-mono font-bold tabular-nums text-emerald-800">
+                        {formatKg(row.tong_tl_kg ?? row.ton_cuoi?.kg)}
+                      </td>
+                      {quantityCells(lines[0], false)}
+                    </tr>
+                    {lines.slice(1).map(line => (
+                      <tr key={`${groupKey}||${line.kind}`} className="border-t border-zinc-100 bg-zinc-50/70">
+                        <td className="px-3 py-2 text-center font-bold text-zinc-700">{line.unit}</td>
+                        <td className="px-3 py-2 text-center font-mono font-bold text-zinc-400">—</td>
+                        {quantityCells(line, true)}
+                      </tr>
+                    ))}
+                  </Fragment>
+                );
+              })
             )}
           </tbody>
         </table>

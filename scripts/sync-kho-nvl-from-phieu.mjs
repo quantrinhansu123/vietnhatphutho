@@ -18,12 +18,32 @@ function round(value) {
 }
 
 try {
-  const { data: movements, error: movementError } = await supabase
-    .from('phieu_xuat_nhap_kho')
-    .select('ma_npl, loai_phieu, so_luong')
-    .or('loai_kho.eq.nvl,loai_kho.is.null');
-
-  if (movementError) throw new Error(movementError.message);
+  // Doc gop bang tach (phieu_nhap_kho + phieu_xuat_kho) + bang cu fallback.
+  // Backfill giu nguyen id nen dedupe theo id de khong dem trung.
+  const tables = ['phieu_nhap_kho', 'phieu_xuat_kho', 'phieu_xuat_nhap_kho'];
+  const seenIds = new Set();
+  const movements = [];
+  for (const table of tables) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('id, ma_npl, loai_phieu, so_luong')
+      .or('loai_kho.eq.nvl,loai_kho.is.null');
+    if (error) {
+      // Bang moi chua tao -> bo qua; bang cu loi that -> throw.
+      if (table !== 'phieu_xuat_nhap_kho') {
+        console.warn(`Bo qua bang ${table}: ${error.message}`);
+        continue;
+      }
+      throw new Error(error.message);
+    }
+    for (const row of data || []) {
+      const id = String(row.id ?? '').trim();
+      const key = id || `${row.ma_npl}||${row.loai_phieu}||${row.so_luong}`;
+      if (seenIds.has(key)) continue;
+      seenIds.add(key);
+      movements.push(row);
+    }
+  }
 
   const totals = new Map();
   for (const row of movements || []) {

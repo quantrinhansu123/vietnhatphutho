@@ -66,6 +66,10 @@ export type TonKhoThanhPhamPeriodRow = {
   nhap: TonKhoMetric;
   xuat: TonKhoMetric;
   ton_cuoi: TonKhoMetric;
+  /** Hệ số 1 SP từ sổ nhap_kho. Tồn kỳ vẫn lấy từ phiếu. */
+  trong_luong_kg_mot_sp?: number;
+  so_m2_mot_sp?: number;
+  so_m_dai_mot_sp?: number;
 };
 
 function round3(value: number) {
@@ -85,6 +89,27 @@ export function parseThanhPhamNumber(value: unknown): number {
 /** Khóa gộp SP: ma_sp + ten_sp (trim, so sánh không phân biệt hoa thường tên). */
 export function thanhPhamMergeKey(maSp: string, tenSp: string): string {
   return `${String(maSp || '').trim()}||${String(tenSp || '').trim().toLocaleLowerCase('vi')}`;
+}
+
+/** Khóa quy đổi 1 SP: trong_luong_kg_mot_sp|so_m2_mot_sp|so_m_dai_mot_sp. */
+export function nhapKhoPerUnitKey(kg: number, m2: number, mDai: number): string {
+  const part = (value: number) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return '0';
+    return String(Math.round(n * 1_000_000) / 1_000_000);
+  };
+  return `${part(kg)}|${part(m2)}|${part(mDai)}`;
+}
+
+/** Sổ nhap_kho: cùng mã + tên nhưng khác quy đổi là hai dòng. */
+export function nhapKhoProductKey(
+  maSp: string,
+  tenSp: string,
+  kg: number,
+  m2: number,
+  mDai: number
+): string {
+  return `${thanhPhamMergeKey(maSp, tenSp)}||${nhapKhoPerUnitKey(kg, m2, mDai)}`;
 }
 
 export function isCuonLikeUnit(unit: string): boolean {
@@ -277,11 +302,24 @@ export type ThanhPhamMovementRow = {
  */
 export function computeThanhPhamPeriodBalances(
   movements: ThanhPhamMovementRow[],
-  options: { from?: string | null; to?: string | null; tenKho?: string | null } = {}
+  options: {
+    from?: string | null;
+    to?: string | null;
+    tenKho?: string | null;
+    /** Khi có sổ nhap_kho, phiếu được gắn vào đúng dòng quy đổi (mã + tên + hệ số 1 SP). */
+    catalog?: NhapKhoProductSeed[];
+  } = {}
 ): TonKhoThanhPhamPeriodRow[] {
   const from = options.from ? String(options.from).slice(0, 10) : '';
   const to = options.to ? String(options.to).slice(0, 10) : '';
   const tenKhoFilter = String(options.tenKho || '').trim();
+  const seedsByProduct = new Map<string, NhapKhoProductSeed[]>();
+  for (const seed of options.catalog || []) {
+    const productKey = thanhPhamMergeKey(seed.ma_sp, seed.ten_sp);
+    const list = seedsByProduct.get(productKey);
+    if (list) list.push(seed);
+    else seedsByProduct.set(productKey, [seed]);
+  }
 
   type Acc = {
     ma_sp: string;
@@ -289,6 +327,9 @@ export function computeThanhPhamPeriodBalances(
     don_vi: string;
     nhom_vthh: string;
     ten_kho: string;
+    trong_luong_kg_mot_sp: number;
+    so_m2_mot_sp: number;
+    so_m_dai_mot_sp: number;
     ton_dau: TonKhoMetric;
     nhap: TonKhoMetric;
     xuat: TonKhoMetric;
@@ -311,7 +352,10 @@ export function computeThanhPhamPeriodBalances(
       m_dai: Math.max(0, parseThanhPhamNumber(row.so_m_dai)),
       m2: Math.max(0, parseThanhPhamNumber(row.so_m2))
     };
-    const key = `${thanhPhamMergeKey(ma_sp, ten_sp)}||${ten_kho}`;
+    const seed = matchNhapKhoSeed(seedsByProduct.get(thanhPhamMergeKey(ma_sp, ten_sp)) || [], row);
+    const key = seed
+      ? `${nhapKhoProductKey(seed.ma_sp, seed.ten_sp, seed.trong_luong_kg_mot_sp, seed.so_m2_mot_sp, seed.so_m_dai_mot_sp)}||${ten_kho}`
+      : `${thanhPhamMergeKey(ma_sp, ten_sp)}||${ten_kho}`;
     let acc = map.get(key);
     if (!acc) {
       acc = {
@@ -320,6 +364,9 @@ export function computeThanhPhamPeriodBalances(
         don_vi: String(row.don_vi || '').trim(),
         nhom_vthh: String(row.nhom_vthh || '').trim(),
         ten_kho,
+        trong_luong_kg_mot_sp: seed?.trong_luong_kg_mot_sp || 0,
+        so_m2_mot_sp: seed?.so_m2_mot_sp || 0,
+        so_m_dai_mot_sp: seed?.so_m_dai_mot_sp || 0,
         ton_dau: emptyTonKhoMetric(),
         nhap: emptyTonKhoMetric(),
         xuat: emptyTonKhoMetric()
@@ -351,6 +398,9 @@ export function computeThanhPhamPeriodBalances(
       nhom_vthh: acc.nhom_vthh,
       loai_kho: 'san_pham',
       ten_kho: acc.ten_kho,
+      trong_luong_kg_mot_sp: acc.trong_luong_kg_mot_sp,
+      so_m2_mot_sp: acc.so_m2_mot_sp,
+      so_m_dai_mot_sp: acc.so_m_dai_mot_sp,
       ton_dau: acc.ton_dau,
       nhap: acc.nhap,
       xuat: acc.xuat,
@@ -359,26 +409,97 @@ export function computeThanhPhamPeriodBalances(
     .sort((a, b) => `${a.ma_sp}${a.ten_sp}`.localeCompare(`${b.ma_sp}${b.ten_sp}`, 'vi'));
 }
 
-/** Dòng danh mục từ sổ nhap_kho (đã gộp theo mã + tên). */
+/** Dòng danh mục từ sổ nhap_kho (đã gộp theo mã + tên). Hệ số là của 1 SP. */
 export type NhapKhoProductSeed = {
   ma_sp: string;
   ten_sp: string;
   don_vi: string;
   ten_kho: string;
+  trong_luong_kg_mot_sp: number;
+  so_m2_mot_sp: number;
+  so_m_dai_mot_sp: number;
 };
 
+function positivePerUnit(value: unknown): number {
+  const n = parseThanhPhamNumber(value);
+  if (!(n > 0)) return 0;
+  return Math.round(n * 1_000_000) / 1_000_000;
+}
+
 /**
- * Tổng hợp SP trong nhap_kho theo (ma_sp + ten_sp) — không phụ thuộc ngày / không bắt buộc khớp ten_kho.
+ * Gắn một dòng phiếu vào đúng seed nhap_kho.
+ * Một seed thì dùng luôn. Nhiều quy đổi thì chọn seed có SL × hệ số sát tổng dòng phiếu nhất.
+ */
+function matchNhapKhoSeed(
+  seeds: NhapKhoProductSeed[],
+  row: Pick<ThanhPhamMovementRow, 'so_luong' | 'trong_luong_kg' | 'so_m2' | 'so_m_dai'>
+): NhapKhoProductSeed | null {
+  if (seeds.length === 0) return null;
+  if (seeds.length === 1) return seeds[0];
+  const qty = Math.max(0, parseThanhPhamNumber(row.so_luong));
+  const kg = Math.max(0, parseThanhPhamNumber(row.trong_luong_kg));
+  const m2 = Math.max(0, parseThanhPhamNumber(row.so_m2));
+  const mDai = Math.max(0, parseThanhPhamNumber(row.so_m_dai));
+  let best = seeds[0];
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const seed of seeds) {
+    const dist =
+      Math.abs(qty * seed.trong_luong_kg_mot_sp - kg) +
+      Math.abs(qty * seed.so_m2_mot_sp - m2) +
+      Math.abs(qty * seed.so_m_dai_mot_sp - mDai);
+    if (dist < bestDist - 1e-9) {
+      best = seed;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+function nhapKhoBalanceKey(row: {
+  ma_sp: string;
+  ten_sp: string;
+  trong_luong_kg_mot_sp?: number;
+  so_m2_mot_sp?: number;
+  so_m_dai_mot_sp?: number;
+}): string {
+  const kg = positivePerUnit(row.trong_luong_kg_mot_sp);
+  const m2 = positivePerUnit(row.so_m2_mot_sp);
+  const mDai = positivePerUnit(row.so_m_dai_mot_sp);
+  if (kg > 0 || m2 > 0 || mDai > 0) return nhapKhoProductKey(row.ma_sp, row.ten_sp, kg, m2, mDai);
+  return thanhPhamMergeKey(row.ma_sp, row.ten_sp);
+}
+
+/**
+ * Tổng hợp SP trong nhap_kho theo mã + tên + quy đổi 1 SP.
+ * Cùng mã, cùng tên, khác kg/m²/m dài là hai dòng.
  */
 export function aggregateNhapKhoProducts(
-  rows: Array<{ ma_sp?: string | null; ten_sp?: string | null; don_vi?: string | null; ten_kho?: string | null }>
+  rows: Array<{
+    ma_sp?: string | null;
+    ten_sp?: string | null;
+    don_vi?: string | null;
+    ten_kho?: string | null;
+    trong_luong_kg_mot_sp?: number | null;
+    so_m2_mot_sp?: number | null;
+    so_m_dai_mot_sp?: number | null;
+    created_at?: string | null;
+  }>
 ): NhapKhoProductSeed[] {
+  const ordered = [...rows].sort((a, b) => {
+    const ta = String(a.created_at || '');
+    const tb = String(b.created_at || '');
+    if (ta && tb && ta !== tb) return ta < tb ? -1 : 1;
+    return 0;
+  });
   const map = new Map<string, NhapKhoProductSeed>();
-  for (const row of rows) {
+  for (const row of ordered) {
     const ma_sp = String(row.ma_sp || '').trim();
     const ten_sp = String(row.ten_sp || '').trim();
     if (!ma_sp && !ten_sp) continue;
-    const key = thanhPhamMergeKey(ma_sp, ten_sp);
+    const kg = positivePerUnit(row.trong_luong_kg_mot_sp);
+    const m2 = positivePerUnit(row.so_m2_mot_sp);
+    const mDai = positivePerUnit(row.so_m_dai_mot_sp);
+    const key = nhapKhoProductKey(ma_sp, ten_sp, kg, m2, mDai);
     const existing = map.get(key);
     if (existing) {
       if (!existing.don_vi && row.don_vi) existing.don_vi = String(row.don_vi).trim();
@@ -389,7 +510,10 @@ export function aggregateNhapKhoProducts(
       ma_sp,
       ten_sp,
       don_vi: String(row.don_vi || '').trim(),
-      ten_kho: String(row.ten_kho || '').trim() || 'Kho thành phẩm'
+      ten_kho: String(row.ten_kho || '').trim() || 'Kho thành phẩm',
+      trong_luong_kg_mot_sp: kg,
+      so_m2_mot_sp: m2,
+      so_m_dai_mot_sp: mDai
     });
   }
   return Array.from(map.values()).sort((a, b) =>
@@ -399,7 +523,7 @@ export function aggregateNhapKhoProducts(
 
 /**
  * Danh sách SP = sổ nhap_kho; tồn đầu / nhập / xuất / tồn = từ phiếu NX (đã compute).
- * Khớp theo mã + tên (không phụ thuộc ten_kho trống trên phiếu).
+ * Khớp theo mã + tên + quy đổi 1 SP. Cùng mã tên nhưng khác hệ số không cộng chung tồn.
  * SP có trong nhap_kho nhưng chưa có phiếu → số liệu 0.
  */
 export function mergeNhapKhoCatalogWithPeriodBalances(
@@ -411,7 +535,7 @@ export function mergeNhapKhoCatalogWithPeriodBalances(
 
   const balanceByKey = new Map<string, TonKhoThanhPhamPeriodRow>();
   for (const row of balances) {
-    const key = thanhPhamMergeKey(row.ma_sp, row.ten_sp);
+    const key = nhapKhoBalanceKey(row);
     const existing = balanceByKey.get(key);
     if (!existing) {
       balanceByKey.set(key, {
@@ -435,7 +559,7 @@ export function mergeNhapKhoCatalogWithPeriodBalances(
 
   const result: TonKhoThanhPhamPeriodRow[] = [];
   for (const seed of catalog) {
-    const key = thanhPhamMergeKey(seed.ma_sp, seed.ten_sp);
+    const key = nhapKhoBalanceKey(seed);
     const balance = balanceByKey.get(key);
     if (balance) {
       result.push({
@@ -444,7 +568,10 @@ export function mergeNhapKhoCatalogWithPeriodBalances(
         ten_sp: seed.ten_sp || balance.ten_sp,
         don_vi: seed.don_vi || balance.don_vi,
         ten_kho: displayKho,
-        loai_kho: 'thanh_pham'
+        loai_kho: 'thanh_pham',
+        trong_luong_kg_mot_sp: seed.trong_luong_kg_mot_sp,
+        so_m2_mot_sp: seed.so_m2_mot_sp,
+        so_m_dai_mot_sp: seed.so_m_dai_mot_sp
       });
       continue;
     }
@@ -459,7 +586,10 @@ export function mergeNhapKhoCatalogWithPeriodBalances(
       ton_dau: zero,
       nhap: { ...zero },
       xuat: { ...zero },
-      ton_cuoi: { ...zero }
+      ton_cuoi: { ...zero },
+      trong_luong_kg_mot_sp: seed.trong_luong_kg_mot_sp,
+      so_m2_mot_sp: seed.so_m2_mot_sp,
+      so_m_dai_mot_sp: seed.so_m_dai_mot_sp
     });
   }
 

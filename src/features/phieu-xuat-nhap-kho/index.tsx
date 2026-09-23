@@ -175,10 +175,16 @@ export interface WarehouseMovementRow {
   unitPrice: number;
   lineAmount: number;
   weightKg?: number;
+  areaM2?: number;
+  lengthM?: number;
+  nhomVthh?: string;
   reason: string;
   note: string;
   createdBy: string;
   createdAt: string;
+  /** Địa chỉ phiếu nhập thành phẩm. */
+  deliveryAddress?: string;
+  soTronIds?: string[];
   /** nguoi giao / dia diem / loai nhap kho (phieu nhap). */
   deliverer?: string;
   warehouseLocation?: string;
@@ -324,6 +330,8 @@ export type WarehouseSlipPrefillDraft = {
   warehouseLocation?: string;
   /** loai nhap kho NVL. */
   loaiNhapKho?: string;
+  deliveryAddress?: string;
+  soTronIds?: string[];
   editSlipCode?: string;
   actualWeightImageUrl?: string;
   actualWeightImagePublicId?: string;
@@ -347,6 +355,12 @@ export type WarehouseSlipPrefillDraft = {
       | 'warehouseClass'
       | 'machine'
       | 'normWeightPerUnitKg'
+      | 'weightKg'
+      | 'areaM2'
+      | 'lengthM'
+      | 'kgPerUnit'
+      | 'm2PerUnit'
+      | 'mDaiPerUnit'
       | 'sourceInboundLineId'
       | 'sourceInboundSlipCode'
       | 'nhomVthh'
@@ -424,6 +438,9 @@ export function buildWarehouseSlipDraftFromHistoryRows(
   if (!header) return null;
 
   const linkedOrderCodes = extractLinkedProductionOrderCodes(header.reason, header.note);
+  const machines = [
+    ...new Set(rows.map(row => String(row.machine || '').trim()).filter(Boolean))
+  ];
 
   return {
     slipType: header.slipType,
@@ -434,7 +451,7 @@ export function buildWarehouseSlipDraftFromHistoryRows(
     note: header.note || '',
     createdBy: header.createdBy || '',
     productionOrderRef: formatWarehouseProductionOrderSelection(linkedOrderCodes),
-    machine: header.machine || '',
+    machine: machines.join(', '),
     shift: formatWarehouseShiftSelection(
       header.shiftList && header.shiftList.length > 0
         ? header.shiftList
@@ -443,29 +460,55 @@ export function buildWarehouseSlipDraftFromHistoryRows(
     deliverer: header.deliverer || '',
     warehouseLocation: header.warehouseLocation || '',
     loaiNhapKho: header.inboundKind || '',
+    deliveryAddress: header.deliveryAddress || '',
+    soTronIds: header.soTronIds || [],
     editSlipCode: slipCode,
-    lines: rows.map(row => ({
-      code: row.itemCode,
-      name: row.itemName,
-      productionName: row.itemProductionName || '',
-      unit: row.unit,
-      quantity: formatNumber(row.quantity, 2),
-      documentQuantity:
-        row.documentQuantity != null && Number.isFinite(row.documentQuantity)
-          ? formatNumber(row.documentQuantity, 2)
-          : '',
-      tonDauCaMay:
-        row.tonDauCaMay != null && Number.isFinite(row.tonDauCaMay)
-          ? formatNumber(row.tonDauCaMay, 3)
-          : '',
-      unitPrice: row.unitPrice > 0 ? String(row.unitPrice) : '',
-      sourceInboundLineId: row.sourceInboundLineId || '',
-      sourceInboundSlipCode: row.sourceInboundSlipCode || '',
-      damagedReportRowId: row.damagedReportRowId || '',
-      acceptanceReportRowId: row.acceptanceReportRowId || '',
-      actualWeightImageUrl: row.actualWeightImageUrl || '',
-      actualWeightImagePublicId: '',
-    }))
+    lines: rows.map(row => {
+      const quantity = Number.isFinite(row.quantity) ? row.quantity : 0;
+      const perUnit = (total?: number) =>
+        total != null && Number.isFinite(total) && total > 0 && quantity > 0 ? total / quantity : undefined;
+      return {
+        code: row.itemCode,
+        name: row.itemName,
+        productionName: row.itemProductionName || '',
+        unit: row.unit,
+        quantity: formatNumber(quantity, 2),
+        documentQuantity:
+          row.documentQuantity != null && Number.isFinite(row.documentQuantity)
+            ? formatNumber(row.documentQuantity, 2)
+            : '',
+        tonDauCaMay:
+          row.tonDauCaMay != null && Number.isFinite(row.tonDauCaMay)
+            ? formatNumber(row.tonDauCaMay, 3)
+            : '',
+        unitPrice: row.unitPrice > 0 ? String(row.unitPrice) : '',
+        warehouseClass: row.materialClass || '',
+        machine: row.machine || '',
+        nhomVthh: row.nhomVthh || '',
+        normWeightPerUnitKg: perUnit(row.weightKg),
+        weightKg:
+          row.weightKg != null && Number.isFinite(row.weightKg) && row.weightKg > 0
+            ? formatNumber(row.weightKg, 3)
+            : '',
+        areaM2:
+          row.areaM2 != null && Number.isFinite(row.areaM2) && row.areaM2 > 0
+            ? formatNumber(row.areaM2, 3)
+            : '',
+        lengthM:
+          row.lengthM != null && Number.isFinite(row.lengthM) && row.lengthM > 0
+            ? formatNumber(row.lengthM, 3)
+            : '',
+        kgPerUnit: perUnit(row.weightKg),
+        m2PerUnit: perUnit(row.areaM2),
+        mDaiPerUnit: perUnit(row.lengthM),
+        sourceInboundLineId: row.sourceInboundLineId || '',
+        sourceInboundSlipCode: row.sourceInboundSlipCode || '',
+        damagedReportRowId: row.damagedReportRowId || '',
+        acceptanceReportRowId: row.acceptanceReportRowId || '',
+        actualWeightImageUrl: row.actualWeightImageUrl || '',
+        actualWeightImagePublicId: ''
+      };
+    })
   };
 }
 
@@ -610,6 +653,7 @@ import {
   validateWarehouseShiftsSameLoaiCa as validateShiftsSameLoaiCaPure
 } from './nvlSlipLogic';
 import {
+  nhapKhoProductKey,
   type ProductConversionHint
 } from './thanhPham';
 import {
@@ -799,6 +843,10 @@ export type WarehouseSlipPayloadItem = {
   nhom_vthh?: string;
   areaM2?: number;
   lengthM?: number;
+  /** Hệ số 1 SP — ghi sổ nhap_kho, không phải tổng dòng. */
+  kgPerUnit?: number;
+  m2PerUnit?: number;
+  mDaiPerUnit?: number;
   auxiliaryGroup?: string;
   sourceInboundLineId?: string;
   sourceInboundSlipCode?: string;
@@ -897,6 +945,14 @@ export function parseWarehouseSlipPayloadItems(
           warehouseKind === 'san_pham' && Number.isFinite(areaM2) && areaM2 > 0 ? areaM2 : undefined,
         lengthM:
           warehouseKind === 'san_pham' && Number.isFinite(lengthM) && lengthM > 0 ? lengthM : undefined,
+        kgPerUnit:
+          warehouseKind === 'san_pham' && Number(line.kgPerUnit) > 0 ? Number(line.kgPerUnit) : undefined,
+        m2PerUnit:
+          warehouseKind === 'san_pham' && Number(line.m2PerUnit) > 0 ? Number(line.m2PerUnit) : undefined,
+        mDaiPerUnit:
+          warehouseKind === 'san_pham' && Number(line.mDaiPerUnit) > 0
+            ? Number(line.mDaiPerUnit)
+            : undefined,
         nhomVthh,
         nhom_vthh: nhomVthh,
         auxiliaryGroup: line.auxiliaryGroup?.trim() || undefined,
@@ -1165,17 +1221,31 @@ export type TpStockOption = {
   ton_cuoi_kg: number;
   ton_cuoi_m_dai: number;
   ton_cuoi_m2: number;
+  trong_luong_kg_mot_sp?: number;
+  so_m2_mot_sp?: number;
+  so_m_dai_mot_sp?: number;
 };
 
-export function tpStockOptionKey(row: Pick<TpStockOption, 'ma_sp' | 'ten_sp'>) {
-  return `${String(row.ma_sp || '').trim()}||${String(row.ten_sp || '').trim()}`;
+export function tpStockOptionKey(
+  row: Pick<TpStockOption, 'ma_sp' | 'ten_sp' | 'trong_luong_kg_mot_sp' | 'so_m2_mot_sp' | 'so_m_dai_mot_sp'>
+) {
+  return nhapKhoProductKey(
+    row.ma_sp,
+    row.ten_sp,
+    Number(row.trong_luong_kg_mot_sp) || 0,
+    Number(row.so_m2_mot_sp) || 0,
+    Number(row.so_m_dai_mot_sp) || 0
+  );
 }
 
 export function createWarehouseLineDraftFromTpStock(row: TpStockOption): WarehouseSlipLineDraft {
   const sl = Number(row.ton_cuoi_sl) || 0;
-  const kgPer = sl > 0 ? (Number(row.ton_cuoi_kg) || 0) / sl : 0;
-  const m2Per = sl > 0 ? (Number(row.ton_cuoi_m2) || 0) / sl : 0;
-  const mDaiPer = sl > 0 ? (Number(row.ton_cuoi_m_dai) || 0) / sl : 0;
+  const storedKg = Number(row.trong_luong_kg_mot_sp) || 0;
+  const storedM2 = Number(row.so_m2_mot_sp) || 0;
+  const storedMDai = Number(row.so_m_dai_mot_sp) || 0;
+  const kgPer = storedKg > 0 ? storedKg : sl > 0 ? (Number(row.ton_cuoi_kg) || 0) / sl : 0;
+  const m2Per = storedM2 > 0 ? storedM2 : sl > 0 ? (Number(row.ton_cuoi_m2) || 0) / sl : 0;
+  const mDaiPer = storedMDai > 0 ? storedMDai : sl > 0 ? (Number(row.ton_cuoi_m_dai) || 0) / sl : 0;
   return createWarehouseLineDraftFromPrefill({
     code: row.ma_sp,
     name: row.ten_sp,
@@ -1267,6 +1337,23 @@ export function createWarehouseLineDraftFromPrefill(
   };
 }
 
+function parseWarehouseSoTronIds(value: unknown): string[] | undefined {
+  const list = Array.isArray(value)
+    ? value
+    : typeof value === 'string' && value.trim()
+      ? (() => {
+          try {
+            const parsed = JSON.parse(value);
+            return Array.isArray(parsed) ? parsed : value.split(',');
+          } catch {
+            return value.split(',');
+          }
+        })()
+      : [];
+  const ids = list.map(item => String(item ?? '').trim()).filter(Boolean);
+  return ids.length > 0 ? ids : undefined;
+}
+
 export function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow[] {
   const list = data && typeof data === 'object' && Array.isArray((data as { movements?: unknown }).movements)
     ? (data as { movements: unknown[] }).movements
@@ -1328,6 +1415,9 @@ export function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow
         : Number.isFinite(quantity) && Number.isFinite(unitPrice)
           ? Math.round(quantity * unitPrice * 100) / 100
           : 0;
+      const weightKg = Number(record.trong_luong_kg ?? record.weightKg);
+      const areaM2 = Number(record.so_m2 ?? record.areaM2);
+      const lengthM = Number(record.so_m_dai ?? record.lengthM);
       const itemCode =
         warehouseKind === 'san_pham'
           ? maSp || String(record.itemCode ?? '').trim()
@@ -1349,6 +1439,7 @@ export function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow
           ? ((record.ca_list ?? record.caList) as unknown[]).map(item => String(item ?? '').trim()).filter(Boolean)
           : undefined,
         machine: String(record.may ?? record.ma_may ?? record.ten_may ?? record.machine ?? '').trim(),
+        materialClass: String(record.phan_loai_nvl ?? record.materialClass ?? record.warehouseClass ?? '').trim() || undefined,
         itemCode,
         itemName,
         itemProductionName: String(record.ten_nvl_sx ?? record.productionName ?? '').trim() || undefined,
@@ -1358,12 +1449,18 @@ export function normalizeWarehouseMovements(data: unknown): WarehouseMovementRow
         tonDauCaMay: Number.isFinite(tonDauCaMay) && tonDauCaMay >= 0 ? tonDauCaMay : undefined,
         unitPrice: Number.isFinite(unitPrice) ? unitPrice : 0,
         lineAmount: Number.isFinite(lineAmount) ? lineAmount : 0,
+        weightKg: Number.isFinite(weightKg) && weightKg > 0 ? weightKg : undefined,
+        areaM2: Number.isFinite(areaM2) && areaM2 > 0 ? areaM2 : undefined,
+        lengthM: Number.isFinite(lengthM) && lengthM > 0 ? lengthM : undefined,
+        nhomVthh: String(record.nhom_vthh ?? record.nhomVthh ?? '').trim() || undefined,
         reason: String(record.ly_do ?? record.reason ?? '').trim(),
         note: String(record.ghi_chu ?? record.note ?? '').trim(),
         createdBy: String(record.nguoi_lap ?? record.nhan_su ?? record.createdBy ?? '').trim(),
         createdAt: String(record.created_at ?? record.createdAt ?? '').trim(),
         deliverer: String(record.nguoi_giao ?? record.deliverer ?? '').trim() || undefined,
         warehouseLocation: String(record.dia_diem ?? record.warehouseLocation ?? '').trim() || undefined,
+        deliveryAddress: String(record.dia_chi ?? record.deliveryAddress ?? '').trim() || undefined,
+        soTronIds: parseWarehouseSoTronIds(record.so_tron_ids ?? record.soTronIds),
         inboundKind: String(record.loai_nhap_kho ?? record.inboundKind ?? '').trim() || undefined,
         sourceInboundLineId: String(record.id_dong_nhap_nguon ?? record.sourceInboundLineId ?? '').trim() || undefined,
         sourceInboundSlipCode:
@@ -1943,6 +2040,12 @@ export function WarehouseSlipPanel({
   }, []);
 
   useEffect(() => {
+    if (!editSlipCode || warehouseName.trim() || warehouseOptions.length === 0) return;
+    const matchedName = warehouseOptions.find(name => inferWarehouseKindFromName(name) === warehouseKind);
+    if (matchedName) setWarehouseName(matchedName);
+  }, [editSlipCode, warehouseName, warehouseOptions, warehouseKind]);
+
+  useEffect(() => {
     const loadProductionOrders = async () => {
       setIsLoadingProductionOrders(true);
       try {
@@ -2024,7 +2127,85 @@ export function WarehouseSlipPanel({
     void loadMachines();
   }, []);
 
+  const applyWarehouseSlipPrefill = (draft: Partial<WarehouseSlipPrefillDraft>) => {
+    if (!draft || !Array.isArray(draft.lines) || draft.lines.length === 0) return false;
+    const draftName = String(draft.warehouseName || '').trim();
+    const draftKind: WarehouseKind =
+      draft.warehouseKind === 'san_pham' ||
+      draft.warehouseKind === 'tai_che' ||
+      draft.warehouseKind === 'hang_hong' ||
+      draft.warehouseKind === 'hang_hoa' ||
+      draft.warehouseKind === 'cong_cu_dung_cu' ||
+      draft.warehouseKind === 'gia_cong'
+        ? draft.warehouseKind
+        : draft.warehouseKind === 'nvl'
+          ? 'nvl'
+          : inferWarehouseKindFromName(draftName);
+    const editingCode = String(draft.editSlipCode || '').trim();
+    const resolvedKind = editingCode
+      ? draftKind
+      : draftName
+        ? inferWarehouseKindFromName(draftName)
+        : draftKind;
+    const draftAccess = pickWarehouseSlipAccess(warehouseAccess, resolvedKind);
+    if (!(editingCode ? draftAccess.canEdit : draftAccess.canCreate)) {
+      setFormError(
+        editingCode
+          ? 'Bạn không có quyền sửa phiếu thuộc kho này.'
+          : 'Bạn không có quyền lập phiếu thuộc kho này.'
+      );
+      return false;
+    }
+    const nextSlipType: WarehouseSlipType = draft.slipType === 'nhap' ? 'nhap' : 'xuat';
+    setWarehouseName(draftName);
+    setWarehouseKind(resolvedKind);
+    clearSavedPrint();
+    setSlipType(nextSlipType);
+    setIsXuatTreoMode(false);
+    if (draft.slipDate) setSlipDate(draft.slipDate);
+    setReason(stripProductionOrderCodesFromReason(draft.reason || ''));
+    setNote(draft.note || '');
+    setCreatedBy(draft.createdBy?.trim() || loginName);
+    {
+      const fromRef = parseWarehouseProductionOrderSelection(draft.productionOrderRef);
+      const fromText = extractLinkedProductionOrderCodes(draft.reason, draft.note);
+      setProductionOrderCodes(fromRef.length > 0 ? fromRef : fromText);
+    }
+    setProductionOrderSearch('');
+    setMachine(draft.machine || '');
+    setSelectedShifts(parseWarehouseShiftSelection(draft.shift));
+    setRecipient(draft.recipient || '');
+    setDeliverer(draft.deliverer || draft.recipient || '');
+    setWarehouseLocation(draft.warehouseLocation || 'Phú Thọ');
+    setLoaiNhapKho(draft.loaiNhapKho || '');
+    if (resolvedKind === 'san_pham' && nextSlipType === 'nhap') {
+      setTpLenhSxFilterDate(draft.slipDate || '');
+      setTpLenhSxMachines(
+        String(draft.machine || '')
+          .split(',')
+          .map(part => part.trim())
+          .filter(Boolean)
+      );
+      setDeliveryAddress(draft.deliveryAddress || '');
+      setSelectedSoTronIds(Array.isArray(draft.soTronIds) ? draft.soTronIds : []);
+    }
+    const draftLines = draft.lines.map(createWarehouseLineDraftFromPrefill);
+    setLines(nextSlipType === 'nhap' ? draftLines : sortWarehouseLinesKgFirst(draftLines));
+    if (editingCode) {
+      setEditSlipCode(editingCode);
+      setActionMessage(`Đang sửa phiếu ${editingCode}. Chỉnh sửa và bấm cập nhật để lưu.`);
+    } else {
+      setEditSlipCode(null);
+      setActionMessage('Đã điền sẵn phiếu xuất kho từ hạch toán định mức NVL.');
+    }
+    setFormError('');
+    return true;
+  };
+
   useEffect(() => {
+    const editingSlipCode = new URLSearchParams(window.location.search).get('ma_phieu')?.trim() || '';
+    if (editingSlipCode) return;
+
     const rawDraft = localStorage.getItem(STORAGE_WAREHOUSE_SLIP_DRAFT_KEY);
     if (!rawDraft) return;
 
@@ -2032,69 +2213,50 @@ export function WarehouseSlipPanel({
       const draft = JSON.parse(rawDraft) as Partial<WarehouseSlipPrefillDraft>;
       if (!draft || !Array.isArray(draft.lines) || draft.lines.length === 0) return;
       if (!draft.createdAt || Date.now() - draft.createdAt > WAREHOUSE_SLIP_DRAFT_MAX_AGE_MS) return;
-
-      {
-        const draftName = String(draft.warehouseName || '').trim();
-        const draftKind: WarehouseKind =
-          draft.warehouseKind === 'san_pham' ||
-          draft.warehouseKind === 'tai_che' ||
-          draft.warehouseKind === 'hang_hong' ||
-          draft.warehouseKind === 'hang_hoa' ||
-          draft.warehouseKind === 'cong_cu_dung_cu' ||
-          draft.warehouseKind === 'gia_cong'
-            ? draft.warehouseKind
-            : draft.warehouseKind === 'nvl'
-              ? 'nvl'
-              : inferWarehouseKindFromName(draftName);
-        const resolvedKind = draftName ? inferWarehouseKindFromName(draftName) : draftKind;
-        const draftAccess = pickWarehouseSlipAccess(warehouseAccess, resolvedKind);
-        const editingCode = String(draft.editSlipCode || '').trim();
-        if (!(editingCode ? draftAccess.canEdit : draftAccess.canCreate)) {
-          setFormError(
-            editingCode
-              ? 'Bạn không có quyền sửa phiếu thuộc kho này.'
-              : 'Bạn không có quyền lập phiếu thuộc kho này.'
-          );
-          return;
-        }
-        setWarehouseName(draftName);
-        setWarehouseKind(resolvedKind);
-      }
-      clearSavedPrint();
-      setSlipType(draft.slipType === 'nhap' ? 'nhap' : 'xuat');
-      setIsXuatTreoMode(false);
-      if (draft.slipDate) setSlipDate(draft.slipDate);
-      setReason(stripProductionOrderCodesFromReason(draft.reason || ''));
-      setNote(draft.note || '');
-      setCreatedBy(draft.createdBy?.trim() || loginName);
-      {
-        const fromRef = parseWarehouseProductionOrderSelection(draft.productionOrderRef);
-        const fromText = extractLinkedProductionOrderCodes(draft.reason, draft.note);
-        setProductionOrderCodes(fromRef.length > 0 ? fromRef : fromText);
-      }
-      setProductionOrderSearch('');
-      setMachine(draft.machine || '');
-      setSelectedShifts(parseWarehouseShiftSelection(draft.shift));
-      setRecipient(draft.recipient || '');
-      setDeliverer(draft.deliverer || draft.recipient || '');
-      setWarehouseLocation(draft.warehouseLocation || 'Phú Thọ');
-      setLoaiNhapKho(draft.loaiNhapKho || '');
-      const draftLines = draft.lines.map(createWarehouseLineDraftFromPrefill);
-      setLines(draft.slipType === 'nhap' ? draftLines : sortWarehouseLinesKgFirst(draftLines));
-      // Catalog Tổng kg có thể chưa kịp load — xếp lại theo khối lượng khi weightCatalog sẵn sàng.
-      const editingCode = String(draft.editSlipCode || '').trim();
-      if (editingCode) {
-        setEditSlipCode(editingCode);
-        setActionMessage(`Đang sửa phiếu ${editingCode}. Chỉnh sửa và bấm cập nhật để lưu.`);
-      } else {
-        setActionMessage('Đã điền sẵn phiếu xuất kho từ hạch toán định mức NVL.');
-      }
-      setFormError('');
+      applyWarehouseSlipPrefill(draft);
     } catch {
       setFormError('Không thể đọc dữ liệu phiếu xuất kho đã chuyển sang.');
     } finally {
       localStorage.removeItem(STORAGE_WAREHOUSE_SLIP_DRAFT_KEY);
     }
+    // Chỉ đọc draft lúc mở màn phiếu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const slipCode = new URLSearchParams(window.location.search).get('ma_phieu')?.trim() || '';
+    if (!slipCode) return;
+
+    let cancelled = false;
+    const loadSlipForEdit = async () => {
+      try {
+        const res = await fetch(`/api/phieu-xuat-nhap-kho?ma_phieu=${encodeURIComponent(slipCode)}`);
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok) throw new Error(data.error || 'Không thể tải phiếu để sửa.');
+        const rows = normalizeWarehouseMovements(data).filter(row => row.slipCode === slipCode);
+        if (rows.some(row => row.daIn)) {
+          setFormError('Phiếu đã in, không thể sửa nữa.');
+          return;
+        }
+        const draft = buildWarehouseSlipDraftFromHistoryRows(rows, slipCode);
+        if (!draft) {
+          setFormError(`Không tìm thấy phiếu ${slipCode}.`);
+          return;
+        }
+        applyWarehouseSlipPrefill(draft);
+      } catch (loadError: unknown) {
+        if (!cancelled) {
+          setFormError(loadError instanceof Error ? loadError.message : 'Không thể tải phiếu để sửa.');
+        }
+      }
+    };
+    void loadSlipForEdit();
+    return () => {
+      cancelled = true;
+    };
+    // Nạp lại đúng phiếu khi mở tab sửa (?ma_phieu=).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const reloadWarehouseCatalogRef = useRef<(() => Promise<void>) | null>(null);
@@ -2759,9 +2921,9 @@ export function WarehouseSlipPanel({
     [tpInboundLenhSxOptions, productionOrderCodes]
   );
 
-  /** Chỉ cho search SP thuộc lệnh SX đã chọn (nhập TP). Hiển thị mã + tên ghép. */
+  /** Chỉ cho search SP thuộc lệnh SX đã chọn (nhập TP). Phiếu đang sửa dùng danh mục kho, không bắt lọc lệnh. */
   const tpInboundItemOptions = useMemo(() => {
-    if (!isTpInbound) return itemOptions;
+    if (!isTpInbound || editSlipCode) return itemOptions;
     const products = mergeProductsFromLenhSx(tpInboundSelectedOrders);
     if (products.length === 0) return [];
     const byCode = new Map(
@@ -2786,16 +2948,17 @@ export function WarehouseSlipPanel({
         unit: product.unit || ''
       } as MaterialOption;
     });
-  }, [isTpInbound, itemOptions, tpInboundSelectedOrders]);
+  }, [isTpInbound, editSlipCode, itemOptions, tpInboundSelectedOrders]);
 
   useEffect(() => {
-    if (!isTpInbound) return;
+    if (!isTpInbound || isLoadingProductionOrders) return;
+    if (!tpLenhSxFilterDate.trim() || tpLenhSxMachines.length === 0) return;
     const allowed = new Set(tpInboundLenhSxOptions.map(order => order.orderCode.trim()));
     setProductionOrderCodes(current => {
       const next = current.filter(code => allowed.has(code.trim()));
       return next.length === current.length ? current : next;
     });
-  }, [isTpInbound, tpInboundLenhSxOptions]);
+  }, [isTpInbound, isLoadingProductionOrders, tpLenhSxFilterDate, tpLenhSxMachines, tpInboundLenhSxOptions]);
 
   const applyTpInboundLenhSxToLines = (nextOrderCodes: string[]) => {
     const selectedOrders = tpInboundLenhSxOptions.filter(order =>
@@ -2978,7 +3141,10 @@ export function WarehouseSlipPanel({
                 ton_cuoi_sl: Number(tonCuoi.sl) || 0,
                 ton_cuoi_kg: Number(tonCuoi.kg) || 0,
                 ton_cuoi_m_dai: Number(tonCuoi.m_dai) || 0,
-                ton_cuoi_m2: Number(tonCuoi.m2) || 0
+                ton_cuoi_m2: Number(tonCuoi.m2) || 0,
+                trong_luong_kg_mot_sp: Number(row.trong_luong_kg_mot_sp) || 0,
+                so_m2_mot_sp: Number(row.so_m2_mot_sp) || 0,
+                so_m_dai_mot_sp: Number(row.so_m_dai_mot_sp) || 0
               } satisfies TpStockOption;
             })
             .filter(row => row.ma_sp || row.ten_sp)
@@ -3211,6 +3377,7 @@ export function WarehouseSlipPanel({
         let changed = false;
         const next = current.map(line => {
           if (!tonByLineKey.has(line.key)) return line;
+          if (editSlipCode && String(line.tonDauCaMay || '').trim()) return line;
           const ton = tonByLineKey.get(line.key);
           if (ton === undefined) return line;
           const text = formatNumber(ton, 2);
@@ -3229,6 +3396,7 @@ export function WarehouseSlipPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isNvlExport,
+    editSlipCode,
     tonDauDefaultRef.ngay,
     tonDauDefaultRef.ca,
     slipDate,
@@ -4068,17 +4236,17 @@ export function WarehouseSlipPanel({
         return;
       }
     }
-    if (isTpInbound && !tpLenhSxFilterDate.trim()) {
+    if (!editSlipCode && isTpInbound && !tpLenhSxFilterDate.trim()) {
       setFormError(showSaveFailure('Vui lòng chọn ngày lọc lệnh sản xuất.'));
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-    if (isTpInbound && tpLenhSxMachines.length === 0) {
+    if (!editSlipCode && isTpInbound && tpLenhSxMachines.length === 0) {
       setFormError(showSaveFailure('Vui lòng chọn ít nhất một máy để lọc lệnh sản xuất.'));
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-    if (isTpInbound && productionOrderCodes.length === 0) {
+    if (!editSlipCode && isTpInbound && productionOrderCodes.length === 0) {
       setFormError(showSaveFailure('Vui lòng chọn ít nhất một lệnh sản xuất để nhập kho thành phẩm.'));
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
@@ -4524,7 +4692,7 @@ export function WarehouseSlipPanel({
         </div>
       </section>
 
-      {selectedWarehouseName ? (
+      {selectedWarehouseName || editSlipCode ? (
         <>
       <section className="space-y-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
         <div className="flex items-center gap-2 border-b border-zinc-100 pb-2">
@@ -4759,7 +4927,7 @@ export function WarehouseSlipPanel({
             </label>
           )}
 
-          {isTpInbound ? (
+          {isTpInbound && !editSlipCode ? (
             <div className="col-span-2 space-y-3 rounded-xl border-2 border-amber-400 bg-amber-50/60 p-3 shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs font-black uppercase tracking-wider text-amber-800">
@@ -5304,7 +5472,13 @@ export function WarehouseSlipPanel({
                       value={
                         isTpExport
                           ? line.code.trim() || line.name.trim()
-                            ? tpStockOptionKey({ ma_sp: line.code, ten_sp: line.name })
+                            ? tpStockOptionKey({
+                                ma_sp: line.code,
+                                ten_sp: line.name,
+                                trong_luong_kg_mot_sp: line.kgPerUnit,
+                                so_m2_mot_sp: line.m2PerUnit,
+                                so_m_dai_mot_sp: line.mDaiPerUnit
+                              })
                             : ''
                           : line.code
                       }
@@ -5343,9 +5517,11 @@ export function WarehouseSlipPanel({
                             ? 'Chưa có tồn TP…'
                             : 'Chọn 1 SP từ tồn kho'
                           : isTpInbound
-                            ? productionOrderCodes.length === 0
-                              ? 'Chọn lệnh SX trước…'
-                              : 'Gõ tìm SP trong lệnh SX'
+                            ? editSlipCode
+                              ? 'Gõ tìm sản phẩm'
+                              : productionOrderCodes.length === 0
+                                ? 'Chọn lệnh SX trước…'
+                                : 'Gõ tìm SP trong lệnh SX'
                             : warehouseKind === 'san_pham'
                               ? ''
                               : normalizeWarehouseMaterialClass(line.warehouseClass) === 'nvl_chinh'
@@ -5358,19 +5534,19 @@ export function WarehouseSlipPanel({
                       isLoading={
                         isTpExport
                           ? false
-                          : isLoadingItems || (isTpInbound && isLoadingProductionOrders)
+                          : isLoadingItems || (isTpInbound && !editSlipCode && isLoadingProductionOrders)
                       }
                       disabled={
                         isTpExport
                           ? tpStockSelectable.length === 0
-                          : isLoadingItems || (isTpInbound && productionOrderCodes.length === 0)
+                          : isLoadingItems || (isTpInbound && !editSlipCode && productionOrderCodes.length === 0)
                       }
                       inputClassName={warehouseLineFieldClass}
                       desktopAutoFlip
                       getLabel={item => {
                         if (isTpExport) {
                           const row = item as TpStockOption;
-                          return `${row.ma_sp || '—'} · ${row.ten_sp || '—'} (tồn ${row.ton_cuoi_sl} ${row.don_vi || ''})`;
+                          return `${row.ma_sp || '—'} · ${row.ten_sp || '—'} · ${row.trong_luong_kg_mot_sp || 0} kg · ${row.so_m2_mot_sp || 0} m² · ${row.so_m_dai_mot_sp || 0} m (tồn ${row.ton_cuoi_sl} ${row.don_vi || ''})`;
                         }
                         const option = item as MaterialOption;
                         return `${option.code} · ${option.name}`;
@@ -5565,7 +5741,18 @@ export function WarehouseSlipPanel({
                           type="text"
                           inputMode="decimal"
                           value={line.weightKg || ''}
-                          onChange={event => updateLine(line.key, { weightKg: event.target.value })}
+                          onChange={event => {
+                            const weightKg = event.target.value;
+                            const qty = parsePercentInput(line.quantity);
+                            const total = parsePercentInput(weightKg);
+                            updateLine(line.key, {
+                              weightKg,
+                              kgPerUnit:
+                                Number.isFinite(qty) && qty > 0 && Number.isFinite(total) && total > 0
+                                  ? total / qty
+                                  : undefined
+                            });
+                          }}
                           className={`${warehouseLineFieldClass} min-w-0 font-mono`}
                           placeholder="kg"
                           title="Quy đổi kg"
@@ -5574,7 +5761,18 @@ export function WarehouseSlipPanel({
                           type="text"
                           inputMode="decimal"
                           value={line.areaM2 || ''}
-                          onChange={event => updateLine(line.key, { areaM2: event.target.value })}
+                          onChange={event => {
+                            const areaM2 = event.target.value;
+                            const qty = parsePercentInput(line.quantity);
+                            const total = parsePercentInput(areaM2);
+                            updateLine(line.key, {
+                              areaM2,
+                              m2PerUnit:
+                                Number.isFinite(qty) && qty > 0 && Number.isFinite(total) && total > 0
+                                  ? total / qty
+                                  : undefined
+                            });
+                          }}
                           className={`${warehouseLineFieldClass} hidden min-w-0 font-mono md:block`}
                           placeholder="m²"
                           title="Quy đổi m²"
@@ -5583,7 +5781,18 @@ export function WarehouseSlipPanel({
                           type="text"
                           inputMode="decimal"
                           value={line.lengthM || ''}
-                          onChange={event => updateLine(line.key, { lengthM: event.target.value })}
+                          onChange={event => {
+                            const lengthM = event.target.value;
+                            const qty = parsePercentInput(line.quantity);
+                            const total = parsePercentInput(lengthM);
+                            updateLine(line.key, {
+                              lengthM,
+                              mDaiPerUnit:
+                                Number.isFinite(qty) && qty > 0 && Number.isFinite(total) && total > 0
+                                  ? total / qty
+                                  : undefined
+                            });
+                          }}
                           className={`${warehouseLineFieldClass} hidden min-w-0 font-mono md:block`}
                           placeholder="m dài"
                           title="Quy đổi m dài"
@@ -6325,12 +6534,14 @@ export function WarehouseHistoryPanel({
       setError('Phiếu đã in, không thể sửa nữa.');
       return;
     }
-    const draft = buildWarehouseSlipDraftFromHistoryRows(rows, slipCode);
-    if (!draft) return;
+    if (!slipCode) return;
 
-    localStorage.setItem(STORAGE_WAREHOUSE_SLIP_DRAFT_KEY, JSON.stringify({ ...draft, createdAt: Date.now() }));
     setViewingSlipCode(null);
-    onOpenSlip();
+    window.open(
+      `/phieu-xuat-nhap-kho?ma_phieu=${encodeURIComponent(slipCode)}`,
+      '_blank',
+      'noopener'
+    );
   };
 
   const handleDeleteSlip = async (slipCode: string, lineCount: number) => {

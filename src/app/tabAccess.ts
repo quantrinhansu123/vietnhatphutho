@@ -34,9 +34,18 @@ export const TAB_ACCESS_ALIASES: Record<string, string> = {
  * Có quyền hub → được xem các tab card thuộc hub đó.
  */
 export const HUB_IMPLIED_TABS: Record<string, readonly string[]> = {
-  'report-forms': [
-    'so-giao-ca-mmtb',
+  /** Sổ trộn, sổ giao ca MMTB, sổ chế độ máy — menu riêng cho công nhân sản xuất. */
+  'bao-cao-truong-ca-tron': [
     'so-tron',
+    'so-giao-ca-mmtb',
+    'so-che-do-may',
+    'so-tron-list',
+    'so-giao-ca-mmtb-list',
+    'so-che-do-may-list'
+  ],
+  'report-forms': [
+    'so-tron',
+    'so-giao-ca-mmtb',
     'so-che-do-may',
     'machine-nvl-report',
     'mixing-report',
@@ -53,8 +62,8 @@ export const HUB_IMPLIED_TABS: Record<string, readonly string[]> = {
     'kiem-kho',
     'doi-soat',
     // form ↔ list (nút Danh sách / Sửa)
-    'so-giao-ca-mmtb-list',
     'so-tron-list',
+    'so-giao-ca-mmtb-list',
     'so-che-do-may-list',
     'machine-nvl-report-list',
     'mixing-report-list',
@@ -68,8 +77,8 @@ export const HUB_IMPLIED_TABS: Record<string, readonly string[]> = {
     'acceptance-report-list'
   ],
   'report-lists': [
-    'so-giao-ca-mmtb-list',
     'so-tron-list',
+    'so-giao-ca-mmtb-list',
     'so-che-do-may-list',
     'bao-cao-thang-list',
     'bao-cao-ngay-list',

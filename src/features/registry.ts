@@ -13,6 +13,8 @@ export type TableId =
   | 'danh_sach_may'
   | 'kho_nvl'
   | 'phieu_xuat_nhap_kho'
+  | 'phieu_nhap_kho'
+  | 'phieu_xuat_kho'
   | 'don_hang'
   | 'khach_hang'
   | 'lenh_xuat_hang'
@@ -168,12 +170,34 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   },
   phieu_xuat_nhap_kho: {
     table: 'phieu_xuat_nhap_kho',
-    label: 'Phiếu xuất nhập kho',
+    label: 'Phiếu xuất nhập kho (bảng cũ — facade gộp 2 bảng tách)',
     sql: ['supabase-phieu-xuat-nhap-kho.sql', 'supabase-phieu-xuat-nhap-kho-*.sql'],
     apiPrefix: '/api/phieu-xuat-nhap-kho',
-    serverLines: '4786–5118',
+    serverLines: 'handleWarehouseList/Create/Update/DeleteSlip/DeleteLine (facade)',
     appTab: 'warehouse-slip | warehouse-history',
     appLines: 'src/features/phieu-xuat-nhap-kho/index.tsx',
+    components: ['src/components/WarehouseSlipPrintModal.tsx'],
+    utils: ['scripts/sync-kho-nvl-from-phieu.mjs']
+  },
+  phieu_nhap_kho: {
+    table: 'phieu_nhap_kho',
+    label: 'Phiếu nhập kho (tách từ phieu_xuat_nhap_kho)',
+    sql: ['supabase-phieu-nhap-kho.sql', 'supabase-phieu-nhap-xuat-split-backfill.sql'],
+    apiPrefix: '/api/phieu-nhap-kho',
+    serverLines: 'SUPABASE_WAREHOUSE_NHAP_TABLE + handleWarehouse* (forced nhap)',
+    appTab: 'warehouse-slip | warehouse-history',
+    appLines: 'src/features/phieu-nhap-kho/api.ts (client) — panel dùng chung src/features/phieu-xuat-nhap-kho/index.tsx qua facade',
+    components: ['src/components/WarehouseSlipPrintModal.tsx'],
+    utils: ['scripts/sync-kho-nvl-from-phieu.mjs']
+  },
+  phieu_xuat_kho: {
+    table: 'phieu_xuat_kho',
+    label: 'Phiếu xuất kho (tách từ phieu_xuat_nhap_kho)',
+    sql: ['supabase-phieu-xuat-kho.sql', 'supabase-phieu-nhap-xuat-split-backfill.sql'],
+    apiPrefix: '/api/phieu-xuat-kho',
+    serverLines: 'SUPABASE_WAREHOUSE_XUAT_TABLE + handleWarehouse* (forced xuat)',
+    appTab: 'warehouse-slip | warehouse-history',
+    appLines: 'src/features/phieu-xuat-kho/api.ts (client) — panel dùng chung src/features/phieu-xuat-nhap-kho/index.tsx qua facade',
     components: ['src/components/WarehouseSlipPrintModal.tsx'],
     utils: ['scripts/sync-kho-nvl-from-phieu.mjs']
   },
