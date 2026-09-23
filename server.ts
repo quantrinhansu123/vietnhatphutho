@@ -4599,9 +4599,13 @@ type WarehouseSlipLineInput = {
   materialClass: WarehouseMaterialClass;
   machine?: string;
   weightKg?: number;
-  /** Thành phẩm: quy doi m2 / m dai. */
+  /** Thành phẩm: quy doi m2 / m dai (tong dong phieu). */
   areaM2?: number;
   lengthM?: number;
+  /** Thành phẩm: he so 1 SP, ghi vao nhap_kho. */
+  kgPerUnit?: number;
+  m2PerUnit?: number;
+  mDaiPerUnit?: number;
   nhomVthh?: string;
   sourceInboundLineId?: string;
   sourceInboundSlipCode?: string;
@@ -4945,6 +4949,15 @@ function parseWarehouseSlipLines(
       record.lengthM ?? record.so_m_dai ?? record.m_dai ?? record.tong_m_dai
     );
     const nhomVthh = String(record.nhom_vthh ?? record.nhomVthh ?? '').trim();
+    const kgPerUnit = parseOptionalMaterialNumber(
+      record.kgPerUnit ?? record.kg_per_unit ?? record.trong_luong_kg_mot_sp
+    );
+    const m2PerUnit = parseOptionalMaterialNumber(
+      record.m2PerUnit ?? record.m2_per_unit ?? record.so_m2_mot_sp
+    );
+    const mDaiPerUnit = parseOptionalMaterialNumber(
+      record.mDaiPerUnit ?? record.m_dai_per_unit ?? record.so_m_dai_mot_sp
+    );
 
     if (!code) {
       return { error: loaiKho === 'san_pham' ? 'Mỗi dòng cần có mã sản phẩm.' : 'Mỗi dòng cần có mã NPL.' };
@@ -4984,6 +4997,9 @@ function parseWarehouseSlipLines(
       ...(weightKg !== null && weightKg > 0 ? { weightKg: roundWarehouseQty(weightKg) } : {}),
       ...(areaM2 !== null && areaM2 > 0 ? { areaM2: roundWarehouseQty(areaM2) } : {}),
       ...(lengthM !== null && lengthM > 0 ? { lengthM: roundWarehouseQty(lengthM) } : {}),
+      ...(kgPerUnit !== null && kgPerUnit > 0 ? { kgPerUnit } : {}),
+      ...(m2PerUnit !== null && m2PerUnit > 0 ? { m2PerUnit } : {}),
+      ...(mDaiPerUnit !== null && mDaiPerUnit > 0 ? { mDaiPerUnit } : {}),
       ...(nhomVthh ? { nhomVthh } : {}),
       ...(sourceInboundLineId ? { sourceInboundLineId } : {}),
       ...(sourceInboundSlipCode ? { sourceInboundSlipCode } : {})
@@ -5497,18 +5513,29 @@ async function insertNhapKhoThanhPhamRows(parsed: {
   }
 
   const tenKho = String(parsed.tenKho || '').trim();
+  const perUnit = (explicit: number | undefined, total: number | undefined, quantity: number) => {
+    const direct = Number(explicit);
+    const value =
+      Number.isFinite(direct) && direct > 0
+        ? direct
+        : quantity > 0 && total != null && Number.isFinite(total) && total > 0
+          ? total / quantity
+          : null;
+    if (value === null || !(value > 0)) return null;
+    return Math.round(value * 1_000_000) / 1_000_000;
+  };
   const rows = parsed.items
     .map(item => {
       const maSp = String(item.code || '').trim();
       if (!maSp) return null;
+      const quantity = Number(item.quantity) || 0;
       return {
         ma_sp: maSp,
         ten_sp: String(item.name || '').trim(),
         don_vi: String(item.unit || '').trim(),
-        so_luong: item.quantity ?? null,
-        trong_luong_kg: item.weightKg ?? null,
-        so_m2: item.areaM2 ?? null,
-        so_m_dai: item.lengthM ?? null,
+        trong_luong_kg_mot_sp: perUnit(item.kgPerUnit, item.weightKg, quantity),
+        so_m2_mot_sp: perUnit(item.m2PerUnit, item.areaM2, quantity),
+        so_m_dai_mot_sp: perUnit(item.mDaiPerUnit, item.lengthM, quantity),
         loai_kho: NHAP_KHO_LOAI_THANH_PHAM,
         ten_kho: tenKho
       };
@@ -5576,11 +5603,27 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
   const displayKho = tenKho || 'Kho thành phẩm';
 
   // Danh sách SP: mọi dòng nhap_kho thanh_pham (không lọc ngày, không bắt buộc khớp ten_kho).
-  const { data: nhapKhoRows, error: nhapKhoError } = await supabase
+  const nhapKhoSelectFull =
+    'ma_sp, ten_sp, don_vi, ten_kho, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, created_at';
+  let nhapKhoQuery = supabase
     .from(SUPABASE_NHAP_KHO_TABLE)
-    .select('ma_sp, ten_sp, don_vi, ten_kho')
+    .select(nhapKhoSelectFull)
     .eq('loai_kho', NHAP_KHO_LOAI_THANH_PHAM)
+    .order('created_at', { ascending: true })
     .limit(50000);
+  let { data: nhapKhoRows, error: nhapKhoError } = await nhapKhoQuery;
+  if (nhapKhoError && isMissingColumnError(nhapKhoError)) {
+    console.warn(
+      `[nhap-kho] thiếu cột hệ số 1 SP (${nhapKhoError.message}) — chạy lại supabase-nhap-kho.sql.`
+    );
+    const fallback = await supabase
+      .from(SUPABASE_NHAP_KHO_TABLE)
+      .select('ma_sp, ten_sp, don_vi, ten_kho')
+      .eq('loai_kho', NHAP_KHO_LOAI_THANH_PHAM)
+      .limit(50000);
+    nhapKhoRows = fallback.data;
+    nhapKhoError = fallback.error;
+  }
 
   if (nhapKhoError) {
     if (isMissingTableError(nhapKhoError) || isMissingColumnError(nhapKhoError)) {
@@ -5602,7 +5645,11 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
       ma_sp: String(row.ma_sp ?? '').trim(),
       ten_sp: String(row.ten_sp ?? '').trim(),
       don_vi: String(row.don_vi ?? '').trim(),
-      ten_kho: String(row.ten_kho ?? '').trim() || displayKho
+      ten_kho: String(row.ten_kho ?? '').trim() || displayKho,
+      trong_luong_kg_mot_sp: Number(row.trong_luong_kg_mot_sp) || 0,
+      so_m2_mot_sp: Number(row.so_m2_mot_sp) || 0,
+      so_m_dai_mot_sp: Number(row.so_m_dai_mot_sp) || 0,
+      created_at: String(row.created_at ?? '')
     }))
   );
 
@@ -5656,7 +5703,8 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
 
   const periodBalances = computeThanhPhamPeriodBalances(mapped, {
     from: tuNgay,
-    to: denNgay
+    to: denNgay,
+    catalog
     // không lọc tenKho — phiếu có thể để trống ten_kho
   });
   const rows = mergeNhapKhoCatalogWithPeriodBalances(catalog, periodBalances, { tenKho: displayKho });
@@ -15086,7 +15134,7 @@ async function loadKiemKhoLiveTongHopForDot(
       let query = supabase
         .from(SUPABASE_NHAP_KHO_TABLE)
         .select(
-          'id, ma_sp, ten_sp, don_vi, so_luong, trong_luong_kg, so_m2, so_m_dai, loai_kho, ten_kho, created_at'
+          'id, ma_sp, ten_sp, don_vi, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, loai_kho, ten_kho, created_at'
         )
         .eq('loai_kho', loaiKho)
         .order('created_at', { ascending: false })

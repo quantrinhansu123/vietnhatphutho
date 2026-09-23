@@ -11,10 +11,12 @@
 Sổ **danh sách sản phẩm** kho thành phẩm (`loai_kho = 'thanh_pham'`).  
 **Không** dùng bảng `ton_kho_thanh_pham` cho màn Kho hàng.
 
-- Danh sách SP: gộp theo `ma_sp` + `ten_sp` từ `nhap_kho`
+- Danh sách SP: gộp theo `ma_sp` + `ten_sp` + `trong_luong_kg_mot_sp|so_m2_mot_sp|so_m_dai_mot_sp`. Cùng mã và tên nhưng khác quy đổi là hai dòng.
 - Tồn đầu / Nhập / Xuất / Tồn: tính từ phiếu `phieu_xuat_nhap_kho` (`loai_kho=san_pham`)
 
-Cột: `ma_sp`, `ten_sp`, `don_vi`, `so_luong`, `trong_luong_kg`, `so_m2`, `so_m_dai`, `loai_kho` (không default), `ten_kho`.
+Cột: `ma_sp`, `ten_sp`, `don_vi`, `trong_luong_kg_mot_sp`, `so_m2_mot_sp`, `so_m_dai_mot_sp` (hệ số **1 SP**), `loai_kho` (không default), `ten_kho`.
+
+SL và tổng kg / m² / mét dài của dòng phiếu nằm ở `phieu_xuat_nhap_kho`. `nhap_kho` không lưu `so_luong`, `trong_luong_kg`, `so_m2`, `so_m_dai`.
 
 ## API (`server.ts`)
 

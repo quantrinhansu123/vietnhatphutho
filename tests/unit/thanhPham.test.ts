@@ -86,6 +86,46 @@ describe('thanhPham — danh muc nhap_kho + ton phieu', () => {
     assert.equal(catalog[1].ma_sp, 'SP02');
   });
 
+  it('cung ma ten khac quy doi la hai dong', () => {
+    const catalog = aggregateNhapKhoProducts([
+      {
+        ma_sp: 'SP01',
+        ten_sp: 'A',
+        don_vi: 'Tam',
+        ten_kho: 'Kho TP',
+        trong_luong_kg_mot_sp: 1.234567,
+        so_m2_mot_sp: 0.5,
+        so_m_dai_mot_sp: 2,
+        created_at: '2026-09-10T00:00:00Z'
+      },
+      {
+        ma_sp: 'SP01',
+        ten_sp: 'A',
+        don_vi: 'Tam',
+        ten_kho: 'Kho TP',
+        trong_luong_kg_mot_sp: 1,
+        so_m2_mot_sp: 0.2,
+        so_m_dai_mot_sp: 1,
+        created_at: '2026-09-01T00:00:00Z'
+      },
+      {
+        ma_sp: 'SP01',
+        ten_sp: 'a',
+        don_vi: 'Tam',
+        ten_kho: 'Kho TP',
+        trong_luong_kg_mot_sp: 1,
+        so_m2_mot_sp: 0.2,
+        so_m_dai_mot_sp: 1,
+        created_at: '2026-09-02T00:00:00Z'
+      }
+    ]);
+    assert.equal(catalog.length, 2);
+    const heavy = catalog.find(row => row.trong_luong_kg_mot_sp === 1.234567);
+    const light = catalog.find(row => row.trong_luong_kg_mot_sp === 1);
+    assert.equal(heavy?.so_m2_mot_sp, 0.5);
+    assert.equal(light?.so_m_dai_mot_sp, 1);
+  });
+
   it('merge: SP trong nhap_kho khong co phieu van hien (so 0)', () => {
     const catalog = aggregateNhapKhoProducts([
       { ma_sp: 'SP01', ten_sp: 'A', don_vi: 'Tam', ten_kho: 'Kho TP' },
@@ -115,5 +155,63 @@ describe('thanhPham — danh muc nhap_kho + ton phieu', () => {
     assert.equal(sp02?.nhap.sl, 0);
     assert.equal(sp02?.ton_cuoi.sl, 0);
     assert.equal(sp02?.loai_kho, 'thanh_pham');
+  });
+
+  it('ton tach theo quy doi 1 sp', () => {
+    const catalog = aggregateNhapKhoProducts([
+      {
+        ma_sp: 'SP01',
+        ten_sp: 'A',
+        don_vi: 'Tam',
+        ten_kho: 'Kho TP',
+        trong_luong_kg_mot_sp: 2,
+        so_m2_mot_sp: 1,
+        so_m_dai_mot_sp: 4
+      },
+      {
+        ma_sp: 'SP01',
+        ten_sp: 'A',
+        don_vi: 'Tam',
+        ten_kho: 'Kho TP',
+        trong_luong_kg_mot_sp: 3,
+        so_m2_mot_sp: 1,
+        so_m_dai_mot_sp: 4
+      }
+    ]);
+    const movements = [
+      {
+        ma_sp: 'SP01',
+        ten_sp: 'A',
+        loai_phieu: 'nhap',
+        ngay_phieu: '2026-09-10',
+        so_luong: 10,
+        trong_luong_kg: 20,
+        so_m2: 10,
+        so_m_dai: 40
+      },
+      {
+        ma_sp: 'SP01',
+        ten_sp: 'A',
+        loai_phieu: 'nhap',
+        ngay_phieu: '2026-09-11',
+        so_luong: 5,
+        trong_luong_kg: 15,
+        so_m2: 5,
+        so_m_dai: 20
+      }
+    ];
+    const balances = computeThanhPhamPeriodBalances(movements, {
+      from: '2026-09-01',
+      to: '2026-09-30',
+      catalog
+    });
+    const merged = mergeNhapKhoCatalogWithPeriodBalances(catalog, balances, { tenKho: 'Kho thành phẩm' });
+    assert.equal(merged.length, 2);
+    const kg2 = merged.find(row => row.trong_luong_kg_mot_sp === 2);
+    const kg3 = merged.find(row => row.trong_luong_kg_mot_sp === 3);
+    assert.equal(kg2?.nhap.sl, 10);
+    assert.equal(kg2?.nhap.kg, 20);
+    assert.equal(kg3?.nhap.sl, 5);
+    assert.equal(kg3?.nhap.kg, 15);
   });
 });

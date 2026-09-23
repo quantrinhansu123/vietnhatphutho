@@ -10,10 +10,9 @@ create table if not exists public.nhap_kho (
   ma_sp text not null default '',
   ten_sp text not null default '',
   don_vi text not null default '',
-  so_luong numeric,
-  trong_luong_kg numeric,
-  so_m2 numeric,
-  so_m_dai numeric,
+  trong_luong_kg_mot_sp numeric,
+  so_m2_mot_sp numeric,
+  so_m_dai_mot_sp numeric,
   loai_kho text not null,
   ten_kho text not null default '',
   created_at timestamptz not null default now(),
@@ -25,10 +24,9 @@ alter table public.nhap_kho
   add column if not exists ma_sp text not null default '',
   add column if not exists ten_sp text not null default '',
   add column if not exists don_vi text not null default '',
-  add column if not exists so_luong numeric,
-  add column if not exists trong_luong_kg numeric,
-  add column if not exists so_m2 numeric,
-  add column if not exists so_m_dai numeric,
+  add column if not exists trong_luong_kg_mot_sp numeric,
+  add column if not exists so_m2_mot_sp numeric,
+  add column if not exists so_m_dai_mot_sp numeric,
   add column if not exists loai_kho text,
   add column if not exists ten_kho text not null default '',
   add column if not exists created_at timestamptz not null default now(),
@@ -41,6 +39,45 @@ alter table public.nhap_kho
   drop column if exists nguoi_thuc_hien,
   drop column if exists ngay,
   drop column if exists ca;
+
+-- Sổ SP chỉ giữ hệ số 1 sản phẩm. Tổng SL / kg / m2 / m dài nằm trên phiếu.
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'nhap_kho'
+      and column_name = 'so_luong'
+  ) then
+    update public.nhap_kho
+    set
+      trong_luong_kg_mot_sp = case
+        when so_luong is not null and so_luong > 0 and trong_luong_kg is not null
+          then round(trong_luong_kg / so_luong, 6)
+        else trong_luong_kg_mot_sp
+      end,
+      so_m2_mot_sp = case
+        when so_luong is not null and so_luong > 0 and so_m2 is not null
+          then round(so_m2 / so_luong, 6)
+        else so_m2_mot_sp
+      end,
+      so_m_dai_mot_sp = case
+        when so_luong is not null and so_luong > 0 and so_m_dai is not null
+          then round(so_m_dai / so_luong, 6)
+        else so_m_dai_mot_sp
+      end
+    where trong_luong_kg_mot_sp is null
+       or so_m2_mot_sp is null
+       or so_m_dai_mot_sp is null;
+  end if;
+end $$;
+
+alter table public.nhap_kho
+  drop column if exists so_luong,
+  drop column if exists trong_luong_kg,
+  drop column if exists so_m2,
+  drop column if exists so_m_dai;
 
 -- loai_kho bắt buộc, không default (ghi rõ 'thanh_pham' từ app).
 alter table public.nhap_kho
@@ -88,9 +125,8 @@ comment on table public.nhap_kho is
 comment on column public.nhap_kho.ma_sp is 'Ma san pham (co the kem hau to lo/serial).';
 comment on column public.nhap_kho.ten_sp is 'Ten san pham snapshot luc nhap.';
 comment on column public.nhap_kho.don_vi is 'Don vi tinh.';
-comment on column public.nhap_kho.so_luong is 'So luong thuc nhap.';
-comment on column public.nhap_kho.trong_luong_kg is 'Quy doi kg.';
-comment on column public.nhap_kho.so_m2 is 'Quy doi m2.';
-comment on column public.nhap_kho.so_m_dai is 'Quy doi met dai.';
+comment on column public.nhap_kho.trong_luong_kg_mot_sp is 'Kg cua 1 san pham — he so quy doi, khong phai tong dong phieu.';
+comment on column public.nhap_kho.so_m2_mot_sp is 'm2 cua 1 san pham.';
+comment on column public.nhap_kho.so_m_dai_mot_sp is 'Met dai cua 1 san pham.';
 comment on column public.nhap_kho.loai_kho is 'Loai kho: thanh_pham (khong co default — app phai ghi ro).';
 comment on column public.nhap_kho.ten_kho is 'Ten kho vat ly.';

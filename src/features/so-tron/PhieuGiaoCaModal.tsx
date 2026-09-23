@@ -368,16 +368,42 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
         }));
 
       // Thành phẩm: chỉ đọc từ sổ trộn — không ghi đè khi lưu phiếu giao ca.
-      const nextBangSanPham = (report.bang_san_pham || []).map(sp => ({
-        ma_lenh_sx: sp.ma_lenh_sx || '',
-        ma_sp: sp.ma_sp || '',
-        ten_sp: sp.ten_sp || '',
-        mang: (sp as { mang?: string }).mang || '',
-        so_luong: str(sp.so_luong),
-        dinh_muc: str(sp.dinh_muc),
-        trong_luong: str(sp.trong_luong),
-        ghi_chu: sp.ghi_chu || ''
-      }));
+      // Giữ nguyên snapshot quy đổi 1 SP (kg/m2/m dài) đã lưu trong sổ trộn.
+      const nextBangSanPham = (report.bang_san_pham || []).map(sp => {
+        const conv = sp as {
+          san_pham_id?: unknown;
+          kg_1_sp?: unknown;
+          m2_1_sp?: unknown;
+          m_dai_1_sp?: unknown;
+          nguon_quy_doi?: unknown;
+        };
+        const numOrUndefined = (value: unknown) => {
+          const parsed = Number(String(value ?? '').trim().replace(',', '.'));
+          return Number.isFinite(parsed) && parsed > 0
+            ? Math.round((parsed + Number.EPSILON) * 100) / 100
+            : undefined;
+        };
+        const kg = numOrUndefined(conv.kg_1_sp);
+        const m2 = numOrUndefined(conv.m2_1_sp);
+        const mDai = numOrUndefined(conv.m_dai_1_sp);
+        return {
+          ma_lenh_sx: sp.ma_lenh_sx || '',
+          ...(str(conv.san_pham_id) ? { san_pham_id: str(conv.san_pham_id) } : {}),
+          ma_sp: sp.ma_sp || '',
+          ten_sp: sp.ten_sp || '',
+          mang: (sp as { mang?: string }).mang || '',
+          so_luong: str(sp.so_luong),
+          dinh_muc: str(sp.dinh_muc),
+          trong_luong: str(sp.trong_luong),
+          ...(kg !== undefined ? { kg_1_sp: kg } : {}),
+          ...(m2 !== undefined ? { m2_1_sp: m2 } : {}),
+          ...(mDai !== undefined ? { m_dai_1_sp: mDai } : {}),
+          ...(str(conv.nguon_quy_doi) && (kg !== undefined || m2 !== undefined || mDai !== undefined)
+            ? { nguon_quy_doi: str(conv.nguon_quy_doi) }
+            : {}),
+          ghi_chu: sp.ghi_chu || ''
+        };
+      });
 
       const nextBangHangLoi = hangLoiRows.map(r => ({
         ten_loi: r.ten_loi,
