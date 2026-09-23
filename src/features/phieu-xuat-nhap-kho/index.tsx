@@ -1726,7 +1726,7 @@ export function WarehouseSlipPanel({
   const [selectedShifts, setSelectedShifts] = useState<string[]>([]);
   const [recipient, setRecipient] = useState('');
   const [deliverer, setDeliverer] = useState('');
-  const [warehouseLocation, setWarehouseLocation] = useState('Đà Nẵng');
+  const [warehouseLocation, setWarehouseLocation] = useState('Phú Thọ');
   /** Thành phẩm: địa chỉ phiếu nhập TP (tách với địa điểm). */
   const [deliveryAddress, setDeliveryAddress] = useState('');
   /** Thành phẩm: sổ trộn nguồn phiếu nhập TP. */
@@ -2077,7 +2077,7 @@ export function WarehouseSlipPanel({
       setSelectedShifts(parseWarehouseShiftSelection(draft.shift));
       setRecipient(draft.recipient || '');
       setDeliverer(draft.deliverer || draft.recipient || '');
-      setWarehouseLocation(draft.warehouseLocation || 'Đà Nẵng');
+      setWarehouseLocation(draft.warehouseLocation || 'Phú Thọ');
       setLoaiNhapKho(draft.loaiNhapKho || '');
       const draftLines = draft.lines.map(createWarehouseLineDraftFromPrefill);
       setLines(draft.slipType === 'nhap' ? draftLines : sortWarehouseLinesKgFirst(draftLines));
@@ -2554,7 +2554,7 @@ export function WarehouseSlipPanel({
     setSelectedShifts(parseWarehouseShiftSelection(draft.shift));
     setRecipient(draft.recipient || '');
     setDeliverer(draft.deliverer || '');
-    setWarehouseLocation(draft.warehouseLocation || 'Đà Nẵng');
+    setWarehouseLocation(draft.warehouseLocation || 'Phú Thọ');
     setLoaiNhapKho(draft.loaiNhapKho || '');
     const restoredLines = draft.lines.map(createWarehouseLineDraftFromPrefill);
     linesRef.current = restoredLines;
@@ -4712,7 +4712,7 @@ export function WarehouseSlipPanel({
                   value={warehouseLocation}
                   onChange={event => setWarehouseLocation(event.target.value)}
                   className={warehouseFieldClass}
-                  placeholder="VD: Đà Nẵng"
+                  placeholder="VD: Phú Thọ"
                 />
               </label>
               {isTpInbound ? (
