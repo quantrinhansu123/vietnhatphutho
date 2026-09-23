@@ -70,10 +70,89 @@ export type TonKhoThanhPhamPeriodRow = {
   trong_luong_kg_mot_sp?: number;
   so_m2_mot_sp?: number;
   so_m_dai_mot_sp?: number;
+  /** Cắt lẻ: 7 thông số ghép tên copy từ san_pham / dòng mẹ (nullable với dữ liệu cũ). */
+  ten_goc?: string;
+  do_li?: string;
+  do_li_dm?: string;
+  do_day_m?: string;
+  do_dai_m?: string;
+  mang?: string;
+  hang_phe?: string;
+  ma_amis?: string;
+  /** Id dòng sổ nhap_kho (nguồn cắt lẻ). */
+  id?: string;
 };
 
 function round3(value: number) {
   return Math.round(value * 1000) / 1000;
+}
+
+/** Nhóm catalog nhap_kho: mã kho mới (kho_thanh_pham/...) + mã cũ giữ để đọc tương thích. */
+export const NHAP_KHO_LOAI_LIST = [
+  'kho_thanh_pham',
+  'kho_cat_le',
+  'kho_tai_che',
+  'thanh_pham',
+  'cat_le',
+  'tai_che'
+] as const;
+
+/**
+ * Mã kho ngầm từ tên tiếng Việt: không dấu, cách nhau bằng `_`.
+ * Vd "Kho cắt lẻ" → "kho_cat_le". Trả '' khi tên trống.
+ */
+export function slugMaKho(tenKho: unknown): string {
+  const slug = String(tenKho ?? '')
+    .trim()
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_');
+  return slug;
+}
+
+/** Chuẩn hóa mã loại kho cũ về mã mới (cat_le → kho_cat_le...). Mã mới giữ nguyên. */
+export function normalizeLoaiKho(loai: unknown): string {
+  const code = String(loai ?? '').trim();
+  if (code === 'cat_le') return 'kho_cat_le';
+  if (code === 'tai_che') return 'kho_tai_che';
+  if (code === 'thanh_pham') return 'kho_thanh_pham';
+  return code;
+}
+
+/** Mã loại kho cho tên kho (dự phòng khi kho chưa có trong quản lý kho — server ưu tiên tra quan_ly_kho). */
+export function nhapKhoLoaiForKho(tenKho: unknown): string {
+  return slugMaKho(tenKho) || 'kho_thanh_pham';
+}
+
+/** Chuẩn hóa tên kho để khớp tồn: trống → Kho thành phẩm; alias SP/TP → Kho thành phẩm. */
+export function normalizeKhoLabel(value: unknown): string {
+  const text = String(value ?? '').trim();
+  if (!text) return 'Kho thành phẩm';
+  const n = text
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+  if (n.includes('san pham') || n.includes('thanh pham')) return 'Kho thành phẩm';
+  return text;
+}
+
+/** strictKho (/kho-hang, Lệnh cắt, Chuyển kho): dòng catalog thuộc kho đang xem theo ten_kho hoặc mã kho. */
+export function nhapKhoSeedMatchesKho(
+  seed: { ten_kho?: string | null; loai_kho?: string | null },
+  tenKho: string,
+  maKho?: string
+): boolean {
+  const filter = String(tenKho || '').trim();
+  if (!filter) return true;
+  if (normalizeKhoLabel(seed.ten_kho) === normalizeKhoLabel(filter)) return true;
+  const loai = normalizeLoaiKho(seed.loai_kho);
+  const expected = String(maKho || '').trim() || nhapKhoLoaiForKho(filter);
+  return Boolean(loai) && Boolean(expected) && loai === expected;
 }
 
 function round2(value: number) {
@@ -418,6 +497,19 @@ export type NhapKhoProductSeed = {
   trong_luong_kg_mot_sp: number;
   so_m2_mot_sp: number;
   so_m_dai_mot_sp: number;
+  /** Cắt lẻ: nhóm kho của dòng (thanh_pham/cat_le/tai_che, nullable với dữ liệu cũ). */
+  loai_kho?: string;
+  /** Cắt lẻ: 7 thông số ghép tên (nullable với dữ liệu cũ chưa backfill). */
+  ten_goc?: string;
+  do_li?: string;
+  do_li_dm?: string;
+  do_day_m?: string;
+  do_dai_m?: string;
+  mang?: string;
+  hang_phe?: string;
+  ma_amis?: string;
+  /** Id dòng sổ nhap_kho gốc (dòng cũ nhất trong nhóm). */
+  id?: string;
 };
 
 function positivePerUnit(value: unknown): number {
@@ -479,10 +571,20 @@ export function aggregateNhapKhoProducts(
     ten_sp?: string | null;
     don_vi?: string | null;
     ten_kho?: string | null;
+    loai_kho?: string | null;
     trong_luong_kg_mot_sp?: number | null;
     so_m2_mot_sp?: number | null;
     so_m_dai_mot_sp?: number | null;
     created_at?: string | null;
+    ten_goc?: string | null;
+    do_li?: string | null;
+    do_li_dm?: string | null;
+    do_day_m?: string | null;
+    do_dai_m?: string | null;
+    mang?: string | null;
+    hang_phe?: string | null;
+    ma_amis?: string | null;
+    id?: string | null;
   }>
 ): NhapKhoProductSeed[] {
   const ordered = [...rows].sort((a, b) => {
@@ -504,6 +606,12 @@ export function aggregateNhapKhoProducts(
     if (existing) {
       if (!existing.don_vi && row.don_vi) existing.don_vi = String(row.don_vi).trim();
       if (!existing.ten_kho && row.ten_kho) existing.ten_kho = String(row.ten_kho).trim();
+      if (!existing.loai_kho && row.loai_kho) existing.loai_kho = String(row.loai_kho).trim();
+      // Cắt lẻ: giữ thông số ghép tên đầu tiên gặp (dòng cũ nhất sau sort).
+      const specKeys = ['ten_goc', 'do_li', 'do_li_dm', 'do_day_m', 'do_dai_m', 'mang', 'hang_phe', 'ma_amis'] as const;
+      for (const specKey of specKeys) {
+        if (!existing[specKey] && row[specKey]) existing[specKey] = String(row[specKey]).trim();
+      }
       continue;
     }
     map.set(key, {
@@ -511,9 +619,19 @@ export function aggregateNhapKhoProducts(
       ten_sp,
       don_vi: String(row.don_vi || '').trim(),
       ten_kho: String(row.ten_kho || '').trim() || 'Kho thành phẩm',
+      loai_kho: String(row.loai_kho || '').trim(),
       trong_luong_kg_mot_sp: kg,
       so_m2_mot_sp: m2,
-      so_m_dai_mot_sp: mDai
+      so_m_dai_mot_sp: mDai,
+      ten_goc: String(row.ten_goc || '').trim(),
+      do_li: String(row.do_li || '').trim(),
+      do_li_dm: String(row.do_li_dm || '').trim(),
+      do_day_m: String(row.do_day_m || '').trim(),
+      do_dai_m: String(row.do_dai_m || '').trim(),
+      mang: String(row.mang || '').trim(),
+      hang_phe: String(row.hang_phe || '').trim(),
+      ma_amis: String(row.ma_amis || '').trim(),
+      id: String(row.id || '').trim()
     });
   }
   return Array.from(map.values()).sort((a, b) =>
@@ -532,6 +650,7 @@ export function mergeNhapKhoCatalogWithPeriodBalances(
   options: { tenKho?: string | null } = {}
 ): TonKhoThanhPhamPeriodRow[] {
   const displayKho = String(options.tenKho || '').trim() || 'Kho thành phẩm';
+  const displayLoaiKho = nhapKhoLoaiForKho(displayKho);
 
   const balanceByKey = new Map<string, TonKhoThanhPhamPeriodRow>();
   for (const row of balances) {
@@ -545,7 +664,7 @@ export function mergeNhapKhoCatalogWithPeriodBalances(
         xuat: { ...row.xuat },
         ton_cuoi: { ...row.ton_cuoi },
         ten_kho: displayKho,
-        loai_kho: 'thanh_pham'
+        loai_kho: displayLoaiKho
       });
       continue;
     }
@@ -568,10 +687,19 @@ export function mergeNhapKhoCatalogWithPeriodBalances(
         ten_sp: seed.ten_sp || balance.ten_sp,
         don_vi: seed.don_vi || balance.don_vi,
         ten_kho: displayKho,
-        loai_kho: 'thanh_pham',
+        loai_kho: displayLoaiKho,
         trong_luong_kg_mot_sp: seed.trong_luong_kg_mot_sp,
         so_m2_mot_sp: seed.so_m2_mot_sp,
-        so_m_dai_mot_sp: seed.so_m_dai_mot_sp
+        so_m_dai_mot_sp: seed.so_m_dai_mot_sp,
+        ten_goc: seed.ten_goc || balance.ten_goc || '',
+        do_li: seed.do_li || balance.do_li || '',
+        do_li_dm: seed.do_li_dm || balance.do_li_dm || '',
+        do_day_m: seed.do_day_m || balance.do_day_m || '',
+        do_dai_m: seed.do_dai_m || balance.do_dai_m || '',
+        mang: seed.mang || balance.mang || '',
+        hang_phe: seed.hang_phe || balance.hang_phe || '',
+        ma_amis: seed.ma_amis || balance.ma_amis || '',
+        id: seed.id || ''
       });
       continue;
     }
@@ -581,7 +709,7 @@ export function mergeNhapKhoCatalogWithPeriodBalances(
       ten_sp: seed.ten_sp,
       don_vi: seed.don_vi,
       nhom_vthh: '',
-      loai_kho: 'thanh_pham',
+      loai_kho: displayLoaiKho,
       ten_kho: displayKho,
       ton_dau: zero,
       nhap: { ...zero },
@@ -589,7 +717,16 @@ export function mergeNhapKhoCatalogWithPeriodBalances(
       ton_cuoi: { ...zero },
       trong_luong_kg_mot_sp: seed.trong_luong_kg_mot_sp,
       so_m2_mot_sp: seed.so_m2_mot_sp,
-      so_m_dai_mot_sp: seed.so_m_dai_mot_sp
+      so_m_dai_mot_sp: seed.so_m_dai_mot_sp,
+      ten_goc: seed.ten_goc || '',
+      do_li: seed.do_li || '',
+      do_li_dm: seed.do_li_dm || '',
+      do_day_m: seed.do_day_m || '',
+      do_dai_m: seed.do_dai_m || '',
+      mang: seed.mang || '',
+      hang_phe: seed.hang_phe || '',
+      ma_amis: seed.ma_amis || '',
+      id: seed.id || ''
     });
   }
 

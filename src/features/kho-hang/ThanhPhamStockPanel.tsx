@@ -144,6 +144,7 @@ export function ThanhPhamStockPanel({ warehouseName, topControls, onBack }: Prop
     try {
       const params = new URLSearchParams();
       if (warehouseName.trim()) params.set('ten_kho', warehouseName.trim());
+      params.set('strict_kho', '1');
       params.set('from', fromDate);
       params.set('to', toDate);
       if (keyword.trim()) params.set('q', keyword.trim());

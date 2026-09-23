@@ -10,7 +10,12 @@ import {
   recalcThanhPhamLineMetrics,
   computeThanhPhamPeriodBalances,
   aggregateNhapKhoProducts,
-  mergeNhapKhoCatalogWithPeriodBalances
+  mergeNhapKhoCatalogWithPeriodBalances,
+  nhapKhoLoaiForKho,
+  nhapKhoSeedMatchesKho,
+  normalizeKhoLabel,
+  normalizeLoaiKho,
+  slugMaKho
 } from '../../src/features/phieu-xuat-nhap-kho/thanhPham';
 
 describe('thanhPham — merge key ma_sp + ten_sp', () => {
@@ -154,7 +159,7 @@ describe('thanhPham — danh muc nhap_kho + ton phieu', () => {
     assert.equal(sp01?.ten_kho, 'Kho thành phẩm');
     assert.equal(sp02?.nhap.sl, 0);
     assert.equal(sp02?.ton_cuoi.sl, 0);
-    assert.equal(sp02?.loai_kho, 'thanh_pham');
+    assert.equal(sp02?.loai_kho, 'kho_thanh_pham');
   });
 
   it('ton tach theo quy doi 1 sp', () => {
@@ -213,5 +218,77 @@ describe('thanhPham — danh muc nhap_kho + ton phieu', () => {
     assert.equal(kg2?.nhap.kg, 20);
     assert.equal(kg3?.nhap.sl, 5);
     assert.equal(kg3?.nhap.kg, 15);
+  });
+});
+
+describe('thanhPham — mã kho từ quản lý kho (slug không dấu nối _)', () => {
+  it('slugMaKho sinh mã ngầm', () => {
+    assert.equal(slugMaKho('Kho cắt lẻ'), 'kho_cat_le');
+    assert.equal(slugMaKho('Kho thành phẩm'), 'kho_thanh_pham');
+    assert.equal(slugMaKho('Kho tái chế'), 'kho_tai_che');
+    assert.equal(slugMaKho('  Kho  NVL   Phú-Thọ  '), 'kho_nvl_phu_tho');
+    assert.equal(slugMaKho(''), '');
+  });
+
+  it('normalizeLoaiKho đổi mã cũ về mã mới', () => {
+    assert.equal(normalizeLoaiKho('thanh_pham'), 'kho_thanh_pham');
+    assert.equal(normalizeLoaiKho('cat_le'), 'kho_cat_le');
+    assert.equal(normalizeLoaiKho('tai_che'), 'kho_tai_che');
+    assert.equal(normalizeLoaiKho('kho_cat_le'), 'kho_cat_le');
+  });
+
+  it('nhapKhoLoaiForKho dự phòng bằng slug', () => {
+    assert.equal(nhapKhoLoaiForKho('Kho thành phẩm'), 'kho_thanh_pham');
+    assert.equal(nhapKhoLoaiForKho(''), 'kho_thanh_pham');
+    assert.equal(nhapKhoLoaiForKho('Kho cắt lẻ'), 'kho_cat_le');
+    assert.equal(nhapKhoLoaiForKho('Kho tái chế'), 'kho_tai_che');
+  });
+
+  it('normalizeKhoLabel khớp alias TP', () => {
+    assert.equal(normalizeKhoLabel(''), 'Kho thành phẩm');
+    assert.equal(normalizeKhoLabel('Kho sản phẩm'), 'Kho thành phẩm');
+    assert.equal(normalizeKhoLabel('Kho cắt lẻ'), 'Kho cắt lẻ');
+  });
+
+  it('nhapKhoSeedMatchesKho khớp theo ten_kho hoặc mã kho', () => {
+    // Khớp ten_kho (kể cả dòng cũ chưa backfill loai_kho).
+    assert.equal(
+      nhapKhoSeedMatchesKho({ ten_kho: 'Kho cắt lẻ', loai_kho: 'thanh_pham' }, 'Kho cắt lẻ'),
+      true
+    );
+    // Khớp mã kho mới.
+    assert.equal(
+      nhapKhoSeedMatchesKho({ ten_kho: 'Kho cắt lẻ', loai_kho: 'kho_cat_le' }, 'Kho cắt lẻ'),
+      true
+    );
+    // Mã cũ vẫn khớp nhờ chuẩn hóa.
+    assert.equal(
+      nhapKhoSeedMatchesKho({ ten_kho: 'Kho X', loai_kho: 'cat_le' }, 'Kho cắt lẻ'),
+      true
+    );
+    // Dòng TP không lọt vào view cắt lẻ.
+    assert.equal(
+      nhapKhoSeedMatchesKho({ ten_kho: 'Kho thành phẩm', loai_kho: 'kho_thanh_pham' }, 'Kho cắt lẻ'),
+      false
+    );
+    assert.equal(
+      nhapKhoSeedMatchesKho({ ten_kho: '', loai_kho: 'kho_thanh_pham' }, 'Kho cắt lẻ'),
+      false
+    );
+    // Dòng trống kho thuộc TP.
+    assert.equal(
+      nhapKhoSeedMatchesKho({ ten_kho: '', loai_kho: '' }, 'Kho thành phẩm'),
+      true
+    );
+  });
+
+  it('merge gắn mã kho theo kho hiển thị', () => {
+    const catalog = aggregateNhapKhoProducts([
+      { ma_sp: 'SP01', ten_sp: 'A', don_vi: 'Tam', ten_kho: 'Kho cắt lẻ', loai_kho: 'kho_cat_le' }
+    ]);
+    const merged = mergeNhapKhoCatalogWithPeriodBalances(catalog, [], { tenKho: 'Kho cắt lẻ' });
+    assert.equal(merged.length, 1);
+    assert.equal(merged[0]?.loai_kho, 'kho_cat_le');
+    assert.equal(merged[0]?.ten_kho, 'Kho cắt lẻ');
   });
 });

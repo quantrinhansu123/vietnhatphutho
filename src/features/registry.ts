@@ -50,6 +50,8 @@ export type TableId =
   | 'dinh_gia_nhan_cong'
   | 'chi_phi_dien'
   | 'chi_phi_bao_duong'
+  | 'lenh_cat_le'
+  | 'phieu_chuyen_kho'
   | 'control_board';
 
 export interface TableRegistryEntry {
@@ -112,7 +114,7 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   quan_ly_kho: {
     table: 'quan_ly_kho',
     label: 'Quản lý kho',
-    sql: ['supabase-quan-ly-kho.sql'],
+    sql: ['supabase-quan-ly-kho.sql', 'supabase-quan-ly-kho-ma-kho.sql'],
     apiPrefix: '/api/quan-ly-kho',
     serverLines: 'GET/POST/PUT/DELETE /api/quan-ly-kho (client supabase / he-thong)',
     appTab: 'quan-ly-kho',
@@ -640,6 +642,28 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
       'src/features/chi-phi-bao-duong/ChiPhiBaoDuongPrintSheet.tsx'
     ],
     utils: ['src/features/chi-phi-nhan-cong/MonthYearPickerVi.tsx']
+  },
+  lenh_cat_le: {
+    table: 'lenh_cat_le',
+    label: 'Lệnh cắt lẻ (kho cắt lẻ → TP + thừa/tái chế)',
+    sql: ['supabase-lenh-cat-le.sql', 'supabase-nhap-kho-cat-le.sql', 'supabase-nhap-kho-loai-kho.sql'],
+    apiPrefix: '/api/lenh-cat-le',
+    serverLines: 'GET/POST /api/lenh-cat-le (POST sanPham[] chỉ lưu moi) + PUT/DELETE /:id + POST /:id/hoan-thanh (duyệt, ghi kho) + POST /:id/huy',
+    appTab: 'lenh-cat-le',
+    appLines: 'src/features/lenh-cat-le/index.tsx',
+    components: ['src/features/lenh-cat-le/index.tsx'],
+    utils: ['src/features/lenh-cat-le/logic.ts', 'src/utils/productProductionName.ts']
+  },
+  phieu_chuyen_kho: {
+    table: 'phieu_chuyen_kho',
+    label: 'Phiếu chuyển kho SP (nguồn → đích, hủy sinh phiếu đảo)',
+    sql: ['supabase-phieu-chuyen-kho.sql', 'supabase-nhap-kho-loai-kho.sql'],
+    apiPrefix: '/api/chuyen-kho',
+    serverLines: 'GET/POST /api/chuyen-kho + PUT /:id (sửa nháp moi) + POST /:id/hoan-thanh + POST /:id/huy (sau lenh-cat-le, không có xóa)',
+    appTab: 'chuyen-kho',
+    appLines: 'src/features/chuyen-kho/index.tsx',
+    components: ['src/features/chuyen-kho/index.tsx'],
+    utils: []
   },
   control_board: {
     table: 'control_board',

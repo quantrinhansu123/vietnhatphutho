@@ -22,6 +22,7 @@ import type { OrderProductLine } from '../_shared/productionProductHelpers';
 import { findShiftChainMeta, getProductionShiftOptions, normalizeShiftSettings, resolveLogicalNextShiftSlot, resolveLogicalPreviousShiftSlot, resolveShiftName, type ShiftSetting } from '../../utils/shiftSettings';
 import { STANDARD_SHIFTS } from '../../types';
 import { normalizeWarehouseMovements } from '../phieu-xuat-nhap-kho';
+import { mainLineTotalWeightKg } from './dinhMucVatTu';
 
 
 const CHI_NHANH_MAC_DINH = 'Phú Thọ';
@@ -35,6 +36,8 @@ type CoiMauNvl = {
   ten_nvl_sx: string;
   dvt: string;
   gia_tri: string;
+  /** Tổng trọng lượng kg trên phiếu trộn định mức — hiện ở cột Định mức vật tư. */
+  tong_khoi_luong: string;
 };
 type CoiMauItem = {
   ma_lenh_sx: string;
@@ -124,7 +127,7 @@ export type SoTronSavedReport = {
     lan: number[];
     tong: number;
     lenh_sx: string[];
-    /** Định mức vật tư (người dùng nhập tay trên phiếu giao ca) */
+    /** Định mức vật tư trên phiếu giao ca: tổng trọng lượng NVL phụ theo phiếu trộn định mức */
     dinh_muc?: string;
   }[];
   bang_san_pham: {
@@ -189,6 +192,20 @@ function parseNum(value: unknown) {
 
 function round2(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+/** Tổng trọng lượng SP: phần nghìn dấu `.`, thập phân dấu `,`, luôn 2 chữ số (vd 1.234,50). */
+function formatTongTrongLuongSp(value: string) {
+  const raw = value.trim();
+  if (!raw) return '';
+  let normalized = raw.replace(/\s/g, '');
+  if (normalized.includes(',')) normalized = normalized.replace(/\./g, '').replace(',', '.');
+  const num = Number(normalized);
+  if (!Number.isFinite(num)) return raw;
+  return new Intl.NumberFormat('vi-VN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(round2(num));
 }
 
 function formatQty(value: number) {
@@ -364,7 +381,7 @@ function normalizePhanCong(data: unknown, staffMap: Map<string, string>): PhanCo
     .filter((item): item is PhanCongItem => Boolean(item));
 }
 
-function normalizeCoiMauNvl(raw: unknown): CoiMauNvl[] {
+function normalizeCoiMauNvl(raw: unknown, productTotalKg = 0): CoiMauNvl[] {
   const list = Array.isArray(raw) ? raw : [];
   return list
     .map(rawLine => {
@@ -383,7 +400,11 @@ function normalizeCoiMauNvl(raw: unknown): CoiMauNvl[] {
         ten_nvl: ten || ma,
         ten_nvl_sx: sx,
         dvt: dvtRaw === '%' ? '%' : 'kg',
-        gia_tri: str(line.gia_tri ?? line.dinh_muc ?? '')
+        gia_tri: str(line.gia_tri ?? line.dinh_muc ?? ''),
+        tong_khoi_luong: (() => {
+          const kg = mainLineTotalWeightKg(line, productTotalKg);
+          return kg > 0 ? String(kg) : '';
+        })()
       };
     })
     .filter((line): line is CoiMauNvl => Boolean(line));
@@ -453,7 +474,7 @@ function normalizeCoiMau(data: unknown): { products: CoiMauItem[] } {
       for (const rawProd of record.products as unknown[]) {
         if (!rawProd || typeof rawProd !== 'object') continue;
         const prod = rawProd as Record<string, unknown>;
-        pushBlock(maLenh, tenPhieu, prod, normalizeCoiMauNvl(prod.nvl ?? prod.chi_tiet));
+        pushBlock(maLenh, tenPhieu, prod, normalizeCoiMauNvl(prod.nvl ?? prod.chi_tiet, parseNum(prod.tong_trong_luong)));
       }
       continue;
     }
@@ -465,11 +486,11 @@ function normalizeCoiMau(data: unknown): { products: CoiMauItem[] } {
         for (const entry of chiTiet as unknown[]) {
           if (!entry || typeof entry !== 'object') continue;
           const prod = entry as Record<string, unknown>;
-          pushBlock(maLenh, tenPhieu, prod, normalizeCoiMauNvl(prod.nvl ?? prod.chi_tiet));
+          pushBlock(maLenh, tenPhieu, prod, normalizeCoiMauNvl(prod.nvl ?? prod.chi_tiet, parseNum(prod.tong_trong_luong)));
         }
       } else {
         // 3) LEGACY: chi_tiet = các dòng NVL phẳng + SP ở cấp phiếu
-        pushBlock(maLenh, tenPhieu, record, normalizeCoiMauNvl(chiTiet));
+        pushBlock(maLenh, tenPhieu, record, normalizeCoiMauNvl(chiTiet, parseNum(record.tong_trong_luong)));
       }
     } else {
       // 4) Phiếu chỉ có cột SP/NVL cấp phiếu
@@ -488,7 +509,7 @@ function normalizeCoiMau(data: unknown): { products: CoiMauItem[] } {
                 }
               ]
             : [];
-        pushBlock(maLenh, tenPhieu, record, normalizeCoiMauNvl(fallbackLines));
+        pushBlock(maLenh, tenPhieu, record, normalizeCoiMauNvl(fallbackLines, parseNum(record.tong_trong_luong)));
       }
     }
   }
@@ -1212,7 +1233,7 @@ export function SoTronPanel({
     const selectedSet = new Set(selectedLenh.map(c => c.trim().toLowerCase()));
     const desired = new Map<
       string,
-      { material_id: string; ma: string; ten: string; sx: string; dvt: string; nguon: Set<string> }
+      { material_id: string; ma: string; ten: string; sx: string; dvt: string; nguon: Set<string>; dinhMucKg: number }
     >();
     for (const item of coiMau) {
       const tokens = splitLenhCodes(item.ma_lenh_sx);
@@ -1229,11 +1250,13 @@ export function SoTronPanel({
           ten: disp.ten_nvl,
           sx: disp.ten_nvl_sx,
           dvt: line.dvt,
-          nguon: new Set<string>()
+          nguon: new Set<string>(),
+          dinhMucKg: 0
         };
         if (disp.ten_nvl && !entry.ten) entry.ten = disp.ten_nvl;
         if (disp.ten_nvl_sx && !entry.sx) entry.sx = disp.ten_nvl_sx;
         if (line.dvt && (!entry.dvt || entry.dvt === 'kg')) entry.dvt = line.dvt;
+        entry.dinhMucKg = round2(entry.dinhMucKg + parseNum(line.tong_khoi_luong));
         for (const code of owners) {
           const original = selectedLenh.find(c => c.trim().toLowerCase() === code.trim().toLowerCase()) || code;
           entry.nguon.add(original);
@@ -1269,6 +1292,7 @@ export function SoTronPanel({
             ten_nvl: cur.ten_nvl || meta.ten,
             ten_nvl_sx: cur.ten_nvl_sx || meta.sx,
             dvt: cur.dvt || meta.dvt,
+            dinh_muc: meta.dinhMucKg > 0 ? formatTongTrongLuongSp(String(meta.dinhMucKg)) : cur.dinh_muc,
             nguon: [...new Set([...cur.nguon, ...nguon])]
           });
         } else {
@@ -1279,7 +1303,7 @@ export function SoTronPanel({
             ten_nvl: meta.ten,
             ten_nvl_sx: meta.sx,
             dvt: meta.dvt,
-            dinh_muc: '',
+            dinh_muc: meta.dinhMucKg > 0 ? formatTongTrongLuongSp(String(meta.dinhMucKg)) : '',
             lan: Array(numLan).fill(''),
             nguon
           });
@@ -2605,7 +2629,7 @@ export function SoTronPanel({
                           <div className="flex flex-wrap gap-x-3 gap-y-0.5 px-3 pt-1.5 text-[13px] font-semibold text-slate-500">
                             {block.ma_lenh_sx ? <span>Lệnh SX: {block.ma_lenh_sx}</span> : null}
                             {block.tong_trong_luong ? (
-                              <span>Tổng trọng lượng: <span className="tabular-nums text-slate-700">{block.tong_trong_luong} kg</span></span>
+                              <span>Tổng trọng lượng sản phẩm: <span className="tabular-nums text-slate-700">{formatTongTrongLuongSp(block.tong_trong_luong)} kg</span></span>
                             ) : null}
                             {block.dinh_luong_coi ? (
                               <span>Định lượng cối: <span className="tabular-nums text-slate-700">{block.dinh_luong_coi} kg</span></span>
@@ -3230,9 +3254,9 @@ export function SoTronPanel({
                   </span>
                 </div>
 
-                {/* Bảng NVL trộn thực tế: Nguyên liệu | ĐVT | L1..Ln | Tổng */}
+                {/* Bảng NVL trộn thực tế: Nguyên liệu | ĐVT | L1..Ln | Tổng | Định mức vật tư */}
                 <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-center" style={{ minWidth: 426 + numLan * 64 }}>
+                  <table className="w-full border-collapse text-center" style={{ minWidth: 522 + numLan * 64 }}>
                     <colgroup>
                       <col style={{ width: '260px', minWidth: '260px' }} />
                       <col style={{ width: '56px', minWidth: '56px' }} />
@@ -3240,6 +3264,7 @@ export function SoTronPanel({
                         <col key={i} style={{ width: '64px', minWidth: '64px' }} />
                       ))}
                       <col style={{ width: '76px', minWidth: '76px' }} />
+                      <col style={{ width: '96px', minWidth: '96px' }} />
                       <col style={{ width: '34px', minWidth: '34px' }} />
                     </colgroup>
                     <thead>
@@ -3248,6 +3273,7 @@ export function SoTronPanel({
                         <th rowSpan={2} className={`${paperTh} w-[56px] min-w-[56px]`}>ĐVT</th>
                         <th colSpan={numLan} className={paperTh}>Trọng Lượng</th>
                         <th rowSpan={2} className={`${paperTh} w-[76px] min-w-[76px]`}>Tổng</th>
+                        <th rowSpan={2} className={`${paperTh} w-[96px] min-w-[96px] leading-tight`} title="Tổng trọng lượng NVL trên phiếu trộn định mức">Định mức vật tư</th>
                         <th rowSpan={2} className={`${paperTh} w-[34px] min-w-[34px]`} />
                       </tr>
                       <tr>
@@ -3261,7 +3287,7 @@ export function SoTronPanel({
                     <tbody>
                       {nvlRows.length === 0 && (
                         <tr>
-                          <td colSpan={numLan + 4} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
+                          <td colSpan={numLan + 5} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
                             Chưa có NVL — kiểm tra cối trộn mẫu của lệnh hoặc thêm NVL khác bên dưới.
                           </td>
                         </tr>
@@ -3305,6 +3331,9 @@ export function SoTronPanel({
                           ))}
                           <td className="border border-slate-700 px-1 py-0.5 text-right text-[13px] font-bold tabular-nums w-[76px] min-w-[76px]">
                             {formatQty(round2(row.lan.reduce((sum, v) => sum + parseNum(v), 0)))}
+                          </td>
+                          <td className="border border-slate-700 px-1 py-0.5 text-right text-[12.5px] font-bold tabular-nums text-slate-800 w-[96px] min-w-[96px]" title="Tổng trọng lượng NVL trên phiếu trộn định mức">
+                            {row.dinh_muc}
                           </td>
                           <td className="border border-slate-700 px-0.5 py-0.5 w-[34px] min-w-[34px]">
                             <button

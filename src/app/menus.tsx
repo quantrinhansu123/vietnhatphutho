@@ -56,7 +56,7 @@ import {
   FilePlus2, Layers, History, UsersRound, Building2, BriefcaseBusiness, Package, Cpu, Boxes,
   ClipboardList, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, ArrowLeftRight, Scale, Settings,
   CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity, Truck,
-  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, AlertTriangle, Coins
+  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, AlertTriangle, Coins, Scissors
 } from 'lucide-react';
 import type { AppTab } from '../routes';
 import { hubHasAllowedChild, resolveAccessTab } from './tabAccess';
@@ -751,6 +751,20 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'kiem-kho-chenh-lech'
   },
   {
+    title: 'Lệnh cắt lẻ',
+    desc: 'Cắt cuộn/tấm ở kho cắt lẻ: SP con về kho thành phẩm, thừa nhập lại hoặc chuyển tái chế.',
+    icon: Scissors,
+    icon3d: warehouseSlip3d,
+    tab: 'lenh-cat-le'
+  },
+  {
+    title: 'Chuyển kho',
+    desc: 'Chuyển sản phẩm qua lại giữa các kho, sinh 2 phiếu xuất + nhập.',
+    icon: ArrowLeftRight,
+    icon3d: warehouseSlip3d,
+    tab: 'chuyen-kho'
+  },
+  {
     title: 'Lịch sử xuất nhập',
     desc: 'Tra cứu phiếu đã lưu, lọc theo loại và ngày.',
     icon: History,
@@ -1052,6 +1066,8 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Cân kiểm kho', tab: 'can-kiem-kho' },
       { label: 'Xử lý chênh lệch', tab: 'kiem-kho-chenh-lech' },
       { label: 'Lịch sử xuất nhập', tab: 'warehouse-history' },
+      { label: 'Lệnh cắt lẻ', tab: 'lenh-cat-le' },
+      { label: 'Chuyển kho', tab: 'chuyen-kho' },
       { label: 'Tồn kho', tab: 'ton-kho' },
       { label: 'Chuẩn bị xuất hàng', tab: 'factory-kho', disabled: true }
     ]
@@ -1124,6 +1140,8 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'machines': { group: 'Trang chủ', sub: 'Quản lý máy' },
   'warehouse-slip': { group: 'Kho', sub: 'Phiếu xuất nhập kho' },
   'warehouse-history': { group: 'Kho', sub: 'Lịch sử xuất nhập' },
+  'lenh-cat-le': { group: 'Kho', sub: 'Lệnh cắt lẻ' },
+  'chuyen-kho': { group: 'Kho', sub: 'Chuyển kho' },
   'warehouse-history-detail': { group: 'Kho', sub: 'Chi tiết phiếu' },
   'damaged-goods-warehouse': { group: 'Kho', sub: 'Kho hàng hỏng' },
   'ton-kho': { group: 'Kho', sub: 'Tồn kho' },
