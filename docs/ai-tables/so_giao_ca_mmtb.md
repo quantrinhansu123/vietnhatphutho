@@ -1,7 +1,7 @@
 # so_giao_ca_mmtb
 
 | Bảng | `so_giao_ca_mmtb` |
-| Tab | `so-giao-ca-mmtb` → `/so-giao-ca-mmtb` (card **Sổ giao ca MMTB** trong `/phieu-bao-cao`) + `so-giao-ca-mmtb-list` → `/danh-sach-so-giao-ca-mmtb` (card **Danh sách sổ giao ca MMTB** trong `/danh-sach-bao-cao`) |
+| Tab | `so-giao-ca-mmtb` → `/so-giao-ca-mmtb` + `so-giao-ca-mmtb-list` → `/danh-sach-so-giao-ca-mmtb` (card trong `/bao-cao-truong-ca-tron`, vào từ `/nha-may/cong-nhan`) |
 | SQL | `supabase-so-giao-ca-mmtb.sql` |
 
 ## API (`server.ts`)
@@ -25,7 +25,7 @@
 | `src/features/so-giao-ca-mmtb/types.ts` | Định nghĩa `SoGiaoCaMmtbRecord`, `DongTieuChuan`, `DongCheDoChayRow` (gồm `do_day/chieu_rong/chieu_dai` sau cột Lô), `DongSanPhamRow`, các cột thay màng (9..17), khu khuôn (18..32). |
 | `src/App.tsx` | Shell routing render `SoGiaoCaMmtbPanel` và `SoGiaoCaMmtbListView`. |
 | `src/routes.ts` | `so-giao-ca-mmtb` → `/so-giao-ca-mmtb`, `so-giao-ca-mmtb-list` → `/danh-sach-so-giao-ca-mmtb`. |
-| `src/app/menus.tsx` | Cards trong `REPORT_FORM_MENU_ITEMS` và `REPORT_LIST_MENU_ITEMS`. |
+| `src/app/menus.tsx` | Cards trong `BAO_CAO_TRUONG_CA_TRON_MENU_ITEMS`. |
 | `src/app/tabAccess.ts` | Aliases và hub implied tabs. |
 
 ## Nghiệp vụ

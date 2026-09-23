@@ -1,7 +1,7 @@
 # so_tron
 
 | Bảng | `so_tron` |
-| Tab | `so-tron` → `/so-tron` (card **Sổ trộn** trong `/phieu-bao-cao`) + `so-tron-list` → `/danh-sach-so-tron` (card **Danh sách sổ trộn** trong `/danh-sach-bao-cao`, vào từ `/nha-may/cong-nhan` → Lịch sử công việc) |
+| Tab | `so-tron` → `/so-tron` (card **Sổ trộn** trong `/bao-cao-truong-ca-tron`) + `so-tron-list` → `/danh-sach-so-tron` (cùng menu **Báo cáo Trưởng ca + Trộn**, vào từ `/nha-may/cong-nhan`) |
 | SQL | `supabase-so-tron.sql` + `supabase-so-tron-tong-hop.sql` (5 cột tổng hợp) + `supabase-so-tron-tong-nhap.sql` (`tong_nhap_nvl`) |
 
 ## API (`server.ts`)
@@ -24,7 +24,7 @@
 | `src/features/so-tron/print.ts` | (HIỆN KHÔNG DÙNG — nút `In A4` đã bỏ theo yêu cầu, giữ file phòng khi cần lại) Phiếu in đúng mẫu giấy: 1 tờ A4 ngang (`@page landscape`, font 7.5–9pt, `table-layout: fixed`). Header Ngày/Máy-Ca/Nhân sự → bảng NVL L1..L20 + Tổng → dòng tổng SP → 3 bảng cạnh nhau (Sản phẩm có Cộng | Hàng lỗi có Stt + Cộng | Bàn giao). Đệm dòng trống cho đủ form. In qua cửa sổ riêng (`printSoTronSlip`, pattern `LichLamViecPrintModal`). |
 | `src/App.tsx` | Shell routing — import panel, không chứa logic bảng |
 | `src/routes.ts` | `so-tron` → `/so-tron`, `so-tron-list` → `/danh-sach-so-tron` |
-| `src/app/menus.tsx` | Card Sổ trộn trong `REPORT_FORM_MENU_ITEMS` |
+| `src/app/menus.tsx` | Card Sổ trộn trong `BAO_CAO_TRUONG_CA_TRON_MENU_ITEMS` |
 
 ## Nghiệp vụ
 

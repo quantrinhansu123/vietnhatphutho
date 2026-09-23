@@ -60,6 +60,7 @@ import {
   ADMIN_MENU_ITEMS, REPORT_FORM_MENU_ITEMS, PRODUCTION_REPORT_MENU_ITEMS, FACILITY_MENU_ITEMS,
   REPORT_LIST_MENU_ITEMS, HCNS_MENU_ITEMS, BUSINESS_MENU_ITEMS, FACTORY_MENU_ITEMS,
   FACTORY_QUAN_DOC_MENU_ITEMS, FACTORY_QC_MENU_ITEMS, FACTORY_CONG_NHAN_MENU_ITEMS, FACTORY_KHO_MENU_ITEMS,
+  BAO_CAO_TRUONG_CA_TRON_MENU_ITEMS,
   getActivePageMeta
 } from './app/menus';
 import { ProductsPanel } from './features/san-pham';
@@ -241,7 +242,7 @@ export default function App() {
       const fullAccess =
         Boolean(authUser.fullAccess) || hasFullMenuAccess(authUser.role, authUser.username);
       if (!fullAccess && nextTab !== 'menu') {
-        const allowed = buildAllowedTabSet(authUser.viewPermissions ?? []);
+        const allowed = expandImpliedHubTabs(buildAllowedTabSet(authUser.viewPermissions ?? []));
         const known = buildKnownPermissionTabSet();
         const accessTab = resolveAccessTab(nextTab);
         const allowedHere =
@@ -298,7 +299,7 @@ export default function App() {
     const fullAccess =
       Boolean(authUser.fullAccess) || hasFullMenuAccess(authUser.role, authUser.username);
     if (fullAccess || activeTab === 'menu') return;
-    const allowed = buildAllowedTabSet(authUser.viewPermissions ?? []);
+    const allowed = expandImpliedHubTabs(buildAllowedTabSet(authUser.viewPermissions ?? []));
     const known = buildKnownPermissionTabSet();
     const accessTab = resolveAccessTab(activeTab);
     const allowedHere =
@@ -895,6 +896,21 @@ export default function App() {
                 <MenuPageHeader title="Xem báo cáo" desc="Chọn danh sách báo cáo cần mở." />
                 <MenuCardGrid items={filterMenuItems(REPORT_LIST_MENU_ITEMS)} onNavigate={navigateToTab} />
               </motion.div>
+            ) : activeTab === 'bao-cao-truong-ca-tron' ? (
+              <motion.div
+                key="bao-cao-truong-ca-tron-menu"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-3"
+              >
+                <MenuPageHeader
+                  title="Báo cáo Trưởng ca + Trộn"
+                  desc="Sổ trộn, sổ giao ca MMTB và sổ chế độ máy."
+                />
+                <MenuCardGrid items={filterMenuItems(BAO_CAO_TRUONG_CA_TRON_MENU_ITEMS)} onNavigate={navigateToTab} />
+              </motion.div>
             ) : activeTab === 'acceptance-report-list' ? (
               <motion.div
                 key="acceptance-report-list"
@@ -1003,7 +1019,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
                 className="space-y-3"
               >
-                <MenuPageHeader title="Sản xuất" desc="Nhập và xem báo cáo theo ca sản xuất." />
+                <MenuPageHeader title="Sản xuất" desc="Báo cáo trưởng ca, sổ trộn, công việc được giao và lịch sử công việc." />
                 <MenuCardGrid items={filterMenuItems(FACTORY_CONG_NHAN_MENU_ITEMS)} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'factory-kho' ? (
@@ -1304,7 +1320,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <SoTronPanel
-                  onBack={() => goBack('report-forms')}
+                  onBack={() => goBack('bao-cao-truong-ca-tron')}
                   onOpenList={() => navigateToTab('so-tron-list')}
                   editReport={soTronEditReport}
                   onEditConsumed={() => setSoTronEditReport(null)}
@@ -1319,7 +1335,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <SoTronListView
-                  onBack={() => goBack('report-lists')}
+                  onBack={() => goBack('bao-cao-truong-ca-tron')}
                   onCreate={() => {
                     setSoTronEditReport(null);
                     navigateToTab('so-tron');
@@ -1339,7 +1355,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <SoGiaoCaMmtbPanel
-                  onBack={() => goBack('report-forms')}
+                  onBack={() => goBack('bao-cao-truong-ca-tron')}
                   onOpenList={() => navigateToTab('so-giao-ca-mmtb-list')}
                   editRecord={soGiaoCaMmtbEditRecord}
                   onEditConsumed={() => setSoGiaoCaMmtbEditRecord(null)}
@@ -1354,7 +1370,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <SoGiaoCaMmtbListView
-                  onBack={() => goBack('report-lists')}
+                  onBack={() => goBack('bao-cao-truong-ca-tron')}
                   onCreate={() => {
                     setSoGiaoCaMmtbEditRecord(null);
                     navigateToTab('so-giao-ca-mmtb');
@@ -1395,7 +1411,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <SoCheDoMayWorkspace onBack={() => goBack('report-forms')} />
+                <SoCheDoMayWorkspace onBack={() => goBack('bao-cao-truong-ca-tron')} />
               </motion.div>
             ) : activeTab === 'so-che-do-may-list' ? (
               <motion.div
@@ -1405,7 +1421,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <SoCheDoMayWorkspace onBack={() => goBack('report-lists')} />
+                <SoCheDoMayWorkspace onBack={() => goBack('bao-cao-truong-ca-tron')} />
               </motion.div>
             ) : activeTab === 'acceptance-report' ? (
               <motion.div

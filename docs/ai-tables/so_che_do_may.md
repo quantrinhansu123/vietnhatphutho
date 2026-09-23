@@ -1,7 +1,7 @@
 # so_che_do_may
 
 | Bảng | `so_che_do_may` |
-| Tab | `so-che-do-may` → `/so-che-do-may` (card **Sổ chế độ máy** trong `/phieu-bao-cao`) + `so-che-do-may-list` → `/danh-sach-so-che-do-may` (card **Danh sách sổ chế độ máy** trong `/danh-sach-bao-cao`) |
+| Tab | `so-che-do-may` → `/so-che-do-may` + `so-che-do-may-list` → `/danh-sach-so-che-do-may` (card trong `/bao-cao-truong-ca-tron`, vào từ `/nha-may/cong-nhan`) |
 | SQL | `supabase-so-che-do-may.sql` (+ migration `supabase-so-che-do-may-ma-may.sql` nếu đã tạo bảng từ bản cũ) |
 
 ## API (`server.ts`)
@@ -20,7 +20,7 @@
 | `src/features/so-che-do-may/index.tsx` | Màn hình duy nhất (`SoCheDoMayWorkspace`: props `onBack` — 2 route `so-che-do-may` + `so-che-do-may-list` cùng render; dropdown multiple tìm/chọn máy sinh section, checkbox trước tên máy ở section để tick lưu/in, lưu cả lô, khóa sửa theo `useTabAccess('so-che-do-may-list')`) + lưới dùng chung (`SoCheDoMayGrid`) + modal ghi chú (`NoteModal`) + ô bàn giao (`HandoverCell`) + picker lịch popup (`MonthYearPicker` tháng/năm, `VnCalendarPicker` ngày). |
 | `src/App.tsx` | Shell routing — import panel, không chứa logic bảng |
 | `src/routes.ts` | `so-che-do-may` → `/so-che-do-may`, `so-che-do-may-list` → `/danh-sach-so-che-do-may` |
-| `src/app/menus.tsx` | Cards trong `REPORT_FORM_MENU_ITEMS` và `REPORT_LIST_MENU_ITEMS` |
+| `src/app/menus.tsx` | Cards trong `BAO_CAO_TRUONG_CA_TRON_MENU_ITEMS` |
 | `src/app/tabAccess.ts` | Alias `so-che-do-may` → `so-che-do-may-list` + hub implied tabs |
 | `src/features/so-che-do-may/print.ts` | In phiếu đã chọn khổ ngang A4 (`printSoCheDoMaySlips`, mỗi máy 1 trang). |
 

@@ -54,14 +54,14 @@ Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...
 | `phieu_tron_thuc_te` | `/danh-sach-bao-cao-phoi-tron` (tab thực tế) | [phieu_tron_thuc_te.md](./phieu_tron_thuc_te.md) |
 | `bao_cao_nghiem_thu` | `/bao-cao-san-luong` | [bao_cao_nghiem_thu.md](./bao_cao_nghiem_thu.md) |
 | `bao_cao_may_nvl_ton` | `/bao-cao-may-nvl-ton` | [bao_cao_may_nvl_ton.md](./bao_cao_may_nvl_ton.md) |
-| `so_tron` | `/so-tron` (card Sổ trộn trong `/phieu-bao-cao`, vào từ `/nha-may/cong-nhan`) | [so_tron.md](./so_tron.md) |
+| `so_tron` | `/so-tron` (card Sổ trộn trong `/bao-cao-truong-ca-tron`, vào từ `/nha-may/cong-nhan`) | [so_tron.md](./so_tron.md) |
 | `nhap_kho` | `/kho-hang` → Kho thành phẩm (danh sách SP + tồn kỳ) | [nhap_kho.md](./nhap_kho.md) |
 | `ton_kho_thanh_pham` | *(không dùng UI — xem nhap_kho)* | [ton_kho_thanh_pham.md](./ton_kho_thanh_pham.md) |
 | `bao_cao_ngay` | `/bao-cao-ngay` (card Báo cáo ngày trong `/phieu-bao-cao`) + `/danh-sach-bao-cao-ngay` | [bao_cao_ngay.md](./bao_cao_ngay.md) |
-| `so_giao_ca_mmtb` | `/so-giao-ca-mmtb` (card Sổ giao ca MMTB trong `/phieu-bao-cao`) | [so_giao_ca_mmtb.md](./so_giao_ca_mmtb.md) |
+| `so_giao_ca_mmtb` | `/so-giao-ca-mmtb` (card Sổ giao ca MMTB trong `/bao-cao-truong-ca-tron`) | [so_giao_ca_mmtb.md](./so_giao_ca_mmtb.md) |
 | `so_test_mau_nhua` | `/so-test-mau-nhua` (card Sổ test mẫu nhựa trong QC `/nha-may/qc`) | [so_test_mau_nhua.md](./so_test_mau_nhua.md) |
 | `bao_cao_hang_loi_khach_hang` | `/bao-cao-hang-loi-khach-hang` (card Báo cáo hàng lỗi hỏng trong `/kinh-doanh`) + `/thong-ke-hang-loi-khach-hang` (card Thống kê hàng lỗi hỏng trong QC `/nha-may/qc`) | [bao_cao_hang_loi_khach_hang.md](./bao_cao_hang_loi_khach_hang.md) |
-| `so_che_do_may` | `/so-che-do-may` (card Sổ chế độ máy trong `/phieu-bao-cao`) + `/danh-sach-so-che-do-may` | [so_che_do_may.md](./so_che_do_may.md) |
+| `so_che_do_may` | `/so-che-do-may` (card Sổ chế độ máy trong `/bao-cao-truong-ca-tron`) + `/danh-sach-so-che-do-may` | [so_che_do_may.md](./so_che_do_may.md) |
 | `phieu_bao_dung_may` | `/phieu-bao-dung-may` | [phieu_bao_dung_may.md](./phieu_bao_dung_may.md) |
 | *(chưa có bảng)* | `/bao-cao-tuan` (card Báo cáo tuần trong `/phieu-bao-cao`) | [bao_cao_tuan.md](./bao_cao_tuan.md) |
 | `bao_cao_thang` | `/bao-cao-thang` (card Báo cáo tháng trong `/phieu-bao-cao`) + `/danh-sach-bao-cao-thang` | [bao_cao_thang.md](./bao_cao_thang.md) |
