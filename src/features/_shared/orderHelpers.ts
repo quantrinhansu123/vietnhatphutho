@@ -95,6 +95,94 @@ export function parseSouthTemFromTenGhep(tenGhep?: string | null): { tem: string
   if (legacy) return { tem: String(legacy[1] || '').trim(), mauTem: String(legacy[2] || '').trim(), danTem2Dau };
   return { tem: '', mauTem: '', danTem2Dau };
 }
+function matchOrderProductCode(product: OrderProductOption, normalizedCode: string): boolean {
+  return product.code.trim().toLocaleLowerCase('vi') === normalizedCode ||
+    product.newCode.trim().toLocaleLowerCase('vi') === normalizedCode;
+}
+
+/** Mọi tên sản xuất của đúng mã AMIS (không lọc thêm theo Tên SP để không sót variant). */
+export function listProductionNamesByCode(
+  products: OrderProductOption[],
+  productCode: string,
+  productionName = ''
+): string[] {
+  const normalizedCode = String(productCode || '').trim().toLocaleLowerCase('vi');
+  const direct = normalizedCode
+    ? products.filter(product => matchOrderProductCode(product, normalizedCode))
+    : [];
+  const source =
+    direct.length > 0
+      ? direct
+      : siblingProductsByProductionName(products, productionName);
+  const names = source.map(product => product.productionName).filter(name => Boolean(name));
+  return [...new Set(names)].sort((a, b) => a.localeCompare(b, 'vi'));
+}
+
+/**
+ * Fallback khi mã trên dòng đơn không còn khớp danh mục (mã cũ đã đổi, vd `...1.22r` → `...1.22m`):
+ * tìm dòng danh mục có đúng tên sản xuất đang lưu, lấy các variant cùng mã của nó.
+ */
+function siblingProductsByProductionName(
+  products: OrderProductOption[],
+  productionName: string
+): OrderProductOption[] {
+  const picked = String(productionName || '').trim();
+  if (!picked) return [];
+  const owners = products.filter(product => product.productionName.trim() === picked);
+  if (owners.length === 0) return [];
+  const codes = new Set(
+    owners.flatMap(product => [product.code.trim().toLocaleLowerCase('vi'), product.newCode.trim().toLocaleLowerCase('vi')].filter(Boolean))
+  );
+  return products.filter(
+    product =>
+      codes.has(product.code.trim().toLocaleLowerCase('vi')) ||
+      (product.newCode.trim() && codes.has(product.newCode.trim().toLocaleLowerCase('vi')))
+  );
+}
+
+/**
+ * Tìm đúng dòng danh mục theo (mã + tên sản xuất) khi chọn lại Tên SX trên form đơn hàng.
+ * Ưu tiên: khớp duy nhất → giữ dòng đang chọn (chọn lại đúng tên cũ) → cùng Tên SP → dòng đầu.
+ * Trả null khi tên SX không thuộc mã (giữ tay) để form xóa productId thay vì gán nhầm.
+ */
+export function matchOrderProductByCodeAndProductionName(
+  products: OrderProductOption[],
+  productCode: string,
+  productionName: string,
+  preferredId = '',
+  productName = ''
+): OrderProductOption | null {
+  const picked = String(productionName || '').trim();
+  if (!picked) return null;
+  const codeKey = String(productCode || '').trim().toLocaleLowerCase('vi');
+  const exact = codeKey
+    ? products.filter(product =>
+        matchOrderProductCode(product, codeKey) && product.productionName.trim() === picked
+      )
+    : [];
+  // Mã trên dòng không còn khớp danh mục (mã cũ đã đổi): suy mã qua tên SX đang lưu,
+  // nhưng pool vẫn phải giữ đúng tên đã chọn (không trả dòng tên khác).
+  const pool =
+    exact.length > 0
+      ? exact
+      : siblingProductsByProductionName(products, picked).filter(
+          product => product.productionName.trim() === picked
+        );
+  if (pool.length === 0) return null;
+  if (pool.length === 1) return pool[0];
+  const keepId = String(preferredId || '').trim();
+  if (keepId) {
+    const kept = pool.find(product => product.id === keepId);
+    if (kept) return kept;
+  }
+  const nameKey = String(productName || '').trim();
+  if (nameKey) {
+    const byName = pool.find(product => product.name.trim() === nameKey);
+    if (byName) return byName;
+  }
+  return pool[0];
+}
+
 export const ORDER_STATUS_DEFAULT = 'Chờ sx';
 export const ORDER_STATUS_OPTIONS = ['Chờ sx', 'Đang sx', 'Hoàn thành', 'Hủy'] as const;
 export const STORAGE_ORDER_UNIT_KEY = 'order_unit_suggestions_v1';
