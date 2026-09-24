@@ -126,4 +126,76 @@ describe('tp inbound lệnh SX', () => {
     assert.equal(sp1?.areaM2, 6.5);
     assert.equal(sp1?.lengthM, 39);
   });
+
+  it('không gộp cùng mã khác tên ghép (2 variant mét cắt khác nhau)', () => {
+    const merged = mergeProductsFromLenhSx([
+      {
+        orderCode: 'LSX-A',
+        machine: 'Máy 01',
+        startDate: '2026-09-22',
+        endDate: '2026-09-22',
+        lines: [
+          {
+            code: 'SP1',
+            name: 'Tam A',
+            productionName: 'Tam A - 6m',
+            unit: 'Tấm',
+            quantity: 100,
+            weightKg: 500,
+            kgPerUnit: 5
+          }
+        ]
+      },
+      {
+        orderCode: 'LSX-B',
+        machine: 'Máy 01',
+        startDate: '2026-09-22',
+        endDate: '2026-09-22',
+        lines: [
+          {
+            code: 'SP1',
+            name: 'Tam A',
+            productionName: 'Tam A - 8m',
+            unit: 'Tấm',
+            quantity: 50,
+            weightKg: 300,
+            kgPerUnit: 6
+          }
+        ]
+      }
+    ]);
+    assert.equal(merged.length, 2);
+    const v6m = merged.find(row => row.productionName === 'Tam A - 6m');
+    const v8m = merged.find(row => row.productionName === 'Tam A - 8m');
+    assert.equal(v6m?.quantity, 100);
+    assert.equal(v6m?.weightKg, 500);
+    assert.equal(v6m?.kgPerUnit, 5);
+    assert.equal(v8m?.quantity, 50);
+    assert.equal(v8m?.weightKg, 300);
+    assert.equal(v8m?.kgPerUnit, 6);
+  });
+
+  it('không gộp cùng mã + tên ghép nhưng khác hệ số 1 SP', () => {
+    const merged = mergeProductsFromLenhSx([
+      {
+        orderCode: 'LSX-A',
+        machine: 'Máy 01',
+        startDate: '2026-09-22',
+        endDate: '2026-09-22',
+        lines: [
+          { code: 'SP1', name: 'Tam A', productionName: 'Tam A', unit: 'Tấm', quantity: 10, weightKg: 50, kgPerUnit: 5 }
+        ]
+      },
+      {
+        orderCode: 'LSX-B',
+        machine: 'Máy 01',
+        startDate: '2026-09-22',
+        endDate: '2026-09-22',
+        lines: [
+          { code: 'SP1', name: 'Tam A', productionName: 'Tam A', unit: 'Tấm', quantity: 10, weightKg: 60, kgPerUnit: 6 }
+        ]
+      }
+    ]);
+    assert.equal(merged.length, 2);
+  });
 });
