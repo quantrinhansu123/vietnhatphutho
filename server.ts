@@ -5362,8 +5362,9 @@ function parseWarehouseSlipLenhSxSelection(value: unknown): WarehouseSlipLenhSxR
     const ma_lenh_sx = String(row.ma_lenh_sx ?? row.maLenhSx ?? '').trim();
     const ngay = String(row.ngay ?? '').trim().slice(0, 10);
     const ca = String(row.ca ?? '').trim();
-    if (!dinh_muc_id || !ma_lenh_sx || !ngay) return;
-    const key = dinh_muc_id;
+    // Phiếu mới khóa bằng id định mức; bản cũ chỉ có mã lệnh + ngày.
+    if (!dinh_muc_id && (!ma_lenh_sx || !ngay)) return;
+    const key = dinh_muc_id || `${ma_lenh_sx}::${ngay}::${ca}`;
     if (seen.has(key)) return;
     seen.add(key);
     result.push({ dinh_muc_id, ten_phieu, ma_lenh_sx, ngay, ca });
@@ -5419,9 +5420,6 @@ function parseWarehouseSlipBody(body: unknown): {
   const lenhSxDaChon = parseWarehouseSlipLenhSxSelection(
     source.lenhSxDaChon ?? source.lenh_sx_da_chon ?? source.dinhMucDaChon ?? source.dinh_muc_da_chon
   );
-  if (loaiPhieu === 'xuat' && loaiKho === 'nvl' && lenhSxDaChon.length === 0) {
-    return { error: 'Vui lòng chọn ít nhất một phiếu trộn định mức để xuất kho NVL.' };
-  }
 
   // Module 1: header mo rong (tuong thich payload cu thieu cac truong nay).
   const tenKho =

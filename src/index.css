@@ -897,14 +897,15 @@ input[type="number"] {
   text-align: center;
 }
 
-.order-print-products-table th:nth-child(1) { width: 5%; }
-.order-print-products-table th:nth-child(2) { width: 12%; }
-.order-print-products-table th:nth-child(3) { width: 30%; }
-.order-print-products-table th:nth-child(4) { width: 10%; }
-.order-print-products-table th:nth-child(5) { width: 8%; }
-.order-print-products-table th:nth-child(6) { width: 10%; }
-.order-print-products-table th:nth-child(7) { width: 10%; }
-.order-print-products-table th:nth-child(8) { width: 15%; }
+.order-print-products-table th:nth-child(1) { width: 4%; }
+.order-print-products-table th:nth-child(2) { width: 11%; }
+.order-print-products-table th:nth-child(3) { width: 27%; }
+.order-print-products-table th:nth-child(4) { width: 9%; }
+.order-print-products-table th:nth-child(5) { width: 7%; }
+.order-print-products-table th:nth-child(6) { width: 9%; }
+.order-print-products-table th:nth-child(7) { width: 9%; }
+.order-print-products-table th:nth-child(8) { width: 13%; }
+.order-print-products-table th:nth-child(9) { width: 11%; }
 
 .order-print-center {
   text-align: center;
