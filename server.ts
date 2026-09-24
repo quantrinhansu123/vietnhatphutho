@@ -28,7 +28,7 @@ import {
   resolveAuxiliaryWeightPerUnit,
   stripMixingNormRevisionSuffix
 } from './src/utils/mixingNormAuxiliary';
-import { buildOrderTenGhep, calculateDoLiDm, isDiscontinuedWhiteSuProduct, replaceCutLengthMeters, replaceDoLiDmInTenGhep } from './src/utils/productProductionName';
+import { buildOrderTenGhep, calculateDoLiDm, isDiscontinuedWhiteSuProduct, parseProductionNameParts, replaceCutLengthMeters, replaceDoLiDmInTenGhep, stripTrailingDuplicateCutAfterTem } from './src/utils/productProductionName';
 import { buildCatLeSanPhamLine, KHO_CAT_LE, KHO_TAI_CHE, KHO_THANH_PHAM, normalizeCatLeSanPhamList, type CatLeSanPhamLine } from './src/features/lenh-cat-le/logic';
 
 dotenv.config();
@@ -5396,6 +5396,8 @@ function parseWarehouseSlipBody(body: unknown): {
   soTronIds: string[];
   items: WarehouseSlipLineInput[];
   lenhSxDaChon: WarehouseSlipLenhSxRef[];
+  /** Mã lệnh SX đã chọn khi nhập thành phẩm — dùng để lấy JSON đơn hàng. */
+  maLenhSx: string[];
   /** Mã kho (quan_ly_kho.ma_kho) — ghi vào loai_kho, thay cho nhóm nvl/san_pham. */
   maKho?: string | null;
 } {
@@ -5498,8 +5500,22 @@ function parseWarehouseSlipBody(body: unknown): {
     diaChi,
     soTronIds,
     items: parsedItems.items,
-    lenhSxDaChon
+    lenhSxDaChon,
+    maLenhSx: parseWarehouseProductionOrderCodes(source.maLenhSx ?? source.ma_lenh_sx ?? source.productionOrderCodes)
   };
+}
+
+function parseWarehouseProductionOrderCodes(value: unknown): string[] {
+  const list = Array.isArray(value) ? value : String(value ?? '').split(/[,|;]+/);
+  const seen = new Set<string>();
+  const codes: string[] = [];
+  for (const entry of list) {
+    const code = String(entry ?? '').trim();
+    if (!code || seen.has(code.toLowerCase())) continue;
+    seen.add(code.toLowerCase());
+    codes.push(code);
+  }
+  return codes;
 }
 
 function buildWarehouseSlipInsertRecords(
@@ -5896,6 +5912,135 @@ async function deleteWarehouseSlipEverywhere(
   return { tables: touched };
 }
 
+type NhapKhoOrderSpecs = {
+  ma_sp: string;
+  ten_goc: string;
+  do_li: string;
+  do_li_dm: string;
+  do_day_m: string;
+  do_dai_m: string;
+  mang: string;
+  hang_phe: string;
+  ma_amis: string;
+  mo_ta_tem: string;
+  san_pham_id: string;
+  ten_sp: string;
+  ten_ghep: string;
+};
+
+function formatNhapKhoMeterLabel(value: unknown): string {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  const label = Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000);
+  return `${label}m`;
+}
+
+/** Tách thông số ghép tên từ một dòng JSON đơn hàng / lệnh SX. */
+function specsFromOrderProductJson(row: Record<string, unknown>): NhapKhoOrderSpecs | null {
+  const maSp = String(row.ma_sp ?? row.maSp ?? '').trim();
+  if (!maSp) return null;
+  const tenGhepRaw = String(row.ten_ghep ?? row.tenGhep ?? '').trim();
+  const tenSanXuat = String(row.ten_san_xuat ?? row.tenSanXuat ?? '').trim();
+  const base = stripSouthTemSuffixServer(tenGhepRaw) || tenSanXuat;
+  const parts = base
+    ? parseProductionNameParts(base, String(row.nhom_vthh ?? row.nhomVthh ?? ''), String(row.ma_amis ?? row.maAmis ?? ''))
+    : null;
+  const doDaiExplicit = formatNhapKhoMeterLabel(row.dai_m ?? row.quy_cach_m_dai ?? row.daiM);
+  const doLiDm = String(row.do_li_dm ?? row.doLiDm ?? '').trim() || parts?.doLiDm || '';
+  const moTaTem = String(row.mo_ta_tem ?? row.moTaTem ?? '').trim()
+    || buildSouthTemSuffixServer(row.tem, row.mau_tem ?? row.mauTem, row.dan_tem_2_dau ?? row.danTem2Dau).trim();
+  return {
+    ma_sp: maSp,
+    ten_goc: parts?.tenGoc || '',
+    do_li: String(row.do_li ?? row.doLi ?? '').trim() || parts?.doLi || '',
+    do_li_dm: doLiDm,
+    do_day_m: parts?.doDayM || '',
+    do_dai_m: doDaiExplicit || parts?.doDaiM || '',
+    mang: parts?.mang || '',
+    hang_phe: parts?.hangPhe || '',
+    ma_amis: String(row.ma_amis ?? row.maAmis ?? '').trim(),
+    mo_ta_tem: moTaTem,
+    san_pham_id: String(row.san_pham_id ?? row.sanPhamId ?? '').trim(),
+    ten_sp: String(row.ten_sp ?? row.tenSp ?? '').trim(),
+    ten_ghep: tenGhepRaw
+  };
+}
+
+function orderProductListFromJson(raw: unknown): NhapKhoOrderSpecs[] {
+  const list = Array.isArray(raw) ? raw : [];
+  return list.flatMap(item => {
+    if (!item || typeof item !== 'object') return [];
+    const specs = specsFromOrderProductJson(item as Record<string, unknown>);
+    return specs ? [specs] : [];
+  });
+}
+
+function pickOrderSpecsForItem(candidates: NhapKhoOrderSpecs[], itemName: string): NhapKhoOrderSpecs | null {
+  if (candidates.length === 0) return null;
+  const name = itemName.trim().toLocaleLowerCase('vi');
+  if (!name) return candidates[0];
+  const matched = candidates.find(specs => {
+    const tenSp = specs.ten_sp.toLocaleLowerCase('vi');
+    const tenGhep = stripSouthTemSuffixServer(specs.ten_ghep).toLocaleLowerCase('vi');
+    return tenSp === name || tenGhep === name || (tenGhep && name && tenGhep.includes(name));
+  });
+  return matched || candidates[0];
+}
+
+/** Lệnh SX → đơn hàng: map mã SP → thông số lấy từ JSON san_pham của đơn. */
+async function loadOrderSpecsByProductionOrders(codes: string[]): Promise<Map<string, NhapKhoOrderSpecs[]>> {
+  const map = new Map<string, NhapKhoOrderSpecs[]>();
+  if (!supabase || codes.length === 0) return map;
+  const { data: lenhRows, error: lenhError } = await supabase
+    .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
+    .select('ma_lenh_sx, ma_don_hang, san_pham')
+    .in('ma_lenh_sx', codes);
+  if (lenhError || !lenhRows) {
+    if (lenhError) console.warn('[nhap_kho] không đọc được lệnh SX để lấy đơn hàng:', lenhError.message);
+    return map;
+  }
+  const orderCodes = new Set<string>();
+  for (const row of lenhRows as Array<Record<string, unknown>>) {
+    String(row.ma_don_hang ?? '')
+      .split(/[,;]+/)
+      .map(code => code.trim())
+      .filter(Boolean)
+      .forEach(code => orderCodes.add(code));
+  }
+  const orderProducts = new Map<string, NhapKhoOrderSpecs[]>();
+  if (orderCodes.size > 0) {
+    const { data: orders, error: orderError } = await supabase
+      .from(SUPABASE_ORDERS_TABLE)
+      .select('ma_don_hang, san_pham')
+      .in('ma_don_hang', [...orderCodes]);
+    if (orderError) {
+      console.warn('[nhap_kho] không đọc được đơn hàng theo lệnh SX:', orderError.message);
+    } else {
+      for (const order of orders || []) {
+        const code = String((order as { ma_don_hang?: string }).ma_don_hang || '').trim();
+        if (code) orderProducts.set(code, orderProductListFromJson((order as { san_pham?: unknown }).san_pham));
+      }
+    }
+  }
+  const addSpecs = (specs: NhapKhoOrderSpecs) => {
+    const key = specs.ma_sp.trim().toLocaleLowerCase('vi');
+    if (!key) return;
+    const current = map.get(key) || [];
+    current.push(specs);
+    map.set(key, current);
+  };
+  for (const row of lenhRows as Array<Record<string, unknown>>) {
+    const orderCodeList = String(row.ma_don_hang ?? '')
+      .split(/[,;]+/)
+      .map(code => code.trim())
+      .filter(Boolean);
+    const fromOrders = orderCodeList.flatMap(code => orderProducts.get(code) || []);
+    const lines = fromOrders.length > 0 ? fromOrders : orderProductListFromJson(row.san_pham);
+    lines.forEach(addSpecs);
+  }
+  return map;
+}
+
 /**
  * Sau phiếu nhập kho thành phẩm: ghi sổ SP vào nhap_kho (loai_kho = thanh_pham).
  * Trả về số dòng đã ghi — caller có thể báo cảnh báo nếu lỗi (không chặn lưu phiếu).
@@ -5905,6 +6050,7 @@ async function insertNhapKhoThanhPhamRows(parsed: {
   loaiKho: 'nvl' | 'san_pham';
   tenKho: string | null;
   items: WarehouseSlipLineInput[];
+  maLenhSx?: string[];
 }): Promise<{ saved: boolean; count: number; error?: string }> {
   if (!supabase) return { saved: false, count: 0, error: 'Supabase chưa cấu hình.' };
   if (parsed.loaiPhieu !== 'nhap' || parsed.loaiKho !== 'san_pham') {
@@ -5914,6 +6060,7 @@ async function insertNhapKhoThanhPhamRows(parsed: {
   const tenKho = String(parsed.tenKho || '').trim();
   // Mã loại kho tra từ quan_ly_kho (nguồn thật), slug dự phòng khi kho chưa khai báo.
   const loaiKho = await resolveMaKho(tenKho || 'Kho thành phẩm');
+  const orderSpecsByCode = await loadOrderSpecsByProductionOrders(parsed.maLenhSx || []);
   const perUnit = (explicit: number | undefined, total: number | undefined, quantity: number) => {
     const direct = Number(explicit);
     const value =
@@ -5930,6 +6077,8 @@ async function insertNhapKhoThanhPhamRows(parsed: {
       const maSp = String(item.code || '').trim();
       if (!maSp) return null;
       const quantity = Number(item.quantity) || 0;
+      const specs = pickOrderSpecsForItem(orderSpecsByCode.get(maSp.toLocaleLowerCase('vi')) || [], String(item.name || ''));
+      const textOrNull = (value: string) => value.trim() || null;
       return {
         ma_sp: maSp,
         ten_sp: String(item.name || '').trim(),
@@ -5939,7 +6088,16 @@ async function insertNhapKhoThanhPhamRows(parsed: {
         so_m_dai_mot_sp: perUnit(item.mDaiPerUnit, item.lengthM, quantity),
         loai_kho: loaiKho,
         ten_kho: tenKho,
-        ...(item.moTaTem ? { mo_ta_tem: item.moTaTem } : {})
+        ...(specs?.ten_goc ? { ten_goc: textOrNull(specs.ten_goc) } : {}),
+        ...(specs?.do_li ? { do_li: textOrNull(specs.do_li) } : {}),
+        ...(specs?.do_li_dm ? { do_li_dm: textOrNull(specs.do_li_dm) } : {}),
+        ...(specs?.do_day_m ? { do_day_m: textOrNull(specs.do_day_m) } : {}),
+        ...(specs?.do_dai_m ? { do_dai_m: textOrNull(specs.do_dai_m) } : {}),
+        ...(specs?.mang ? { mang: textOrNull(specs.mang) } : {}),
+        ...(specs?.hang_phe ? { hang_phe: textOrNull(specs.hang_phe) } : {}),
+        ...(specs?.ma_amis ? { ma_amis: textOrNull(specs.ma_amis) } : {}),
+        ...(specs?.san_pham_id ? { san_pham_id: specs.san_pham_id } : {}),
+        ...((item.moTaTem || specs?.mo_ta_tem) ? { mo_ta_tem: item.moTaTem || specs?.mo_ta_tem } : {})
       };
     })
     .filter((row): row is NonNullable<typeof row> => Boolean(row));
@@ -7205,12 +7363,8 @@ function buildProductionOrderRecordFromOrder(
   const quyCachForTenGhep =
     selectedProduct?.quy_cach_m_dai ??
     (selectedProduct?.dai_m && selectedProduct.dai_m > 0 ? selectedProduct.dai_m : null);
-  const productTenGhep = resolveStoredOrderTenGhep(
-    selectedProduct?.ten_ghep,
-    productProductionName || productName,
-    '',
-    quyCachForTenGhep ?? null
-  );
+  const productTenGhep = String(selectedProduct?.ten_ghep || '').trim()
+    || resolveStoredOrderTenGhep('', productProductionName || productName, '', quyCachForTenGhep ?? null);
   const customer = pickRowField(order, ['khach_hang', 'customer']);
   const unit = selectedProduct?.don_vi ?? '';
   const workers =
@@ -7314,12 +7468,9 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
       const match = quy_cach.match(/(\d+(?:[.,]\d+)?)/);
       if (match) parsedQuyCachMDai = Number(match[1].replace(',', '.'));
     }
-    const ten_ghep = resolveStoredOrderTenGhep(
-      ten_ghep_raw,
-      ten_san_xuat || ten_sp,
-      '',
-      parsedQuyCachMDai
-    );
+    const storedTenGhep = stripTrailingDuplicateCutAfterTem(String(ten_ghep_raw || '').trim());
+    const ten_ghep = storedTenGhep
+      || resolveStoredOrderTenGhep('', ten_san_xuat || ten_sp, '', parsedQuyCachMDai);
     const m2 = parseOrderQuantity(row.m2 ?? row.dien_tich_m2);
     const m_dai = parseOrderQuantity(row.m_dai ?? row.mDai ?? row.met_dai ?? row.chieu_dai_m);
     const tong_kg = parseOrderQuantity(row.tong_kg ?? row.tongKg ?? row.trong_luong ?? row.trong_luong_kg);
@@ -16085,7 +16236,8 @@ async function loadKiemKhoLiveTongHopForDot(
       doDaiM: String(item.doDaiM ?? item.do_dai_m ?? item.doDaiMMe ?? item.do_dai_m_me ?? '').trim(),
       mang: String(item.mang ?? '').trim(),
       hangPhe: String(item.hangPhe ?? item.hang_phe ?? '').trim(),
-      maAmis: String(item.maAmis ?? item.ma_amis ?? '').trim()
+      maAmis: String(item.maAmis ?? item.ma_amis ?? '').trim(),
+      moTaTem: String(item.moTaTem ?? item.mo_ta_tem ?? '').trim()
     };
   }
 

@@ -3,7 +3,7 @@
  * Quy ước đã chốt với nghiệp vụ:
  *  - Tên hiển thị `... 8li ...` là `do_li` — GIỮ NGUYÊN khi cắt.
  *  - Nhát cắt đổi `do_dai_m` (m dài) và/hoặc khổ. Đổi độ li thì `do_day_m` của SP cắt = số li mới (m).
- *    v1 chỉ hỗ trợ đổi 1 chiều: xẻ khổ (giữ dài) hoặc cắt ngắn (giữ rộng).
+ *    Được hạ một chiều hoặc cả khổ lẫn m dài. Độ li đổi riêng.
  *  - Gốc tính trọng lượng là 3 hệ số 1 SP của dòng mẹ trong `nhap_kho`
  *    (kg1 / a1 / l1): kg2 = kg1 × (w2×l2)/(w1×l1), với w1 = a1/l1.
  *  - Phần thừa < 2m dài thì đi Kho tái chế thay vì nhập lại Kho cắt lẻ.
@@ -55,7 +55,7 @@ export interface CatLeInput {
   doLiMoi?: string | null;
 }
 
-export type CatLeKieu = 'xe_kho' | 'cat_tam' | 'doi_li';
+export type CatLeKieu = 'xe_kho' | 'cat_tam' | 'doi_li' | 'ca_hai';
 
 export interface CatLeResult {
   kieuCat: CatLeKieu;
@@ -246,10 +246,7 @@ export function computeCatLe(
   if (giuRong && giuDai && !doiDoLi) {
     throw new Error('Khổ, m dài và độ li mới giống hệt cuộn mẹ — không có gì để cắt.');
   }
-  if (!giuRong && !giuDai) {
-    throw new Error('Chỉ đổi 1 chiều hình học: xẻ khổ (giữ m dài) hoặc cắt ngắn (giữ khổ rộng). Độ li đổi riêng được.');
-  }
-  const kieuCat: CatLeKieu = giuRong && giuDai ? 'doi_li' : giuDai ? 'xe_kho' : 'cat_tam';
+  const kieuCat: CatLeKieu = giuRong && giuDai ? 'doi_li' : !giuRong && !giuDai ? 'ca_hai' : giuDai ? 'xe_kho' : 'cat_tam';
   if (w2 > w1 + EPS) throw new Error('Khổ mới lớn hơn khổ mẹ — không cắt được.');
   if (l2 > l1 + EPS) throw new Error('M dài mới lớn hơn mẹ — không cắt được.');
 
@@ -277,9 +274,9 @@ export function computeCatLe(
   // Phần còn lại giữ độ li mẹ nên kg theo diện tích thừa. Kg cân tay thì lấy phần mẹ trừ cân.
   const kgThua = coCanTay ? Math.max(0, kg1 - kg2) : (kg1 * Math.max(0, a1 - a2)) / a1;
 
-  // Phần thừa luôn là 1 HCN (vì chỉ đổi 1 chiều).
-  const wThua = kieuCat === 'xe_kho' ? w1 - w2 : w1;
-  const lThua = kieuCat === 'xe_kho' ? l1 : l1 - l2;
+  // Khổ còn lại = khổ mẹ − khổ cắt. Hạ cả hai chiều vẫn giữ m dài mẹ (không gộp thành khổ tương đương).
+  const wThua = kieuCat === 'cat_tam' ? w1 : w1 - w2;
+  const lThua = kieuCat === 'cat_tam' ? l1 - l2 : l1;
   const nhomVthh = String(options.nhomVthh ?? '').trim();
   const doLiDmCon = doiDoLi ? calculateDoLiDm(doLiCon, nhomVthh) || mother.doLiDm : mother.doLiDm;
   // Đổi độ li (độ dày): do_day_m của SP cắt = số li mới, dạng mét (1 → 1m).
@@ -297,20 +294,26 @@ export function computeCatLe(
     hangPhe: mother.hangPhe,
     maAmis: mother.maAmis
   };
-  const tenSpCon = composeProductionDisplayName(
+  const withMoTaTem = (name: string) => {
+    const base = String(name || '').trim();
+    const suffix = String(mother.moTaTem || '').trim();
+    if (!base || !suffix || base.endsWith(suffix)) return base;
+    return `${base} ${suffix}`;
+  };
+  const tenSpCon = withMoTaTem(composeProductionDisplayName(
     { ...baseSpecs, doLi: doLiCon, doLiDm: doLiDmCon, doDayM: doDayMCon, doDaiM: doDaiMCon },
     nhomVthh
-  );
-  const mDaiThua = kieuCat === 'xe_kho' ? l1 : round3(l1 - l2);
+  ));
+  const mDaiThua = kieuCat === 'xe_kho' || kieuCat === 'ca_hai' ? l1 : round3(l1 - l2);
   // Thừa quá vụn (cả 2 chiều ~0, hoặc chỉ đổi độ li) thì không sinh tên thừa.
   const conThua = wThua > EPS && lThua > EPS;
   const doDayMThua = conThua ? formatMeterLabel(wThua) : '';
   const doDaiMThua = conThua ? formatMeterLabel(mDaiThua) : '';
   const tenSpThua = conThua
-    ? composeProductionDisplayName(
+    ? withMoTaTem(composeProductionDisplayName(
         { ...baseSpecs, doDayM: doDayMThua, doDaiM: doDaiMThua },
         nhomVthh
-      )
+      ))
     : '';
   const diTaiChe = conThua && mDaiThua < TAI_CHE_MIN_M - EPS;
 
@@ -325,8 +328,8 @@ export function computeCatLe(
     doDaiMCon,
     doLiDmCon,
     tenSpThua,
-    kgThua: conThua ? round3(kgThua) : 0,
-    m2Thua: conThua ? round3(aThua) : 0,
+    kgThua: conThua ? round3(kieuCat === 'ca_hai' && !coCanTay ? (kg1 * wThua * lThua) / a1 : kgThua) : 0,
+    m2Thua: conThua ? round3(kieuCat === 'ca_hai' ? wThua * lThua : aThua) : 0,
     mDaiThua: conThua ? round3(mDaiThua) : 0,
     doLiThua: conThua ? mother.doLi : '',
     doDayMThua,
@@ -521,6 +524,28 @@ export function normalizeCatLeSanPhamLine(raw: unknown): CatLeSanPhamLine | null
 export function normalizeCatLeSanPhamList(raw: unknown): CatLeSanPhamLine[] {
   if (!Array.isArray(raw)) return [];
   return raw.map(normalizeCatLeSanPhamLine).filter((line): line is CatLeSanPhamLine => Boolean(line));
+}
+
+/** Hậu tố tem đơn miền nam cuối tên nguồn, vd "(Dán Tem 2.5li) Màu Hồng MVCC Dán Tem 2 Đầu". */
+export function extractTemSuffix(tenSp: unknown): string {
+  const text = String(tenSp ?? '');
+  const m = text.match(
+    /\s*(\(Dán Tem\s*[^)]*\)(?:\s*Màu\s*\S+(?:\s*M\w+)?)?(?:\s*Dán Tem 2 Đầu)?)\s*$/iu
+  );
+  return m ? m[1].trim() : '';
+}
+
+/**
+ * Tên SP cắt để hiển thị: tên đã lưu + mo_ta_tem của mẹ.
+ * Ưu tiên field mo_ta_tem; bản ghi cũ chưa có field thì tách hậu tố từ tên nguồn.
+ * Không nối lặp khi tên đã có hậu tố.
+ */
+export function catDisplayName(tenCat: unknown, moTaTem: unknown, tenNguon?: unknown): string {
+  const base = String(tenCat ?? '').trim();
+  if (!base) return '';
+  const suffix = String(moTaTem ?? '').trim() || extractTemSuffix(tenNguon);
+  if (!suffix || base.endsWith(suffix)) return base;
+  return `${base} ${suffix}`;
 }
 
 export interface CatLePrintLine {

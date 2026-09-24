@@ -4,7 +4,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCatLePrintSlips, buildCatLeSanPhamLine, computeCatLe, type CatLeMother } from '../../src/features/lenh-cat-le/logic';
+import { buildCatLePrintSlips, buildCatLeSanPhamLine, catDisplayName, computeCatLe, extractTemSuffix, type CatLeMother } from '../../src/features/lenh-cat-le/logic';
 
 const mother20m: CatLeMother = {
   maSp: 'SP-CAT',
@@ -94,8 +94,17 @@ describe('lenh-cat-le — xẻ khổ giữ dài', () => {
 });
 
 describe('lenh-cat-le — validate', () => {
-  it('đổi cả 2 chiều hình học thì chặn', () => {
-    assert.throws(() => computeCatLe(mother20m, { w2: 1, l2: 12, qty: 1 }), /1 chiều/);
+  it('hạ cả khổ lẫn m dài: khổ còn lại = mẹ − khổ cắt, tên có mo_ta_tem', () => {
+    const mother = { ...mother20m, moTaTem: '(Dán Tem 2.5li) Màu Hồng MVCC Dán Tem 2 Đầu' };
+    const r = computeCatLe(mother, { w2: 1, l2: 12, qty: 1 });
+    assert.equal(r.kieuCat, 'ca_hai');
+    assert.equal(r.doDayMCon, '1m');
+    assert.equal(r.doDayMThua, '0.22m');
+    assert.equal(r.mDaiThua, 20);
+    assert.equal(r.m2Thua, 4.4);
+    assert.match(r.tenSpCon, /Dán Tem 2 Đầu$/);
+    assert.match(r.tenSpThua, /0\.22m/);
+    assert.match(r.tenSpThua, /Dán Tem 2 Đầu$/);
   });
   it('thiếu kg mẹ mà không cân tay thì chặn', () => {
     const noKg: CatLeMother = { ...mother20m, kg1: 0 };
@@ -157,6 +166,8 @@ describe('lenh-cat-le — tên theo độ li, khổ rộng, m dài', () => {
       ['PX-1', 'PN-1', 'PN-3']
     );
     assert.equal(slips[0].slipType, 'xuat');
+    assert.equal(slips[0].warehouseName, 'Kho cắt lẻ');
+    assert.equal(slips[1].warehouseName, 'Kho thành phẩm');
     assert.match(slips[0].note, /sản phẩm chuẩn bị cắt/);
     assert.equal(slips[2].slipType, 'nhap');
     assert.match(slips[2].note, /tái chế|Kho tái chế/);
@@ -168,5 +179,32 @@ describe('lenh-cat-le — tên theo độ li, khổ rộng, m dài', () => {
     );
     assert.ok(preview.every(slip => slip.slipCode === 'Chưa sinh'));
     assert.match(preview[2].warehouseName, /tái chế/i);
+  });
+});
+
+describe('lenh-cat-le — hiển thị mo_ta_tem ở cột cắt', () => {
+  const tem = '(Dán Tem 2.5li) Màu Hồng MVCC Dán Tem 2 Đầu';
+  it('nối mo_ta_tem của mẹ khi tên cắt chưa có', () => {
+    assert.equal(
+      catDisplayName('Tấm nhựa đặc XDT - ECO - 10li - (đm 5 li) - 1m - 3m', tem),
+      `Tấm nhựa đặc XDT - ECO - 10li - (đm 5 li) - 1m - 3m ${tem}`
+    );
+  });
+  it('không nối lặp khi tên cắt đã có hậu tố', () => {
+    const named = `Tấm nhựa đặc - 1m - 3m ${tem}`;
+    assert.equal(catDisplayName(named, tem), named);
+  });
+  it('bản ghi cũ thiếu field: tách hậu tố từ tên nguồn', () => {
+    const nguon = `Tấm nhựa đặc XDT - ECO - 10li - (đm 5 li) - 2.1m - 3m ${tem}`;
+    assert.equal(extractTemSuffix(nguon), tem);
+    assert.equal(
+      catDisplayName('Tấm nhựa đặc XDT - ECO - 10li - (đm 5 li) - 1m - 3m', '', nguon),
+      `Tấm nhựa đặc XDT - ECO - 10li - (đm 5 li) - 1m - 3m ${tem}`
+    );
+  });
+  it('không có tem thì giữ nguyên tên', () => {
+    assert.equal(extractTemSuffix('Tấm nhựa đặc - 0.8li - 1.22m - 20m'), '');
+    assert.equal(catDisplayName('Tấm nhựa đặc - 1m - 3m', '', 'Tấm nhựa đặc - 2m - 3m'), 'Tấm nhựa đặc - 1m - 3m');
+    assert.equal(catDisplayName('', tem), '');
   });
 });

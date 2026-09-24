@@ -12,6 +12,7 @@ import {
   KHO_THANH_PHAM,
   buildCatLePrintSlips,
   buildCatLeSanPhamLine,
+  catDisplayName,
   computeCatLe,
   normalizeCatLeSanPhamList,
   motherFromNhapKhoRow,
@@ -109,6 +110,7 @@ function toPrintData(slip: CatLePrintSlip, temporary = false): WarehouseSlipPrin
     createdBy: slip.createdBy,
     totalAmount: 0,
     warehouseName: slip.warehouseName,
+    useWarehouseNameInTitle: true,
     isTemporary: temporary,
     lines: slip.lines.map(line => ({
       code: line.code,
@@ -538,6 +540,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
           mang: mother.mang,
           hangPhe: mother.hangPhe,
           maAmis: mother.maAmis,
+          moTaTem: mother.moTaTem || '',
           nhomVthh: row.nhom_vthh,
           mDaiCat: preview.l2,
           khoRongM: preview.w2,
@@ -726,8 +729,26 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                   .map(item => item.san_pham_nguon.ten_sp || item.san_pham_nguon.ma_sp)
                   .filter(Boolean)
                   .join(' · ');
-                const cat1 = products.map(item => item.san_pham_cat_1.ten_sp).filter(Boolean).join(' · ');
-                const cat2 = products.map(item => item.san_pham_cat_2?.ten_sp || '').filter(Boolean).join(' · ');
+                const cat1 = products
+                  .map(item =>
+                    catDisplayName(
+                      item.san_pham_cat_1.ten_sp,
+                      item.san_pham_nguon.mo_ta_tem,
+                      item.san_pham_nguon.ten_sp
+                    )
+                  )
+                  .filter(Boolean)
+                  .join(' · ');
+                const cat2 = products
+                  .map(item =>
+                    catDisplayName(
+                      item.san_pham_cat_2?.ten_sp || '',
+                      item.san_pham_nguon.mo_ta_tem,
+                      item.san_pham_nguon.ten_sp
+                    )
+                  )
+                  .filter(Boolean)
+                  .join(' · ');
                 const soLuong = products.reduce((sum, item) => sum + (Number(item.san_pham_nguon.so_luong) || 0), 0);
                 return (
                 <tr key={row.id} className="border-t">
@@ -1077,7 +1098,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                   </table>
                 </div>
                 <p className="text-[11px] font-semibold text-zinc-500">
-                  Chọn sản phẩm thì Hạ Khổ và M cắt dài tự điền từ độ khổ (do_day_m) và mét dài ban đầu (do_dai_m). Chỉ sửa một chiều: hạ khổ (giữ dài) hoặc cắt ngắn (giữ khổ). Độ li mẹ giữ nguyên. Bỏ trống một ô = giữ số của mẹ. Khi đủ thông tin, bấm Xác nhận ở đầu danh sách để xem sản phẩm cắt và phần còn lại nằm ở kho nào.
+                  Chọn sản phẩm thì Hạ Khổ và M cắt dài tự điền từ độ khổ (do_day_m) và mét dài ban đầu (do_dai_m). Có thể hạ một chiều hoặc hạ cả khổ lẫn m dài. Độ li mẹ giữ nguyên, đổi riêng được. Bỏ trống một ô = giữ số của mẹ. Khi đủ thông tin, bấm Xác nhận ở đầu danh sách để xem sản phẩm cắt và phần còn lại nằm ở kho nào.
                 </p>
               </section>
 

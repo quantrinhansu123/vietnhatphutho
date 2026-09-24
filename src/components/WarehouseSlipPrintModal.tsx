@@ -55,6 +55,8 @@ export type WarehouseSlipPrintData = {
   warehouseLocation?: string;
   /** Tên kho vật lý (từ Quản lý kho). */
   warehouseName?: string;
+  /** Tiêu đề phiếu dùng tên kho (Xuất = kho nguồn, Nhập = kho đích) thay cho nhãn loại kho. */
+  useWarehouseNameInTitle?: boolean;
   /** Bản xem/in tạm, chưa được lưu vào lịch sử và chưa cập nhật tồn kho. */
   isTemporary?: boolean;
   lines: WarehouseSlipPrintLine[];
@@ -217,8 +219,16 @@ function warehouseKindTitleLabel(kind: WarehouseSlipPrintData['warehouseKind']) 
   }
 }
 
+function warehouseNameTitleLabel(name: string) {
+  return name.trim().replace(/^kho\s+/iu, '').toLocaleUpperCase('vi');
+}
+
 function slipTypeTitle(data: WarehouseSlipPrintData) {
-  const kindLabel = warehouseKindTitleLabel(data.warehouseKind);
+  const named = String(data.warehouseName || '').trim();
+  const kindLabel =
+    data.useWarehouseNameInTitle && named
+      ? warehouseNameTitleLabel(named)
+      : warehouseKindTitleLabel(data.warehouseKind);
   const base = isNhapKhoPrintLayout(data) ? 'PHIẾU NHẬP KHO' : 'PHIẾU XUẤT KHO';
   return `${base} ${kindLabel}`;
 }
