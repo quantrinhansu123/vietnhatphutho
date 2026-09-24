@@ -61,11 +61,11 @@ interface MotherStockRow {
 interface CutLine {
   key: string;
   motherKey: string;
-  /** Độ li (độ dày) SP đích. Trống = giữ mẹ. */
+  /** Độ li mẹ — form không sửa. Giữ field để mở lệnh cũ không mất dữ liệu. */
   doLiText: string;
-  /** Khổ cuộn rộng (m). Trống = giữ mẹ. */
+  /** Hạ khổ đích (m), từ do_day_m. Trống = giữ mẹ. */
   khoRongText: string;
-  /** M dài cần cắt. Trống = giữ mẹ. */
+  /** M cắt dài đích (m), từ do_dai_m. Trống = giữ mẹ. */
   mDaiText: string;
   qtyText: string;
   kgCanText: string;
@@ -186,6 +186,34 @@ function buildMother(row: MotherStockRow): CatLeMother | null {
 function motherWidth(mother: CatLeMother): number | null {
   if (mother.a1 > 0 && mother.l1 > 0) return mother.a1 / mother.l1;
   return parseMeterLabel(mother.doDayM);
+}
+
+/** Mét trong tên SP, bỏ token trùng khổ — mét còn lại là m dài. */
+function lengthFromProductName(tenSp: string, width: number | null): number | null {
+  const values: number[] = [];
+  for (const match of String(tenSp || '').matchAll(/(\d+(?:[.,]\d+)?)\s*m\b/giu)) {
+    const n = parseMeterLabel(match[1]);
+    if (n) values.push(n);
+  }
+  const rest = width ? values.filter(n => Math.abs(n - width) > 0.001) : values;
+  if (rest.length === 0) return null;
+  return rest[rest.length - 1];
+}
+
+/** Hạ khổ và m cắt dài ban đầu khi vừa chọn sản phẩm nguồn. */
+function motherCutDefaults(row: MotherStockRow | undefined): { khoRongText: string; mDaiText: string } {
+  const mother = row ? buildMother(row) : null;
+  if (!mother) return { khoRongText: '', mDaiText: '' };
+  const w = parseMeterLabel(mother.doDayM) ?? motherWidth(mother);
+  const fromSpec = parseMeterLabel(mother.doDaiM);
+  const fromPiece = mother.l1 > 0 ? mother.l1 : null;
+  const fromName = lengthFromProductName(mother.tenSp, w);
+  // so_m_dai_mot_sp là mét dài đang có của 1 SP. do_dai_m đôi khi trống hoặc lệch tên.
+  const l = fromPiece ?? fromSpec ?? fromName;
+  return {
+    khoRongText: w ? String(w) : '',
+    mDaiText: l ? String(l) : ''
+  };
 }
 
 export function LenCatLePanel({ onBack }: { onBack: () => void }) {
@@ -347,11 +375,11 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         if (!mother) return { ...empty, motherRow, error: 'Không đọc được thông số mẹ.' };
         const w1 = motherWidth(mother);
         const l1 = mother.l1 > 0 ? mother.l1 : parseMeterLabel(mother.doDaiM);
-        const w2 = w1;
+        const w2 = parseMeterInput(line.khoRongText) ?? w1;
         const l2 = parseMeterInput(line.mDaiText) ?? l1;
         const qty = Number(String(line.qtyText || '').replace(',', '.'));
         const base = { ...empty, motherRow, mother, w2, l2, qty };
-        if (!w2 || !l2) return { ...base, error: 'Nhập độ li hoặc m dài cần cắt.' };
+        if (!w2 || !l2) return { ...base, error: 'Nhập hạ khổ hoặc m cắt dài.' };
         if (!(qty > 0)) return { ...base, error: 'Nhập số lượng cắt.' };
         const taken = used.get(line.motherKey) || 0;
         if (qty + taken > motherRow.ton_sl + 1e-9) {
@@ -364,7 +392,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
               w2,
               l2,
               qty,
-              doLiMoi: line.doLiText.trim() || null,
+              doLiMoi: null,
               kgCanThucTe: null
             },
             { nhomVthh: motherRow.nhom_vthh }
@@ -459,7 +487,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         qty: preview.qty,
         w2: preview.w2 as number,
         l2: preview.l2 as number,
-        doLiMoi: line.doLiText.trim() || null,
+        doLiMoi: null,
         kgCanThucTe: null,
         ghiChu: line.ghiChu.trim()
       });
@@ -467,7 +495,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
 
   const handleConfirmPreview = () => {
     if (!canSave) {
-      setModalError('Còn dòng chưa hợp lệ — kiểm tra sản phẩm nguồn, độ li, m dài và số lượng.');
+      setModalError('Còn dòng chưa hợp lệ — kiểm tra sản phẩm nguồn, hạ khổ, m cắt dài và số lượng.');
       setConfirmedLines(null);
       return;
     }
@@ -483,7 +511,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
 
   const handleSaveModal = async () => {
     if (!canSave) {
-      setModalError('Còn dòng chưa hợp lệ — kiểm tra sản phẩm nguồn, độ li, m dài và số lượng.');
+      setModalError('Còn dòng chưa hợp lệ — kiểm tra sản phẩm nguồn, hạ khổ, m cắt dài và số lượng.');
       return;
     }
     setSaving(true);
@@ -511,7 +539,6 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
           hangPhe: mother.hangPhe,
           maAmis: mother.maAmis,
           nhomVthh: row.nhom_vthh,
-          doLiCat: line.doLiText.trim(),
           mDaiCat: preview.l2,
           khoRongM: preview.w2,
           kgCanThucTe: null,
@@ -884,8 +911,8 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                         <th className="px-2 py-2">Tên SP *</th>
                         <th className="px-2 py-2 text-center">ĐVT</th>
                         <th className="px-2 py-2 text-center">Tồn</th>
-                        <th className="px-2 py-2 text-center">Độ li (độ dày)</th>
-                        <th className="px-2 py-2 text-center">M dài cắt</th>
+                        <th className="px-2 py-2 text-center">Hạ Khổ</th>
+                        <th className="px-2 py-2 text-center">M cắt dài</th>
                         <th className="px-2 py-2 text-center">SL *</th>
                         <th className="px-2 py-2 text-center">Ghi chú</th>
                         <th className="px-2 py-2" />
@@ -904,7 +931,10 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                               <td className="min-w-[150px] px-2 py-2">
                                 <SearchableSelect
                                   value={line.motherKey}
-                                  onChange={value => updateLine(line.key, { motherKey: value })}
+                                  onChange={value => {
+                                    const row = stock.find(item => item.key === value);
+                                    updateLine(line.key, { motherKey: value, ...motherCutDefaults(row) });
+                                  }}
                                   options={stock}
                                   placeholder={stockLoading ? 'Đang tải...' : 'Mã SP...'}
                                   isLoading={stockLoading}
@@ -918,7 +948,10 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                               <td className="min-w-[260px] px-2 py-2">
                                 <SearchableSelect
                                   value={line.motherKey}
-                                  onChange={value => updateLine(line.key, { motherKey: value })}
+                                  onChange={value => {
+                                    const row = stock.find(item => item.key === value);
+                                    updateLine(line.key, { motherKey: value, ...motherCutDefaults(row) });
+                                  }}
                                   options={tenOptions}
                                   placeholder={stockLoading ? 'Đang tải...' : 'Tên SP...'}
                                   isLoading={stockLoading}
@@ -933,11 +966,11 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                               <td className="px-2 py-2 text-center font-bold">{row ? row.ton_sl : '—'}</td>
                               <td className="px-2 py-2">
                                 <input
-                                  value={line.doLiText}
-                                  onChange={e => updateLine(line.key, { doLiText: e.target.value })}
+                                  value={line.khoRongText}
+                                  onChange={e => updateLine(line.key, { khoRongText: e.target.value })}
                                   inputMode="decimal"
-                                  placeholder={preview?.mother?.doLi || 'giữ độ li'}
-                                  title="Độ li (độ dày) SP đích — bỏ trống = giữ mẹ. Có số mới thì tên và do_day_m ghép lại (1 → 1m)."
+                                  placeholder={preview?.mother ? `Mẹ ${fmtQty(motherWidth(preview.mother) ?? parseMeterLabel(preview.mother.doDayM))}` : 'vd 1.22'}
+                                  title="Hạ khổ đích (m) — điền từ do_day_m của sản phẩm nguồn. Sửa nhỏ hơn khổ mẹ để xẻ khổ. Bỏ trống = giữ khổ mẹ."
                                   className={cellInputClass}
                                 />
                               </td>
@@ -946,8 +979,16 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                                   value={line.mDaiText}
                                   onChange={e => updateLine(line.key, { mDaiText: e.target.value })}
                                   inputMode="decimal"
-                                  placeholder={row ? `Mẹ ${fmtQty(row.l1)}` : 'vd 12'}
-                                  title="M dài cần cắt — bỏ trống = giữ nguyên m dài mẹ. Khổ rộng giữ theo sản phẩm nguồn."
+                                  placeholder={
+                                    preview?.mother
+                                      ? `Mẹ ${fmtQty(
+                                          (preview.mother.l1 > 0 ? preview.mother.l1 : null) ??
+                                            parseMeterLabel(preview.mother.doDaiM) ??
+                                            lengthFromProductName(preview.mother.tenSp, motherWidth(preview.mother))
+                                        )}`
+                                      : 'vd 12'
+                                  }
+                                  title="M cắt dài đích (m) — điền từ do_dai_m của sản phẩm nguồn. Sửa ngắn hơn để cắt dài. Bỏ trống = giữ m dài mẹ."
                                   className={cellInputClass}
                                 />
                               </td>
@@ -1036,7 +1077,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                   </table>
                 </div>
                 <p className="text-[11px] font-semibold text-zinc-500">
-                  Đổi độ li thì tên và do_day_m của sản phẩm cắt ghép lại theo số li mới (1 → 1m). Phần còn lại giữ độ dày mẹ. Bỏ trống độ li hoặc m dài = giữ nguyên của mẹ. Khi đủ thông tin, bấm Xác nhận ở đầu danh sách để xem sản phẩm cắt và phần còn lại nằm ở kho nào.
+                  Chọn sản phẩm thì Hạ Khổ và M cắt dài tự điền từ độ khổ (do_day_m) và mét dài ban đầu (do_dai_m). Chỉ sửa một chiều: hạ khổ (giữ dài) hoặc cắt ngắn (giữ khổ). Độ li mẹ giữ nguyên. Bỏ trống một ô = giữ số của mẹ. Khi đủ thông tin, bấm Xác nhận ở đầu danh sách để xem sản phẩm cắt và phần còn lại nằm ở kho nào.
                 </p>
               </section>
 
