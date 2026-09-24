@@ -42,7 +42,9 @@ export function SearchableSelect({
   comboboxSearchable = true,
   matchDropdownWidth = false,
   searchPlaceholder,
-  skipUnchangedBlurCommit: _skipUnchangedBlurCommit
+  selectedOptionClassName,
+  skipUnchangedBlurCommit: _skipUnchangedBlurCommit,
+  showAllWhenQueryMatchesSelection = false
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -74,8 +76,15 @@ export function SearchableSelect({
   matchDropdownWidth?: boolean;
   /** Placeholder riêng cho ô tìm kiếm trong menu combobox. */
   searchPlaceholder?: string;
+  /** Class riêng cho option đang được chọn trong dropdown (mặc định: nền đỏ/chữ đỏ). */
+  selectedOptionClassName?: string;
   /** Tương thích prop main — hiện chưa đổi hành vi blur. */
   skipUnchangedBlurCommit?: boolean;
+  /**
+   * Khi ô đang hiện đúng giá trị đã chọn, dropdown liệt kê đủ option
+   * (vd tên sản xuất cùng mã AMIS). Chỉ lọc sau khi người dùng sửa chữ tìm.
+   */
+  showAllWhenQueryMatchesSelection?: boolean;
 }) {
   const fieldClass = inputClassName || orderFieldClass;
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -112,6 +121,10 @@ export function SearchableSelect({
       return options.slice(0, maxResults);
     }
     const normalized = normalizeSearchText(query.trim());
+    const selectedNormalized = normalizeSearchText(String(selectedLabel || '').trim());
+    if (showAllWhenQueryMatchesSelection && normalized && normalized === selectedNormalized) {
+      return options.slice(0, maxResults);
+    }
     const list = normalized
       ? options.filter(item => {
           const label = normalizeSearchText((getSearchText ?? getLabel)(item));
@@ -128,7 +141,9 @@ export function SearchableSelect({
     getValue,
     maxResults,
     comboboxMode,
-    comboboxSearchable
+    comboboxSearchable,
+    showAllWhenQueryMatchesSelection,
+    selectedLabel
   ]);
 
   const commitValue = (nextValue: string, item: unknown | null = null) => {
@@ -469,7 +484,9 @@ export function SearchableSelect({
                 onMouseDown={event => event.preventDefault()}
                 onClick={() => commitValue(optionValue, item)}
                 className={`block w-full px-3 py-2 text-left text-sm transition hover:bg-red-50 ${
-                  optionValue === value ? 'bg-red-50 font-black text-[#ef1b2d]' : 'font-semibold text-zinc-800'
+                  optionValue === value
+                    ? (selectedOptionClassName ?? 'bg-red-50 font-black text-[#ef1b2d]')
+                    : 'font-semibold text-zinc-800'
                 }`}
               >
                 {optionLabel}

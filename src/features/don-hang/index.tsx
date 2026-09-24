@@ -36,6 +36,8 @@ import {
   allowedOrderUnits,
   isCuonProduct,
   isTamProduct,
+  listProductionNamesByCode,
+  matchOrderProductByCodeAndProductionName,
   type OrderProductOption,
   type OrderProductConversion,
   type StaffOption,
@@ -1039,19 +1041,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     );
   }, [orders, productOptions]);
 
-  const getProductionNameOptions = (productCode: string, productName = '') => {
-    const normalizedCode = productCode.trim();
-    const normalizedName = productName.trim();
-    const source = normalizedCode
-      ? productOptions.filter(product =>
-          (product.code.toLocaleLowerCase('vi') === normalizedCode.toLocaleLowerCase('vi') ||
-            product.newCode.toLocaleLowerCase('vi') === normalizedCode.toLocaleLowerCase('vi')) &&
-          (!normalizedName || product.name.trim() === normalizedName)
-        )
-      : productOptions;
-    const names = source.map(product => product.productionName).filter(name => Boolean(name));
-    return [...new Set([...names])].sort((a, b) => a.localeCompare(b, 'vi'));
-  };
+  /** Mọi tên sản xuất của đúng mã AMIS (không lọc thêm theo Tên SP để không sót variant). */
+  const getProductionNameOptions = (productCode: string, productionName = '') =>
+    listProductionNamesByCode(productOptions, productCode, productionName);
 
   const pickProductionName = (key: string, productionName: string) => {
     setOrderForm(prev => ({
@@ -1059,23 +1051,66 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       productLines: prev.productLines.map(line => {
         if (line.key !== key) return line;
         const nextLine = { ...line, productionName, shouldRecalculateConversion: true };
-        // Re-resolve from the visible identity. Do not fall back to the old ID:
-        // clearing/changing the production name must also clear stale conversion data.
-        const match = resolveOrderLineProduct(productOptions, { ...nextLine, productId: '' });
+        const picked = productionName.trim();
+        if (!picked) {
+          // Re-resolve from the visible identity. Do not fall back to the old ID:
+          // clearing/changing the production name must also clear stale conversion data.
+          const match = resolveOrderLineProduct(productOptions, { ...nextLine, productId: '' });
+          return match
+            ? {
+                ...nextLine,
+                productId: match.id,
+                // Production name is optional. Clearing it must not replace the
+                // AMIS code/name already visible on the order line.
+                productCode: nextLine.productCode,
+                productName: nextLine.productName || match.name,
+                productionName: ''
+              }
+            : { ...nextLine, productId: '' };
+        }
+        // Tìm đúng dòng danh mục theo (mã + tên sản xuất) để lưu đúng sản phẩm,
+        // kể cả khi tên SX thuộc variant Tên SP khác với dòng đang hiển thị.
+        const match: OrderProductOption | null = matchOrderProductByCodeAndProductionName(
+          productOptions,
+          line.productCode,
+          productionName,
+          line.productId,
+          line.productName
+        );
         return match
           ? {
               ...nextLine,
               productId: match.id,
-              // Production name is optional. Clearing it must not replace the
-              // AMIS code/name already visible on the order line.
-              productCode: nextLine.productCode,
-              productName: nextLine.productName || match.name,
-              productionName: productionName.trim() ? match.productionName : ''
+              // Lấy mã chuẩn của đúng dòng danh mục (chữa luôn mã cũ đã đổi trên dòng đơn).
+              productCode: match.code || nextLine.productCode,
+              productName: match.name || nextLine.productName,
+              productionName: match.productionName
             }
           : { ...nextLine, productId: '' };
       })
     }));
   };
+
+  /** Ô Tên sản xuất: dropdown mở ngược lên trên, mục đang chọn viền vàng/chữ vàng đậm trên nền vàng. */
+  const renderProductionNameSelect = (line: OrderProductFormLine) => (
+    <SearchableSelect
+      value={line.productionName}
+      onChange={productionName => pickProductionName(line.key, productionName)}
+      options={getProductionNameOptions(line.productCode, line.productionName)}
+      placeholder={line.productCode.trim() ? 'Chọn tên sản xuất' : 'Chọn mã AMIS trước'}
+      isLoading={isLoadingLookups}
+      disabled={!line.productCode.trim()}
+      skipUnchangedBlurCommit
+      openUpward
+      showAllWhenQueryMatchesSelection
+      maxResults={ORDER_AMIS_SEARCH_MAX_RESULTS}
+      selectedOptionClassName="bg-yellow-50 font-black text-yellow-800 ring-2 ring-inset ring-yellow-400"
+      inputClassName={orderFieldClass}
+      getLabel={item => String(item)}
+      getValue={item => String(item)}
+      allowEmpty
+    />
+  );
 
   const handlePrintOrder = async (order: OrderRow) => {
     setPendingPrint(false);
@@ -1841,19 +1876,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           />
                         </div>
                         <div className="min-w-0">
-                          <SearchableSelect
-                            value={line.productionName}
-                            onChange={productionName => pickProductionName(line.key, productionName)}
-                            options={getProductionNameOptions(line.productCode, line.productName)}
-                            placeholder={line.productCode.trim() ? 'Chọn tên sản xuất' : 'Chọn mã AMIS trước'}
-                            isLoading={isLoadingLookups}
-                            disabled={!line.productCode.trim()}
-                            skipUnchangedBlurCommit
-                            inputClassName={orderFieldClass}
-                            getLabel={item => String(item)}
-                            getValue={item => String(item)}
-                            allowEmpty
-                          />
+                          {renderProductionNameSelect(line)}
                         </div>
                         <div className="col-span-1 min-w-0">
                           <input
@@ -2089,19 +2112,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         />
                       </div>
                       <div className="min-w-0">
-                        <SearchableSelect
-                          value={line.productionName}
-                          onChange={productionName => pickProductionName(line.key, productionName)}
-                          options={getProductionNameOptions(line.productCode, line.productName)}
-                          placeholder={line.productCode.trim() ? 'Chọn tên sản xuất' : 'Chọn mã AMIS trước'}
-                          isLoading={isLoadingLookups}
-                          disabled={!line.productCode.trim()}
-                          skipUnchangedBlurCommit
-                          inputClassName={orderFieldClass}
-                          getLabel={item => String(item)}
-                          getValue={item => String(item)}
-                          allowEmpty
-                        />
+                        {renderProductionNameSelect(line)}
                       </div>
                       <div className="min-w-0">
                         <input
