@@ -21,6 +21,7 @@ import {
   SOUTH_TEM_COLOR_OPTIONS,
   SOUTH_TEM_COLOR_DEFAULT,
   appendSouthTemToTenGhep,
+  buildSouthTemSuffix,
   parseSouthTemFromTenGhep,
   orderFieldClass,
   normalizeOrderProducts,
@@ -575,12 +576,16 @@ export function orderProductLinesToPayload(
       // Form chỉ nhập số; khi lưu/ghép tên luôn hiểu là (đm n li).
       const doLiDmValue = isSouthOrder ? normalizeDoLiDm(line.doLiDm, 'li') : '';
       // Ghi đè stale trong sourceProduct khi user xóa tem/màu/bỏ tick 2 Đầu (undefined bị JSON.stringify loại bỏ).
+      const moTaTem = isSouthOrder
+        ? buildSouthTemSuffix(temValue, mauTemValue, danTem2DauValue).trim()
+        : '';
       const southExtraFields = isSouthOrder
         ? {
             tem: temValue || undefined,
             mau_tem: mauTemValue || undefined,
             dan_tem_2_dau: danTem2DauValue ? 1 : undefined,
-            do_li_dm: doLiDmValue || undefined
+            do_li_dm: doLiDmValue || undefined,
+            mo_ta_tem: moTaTem || undefined
           }
         : {};
       const shouldRecalculateConversion = line.shouldRecalculateConversion !== false;

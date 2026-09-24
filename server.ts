@@ -4918,6 +4918,8 @@ type WarehouseSlipLineInput = {
   m2PerUnit?: number;
   mDaiPerUnit?: number;
   nhomVthh?: string;
+  /** Mô tả tem đơn miền nam, ghi vào nhap_kho.mo_ta_tem. */
+  moTaTem?: string;
   sourceInboundLineId?: string;
   sourceInboundSlipCode?: string;
 };
@@ -5283,6 +5285,7 @@ function parseWarehouseSlipLines(
     const mDaiPerUnit = parseOptionalMaterialNumber(
       record.mDaiPerUnit ?? record.m_dai_per_unit ?? record.so_m_dai_mot_sp
     );
+    const moTaTem = String(record.moTaTem ?? record.mo_ta_tem ?? '').trim();
 
     if (!code) {
       return { error: loaiKho === 'san_pham' ? 'Mỗi dòng cần có mã sản phẩm.' : 'Mỗi dòng cần có mã NPL.' };
@@ -5326,6 +5329,7 @@ function parseWarehouseSlipLines(
       ...(m2PerUnit !== null && m2PerUnit > 0 ? { m2PerUnit } : {}),
       ...(mDaiPerUnit !== null && mDaiPerUnit > 0 ? { mDaiPerUnit } : {}),
       ...(nhomVthh ? { nhomVthh } : {}),
+      ...(moTaTem ? { moTaTem } : {}),
       ...(sourceInboundLineId ? { sourceInboundLineId } : {}),
       ...(sourceInboundSlipCode ? { sourceInboundSlipCode } : {})
     });
@@ -5934,7 +5938,8 @@ async function insertNhapKhoThanhPhamRows(parsed: {
         so_m2_mot_sp: perUnit(item.m2PerUnit, item.areaM2, quantity),
         so_m_dai_mot_sp: perUnit(item.mDaiPerUnit, item.lengthM, quantity),
         loai_kho: loaiKho,
-        ten_kho: tenKho
+        ten_kho: tenKho,
+        ...(item.moTaTem ? { mo_ta_tem: item.moTaTem } : {})
       };
     })
     .filter((row): row is NonNullable<typeof row> => Boolean(row));
@@ -5944,7 +5949,16 @@ async function insertNhapKhoThanhPhamRows(parsed: {
   }
 
   try {
-    const { data, error } = await supabase.from(SUPABASE_NHAP_KHO_TABLE).insert(rows).select('id');
+    let { data, error } = await supabase.from(SUPABASE_NHAP_KHO_TABLE).insert(rows).select('id');
+    if (error && isMissingColumnError(error) && String(error.message || '').includes('mo_ta_tem')) {
+      console.warn(`[nhap_kho] thiếu cột mo_ta_tem — chạy supabase-nhap-kho-mo-ta-tem.sql. Ghi không mô tả tem.`);
+      const stripped = rows.map(row => {
+        const clone = { ...row };
+        delete clone.mo_ta_tem;
+        return clone;
+      });
+      ({ data, error } = await supabase.from(SUPABASE_NHAP_KHO_TABLE).insert(stripped).select('id'));
+    }
     if (error) {
       const message = error.message || 'Không thể ghi nhap_kho.';
       if (isMissingTableError(error) || isMissingColumnError(error)) {
@@ -6010,7 +6024,7 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
 
   // Danh sách SP: mọi dòng nhap_kho TP/cắt lẻ/tái chế (không lọc ngày, không bắt buộc khớp ten_kho).
   const nhapKhoSelectFull =
-    'id, ma_sp, ten_sp, don_vi, ten_kho, loai_kho, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, ten_goc, do_li, do_li_dm, do_day_m, do_dai_m, mang, hang_phe, ma_amis, created_at';
+    'id, ma_sp, ten_sp, don_vi, ten_kho, loai_kho, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, ten_goc, do_li, do_li_dm, do_day_m, do_dai_m, mang, hang_phe, ma_amis, mo_ta_tem, created_at';
   const nhapKhoSelectCoeff =
     'ma_sp, ten_sp, don_vi, ten_kho, loai_kho, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, created_at';
   const fetchNhapKhoCatalog = async (selectCols: string) =>
@@ -6023,6 +6037,9 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
   let nhapKhoRows: any[] | null = null;
   let nhapKhoError: { code?: string; message?: string } | null = null;
   ({ data: nhapKhoRows, error: nhapKhoError } = await fetchNhapKhoCatalog(nhapKhoSelectFull));
+  if (nhapKhoError && isMissingColumnError(nhapKhoError) && String(nhapKhoError.message || '').includes('mo_ta_tem')) {
+    ({ data: nhapKhoRows, error: nhapKhoError } = await fetchNhapKhoCatalog(nhapKhoSelectFull.replace(', mo_ta_tem', '')));
+  }
   if (nhapKhoError && isMissingColumnError(nhapKhoError)) {
     const missingSpec = NHAP_KHO_CAT_LE_SPEC_COLUMNS.some(col =>
       String(nhapKhoError?.message || '').includes(col)
@@ -6092,6 +6109,7 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
       mang: String(row.mang ?? '').trim(),
       hang_phe: String(row.hang_phe ?? '').trim(),
       ma_amis: String(row.ma_amis ?? '').trim(),
+      mo_ta_tem: String(row.mo_ta_tem ?? '').trim(),
       created_at: String(row.created_at ?? ''),
       id: String(row.id ?? '').trim()
     }))
@@ -6373,6 +6391,8 @@ type OrderProductRecord = {
   tem?: string | null;
   mau_tem?: string | null;
   dan_tem_2_dau?: number | null;
+  /** Hậu tố tem đã trim, vd "(Dán Tem 1.5li) Màu Hồng MVCC Dán Tem 2 Đầu". */
+  mo_ta_tem?: string | null;
   don_vi: string;
   so_luong: number | null;
   stt?: number;
@@ -6554,6 +6574,9 @@ function parseOrderProductsInput(
     const ten_ghep = isSouthOrderInput
       ? appendSouthTemToTenGhepServer(base_ten_ghep, tem, mau_tem, dan_tem_2_dau)
       : base_ten_ghep;
+    const mo_ta_tem = isSouthOrderInput
+      ? buildSouthTemSuffixServer(tem, mau_tem, dan_tem_2_dau).trim()
+      : '';
     const kg_1_sp = parseOrderQuantity(row.kg_1_sp ?? row.kg1Sp);
     const tong_kg = parseOrderQuantity(row.tong_kg ?? row.tongKg ?? row.trong_luong ?? row.trong_luong_kg);
     const nguon_quy_doi = pickRowField(row, ['nguon_quy_doi', 'conversionSource']);
@@ -6574,6 +6597,7 @@ function parseOrderProductsInput(
       ...(tem ? { tem } : {}),
       ...(mau_tem ? { mau_tem } : {}),
       ...(dan_tem_2_dau ? { dan_tem_2_dau } : {}),
+      ...(mo_ta_tem ? { mo_ta_tem } : {}),
       ...(parsedQuyCachMDai !== null && parsedQuyCachMDai > 0 ? { quy_cach_m_dai: parsedQuyCachMDai } : {}),
       ...(m2 !== null && m2 > 0 ? { m2 } : {}),
       ...(m_dai !== null && m_dai > 0 ? { m_dai } : {}),
@@ -6723,6 +6747,9 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
             : {}),
           ...((record.dan_tem_2_dau === 1 || record.danTem2Dau === true || String(record.dan_tem_2_dau ?? '').trim() === '1' || /Dán Tem 2 Đầu/u.test(String(record.ten_ghep ?? record.tenGhep ?? '')))
             ? { dan_tem_2_dau: 1 }
+            : {}),
+          ...(pickRowField(record, ['mo_ta_tem', 'moTaTem'])
+            ? { mo_ta_tem: pickRowField(record, ['mo_ta_tem', 'moTaTem']) }
             : {}),
           don_vi: pickRowField(record, ['don_vi', 'unit']),
           so_luong: parseOrderQuantity(record.so_luong ?? record.quantity),
@@ -7207,6 +7234,7 @@ function buildProductionOrderRecordFromOrder(
         ...(selectedProduct?.tem ? { tem: selectedProduct.tem } : {}),
         ...(selectedProduct?.mau_tem ? { mau_tem: selectedProduct.mau_tem } : {}),
         ...(selectedProduct?.dan_tem_2_dau ? { dan_tem_2_dau: selectedProduct.dan_tem_2_dau } : {}),
+        ...(selectedProduct?.mo_ta_tem ? { mo_ta_tem: selectedProduct.mo_ta_tem } : {}),
         don_vi: unit,
         so_luong: selectedProduct?.so_luong ?? null,
         ...(selectedProduct?.do_li ? { do_li: selectedProduct.do_li } : {}),
@@ -7329,6 +7357,7 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
       ...(pickRowField(row, ['tem', 'tem_dan', 'dan_tem']) ? { tem: pickRowField(row, ['tem', 'tem_dan', 'dan_tem']) } : {}),
       ...(pickRowField(row, ['mau_tem', 'mauTem', 'mau']) ? { mau_tem: pickRowField(row, ['mau_tem', 'mauTem', 'mau']) } : {}),
       ...((row.dan_tem_2_dau === 1 || row.danTem2Dau === true || String(row.dan_tem_2_dau ?? '').trim() === '1') ? { dan_tem_2_dau: 1 } : {}),
+      ...(pickRowField(row, ['mo_ta_tem', 'moTaTem']) ? { mo_ta_tem: pickRowField(row, ['mo_ta_tem', 'moTaTem']) } : {}),
       don_vi,
       so_luong,
       ...(stt ? { stt } : {}),
@@ -15749,7 +15778,7 @@ async function loadKiemKhoLiveTongHopForDot(
       }
 
       const nhapKhoRawFull =
-        'id, ma_sp, ten_sp, don_vi, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, ten_goc, do_li, do_li_dm, do_day_m, do_dai_m, mang, hang_phe, ma_amis, loai_kho, ten_kho, created_at';
+        'id, ma_sp, ten_sp, don_vi, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, ten_goc, do_li, do_li_dm, do_day_m, do_dai_m, mang, hang_phe, ma_amis, mo_ta_tem, loai_kho, ten_kho, created_at';
       const nhapKhoRawBase =
         'id, ma_sp, ten_sp, don_vi, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, loai_kho, ten_kho, created_at';
       const buildNhapKhoRawQuery = (selectCols: string) => {
@@ -15765,6 +15794,9 @@ async function loadKiemKhoLiveTongHopForDot(
         return query;
       };
       let { data, error } = await buildNhapKhoRawQuery(nhapKhoRawFull);
+      if (error && isMissingColumnError(error) && String(error.message || '').includes('mo_ta_tem')) {
+        ({ data, error } = await buildNhapKhoRawQuery(nhapKhoRawFull.replace(', mo_ta_tem', '')));
+      }
       if (error && isMissingColumnError(error)) {
         console.warn(`[nhap-kho] thiếu cột cắt lẻ (${error.message}) — trả records không specs.`);
         ({ data, error } = await buildNhapKhoRawQuery(nhapKhoRawBase));
@@ -16026,6 +16058,7 @@ async function loadKiemKhoLiveTongHopForDot(
       const stripped = rows.map(row => {
         const clone: Record<string, unknown> = { ...row };
         for (const col of NHAP_KHO_CAT_LE_SPEC_COLUMNS) delete clone[col];
+        delete clone.mo_ta_tem;
         return clone;
       });
       ({ data, error } = await attempt(stripped));
@@ -16158,7 +16191,8 @@ async function loadKiemKhoLiveTongHopForDot(
       do_dai_m: piece?.do_dai_m || null,
       mang: nguon.mang || null,
       hang_phe: nguon.hang_phe || null,
-      ma_amis: nguon.ma_amis || null
+      ma_amis: nguon.ma_amis || null,
+      mo_ta_tem: nguon.mo_ta_tem || null
     };
   }
 
@@ -16593,7 +16627,8 @@ async function loadKiemKhoLiveTongHopForDot(
         do_dai_m: text(item.do_dai_m ?? item.doDaiM) || null,
         mang: text(item.mang) || null,
         hang_phe: text(item.hang_phe ?? item.hangPhe) || null,
-        ma_amis: text(item.ma_amis ?? item.maAmis) || null
+        ma_amis: text(item.ma_amis ?? item.maAmis) || null,
+        mo_ta_tem: text(item.mo_ta_tem ?? item.moTaTem) || null
       });
     }
     return { lines };
@@ -16868,7 +16903,8 @@ async function loadKiemKhoLiveTongHopForDot(
           do_dai_m: (line.do_dai_m as string) || null,
           mang: (line.mang as string) || null,
           hang_phe: (line.hang_phe as string) || null,
-          ma_amis: (line.ma_amis as string) || null
+          ma_amis: (line.ma_amis as string) || null,
+          mo_ta_tem: (line.mo_ta_tem as string) || null
         }))
       );
       const { data: updated, error: updateError } = await supabase
@@ -17015,7 +17051,8 @@ async function loadKiemKhoLiveTongHopForDot(
           do_dai_m: (line.do_dai_m as string) || null,
           mang: (line.mang as string) || null,
           hang_phe: (line.hang_phe as string) || null,
-          ma_amis: (line.ma_amis as string) || null
+          ma_amis: (line.ma_amis as string) || null,
+          mo_ta_tem: (line.mo_ta_tem as string) || null
         }))
       );
       const { data, error } = await supabase
