@@ -133,11 +133,11 @@ function resolveSecondaryTotalWeight(line: MixingNormLine) {
   return null;
 }
 
+/** NVL chính trước, NVL phụ sau. Trong mỗi nhóm giữ đúng thứ tự lúc tạo phiếu. */
 function comparePrintProducts(a: MixingNormProduct, b: MixingNormProduct) {
   const aSecondary = a.loai === 'nvl_phu' ? 1 : 0;
   const bSecondary = b.loai === 'nvl_phu' ? 1 : 0;
-  if (aSecondary !== bSecondary) return aSecondary - bSecondary;
-  return `${a.ma_sp} ${a.ten_sp}`.localeCompare(`${b.ma_sp} ${b.ten_sp}`, 'vi');
+  return aSecondary - bSecondary;
 }
 
 function resolveProductPrintName(
