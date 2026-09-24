@@ -1,4 +1,4 @@
-import { buildOrderTenGhep, seedProductionSpecs } from '../../utils/productProductionName';
+import { buildOrderTenGhep, seedProductionSpecs, stripTrailingDuplicateCutAfterTem } from '../../utils/productProductionName';
 
 export interface OrderProductLine {
   /** Bản ghi gốc trong JSON `don_hang.san_pham`, dùng để form sửa không làm mất dữ liệu đã lưu. */
@@ -165,7 +165,7 @@ export function formatProductionNameWithLength(
   options?: { tenGhep?: string; nhomVthh?: string; maAmis?: string }
 ): string {
   const storedTenGhep = String(options?.tenGhep || '').trim();
-  if (storedTenGhep) return storedTenGhep;
+  if (storedTenGhep) return stripTrailingDuplicateCutAfterTem(storedTenGhep);
 
   const cleanName = (name || '').trim();
   const numericLength = Number(String(length ?? '').replace(',', '.'));
@@ -202,6 +202,7 @@ export {
   composeProductionDisplayName,
   extractDoLiDm,
   replaceCutLengthMeters,
-  seedProductionSpecs
+  seedProductionSpecs,
+  stripTrailingDuplicateCutAfterTem
 } from '../../utils/productProductionName';
 

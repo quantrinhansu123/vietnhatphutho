@@ -17,7 +17,7 @@ Trong form, khi đủ thông tin sản phẩm có nút **Xác nhận**: xem sả
 Bấm **Duyệt** (`POST /:id/hoan-thanh`) mới xuất **Kho cắt lẻ**, nhập **Kho thành phẩm**, nhập phần còn lại lại **Kho cắt lẻ**.
 Phần còn lại **dưới 2m** nhập thẳng **Kho tái chế** (không xuất, vì sản phẩm còn lại chưa có tồn ở Kho cắt lẻ). Từ 2m thì nhập lại Kho cắt lẻ. Sau khi duyệt (`hoan_thanh`) không sửa được.
 
-- Chỉ đổi 1 chiều hình học (xẻ khổ giữ dài / cắt ngắn giữ rộng). Độ li đích đổi riêng được: khi đổi, `do_day_m` của sản phẩm cắt ghép lại theo số li (vd `1` → `1m`) rồi ghi `nhap_kho`; phần còn lại giữ `do_day_m` mẹ.
+- Được hạ một chiều (xẻ khổ giữ dài / cắt ngắn giữ rộng) hoặc hạ cả khổ lẫn m dài (`kieu_cat = ca_hai`). Độ li đích đổi riêng được: khi đổi, `do_day_m` của sản phẩm cắt ghép lại theo số li (vd `1` → `1m`) rồi ghi `nhap_kho`; phần còn lại giữ `do_day_m` mẹ. Hạ khổ thì khổ còn lại = khổ mẹ − khổ cắt, m dài phần còn lại giữ của mẹ. Tên SP cắt và phần còn lại nối thêm `mo_ta_tem` của mẹ.
 - Gốc trọng lượng là 3 hệ số 1 SP của mẹ (`kg/m2/m dài`): `kg2 = kg1 × (w2×l2)/(w1×l1)`.
   Mất số mẹ thì nhập kg cân tay. Chuỗi cắt (20m→12m→10m) lấy con làm mẹ qua `parent` logic.
 

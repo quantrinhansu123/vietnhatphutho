@@ -13,6 +13,7 @@ import {
   seedProductionSpecs,
   buildOrderTenGhep,
   replaceCutLengthMeters,
+  stripTrailingDuplicateCutAfterTem,
   replaceDoLiDmInTenGhep,
   normalizeDoLiDm,
   extractDoLiDmNumber,
@@ -234,6 +235,15 @@ test('ZEM lẫn trong tên gốc thì không phải độ li — ưu tiên li t�
     seedProductionSpecs({ tenSanXuat: 'NHỰA 11 SÓNG XANH 6ZEM -2M', maAmis: 'STS02-11s-6zem', nhomVthh: 'TP; PX Sóng' }).tenGhep,
     'NHỰA 11 SÓNG XANH 6ZEM - 2m'
   );
+});
+
+test('stripTrailingDuplicateCutAfterTem: bỏ mét nối sau hậu tố tem', () => {
+  const orderName = 'Tấm nhựa đặc XDT - ECO - 10li - (đm 5 li) - 2.1m - 3m (Dán Tem 2.5li) Màu Hồng MVCC Dán Tem 2 Đầu';
+  assert.equal(
+    stripTrailingDuplicateCutAfterTem(`${orderName} - 3m`),
+    orderName
+  );
+  assert.equal(stripTrailingDuplicateCutAfterTem(orderName), orderName);
 });
 
 test('replaceCutLengthMeters: thay mét cuối, thiếu thì thêm - Nm', () => {

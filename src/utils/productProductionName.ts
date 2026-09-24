@@ -585,3 +585,18 @@ export function replaceCutLengthMeters(
   }
   return `${coreText} - ${label}${suffix}`;
 }
+
+/** Bỏ mét cắt bị nối sau hậu tố tem khi mét đó đã đứng ngay trước "(Dán Tem". */
+export function stripTrailingDuplicateCutAfterTem(tenGhep: string): string {
+  let text = String(tenGhep || '').trim();
+  for (let i = 0; i < 5; i += 1) {
+    const match = text.match(/^(.*?)(?:\s*-\s*|\s+)(\d[\d.,]*)\s*m\s*$/iu);
+    if (!match) break;
+    const head = match[1].trim();
+    const meter = match[2].replace(',', '.');
+    const esc = meter.replace(/\./g, '[,.]');
+    if (!new RegExp(`${esc}\\s*m\\s*\\(Dán Tem`, 'iu').test(head)) break;
+    text = head;
+  }
+  return text;
+}

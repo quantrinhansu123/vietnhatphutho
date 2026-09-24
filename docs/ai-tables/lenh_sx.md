@@ -56,7 +56,7 @@ Gộp dòng tiến độ (`buildProductionProgressForOrder` trong `src/utils/pro
 - Giữ riêng từng dòng trong JSON `don_hang.san_pham`, kể cả các dòng trùng mã hoặc `san_pham_id`; không gộp số lượng.
 - Trong form thêm/sửa Lệnh SX, sau khi chọn đơn hàng và chọn sản phẩm, ô **SL** tự điền theo `so_luong` của đúng dòng sản phẩm đã chọn trong đơn hàng (ưu tiên nhận diện theo `san_pham_id` + STT dòng).
 - `lenh_sx.san_pham[].san_pham_id` phải giữ nguyên ID từ đúng dòng `don_hang.san_pham[]`; frontend và backend không được fallback/dò lại theo mã hoặc tên sản phẩm vì có thể trỏ sang một dòng danh mục khác.
-- Sản phẩm luôn lưu và hiển thị **tên ghép** (`ten_ghep` lấy từ dòng đơn hàng; có mét cắt thì thay mét cuối bằng `replaceCutLengthMeters`; thiếu mới ghép lại từ `ten_san_xuat` + mét cắt nếu có).
+- Sản phẩm luôn lưu và hiển thị **tên ghép** (`ten_ghep` lấy nguyên từ dòng đơn hàng, không thay mét). Thiếu `ten_ghep` mới ghép lại từ `ten_san_xuat` + mét cắt nếu có.
 - Xem trước/in lệnh SX hiển thị đúng `ten_ghep` trong JSON `san_pham` (thiếu thì tên SX thô) — **không tự ghép lại**.
 - Các cột KG / M2 / M dài và JSON `lenh_sx.san_pham` lấy trực tiếp dữ liệu quy đổi từ dòng đơn hàng (`ket_qua_quy_doi` và các trường liên quan), không tải lại `san_pham_quy_doi` trong form lệnh SX. Đổi ô **SL** thì tính lại KG / M2 / M dài = suất 1 SP × SL mới (gõ thêm chữ số vẫn cập nhật; suất lấy từ tổng đơn ÷ SL đơn, fallback `kg_1_sp`).
 

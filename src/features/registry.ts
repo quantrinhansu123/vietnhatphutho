@@ -454,7 +454,7 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   nhap_kho: {
     table: 'nhap_kho',
     label: 'Sổ SP nhập kho thành phẩm + tồn kỳ /kho-hang',
-    sql: ['supabase-nhap-kho.sql', 'supabase-nhap-kho-mo-ta-tem.sql'],
+    sql: ['supabase-nhap-kho.sql', 'supabase-nhap-kho-mo-ta-tem.sql', 'supabase-kho-cat-le-seed.sql'],
     apiPrefix: '/api/nhap-kho',
     serverLines: 'GET /api/nhap-kho (+ from/to) + insertNhapKhoThanhPhamRows',
     appTab: 'inventory-catalog | warehouse-slip',

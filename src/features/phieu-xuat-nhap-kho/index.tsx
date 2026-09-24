@@ -34,6 +34,7 @@ import { useTabAccess } from '../../app/useTabAccess';
 import type { AuthUser } from '../../app/authUser';
 import { BackButton } from '../../components/layout/NavButtons';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
+import SearchableMultiSelect from '../../components/SearchableMultiSelect';
 import ProductQrScanner from '../../components/ProductQrScanner';
 import {
   FilterCombobox,
@@ -4330,6 +4331,7 @@ export function WarehouseSlipPanel({
         : showMachineInput
           ? machine.trim() || null
           : null,
+      maLenhSx: isTpInbound ? productionOrderCodes : [],
       // "Xuất kho treo" là form chờ lấy dữ liệu báo cáo hàng hỏng; khi lưu phải thành phiếu xuất chính thức.
       treo: false,
       items: payloadItems
@@ -4980,49 +4982,21 @@ export function WarehouseSlipPanel({
                       (chọn nhiều)
                     </span>
                   </span>
-                  <div className="rounded-lg border border-amber-300 bg-white p-2.5">
-                    {machineSelectOptions.length === 0 ? (
-                      <p className="text-xs font-semibold text-zinc-400">
-                        {isLoadingMachines ? 'Đang tải máy…' : 'Chưa có danh sách máy.'}
-                      </p>
-                    ) : (
-                      <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">
-                        {machineSelectOptions.map(option => {
-                          const value = option.label;
-                          const checked = tpLenhSxMachines.includes(value);
-                          return (
-                            <label
-                              key={option.id || value}
-                              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${
-                                checked
-                                  ? 'border-amber-500 bg-amber-100 text-amber-900'
-                                  : 'border-zinc-200 bg-white text-zinc-700 hover:border-amber-300'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => {
-                                  setTpLenhSxMachines(current =>
-                                    checked
-                                      ? current.filter(item => item !== value)
-                                      : [...current, value]
-                                  );
-                                }}
-                                className="h-3.5 w-3.5 rounded border-zinc-300 text-amber-600 focus:ring-amber-500/20"
-                              />
-                              {option.label}
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {tpLenhSxMachines.length > 0 ? (
-                      <p className="mt-1.5 text-[11px] font-semibold text-amber-900/70">
-                        Đã chọn: {tpLenhSxMachines.join(', ')}
-                      </p>
-                    ) : null}
-                  </div>
+                  {machineSelectOptions.length === 0 ? (
+                    <p className="text-xs font-semibold text-zinc-400">
+                      {isLoadingMachines ? 'Đang tải máy…' : 'Chưa có danh sách máy.'}
+                    </p>
+                  ) : (
+                    <SearchableMultiSelect<string>
+                      values={tpLenhSxMachines}
+                      onChange={setTpLenhSxMachines}
+                      options={machineSelectOptions.map(option => option.label)}
+                      allowCustomValues={false}
+                      hideSelectedFromList
+                      placeholder="Gõ để tìm máy..."
+                      disabled={isLoadingMachines}
+                    />
+                  )}
                 </div>
               </div>
 

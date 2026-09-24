@@ -4,7 +4,7 @@
 |---|---|
 | **Bảng** | `nhap_kho` |
 | **Tab** | `/kho-hang` → Kho thành phẩm; ghi sau phiếu nhập TP |
-| **SQL** | `supabase-nhap-kho.sql` + `supabase-nhap-kho-cat-le.sql` (7 cột thông số) + `supabase-nhap-kho-loai-kho.sql` (backfill `loai_kho`) + `supabase-nhap-kho-mo-ta-tem.sql` (`mo_ta_tem`) |
+| **SQL** | `supabase-nhap-kho.sql` + `supabase-nhap-kho-cat-le.sql` (7 cột thông số) + `supabase-nhap-kho-loai-kho.sql` (backfill `loai_kho`) + `supabase-nhap-kho-mo-ta-tem.sql` (`mo_ta_tem`) + `supabase-kho-cat-le-seed.sql` (20 SP Kho cắt lẻ, phiếu `PNK-CL-SEED` / `PXK-CL-SEED`) |
 
 ## Vai trò
 
@@ -25,7 +25,7 @@ SL và tổng kg / m² / mét dài của dòng phiếu nằm ở `phieu_xuat_nha
 |--------|------|---------|
 | GET | `/api/nhap-kho` | Không `from`/`to`: raw records. Có `from`+`to`: rows tồn kỳ (catalog `nhap_kho` + số liệu phiếu NX). `strictKho=1` + `ten_kho`: chỉ hàng đúng kho (lọc catalog theo `ten_kho` hoặc `loai_kho`, phiếu qua `ten_kho`) — `/kho-hang`, Lệnh cắt, Chuyển kho dùng |
 | GET | `/api/ton-kho-thanh-pham` | Alias cũ → cùng `loadNhapKhoThanhPhamPeriodRows` (không đọc/ghi `ton_kho_thanh_pham`) |
-| (ghi) | Sau `POST`/`PUT` phiếu nhập TP | `insertNhapKhoThanhPhamRows` |
+| (ghi) | Sau `POST`/`PUT` phiếu nhập TP | `insertNhapKhoThanhPhamRows` — nếu payload có `maLenhSx`, đọc `lenh_sx.ma_don_hang` rồi JSON `don_hang.san_pham` để ghi `ten_goc`, `do_li`, `do_li_dm`, `do_day_m`, `do_dai_m`, `mang`, `hang_phe`, `ma_amis`, `mo_ta_tem` |
 
 ## Frontend
 
