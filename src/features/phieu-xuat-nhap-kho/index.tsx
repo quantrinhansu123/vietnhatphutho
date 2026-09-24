@@ -4269,6 +4269,23 @@ export function WarehouseSlipPanel({
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
+    const lenhSxDaChon = isNvlExport
+      ? productionOrderCodes.flatMap(key => {
+          const found = nvlExportInstances.find(item => item.key === key);
+          if (found?.normId) {
+            return [{
+              dinh_muc_id: found.normId,
+              ten_phieu: found.normName || '',
+              ma_lenh_sx: found.orderCode || '',
+              ngay: found.ngay || '',
+              ca: found.ca || ''
+            }];
+          }
+          const parsed = parseLenhSxInstanceKey(key);
+          if (!parsed.dinh_muc_id && (!parsed.ma_lenh_sx || !parsed.ngay)) return [];
+          return [parsed];
+        })
+      : [];
     if (!warehouseName.trim()) {
       setFormError(showSaveFailure('Vui lòng chọn tên kho từ danh sách Quản lý kho.'));
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -4332,6 +4349,7 @@ export function WarehouseSlipPanel({
           ? machine.trim() || null
           : null,
       maLenhSx: isTpInbound ? productionOrderCodes : [],
+      lenhSxDaChon,
       // "Xuất kho treo" là form chờ lấy dữ liệu báo cáo hàng hỏng; khi lưu phải thành phiếu xuất chính thức.
       treo: false,
       items: payloadItems

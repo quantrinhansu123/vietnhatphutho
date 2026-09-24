@@ -1,7 +1,7 @@
 import React from 'react';
 import { formatNumber, parsePercentInput } from '../utils';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
-import { SOUTH_ORDER_TYPE, isCutLikeOrderType } from '../features/_shared/orderHelpers';
+import { SOUTH_ORDER_TYPE, getAllocatedQtyFromMap, isCutLikeOrderType } from '../features/_shared/orderHelpers';
 import { getOrderProductLines, type OrderRow } from '../features/_shared/orderRecordHelpers';
 
 function formatOrderCreatedAt(value: string): string {
@@ -22,9 +22,18 @@ function displayCell(value: string | null | undefined) {
   return trimmed && trimmed !== '-' ? trimmed : '';
 }
 
-export default function OrderPrintSheet({ order }: { order: OrderRow }) {
+export default function OrderPrintSheet({ order, allocatedQtyMap }: { order: OrderRow; allocatedQtyMap?: Map<string, number> }) {
   const productLines = getOrderProductLines(order);
   const totalQuantity = productLines.reduce((sum, item) => sum + parsePercentInput(item.quantity), 0);
+  const allocatedOf = (line: ReturnType<typeof getOrderProductLines>[number]) =>
+    allocatedQtyMap
+      ? getAllocatedQtyFromMap(allocatedQtyMap, order.orderCode, {
+          productId: line.productId,
+          productCode: line.productCode,
+          productionName: line.productionName
+        })
+      : 0;
+  const totalAllocated = productLines.reduce((sum, line) => sum + allocatedOf(line), 0);
   const orderNote = displayCell(order.note);
   const isCutOrder = isCutLikeOrderType(order.orderType);
   const isSouthOrder = order.orderType === SOUTH_ORDER_TYPE;
@@ -95,12 +104,13 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
               <th>Số lượng</th>
               <th>Hạn giao</th>
               <th>Ghi chú</th>
+              <th>SL lệnh SX</th>
             </tr>
           </thead>
           <tbody>
             {productLines.length === 0 ? (
               <tr>
-                <td colSpan={8} className="order-print-empty-row">
+                <td colSpan={9} className="order-print-empty-row">
                   Chưa có dòng sản phẩm
                 </td>
               </tr>
@@ -119,6 +129,9 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
                   </td>
                   <td>{order.deliveryDate ? formatOrderCreatedAt(order.deliveryDate) : ''}</td>
                   <td>{displayCell(line.note) || (idx === 0 ? orderNote : '')}</td>
+                  <td className="order-print-center order-print-qty">
+                    {formatNumber(allocatedOf(line))}
+                  </td>
                 </tr>
               ))
             )}
@@ -131,6 +144,9 @@ export default function OrderPrintSheet({ order }: { order: OrderRow }) {
               </td>
               <td />
               <td />
+              <td className="order-print-center order-print-total-value">
+                {formatNumber(totalAllocated)}
+              </td>
             </tr>
           </tbody>
         </table>

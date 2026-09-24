@@ -38,6 +38,8 @@ import {
   isTamProduct,
   listProductionNamesByCode,
   matchOrderProductByCodeAndProductionName,
+  buildAllocatedQtyMap,
+  getAllocatedQtyFromMap,
   type OrderProductOption,
   type OrderProductConversion,
   type StaffOption,
@@ -76,19 +78,19 @@ interface OrderRowExt extends OrderRow {
   khu_vuc?: string;
 }
 
-const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1180px]';
-const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1420px]';
-const ORDER_CUT_TABLE_MIN_WIDTH = 'min-w-[1480px]';
-const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2060px]';
+const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1260px]';
+const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1500px]';
+const ORDER_CUT_TABLE_MIN_WIDTH = 'min-w-[1560px]';
+const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2140px]';
 export const PRODUCTION_ORDER_TYPE = 'Đơn sản xuất';
 const orderProductGridClass =
-  'grid-cols-[2.25rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(12rem,1.35fr)_minmax(7rem,0.9fr)_5.5rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
+  'grid-cols-[2.25rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(12rem,1.35fr)_minmax(7rem,0.9fr)_5rem_5.5rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
 const orderProductionProductGridClass =
-  'grid-cols-[2.25rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(11rem,1.25fr)_minmax(6.5rem,0.85fr)_5rem_4.5rem_4.5rem_4.5rem_5rem_5rem_5rem_5rem_6.5rem]';
+  'grid-cols-[2.25rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(11rem,1.25fr)_minmax(6.5rem,0.85fr)_5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_5rem_5rem_5rem_6.5rem]';
 const orderCutProductGridClass =
-  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_6rem_minmax(8rem,1fr)_6.5rem]';
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_6rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const orderSouthProductGridClass =
-  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_8.5rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_6.5rem]';
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_8.5rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
 const CUSTOMER_ENTERED_KG_SOURCE = 'khach_hang_nhap_kg';
 /** Ô Tìm Mã AMIS: hiện tối đa 400 kết quả đã lọc. Các Select khác vẫn mặc định 50. */
@@ -876,6 +878,22 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const [orderFormOverlayEl, setOrderFormOverlayEl] = useState<HTMLDivElement | null>(null);
   const [selectedProductLineKey, setSelectedProductLineKey] = useState<string | null>(null);
   const [dragProductIndex, setDragProductIndex] = useState<number | null>(null);
+  /** Danh sách lệnh SX thô (API) — nguồn tính cột "SL lệnh SX" theo từng dòng đơn. */
+  const [lenhSxRows, setLenhSxRows] = useState<unknown[]>([]);
+
+  const loadLenhSxRows = async () => {
+    try {
+      const res = await fetch('/api/lenh-sx');
+      const data = await res.json().catch(() => ({}));
+      const rows = (data as { productionOrders?: unknown }).productionOrders;
+      setLenhSxRows(Array.isArray(rows) ? rows : []);
+    } catch {
+      setLenhSxRows([]);
+    }
+  };
+
+  /** Map tổng SL đã lập lệnh theo (mã đơn, SP) — tra O(1)/dòng, memo theo danh sách lệnh. */
+  const allocatedQtyMap = useMemo(() => buildAllocatedQtyMap(lenhSxRows), [lenhSxRows]);
 
   const loadOrders = async (includeDeleted = showDeleted) => {
     setIsLoadingOrders(true);
@@ -914,7 +932,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     loadOrders();
+    void loadLenhSxRows();
   }, []);
+
+  useEffect(() => {
+    if (formMode) void loadLenhSxRows();
+  }, [formMode]);
 
   useEffect(() => {
     if (!formMode) return;
@@ -1572,6 +1595,19 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     .map(customer => customer.id || customer.code || customer.name)
     .join('|')}`;
 
+  /** Ô readonly "SL lệnh SX": tổng SL đã lập lệnh SX cho dòng đơn (tra map memo). */
+  const renderAllocatedQtyCell = (value: number) => (
+    <div className="col-span-1 min-w-0">
+      <input
+        value={formatNumber(value, 3)}
+        readOnly
+        title="Tổng số lượng đã lập lệnh sản xuất cho dòng này"
+        className={`${orderFieldClass} bg-yellow-50 text-right font-black text-yellow-800 ring-2 ring-inset ring-yellow-400`}
+        placeholder="0"
+      />
+    </div>
+  );
+
   const renderProductLineShell = (
     line: OrderProductFormLine,
     index: number,
@@ -1772,6 +1808,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'mauTem', label: 'Màu tem' },
                         { key: 'haiDau', label: '2 Đầu' },
                         { key: 'note', label: 'Ghi chú' },
+                        { key: 'lsxQty', label: 'SL lệnh SX' },
                         { key: 'actions', label: '' }
                       ]
                     : isFormCutOrder
@@ -1787,6 +1824,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'qty', label: 'SL (tổng)', required: true },
                         { key: 'tongKg', label: 'Tổng KG (nhập)' },
                         { key: 'note', label: 'Ghi chú' },
+                        { key: 'lsxQty', label: 'SL lệnh SX' },
                         { key: 'actions', label: '' }
                       ]
                     : isFormProductionOrder
@@ -1796,6 +1834,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           { key: 'name', label: 'Tên sản phẩm' },
                           { key: 'productionName', label: 'Tên sản xuất' },
                           { key: 'note', label: 'Ghi chú' },
+                          { key: 'lsxQty', label: 'SL lệnh SX' },
                           { key: 'unit', label: 'ĐVT' },
                           { key: 'bac', label: 'Bắc' },
                           { key: 'trung', label: 'Trung' },
@@ -1812,6 +1851,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'name', label: 'Tên sản phẩm' },
                         { key: 'productionName', label: 'Tên sản xuất' },
                         { key: 'note', label: 'Ghi chú' },
+                        { key: 'lsxQty', label: 'SL lệnh SX' },
                         { key: 'unit', label: 'ĐVT' },
                         { key: 'qty', label: 'SL', required: true },
                         { key: 'kg', label: 'KG (nhập)' },
@@ -2023,6 +2063,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             placeholder="Ghi chú"
                           />
                         </div>
+                        {renderAllocatedQtyCell(getAllocatedQtyFromMap(allocatedQtyMap, orderForm.orderCode, {
+                          productId: matchedLineProduct?.id || line.productId,
+                          productCode: line.productCode,
+                          productionName: line.productionName
+                        }))}
                         </>
                       );
                     })
@@ -2122,6 +2167,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           placeholder="Ghi chú"
                         />
                       </div>
+                      {renderAllocatedQtyCell(getAllocatedQtyFromMap(allocatedQtyMap, orderForm.orderCode, {
+                        productId: matchedLineProduct?.id || line.productId,
+                        productCode: line.productCode,
+                        productionName: line.productionName
+                      }))}
                       <div className="col-span-1 min-w-0">
                         {matchedLineProduct ? <select value={effectiveUnit} onChange={e => updateConversionProductLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateConversionProductLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
                       </div>
@@ -2302,6 +2352,13 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       </p>
                       <p className="mt-0.5 text-xs font-semibold text-zinc-500">Tên sản xuất: {line.tenGhep || '-'}</p>
                       <p className="mt-0.5 text-xs font-semibold text-zinc-500">Ghi chú: {line.note || '-'}</p>
+                      <p className="mt-0.5 text-xs font-bold text-amber-700">
+                        SL lệnh SX: {formatNumber(getAllocatedQtyFromMap(allocatedQtyMap, viewingOrder.orderCode, {
+                          productId: line.productId,
+                          productCode: line.productCode,
+                          productionName: line.productionName
+                        }), 3)}
+                      </p>
                       <p className="mt-0.5 text-zinc-600">
                         SL: {line.quantity || '-'}
                         {line.unit && line.unit !== '-' ? ` ${line.unit}` : ''}
@@ -2384,7 +2441,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       )}
 
       {printOrder
-        ? createPortal(<OrderPrintSheet order={printOrder} />, document.body)
+        ? createPortal(<OrderPrintSheet order={printOrder} allocatedQtyMap={allocatedQtyMap} />, document.body)
         : null}
 
       <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
@@ -2453,13 +2510,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             <TableHeadCell>Trạng thái</TableHeadCell>
             <TableHeadCell>Nhân viên</TableHeadCell>
             <TableHeadCell>Khách hàng</TableHeadCell>
-            <TableHeadCell className="min-w-[460px]">
-              <div className="grid grid-cols-[2rem_minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2">
+            <TableHeadCell className="min-w-[520px]">
+              <div className="grid grid-cols-[2rem_minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px_64px] gap-2">
                 <span>STT</span>
                 <span>Mã SP</span>
                 <span>Tên SP / Tên ghép</span>
                 <span className="text-right">SL</span>
                 <span>ĐVT</span>
+                <span className="text-right">SL LSX</span>
               </div>
             </TableHeadCell>
             <TableHeadCell>Ghi chú</TableHeadCell>
@@ -2496,12 +2554,19 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             : [line.doLi, sizeText].filter(Boolean).join(' · ');
                         return (
                           <div key={`${order.id}-${line.productCode}-${line.productName}-${index}`} className="py-1.5 first:pt-0 last:pb-0">
-                            <div className="grid grid-cols-[2rem_minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px] gap-2 text-xs font-semibold text-zinc-700">
+                            <div className="grid grid-cols-[2rem_minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px_64px] gap-2 text-xs font-semibold text-zinc-700">
                               <span className="font-black tabular-nums text-zinc-500">{line.stt || index + 1}</span>
                               <span className="font-black text-zinc-950">{line.productCode || '-'}</span>
                               <span className="text-zinc-800">{line.tenGhep || '-'}</span>
                               <span className="text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
                               <span className="font-bold text-zinc-600">{line.unit || '-'}</span>
+                              <span className="text-right font-mono font-bold text-amber-700" title="Tổng SL đã lập lệnh sản xuất cho dòng này">
+                                {formatNumber(getAllocatedQtyFromMap(allocatedQtyMap, order.orderCode, {
+                                  productId: line.productId,
+                                  productCode: line.productCode,
+                                  productionName: line.productionName
+                                }), 3)}
+                              </span>
                             </div>
                             {specText ? <div className="mt-0.5 text-[11px] font-semibold text-zinc-400">{specText}</div> : null}
                             {(line.soLuongBac || line.soLuongTrung || line.soLuongNam) ? (
