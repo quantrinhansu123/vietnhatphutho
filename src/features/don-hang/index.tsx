@@ -1626,10 +1626,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   value={orderForm.orderType}
                   onChange={changeOrderType}
                   options={[...ORDER_TYPE_OPTIONS]}
-                  placeholder="Gõ để tìm loại đơn"
+                  placeholder="Chọn loại đơn"
                   getLabel={item => String(item)}
                   getValue={item => String(item)}
                   allowEmpty={false}
+                  comboboxMode
                 />
               </label>
               <label className="space-y-1.5">
