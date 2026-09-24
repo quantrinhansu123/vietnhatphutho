@@ -204,7 +204,45 @@ export function filterLenhSxForTpInbound(
   });
 }
 
-/** Gộp SP từ các lệnh SX đã chọn (khóa theo mã). Tên hiển thị ưu tiên tên ghép. */
+/** Chuẩn hóa text để so khóa variant (mã / tên ghép / ĐVT): bỏ khoảng trắng thừa, không phân biệt hoa thường. */
+function normalizeVariantText(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .toLocaleLowerCase('vi')
+    .replace(/\s+/g, ' ');
+}
+
+/** Lượng hóa hệ số 1 SP để so khóa variant (tránh lệch float rác). */
+function quantizePerUnit(value: unknown): string {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  return String(Math.round(n * 1_000_000) / 1_000_000);
+}
+
+/**
+ * Khóa gộp variant: cùng mã nhưng khác tên ghép (mét cắt / specs) hoặc khác ĐVT /
+ * hệ số 1 SP là 2 variant khác nhau, KHÔNG được gộp (mỗi variant một dòng phiếu).
+ * Chỉ gộp khi toàn bộ đặc trưng trùng nhau (cùng variant ở nhiều lệnh SX).
+ */
+export function tpInboundVariantKey(line: {
+  code: string;
+  productionName: string;
+  unit: string;
+  kgPerUnit: number;
+  m2PerUnit: number;
+  mDaiPerUnit: number;
+}): string {
+  return [
+    normalizeVariantText(line.code),
+    normalizeVariantText(line.productionName),
+    normalizeVariantText(line.unit),
+    quantizePerUnit(line.kgPerUnit),
+    quantizePerUnit(line.m2PerUnit),
+    quantizePerUnit(line.mDaiPerUnit)
+  ].join('|');
+}
+
+/** Gộp SP từ các lệnh SX đã chọn (khóa theo variant). Tên hiển thị ưu tiên tên ghép. */
 export function mergeProductsFromLenhSx(
   orders: TpInboundLenhSxOption[]
 ): Array<{
@@ -240,35 +278,30 @@ export function mergeProductsFromLenhSx(
     for (const line of order.lines) {
       const code = String(line.code || '').trim();
       if (!code) continue;
-      const key = code.toLowerCase();
       const qty = Number(line.quantity);
       const productionName =
         String(line.productionName || '').trim() || String(line.name || '').trim() || code;
       const name = String(line.name || '').trim() || productionName;
+      const unit = String(line.unit || '').trim();
       const weightKg = Number(line.weightKg) > 0 ? Number(line.weightKg) : 0;
       const areaM2 = Number(line.areaM2) > 0 ? Number(line.areaM2) : 0;
       const lengthM = Number(line.lengthM) > 0 ? Number(line.lengthM) : 0;
       const kgPerUnit = Number(line.kgPerUnit) > 0 ? Number(line.kgPerUnit) : 0;
       const m2PerUnit = Number(line.m2PerUnit) > 0 ? Number(line.m2PerUnit) : 0;
       const mDaiPerUnit = Number(line.mDaiPerUnit) > 0 ? Number(line.mDaiPerUnit) : 0;
+      const key = tpInboundVariantKey({ code, productionName, unit, kgPerUnit, m2PerUnit, mDaiPerUnit });
       const existing = merged.get(key);
       if (existing) {
         if (Number.isFinite(qty) && qty > 0) existing.quantity += qty;
         existing.weightKg += weightKg;
         existing.areaM2 += areaM2;
         existing.lengthM += lengthM;
-        if (!existing.productionName && productionName) existing.productionName = productionName;
-        if (!existing.name && name) existing.name = name;
-        if (!existing.unit && line.unit) existing.unit = String(line.unit).trim();
-        if (!existing.kgPerUnit && kgPerUnit) existing.kgPerUnit = kgPerUnit;
-        if (!existing.m2PerUnit && m2PerUnit) existing.m2PerUnit = m2PerUnit;
-        if (!existing.mDaiPerUnit && mDaiPerUnit) existing.mDaiPerUnit = mDaiPerUnit;
       } else {
         merged.set(key, {
           code,
           name,
           productionName,
-          unit: String(line.unit || '').trim(),
+          unit,
           quantity: Number.isFinite(qty) && qty > 0 ? qty : 0,
           weightKg,
           areaM2,
@@ -297,5 +330,8 @@ export function mergeProductsFromLenhSx(
         mDaiPerUnit
       };
     })
-    .sort((a, b) => a.code.localeCompare(b.code, 'vi'));
+    .sort(
+      (a, b) =>
+        a.code.localeCompare(b.code, 'vi') || a.productionName.localeCompare(b.productionName, 'vi')
+    );
 }

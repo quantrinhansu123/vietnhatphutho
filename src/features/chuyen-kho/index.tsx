@@ -407,7 +407,8 @@ export function ChuyenKhoPanel({ onBack }: { onBack: () => void }) {
             do_dai_m: text(row.do_dai_m),
             mang: text(row.mang),
             hang_phe: text(row.hang_phe),
-            ma_amis: text(row.ma_amis)
+            ma_amis: text(row.ma_amis),
+            mo_ta_tem: text(row.mo_ta_tem)
           }
         });
       }

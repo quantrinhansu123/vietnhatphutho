@@ -32,6 +32,7 @@ export interface CatLeSpecs {
 }
 
 export interface CatLeMother extends CatLeSpecs {
+  moTaTem?: string;
   maSp: string;
   tenSp: string;
   donVi: string;
@@ -101,6 +102,7 @@ export interface CatLeSanPhamNguon extends CatLePiece {
   mang: string;
   hang_phe: string;
   ma_amis: string;
+  mo_ta_tem?: string;
 }
 
 /**
@@ -200,7 +202,8 @@ export function motherFromNhapKhoRow(
     doDaiM: get('do_dai_m', fallbackSpecs?.doDaiM),
     mang: get('mang', fallbackSpecs?.mang),
     hangPhe: get('hang_phe', fallbackSpecs?.hangPhe),
-    maAmis: String(row.ma_amis ?? fallbackSpecs?.maAmis ?? '').trim()
+    maAmis: String(row.ma_amis ?? fallbackSpecs?.maAmis ?? '').trim(),
+    moTaTem: get('mo_ta_tem')
   };
 }
 
@@ -385,6 +388,7 @@ export function buildCatLeSanPhamLine(args: {
       mang: mother.mang,
       hang_phe: mother.hangPhe,
       ma_amis: mother.maAmis,
+      mo_ta_tem: mother.moTaTem || '',
       kg: mother.kg1,
       m2: mother.a1,
       m_dai: mother.l1
@@ -451,7 +455,8 @@ export function normalizeCatLeSanPhamLine(raw: unknown): CatLeSanPhamLine | null
         ten_goc: catLeText(nguon.ten_goc),
         mang: catLeText(nguon.mang),
         hang_phe: catLeText(nguon.hang_phe),
-        ma_amis: catLeText(nguon.ma_amis)
+        ma_amis: catLeText(nguon.ma_amis),
+        mo_ta_tem: catLeText(nguon.mo_ta_tem)
       },
       san_pham_cat_1: catLePiece(cat1),
       san_pham_cat_2: cat2 && cat2.ten_sp ? cat2 : null,
@@ -480,6 +485,7 @@ export function normalizeCatLeSanPhamLine(raw: unknown): CatLeSanPhamLine | null
       mang: catLeText(row.mang),
       hang_phe: catLeText(row.hang_phe),
       ma_amis: catLeText(row.ma_amis),
+      mo_ta_tem: catLeText(row.mo_ta_tem),
       kg: catLeNum(row.kg_nguon),
       m2: catLeNum(row.m2_nguon),
       m_dai: catLeNum(row.m_dai_nguon)

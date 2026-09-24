@@ -79,6 +79,8 @@ export type TonKhoThanhPhamPeriodRow = {
   mang?: string;
   hang_phe?: string;
   ma_amis?: string;
+  /** Mô tả tem đơn miền nam. */
+  mo_ta_tem?: string;
   /** Id dòng sổ nhap_kho (nguồn cắt lẻ). */
   id?: string;
 };
@@ -508,6 +510,7 @@ export type NhapKhoProductSeed = {
   mang?: string;
   hang_phe?: string;
   ma_amis?: string;
+  mo_ta_tem?: string;
   /** Id dòng sổ nhap_kho gốc (dòng cũ nhất trong nhóm). */
   id?: string;
 };
@@ -584,6 +587,7 @@ export function aggregateNhapKhoProducts(
     mang?: string | null;
     hang_phe?: string | null;
     ma_amis?: string | null;
+    mo_ta_tem?: string | null;
     id?: string | null;
   }>
 ): NhapKhoProductSeed[] {
@@ -608,7 +612,7 @@ export function aggregateNhapKhoProducts(
       if (!existing.ten_kho && row.ten_kho) existing.ten_kho = String(row.ten_kho).trim();
       if (!existing.loai_kho && row.loai_kho) existing.loai_kho = String(row.loai_kho).trim();
       // Cắt lẻ: giữ thông số ghép tên đầu tiên gặp (dòng cũ nhất sau sort).
-      const specKeys = ['ten_goc', 'do_li', 'do_li_dm', 'do_day_m', 'do_dai_m', 'mang', 'hang_phe', 'ma_amis'] as const;
+      const specKeys = ['ten_goc', 'do_li', 'do_li_dm', 'do_day_m', 'do_dai_m', 'mang', 'hang_phe', 'ma_amis', 'mo_ta_tem'] as const;
       for (const specKey of specKeys) {
         if (!existing[specKey] && row[specKey]) existing[specKey] = String(row[specKey]).trim();
       }
@@ -631,6 +635,7 @@ export function aggregateNhapKhoProducts(
       mang: String(row.mang || '').trim(),
       hang_phe: String(row.hang_phe || '').trim(),
       ma_amis: String(row.ma_amis || '').trim(),
+      mo_ta_tem: String(row.mo_ta_tem || '').trim(),
       id: String(row.id || '').trim()
     });
   }
@@ -699,6 +704,7 @@ export function mergeNhapKhoCatalogWithPeriodBalances(
         mang: seed.mang || balance.mang || '',
         hang_phe: seed.hang_phe || balance.hang_phe || '',
         ma_amis: seed.ma_amis || balance.ma_amis || '',
+        mo_ta_tem: seed.mo_ta_tem || balance.mo_ta_tem || '',
         id: seed.id || ''
       });
       continue;
@@ -726,6 +732,7 @@ export function mergeNhapKhoCatalogWithPeriodBalances(
       mang: seed.mang || '',
       hang_phe: seed.hang_phe || '',
       ma_amis: seed.ma_amis || '',
+      mo_ta_tem: seed.mo_ta_tem || '',
       id: seed.id || ''
     });
   }

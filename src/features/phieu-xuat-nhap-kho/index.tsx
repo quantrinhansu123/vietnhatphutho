@@ -238,6 +238,8 @@ export interface WarehouseSlipLineDraft {
   kgPerUnit?: number;
   m2PerUnit?: number;
   mDaiPerUnit?: number;
+  /** Mô tả tem đơn miền nam — ghi sổ nhap_kho. */
+  moTaTem?: string;
 }
 
 /** Tham chiếu đúng 1 phiếu trộn định mức được chọn để xuất kho NVL. */
@@ -847,6 +849,8 @@ export type WarehouseSlipPayloadItem = {
   kgPerUnit?: number;
   m2PerUnit?: number;
   mDaiPerUnit?: number;
+  /** Mô tả tem đơn miền nam — ghi cột nhap_kho.mo_ta_tem. */
+  moTaTem?: string;
   auxiliaryGroup?: string;
   sourceInboundLineId?: string;
   sourceInboundSlipCode?: string;
@@ -958,6 +962,7 @@ export function parseWarehouseSlipPayloadItems(
         auxiliaryGroup: line.auxiliaryGroup?.trim() || undefined,
         sourceInboundLineId: sourceInboundLineId || undefined,
         sourceInboundSlipCode: sourceInboundSlipCode || undefined,
+        moTaTem: String(line.moTaTem || '').trim() || undefined,
         damagedReportRowId: damagedReportRowId || undefined,
         acceptanceReportRowId: acceptanceReportRowId || undefined,
         actualWeightImageUrl: actualWeightImageUrl || undefined,
@@ -1295,6 +1300,7 @@ export function createWarehouseLineDraftFromPrefill(
     | 'kgPerUnit'
     | 'm2PerUnit'
     | 'mDaiPerUnit'
+    | 'moTaTem'
   >
 ): WarehouseSlipLineDraft {
   return {
@@ -1333,7 +1339,8 @@ export function createWarehouseLineDraftFromPrefill(
     lengthM: line.lengthM || '',
     kgPerUnit: line.kgPerUnit,
     m2PerUnit: line.m2PerUnit,
-    mDaiPerUnit: line.mDaiPerUnit
+    mDaiPerUnit: line.mDaiPerUnit,
+    moTaTem: line.moTaTem || ''
   };
 }
 
@@ -1515,6 +1522,7 @@ export type WarehouseProductionOrderLine = {
   kgPerUnit: number | null;
   m2PerUnit: number | null;
   mDaiPerUnit: number | null;
+  moTaTem?: string;
 };
 
 export type WarehouseProductionOrderOption = {
@@ -1694,6 +1702,7 @@ function parseWarehouseProductionOrderLines(record: Record<string, unknown>): Wa
         productionName: productionName || catalogName || code,
         unit: pickText(row, ['don_vi', 'unit'], ''),
         quantity,
+        moTaTem: pickText(row, ['mo_ta_tem', 'moTaTem'], '') || undefined,
         ...conversions
       };
     })
@@ -1716,6 +1725,7 @@ function parseWarehouseProductionOrderLines(record: Record<string, unknown>): Wa
       productionName: productionName || catalogName || code,
       unit: pickText(record, ['don_vi'], ''),
       quantity,
+      moTaTem: pickText(record, ['mo_ta_tem', 'moTaTem'], '') || undefined,
       ...conversions
     }
   ];
@@ -1762,29 +1772,34 @@ export function filterWarehouseProductionOrdersByDateShift(
 }
 
 function mergeWarehouseProductLinesFromOrders(orders: WarehouseProductionOrderOption[]) {
-  const merged = new Map<string, { code: string; name: string; unit: string; quantity: number }>();
+  // Gộp theo variant (mã + tên ghép + ĐVT), không gộp theo mỗi mã:
+  // cùng mã nhưng khác tên ghép (mét cắt / specs) là 2 dòng phiếu riêng.
+  const merged = new Map<string, { code: string; name: string; unit: string; quantity: number; moTaTem?: string }>();
   for (const order of orders) {
     for (const line of order.lines) {
       const code = line.code.trim();
       if (!code) continue;
-      const key = code.toLowerCase();
+      const variantName = line.productionName.trim() || line.name.trim() || code;
+      const unit = line.unit || '';
+      const key = `${code.toLowerCase()}|${variantName.toLowerCase()}|${unit.trim().toLowerCase()}`;
       const qty = Number(line.quantity);
       const existing = merged.get(key);
       if (existing) {
         if (Number.isFinite(qty) && qty > 0) existing.quantity += qty;
-        if (!existing.name && line.name) existing.name = line.name;
-        if (!existing.unit && line.unit) existing.unit = line.unit;
       } else {
         merged.set(key, {
           code,
-          name: line.name || code,
-          unit: line.unit || '',
-          quantity: Number.isFinite(qty) && qty > 0 ? qty : 0
+          name: variantName,
+          unit,
+          quantity: Number.isFinite(qty) && qty > 0 ? qty : 0,
+          moTaTem: line.moTaTem || undefined
         });
       }
     }
   }
-  return [...merged.values()].sort((a, b) => a.code.localeCompare(b.code, 'vi'));
+  return [...merged.values()].sort(
+    (a, b) => a.code.localeCompare(b.code, 'vi') || a.name.localeCompare(b.name, 'vi')
+  );
 }
 
 export function WarehouseSlipPanel({
@@ -3513,7 +3528,8 @@ export function WarehouseSlipPanel({
               unit: line.unit,
               quantity: line.quantity != null ? formatNumber(line.quantity, 2) : '',
               documentQuantity: line.quantity != null ? formatNumber(line.quantity, 2) : '',
-              unitPrice: ''
+              unitPrice: '',
+              moTaTem: line.moTaTem || ''
             })
           )
         );
@@ -3534,7 +3550,8 @@ export function WarehouseSlipPanel({
             unit: line.unit,
             quantity: line.quantity > 0 ? formatNumber(line.quantity, 2) : '',
             documentQuantity: line.quantity > 0 ? formatNumber(line.quantity, 2) : '',
-            unitPrice: ''
+            unitPrice: '',
+            moTaTem: line.moTaTem || ''
           })
         )
       );
