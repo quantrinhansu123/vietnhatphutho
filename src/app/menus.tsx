@@ -655,7 +655,7 @@ export const BAO_CAO_TRUONG_CA_TRON_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'so-che-do-may'
   },
   {
-    title: 'Danh sách sổ trộn',
+    title: 'Danh sách phiếu giao ca',
     desc: 'Xem, sửa và xóa các sổ trộn đã lưu theo ngày, máy và ca.',
     icon: History,
     icon3d: spiralNotepad3d,

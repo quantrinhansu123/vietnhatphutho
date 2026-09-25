@@ -8,7 +8,7 @@
 **Components (đã tách):**
 - `MixingReportForm.tsx` — nhập báo cáo
 - `MixingReportListView.tsx` — danh sách + tab định mức
-- `MixingNormMaterialsTab.tsx` — bảng trộn vật tư định mức (nhập tay)
+- `MixingNormMaterialsTab.tsx` — bảng trộn vật tư định mức (nhập tay). Form thêm/sửa: dropdown lệnh SX, mã SP, NVL, tên SX, nhóm VTHH mở lên trên (`openUpward`); ô Máy sổ xuống. Mục đang chọn nền vàng giống danh sách sản phẩm đơn hàng.
 - `MixingReportPrintSheet.tsx` — in
 - `MixingOrderAutofillModal.tsx` — autofill
 

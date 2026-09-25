@@ -22,6 +22,8 @@ export type SearchableMultiSelectProps<T> = {
   keepOptionsOrder?: boolean;
   /** Số options tối đa hiện trong dropdown (mặc định: 50). */
   maxResults?: number;
+  /** Mở danh sách lên trên ô nhập, giống select danh sách sản phẩm trên đơn hàng. */
+  openUpward?: boolean;
 };
 
 function defaultGetValue<T>(item: T): string {
@@ -41,7 +43,8 @@ export default function SearchableMultiSelect<T = string>({
   allowCustomValues = true,
   hideSelectedFromList = false,
   keepOptionsOrder = false,
-  maxResults = 50
+  maxResults = 50,
+  openUpward = false
 }: SearchableMultiSelectProps<T>) {
   const resolvedGetLabel = getLabel ?? ((item: T) => String(item));
   const resolvedGetSearchText = getSearchText ?? resolvedGetLabel;
@@ -53,7 +56,12 @@ export default function SearchableMultiSelect<T = string>({
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
-  const [menuStyle, setMenuStyle] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [menuStyle, setMenuStyle] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight?: number;
+  } | null>(null);
 
   const selectedKeySet = useMemo(
     () => new Set(values.map(item => getValue(item)).filter(Boolean)),
@@ -103,6 +111,20 @@ export default function SearchableMultiSelect<T = string>({
     const element = containerRef.current;
     if (!element) return;
     const rect = element.getBoundingClientRect();
+    const viewportHeight = document.documentElement.clientHeight;
+    const margin = 8;
+    const preferredHeight = 224;
+    const spaceAbove = Math.max(0, rect.top - margin);
+    if (openUpward && spaceAbove > 0) {
+      const maxHeight = Math.min(preferredHeight, spaceAbove);
+      setMenuStyle({
+        top: Math.max(margin, rect.top - 4 - maxHeight),
+        left: rect.left,
+        width: rect.width,
+        maxHeight
+      });
+      return;
+    }
     setMenuStyle({
       top: rect.bottom + 4,
       left: rect.left,
@@ -123,7 +145,7 @@ export default function SearchableMultiSelect<T = string>({
       window.removeEventListener('resize', handleReposition);
       window.removeEventListener('scroll', handleReposition, true);
     };
-  }, [open, query, filteredKeys.length, values.length]);
+  }, [open, query, filteredKeys.length, values.length, openUpward]);
 
   const toggleValue = (key: string) => {
     if (!key) return;
@@ -162,8 +184,8 @@ export default function SearchableMultiSelect<T = string>({
 
     return createPortal(
       <div
-        className="fixed z-[120] max-h-56 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg"
-        style={menuStyle}
+        className="fixed z-[120] overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg"
+        style={{ maxHeight: 224, ...menuStyle }}
         onMouseDown={event => event.preventDefault()}
       >
         {filteredKeys.length === 0 && !canCreate ? (
