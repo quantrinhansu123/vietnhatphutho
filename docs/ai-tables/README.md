@@ -68,6 +68,7 @@ Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...
 | `bao_cao_thang` | `/bao-cao-thang` (card Báo cáo tháng trong `/phieu-bao-cao`) + `/danh-sach-bao-cao-thang` | [bao_cao_thang.md](./bao_cao_thang.md) |
 | `lenh_cat_le` | `/lenh-cat-le` (card **Lệnh cắt lẻ** trong `/nha-may/kho`) | [lenh_cat_le.md](./lenh_cat_le.md) |
 | `phieu_chuyen_kho` | `/chuyen-kho` (card **Chuyển kho** trong `/nha-may/kho`) | [phieu_chuyen_kho.md](./phieu_chuyen_kho.md) |
+| `phieu_nhap_xuat_tong_hop` | `/phieu-nhap-xuat-tong-hop` và `/danh-sach-phieu-nhap-xuat-tong-hop` | [xuat_nhap_tong_hop.md](./xuat_nhap_tong_hop.md) |
 | *(tổng hợp)* | `/bang-dieu-khien` | [control_board.md](./control_board.md) |
 
 ## File dùng chung (chỉ khi cần)

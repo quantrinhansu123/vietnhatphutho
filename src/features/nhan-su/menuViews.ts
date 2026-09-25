@@ -41,7 +41,6 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
     label: 'Kinh doanh',
     children: [
       { tab: 'customers', label: 'Khách hàng' },
-      { tab: 'suppliers', label: 'Nhà cung cấp' },
       { tab: 'orders', label: 'Đơn đặt hàng' },
       { tab: 'shipping-orders', label: 'Lệnh giao / xuất hàng' },
       { tab: 'inventory-limits', label: 'Tồn kho tối thiểu - Tồn kho tối đa' },
@@ -91,6 +90,7 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
     label: 'Kho',
     children: [
       { tab: 'quan-ly-kho', label: 'Danh mục kho' },
+      { tab: 'suppliers', label: 'Nhà cung cấp' },
       { tab: 'materials', label: 'Kho nguyên vật liệu' },
       { tab: 'products', label: 'Kho thành phẩm' },
       { tab: 'warehouse-slip-vat-tu', label: 'Phiếu xuất nhập kho - Vật tư' },
@@ -101,6 +101,8 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
       { tab: 'warehouse-history', label: 'Lịch sử xuất nhập' },
       { tab: 'lenh-cat-le', label: 'Lệnh cắt lẻ' },
       { tab: 'chuyen-kho', label: 'Chuyển kho' },
+      { tab: 'phieu-nhap-xuat-tong-hop', label: 'Phiếu nhập xuất tổng hợp' },
+      { tab: 'phieu-nhap-xuat-tong-hop-list', label: 'Danh sách nhập xuất tổng hợp' },
       { tab: 'ton-kho', label: 'Tồn kho' }
     ]
   },

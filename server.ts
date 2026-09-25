@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { ProductionReport } from './src/types';
 import { normalizeStaffViewPermissions } from './src/features/nhan-su/menuViews';
+import { aggregateSlipOwnsCode, registerXuatNhapTongHopRoutes } from './src/features/xuat-nhap-tong-hop/registerRoutes';
 import { normalizeAssignablePositions } from './src/features/cai-dat-thoi-gian/staffAssignments';
 import { calculateProductConversionFormulas } from './src/utils/productConversionCalculation';
 import {
@@ -6210,7 +6211,7 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
 
   // Danh sách SP: mọi dòng nhap_kho TP/cắt lẻ/tái chế (không lọc ngày, không bắt buộc khớp ten_kho).
   const nhapKhoSelectFull =
-    'id, ma_sp, ten_sp, don_vi, ten_kho, loai_kho, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, ten_goc, do_li, do_li_dm, do_day_m, do_dai_m, mang, hang_phe, ma_amis, mo_ta_tem, created_at';
+    'id, ma_sp, ten_sp, don_vi, ten_kho, loai_kho, ma_may, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, ten_goc, do_li, do_li_dm, do_day_m, do_dai_m, mang, hang_phe, ma_amis, mo_ta_tem, created_at';
   const nhapKhoSelectCoeff =
     'ma_sp, ten_sp, don_vi, ten_kho, loai_kho, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, created_at';
   const fetchNhapKhoCatalog = async (selectCols: string) =>
@@ -6266,7 +6267,8 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
 
   const catalog = aggregateNhapKhoProducts(
     (nhapKhoRows || [])
-      .filter((row: Record<string, unknown>) => {
+      .filter((row: any) => {
+        if (String(row?.ma_may ?? '').trim()) return false;
         // strictKho: danh mục chỉ lấy dòng của đúng kho (theo ten_kho hoặc mã kho).
         if (!strictKho) return true;
         return nhapKhoSeedMatchesKho(
@@ -12683,6 +12685,12 @@ export function createApp() {
         return res.status(404).json({ error: 'Không tìm thấy phiếu cần xóa.' });
       }
 
+      if (await aggregateSlipOwnsCode(supabase, 'phieu_nhap_xuat_tong_hop', slipCode, isMissingTableError)) {
+        return res.status(400).json({
+          error: 'Phiếu này là một vế của phiếu nhập/xuất tổng hợp. Hủy hoặc sửa phiếu tổng hợp, không xóa lẻ một vế.'
+        });
+      }
+
       const affectedNvlCodes = new Set<string>();
       const { san_pham: spListDel } = await loaiKhoLists();
       existing.forEach(row => {
@@ -12732,30 +12740,42 @@ export function createApp() {
         SUPABASE_WAREHOUSE_MOVEMENTS_TABLE
       ];
       let deleted: any | null = null;
+      let deletedTable = '';
       for (const table of tables) {
         if (table !== SUPABASE_WAREHOUSE_MOVEMENTS_TABLE && !(await warehouseSplitTableExists(table))) {
           continue;
         }
         const { data, error } = await supabase
           .from(table)
-          .delete()
+          .select('id, ma_npl, loai_kho, ma_phieu')
           .eq('id', id)
-          .select('id, ma_npl, loai_kho')
           .maybeSingle();
 
         if (error) {
-          if (isMissingTableError(error)) continue;
-          console.error(`Supabase ${table} delete error:`, error);
+          if (isMissingTableError(error) || isMissingColumnError(error)) continue;
+          console.error(`Supabase ${table} delete lookup error:`, error);
           return res.status(500).json({ error: `Không thể xóa dòng phiếu. ${error.message}` });
         }
         if (data) {
           deleted = data;
+          deletedTable = table;
           break;
         }
       }
 
-      if (!deleted) {
+      if (!deleted || !deletedTable) {
         return res.status(404).json({ error: 'Không tìm thấy dòng phiếu cần xóa.' });
+      }
+
+      if (await aggregateSlipOwnsCode(supabase, 'phieu_nhap_xuat_tong_hop', String(deleted.ma_phieu || ''), isMissingTableError)) {
+        return res.status(400).json({
+          error: 'Dòng này thuộc phiếu nhập/xuất tổng hợp. Hủy hoặc sửa phiếu tổng hợp, không xóa lẻ một vế.'
+        });
+      }
+
+      const { error: lineDeleteError } = await supabase.from(deletedTable).delete().eq('id', id);
+      if (lineDeleteError) {
+        return res.status(500).json({ error: `Không thể xóa dòng phiếu. ${lineDeleteError.message}` });
       }
 
       if (deleted.ma_npl && (await slipLoaiKhoCategory(deleted.loai_kho)) !== 'san_pham') {
@@ -16135,6 +16155,8 @@ async function loadKiemKhoLiveTongHopForDot(
         const code = String(row.ma_npl ?? '').trim();
         if (!code) continue;
         const rowKho = String(row.ten_kho ?? '').trim();
+        const rowMay = String(row.may ?? '').trim();
+        if (!rowKho && rowMay) continue;
         if (tenKho && rowKho !== tenKho) continue;
         const key = `${code}||${rowKho}`;
         let balance = balances.get(key);
@@ -16246,7 +16268,7 @@ async function loadKiemKhoLiveTongHopForDot(
       }
 
       const nhapKhoRawFull =
-        'id, ma_sp, ten_sp, don_vi, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, ten_goc, do_li, do_li_dm, do_day_m, do_dai_m, mang, hang_phe, ma_amis, mo_ta_tem, loai_kho, ten_kho, created_at';
+        'id, ma_sp, ten_sp, don_vi, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, ten_goc, do_li, do_li_dm, do_day_m, do_dai_m, mang, hang_phe, ma_amis, mo_ta_tem, loai_kho, ten_kho, ma_may, created_at';
       const nhapKhoRawBase =
         'id, ma_sp, ten_sp, don_vi, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, loai_kho, ten_kho, created_at';
       const buildNhapKhoRawQuery = (selectCols: string) => {
@@ -16279,11 +16301,13 @@ async function loadKiemKhoLiveTongHopForDot(
         return res.status(500).json({ error: `Không thể tải sổ nhập kho. ${error.message}` });
       }
 
-      let records = Array.isArray(data) ? data : [];
+      let records = (Array.isArray(data) ? data : []).filter(
+        (row: any) => !String(row?.ma_may ?? '').trim()
+      );
       if (keyword) {
-        records = records.filter(row => {
-          const ma = String((row as Record<string, unknown>).ma_sp ?? '').toLowerCase();
-          const ten = String((row as Record<string, unknown>).ten_sp ?? '').toLowerCase();
+        records = records.filter((row: any) => {
+          const ma = String(row.ma_sp ?? '').toLowerCase();
+          const ten = String(row.ten_sp ?? '').toLowerCase();
           return ma.includes(keyword) || ten.includes(keyword);
         });
       }
@@ -17502,6 +17526,36 @@ async function loadKiemKhoLiveTongHopForDot(
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi hủy phiếu chuyển kho.' });
     }
+  });
+
+  registerXuatNhapTongHopRoutes(app, {
+    supabase,
+    tables: {
+      header: 'phieu_nhap_xuat_tong_hop',
+      warehouses: SUPABASE_QUAN_LY_KHO_TABLE,
+      suppliers: SUPABASE_SUPPLIERS_TABLE,
+      machines: SUPABASE_MACHINES_TABLE,
+      materials: SUPABASE_MATERIALS_TABLE,
+      nhapKho: SUPABASE_NHAP_KHO_TABLE,
+      history: SUPABASE_WAREHOUSE_HISTORY_TABLE
+    },
+    parseDate: parseWarehouseSlipDate,
+    isVatTuKho,
+    resolveMaKho,
+    buildSlipRecords: buildWarehouseSlipInsertRecords,
+    insertSlipRecords: insertWarehouseSlipRecordsResilient,
+    deleteSlip: async code => {
+      const result = await deleteWarehouseSlipEverywhere(code);
+      return { error: result.error || null };
+    },
+    writeTable: resolveWarehouseWriteTable,
+    readTables: resolveWarehouseReadTables,
+    insertHistory: insertWarehouseSlipHistory,
+    insertNhapKho: insertNhapKhoCatalogRows,
+    isMissingTable: isMissingTableError,
+    isMissingColumn: isMissingColumnError,
+    newSlipCode: generateWarehouseSlipCode,
+    normalizeKho: normalizeKhoLabel
   });
 
   app.get('/api/ton-kho/chi-tiet', async (req, res) => {

@@ -71,6 +71,7 @@ import { MaterialsInventoryPanel } from './features/kho-nvl';
 import { WarehouseSlipPanel, WarehouseHistoryPanel } from './features/phieu-xuat-nhap-kho';
 import { LenCatLePanel } from './features/lenh-cat-le';
 import { ChuyenKhoPanel } from './features/chuyen-kho';
+import { TongHopListPanel, TongHopPanel } from './features/xuat-nhap-tong-hop';
 import { CustomersPanel } from './features/khach-hang';
 import { SuppliersPanel } from './features/nha-cung-cap';
 import { ShippingOrdersPanel } from './features/lenh-xuat-hang';
@@ -793,7 +794,7 @@ export default function App() {
             ? 'p-2 md:p-4'
             : activeTab === 'machine-nvl-report' || activeTab === 'orders'
               ? 'overflow-hidden p-0'
-              : activeTab === 'warehouse-slip' || activeTab === 'warehouse-history'
+              : activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' || activeTab === 'phieu-nhap-xuat-tong-hop' || activeTab === 'phieu-nhap-xuat-tong-hop-list'
                 ? 'p-2 md:p-3 pb-4'
                 : activeTab === 'acceptance-report' || activeTab === 'acceptance-report-list'
                   ? 'p-2 md:p-4 pb-4'
@@ -1704,6 +1705,30 @@ export default function App() {
               >
                 <ChuyenKhoPanel onBack={() => goBack('factory-kho')} />
               </motion.div>
+            ) : activeTab === 'phieu-nhap-xuat-tong-hop' ? (
+              <motion.div
+                key="phieu-nhap-xuat-tong-hop"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <TongHopPanel onBack={() => goBack('factory-kho')} onOpenList={() => navigateToTab('phieu-nhap-xuat-tong-hop-list')} />
+              </motion.div>
+            ) : activeTab === 'phieu-nhap-xuat-tong-hop-list' ? (
+              <motion.div
+                key="phieu-nhap-xuat-tong-hop-list"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <TongHopListPanel
+                  onBack={() => goBack('factory-kho')}
+                  onCreate={() => navigateToTab('phieu-nhap-xuat-tong-hop')}
+                  onEdit={() => navigateToTab('phieu-nhap-xuat-tong-hop')}
+                />
+              </motion.div>
             ) : activeTab === 'orders' ? (
               <motion.div
                 key="orders"
@@ -1733,7 +1758,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <SuppliersPanel onBack={() => goBack('business')} />
+                <SuppliersPanel onBack={() => goBack('factory-kho')} />
               </motion.div>
             ) : activeTab === 'shipping-orders' ? (
               <motion.div

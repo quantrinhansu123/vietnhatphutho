@@ -15,7 +15,7 @@ TP `kho_thanh_pham` | cắt lẻ `kho_cat_le` | tái chế `kho_tai_che`; mã c�
 - Danh sách SP: gộp theo `ma_sp` + `ten_sp` + `trong_luong_kg_mot_sp|so_m2_mot_sp|so_m_dai_mot_sp`. Cùng mã và tên nhưng khác quy đổi là hai dòng.
 - Tồn đầu / Nhập / Xuất / Tồn: tính từ phiếu `phieu_xuat_nhap_kho` (`loai_kho=san_pham`)
 
-Cột: `ma_sp`, `ten_sp`, `don_vi`, `trong_luong_kg_mot_sp`, `so_m2_mot_sp`, `so_m_dai_mot_sp` (hệ số **1 SP**), `loai_kho` (không default), `ten_kho`, `mo_ta_tem` (mô tả tem đơn miền nam, migration `supabase-nhap-kho-mo-ta-tem.sql`).
+Cột: `ma_sp`, `ten_sp`, `don_vi`, `trong_luong_kg_mot_sp`, `so_m2_mot_sp`, `so_m_dai_mot_sp` (hệ số **1 SP**), `loai_kho` (không default), `ten_kho`, `ma_may`, `ten_may` (`supabase-nhap-kho-ma-may.sql`: row kho `ma_may` trống, row máy `ma_may` có giá trị và `ten_kho=''`), `mo_ta_tem`. Báo cáo kho bỏ dòng có `ma_may`.
 
 SL và tổng kg / m² / mét dài của dòng phiếu nằm ở `phieu_xuat_nhap_kho`. `nhap_kho` không lưu `so_luong`, `trong_luong_kg`, `so_m2`, `so_m_dai`.
 
