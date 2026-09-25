@@ -576,7 +576,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
   const handleComplete = async (id: string) => {
     if (
       !window.confirm(
-        `Duyệt lệnh này? Hệ thống xuất ${KHO_CAT_LE} sản phẩm đang có tồn, nhập ${KHO_THANH_PHAM}. Phần còn lại từ 2m nhập lại ${KHO_CAT_LE}. Dưới 2m nhập thẳng ${KHO_TAI_CHE}, không xuất. Sau khi duyệt không sửa được.`
+        `Duyệt lệnh này? Hệ thống xuất ${KHO_CAT_LE} sản phẩm đang có tồn, nhập ${KHO_THANH_PHAM}. Mọi phần còn lại nhập lại ${KHO_CAT_LE}. Sau khi duyệt không sửa được.`
       )
     ) {
       return;
@@ -593,7 +593,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
       const record = (data as { record?: CatLeLenh }).record;
       showAppToast(
         (data as { di_tai_che?: boolean }).di_tai_che
-          ? 'Đã duyệt — phần dưới 2m nhập thẳng Kho tái chế, không xuất.'
+          ? 'Đã duyệt — phần còn lại nhập lại Kho cắt lẻ.'
           : 'Đã duyệt và ghi phiếu xuất / nhập.',
         'success'
       );
@@ -640,7 +640,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         <div>
           <h2 className="text-lg font-black text-zinc-900">Lệnh cắt lẻ</h2>
           <p className="text-xs font-semibold text-zinc-500">
-            Một lệnh nhiều sản phẩm. Lưu và sửa không ghi kho — bấm Duyệt mới xuất {KHO_CAT_LE} sản phẩm đang có tồn, nhập {KHO_THANH_PHAM}. Phần còn lại từ 2m nhập lại {KHO_CAT_LE}. Dưới 2m nhập thẳng {KHO_TAI_CHE}, không xuất. Sau khi duyệt không sửa được.
+            Một lệnh nhiều sản phẩm. Lưu và sửa không ghi kho — bấm Duyệt mới xuất {KHO_CAT_LE} sản phẩm đang có tồn, nhập {KHO_THANH_PHAM}. Mọi phần còn lại nhập lại {KHO_CAT_LE}. Sau khi duyệt không sửa được.
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -855,7 +855,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
             <div className="flex shrink-0 items-center gap-2 border-b bg-white px-4 py-3">
               <h3 className="text-sm font-black text-zinc-900">{editingId ? 'Sửa lệnh cắt lẻ' : 'Lập lệnh cắt lẻ'}</h3>
               <span className="text-xs font-semibold text-zinc-500">
-                {KHO_CAT_LE} → {KHO_THANH_PHAM} (+ thừa / tái chế)
+                {KHO_CAT_LE} → {KHO_THANH_PHAM} (+ thừa nhập lại {KHO_CAT_LE})
               </span>
               <button onClick={() => setShowModal(false)} className="ml-auto rounded border p-2 text-zinc-600">
                 <X size={14} />
@@ -1072,7 +1072,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                                 <td colSpan={9} className="px-2 py-1.5 text-[12px] font-semibold text-zinc-800">
                                   <span className="font-black text-amber-800">Còn lại</span>
                                   {' · '}
-                                  {confirmed.di_tai_che ? KHO_TAI_CHE : KHO_CAT_LE}
+                                  {KHO_CAT_LE}
                                   {' · '}
                                   <span className="font-mono font-bold">{confirmed.san_pham_nguon.ma_sp}</span>
                                   {' · '}

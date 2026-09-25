@@ -106,6 +106,7 @@ const SUPABASE_CUSTOMER_PAYMENTS_TABLE =
   process.env.SUPABASE_CUSTOMER_PAYMENTS_TABLE || 'thu_tien_khach_hang';
 const SUPABASE_ORDERS_TABLE = process.env.SUPABASE_ORDERS_TABLE || 'don_hang';
 const SUPABASE_CUSTOMERS_TABLE = process.env.SUPABASE_CUSTOMERS_TABLE || 'khach_hang';
+const SUPABASE_SUPPLIERS_TABLE = process.env.SUPABASE_SUPPLIERS_TABLE || 'nha_cung_cap';
 const SUPABASE_SHIPPING_ORDERS_TABLE = process.env.SUPABASE_SHIPPING_ORDERS_TABLE || 'lenh_xuat_hang';
 const SUPABASE_SETTINGS_TABLE = process.env.SUPABASE_SETTINGS_TABLE || 'cai_dat_thoi_gian';
 const SUPABASE_PRODUCTION_ORDERS_TABLE = process.env.SUPABASE_PRODUCTION_ORDERS_TABLE || 'lenh_sx';
@@ -128,7 +129,7 @@ const SUPABASE_WAREHOUSE_HISTORY_TABLE =
   process.env.SUPABASE_WAREHOUSE_HISTORY_TABLE || 'phieu_xuat_nhap_kho_lich_su';
 const SUPABASE_NHAP_KHO_TABLE = process.env.SUPABASE_NHAP_KHO_TABLE || 'nhap_kho';
 const NHAP_KHO_LOAI_THANH_PHAM = 'thanh_pham';
-/** Lệnh cắt lẻ: cuộn mẹ kho cắt lẻ -> SP con kho TP + thừa (tái chế nếu < 2m). */
+/** Lệnh cắt lẻ: cuộn mẹ kho cắt lẻ -> SP con kho TP + thừa nhập lại kho cắt lẻ. */
 const SUPABASE_LENH_CAT_LE_TABLE = process.env.SUPABASE_LENH_CAT_LE_TABLE || 'lenh_cat_le';
 /** Cột thông số ghép tên cắt lẻ trên nhap_kho (nullable với DB chưa migrate). */
 const NHAP_KHO_CAT_LE_SPEC_COLUMNS = [
@@ -431,6 +432,7 @@ if (useSupabase) {
     staff: SUPABASE_STAFF_TABLE,
     orders: SUPABASE_ORDERS_TABLE,
     customers: SUPABASE_CUSTOMERS_TABLE,
+    suppliers: SUPABASE_SUPPLIERS_TABLE,
     shippingOrders: SUPABASE_SHIPPING_ORDERS_TABLE,
     settings: SUPABASE_SETTINGS_TABLE,
     productionOrders: SUPABASE_PRODUCTION_ORDERS_TABLE,
@@ -1654,6 +1656,19 @@ function customerWriteError(error: { code?: string; message?: string }, table: s
     return 'Mã khách hàng đã tồn tại trong danh sách.';
   }
   return `Không thể lưu khách hàng vào ${table}. ${error.message || ''}`.trim();
+}
+
+function supplierWriteError(error: { code?: string; message?: string }, table: string) {
+  if (isMissingTableError(error)) {
+    return `Bảng ${table} chưa tồn tại. Hãy chạy file supabase-nha-cung-cap.sql trong Supabase SQL Editor.`;
+  }
+  if (isMissingColumnError(error)) {
+    return `Bảng ${table} đang thiếu cột. Hãy chạy lại file supabase-nha-cung-cap.sql. ${error.message || ''}`.trim();
+  }
+  if (error.code === '23505') {
+    return 'Mã nhà cung cấp đã tồn tại trong danh sách.';
+  }
+  return `Không thể lưu nhà cung cấp vào ${table}. ${error.message || ''}`.trim();
 }
 
 function parseVehicleDocuments(value: unknown) {
@@ -11362,6 +11377,295 @@ export function createApp() {
     }
   });
 
+  // ---- Nhà cung cấp (nha_cung_cap) — CRUD + import batch, bám mẫu khach_hang ----
+  function parseSupplierBoolean(value: unknown) {
+    if (typeof value === 'boolean') return value;
+    return ['true', '1', 'co', 'có', 'x', 'yes'].includes(String(value ?? '').trim().toLowerCase());
+  }
+
+  function buildSupplierOptionalFields(source: Record<string, unknown>): Record<string, unknown> {
+    const noRaw = pickRowField(source, ['so_tien_no', 'so_tien_con_no', 'cong_no', 'debt'], '');
+    const normalizedNo = noRaw ? Number(String(noRaw).replace(/\./g, '').replace(',', '.')) : 0;
+    const normalizePhoneList = (value: string) =>
+      value
+        .split(/[,;\n]+/)
+        .map(phone => phone.trim())
+        .filter(Boolean)
+        .join(', ');
+    return {
+      dia_chi: pickRowField(source, ['dia_chi', 'address'], '') || null,
+      so_tien_no: Number.isFinite(normalizedNo) ? normalizedNo : 0,
+      ma_so_thue_cccd:
+        pickRowField(source, ['ma_so_thue_cccd', 'ma_so_thue', 'cccd', 'tax_code'], '') || null,
+      rui_ro_hoa_don: pickRowField(source, ['rui_ro_hoa_don', 'rui_ro', 'risk'], '') || null,
+      van_ban_tham_chieu:
+        pickRowField(source, ['van_ban_tham_chieu', 'van_ban', 'tham_chieu', 'reference'], '') || null,
+      dien_thoai:
+        normalizePhoneList(pickRowField(source, ['dien_thoai', 'so_dien_thoai', 'phone', 'sdt'], '')) || null,
+      la_doi_tuong_noi_bo: parseSupplierBoolean(
+        source.la_doi_tuong_noi_bo ?? source.is_internal ?? source.la_doi_tuong
+      ),
+      la_tong_cong_ty_chi_nhanh: parseSupplierBoolean(
+        source.la_tong_cong_ty_chi_nhanh ?? source.is_group ?? source.tong_cong_ty
+      )
+    };
+  }
+
+  function parseSupplierBatchRecord(item: unknown): { error: string } | { record: Record<string, unknown> } {
+    const source = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+    const name = pickRowField(source, ['ten_nha_cung_cap', 'ten_ncc', 'ten', 'name'], '');
+    const code = pickRowField(source, ['ma_nha_cung_cap', 'ma_ncc', 'ma', 'code'], '');
+    if (!name) return { error: 'Thiếu tên nhà cung cấp.' };
+    if (!code) return { error: 'Thiếu mã nhà cung cấp.' };
+    return {
+      record: {
+        ma_nha_cung_cap: code,
+        ten_nha_cung_cap: name,
+        ...buildSupplierOptionalFields(source)
+      }
+    };
+  }
+
+  app.get('/api/nha-cung-cap', async (req, res) => {
+    if (!supabase) {
+      return res.json({ suppliers: [], total: 0, source: 'local' });
+    }
+
+    const PAGE_CHUNK = 1000;
+    const MAX_PAGES = 100;
+    const searchText = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const escapeLike = (value: string) => value.replace(/[%_\\]/g, char => `\\${char}`);
+    const applySearchFilter = (query: any) => {
+      if (!searchText) return query;
+      const pattern = `%${escapeLike(searchText).replace(/,/g, '')}%`;
+      if (pattern === '%%') return query;
+      return query.or(
+        [
+          `ma_nha_cung_cap.ilike.${pattern}`,
+          `ten_nha_cung_cap.ilike.${pattern}`,
+          `dia_chi.ilike.${pattern}`,
+          `ma_so_thue_cccd.ilike.${pattern}`,
+          `rui_ro_hoa_don.ilike.${pattern}`,
+          `van_ban_tham_chieu.ilike.${pattern}`,
+          `dien_thoai.ilike.${pattern}`
+        ].join(',')
+      );
+    };
+    const fetchChunk = async (from: number, to: number): Promise<{ rows: any[] }> => {
+      const ordered = await applySearchFilter(
+        supabase
+          .from(SUPABASE_SUPPLIERS_TABLE)
+          .select('*')
+          .order('ten_nha_cung_cap', { ascending: true })
+      ).range(from, to);
+      if (!ordered.error) return { rows: ordered.data || [] };
+      if (!isMissingColumnError(ordered.error)) throw ordered.error;
+      const fallback = await applySearchFilter(
+        supabase.from(SUPABASE_SUPPLIERS_TABLE).select('*')
+      ).range(from, to);
+      if (fallback.error) throw fallback.error;
+      return { rows: fallback.data || [] };
+    };
+
+    try {
+      const hasPagingParams = req.query.page !== undefined || req.query.pageSize !== undefined;
+      if (hasPagingParams) {
+        const page = Math.max(1, Number(req.query.page) || 1);
+        const pageSize = Math.min(1000, Math.max(1, Number(req.query.pageSize) || 200));
+        const countQuery = await applySearchFilter(
+          supabase.from(SUPABASE_SUPPLIERS_TABLE).select('ma_nha_cung_cap', { count: 'exact', head: true })
+        );
+        if (countQuery.error) throw countQuery.error;
+        const { rows } = await fetchChunk((page - 1) * pageSize, page * pageSize - 1);
+        return res.json({
+          suppliers: rows,
+          total: countQuery.count ?? rows.length,
+          page,
+          pageSize,
+          source: 'supabase'
+        });
+      }
+
+      const all: any[] = [];
+      for (let pageIndex = 0; pageIndex < MAX_PAGES; pageIndex += 1) {
+        const { rows } = await fetchChunk(pageIndex * PAGE_CHUNK, (pageIndex + 1) * PAGE_CHUNK - 1);
+        all.push(...rows);
+        if (rows.length < PAGE_CHUNK) break;
+      }
+      return res.json({
+        suppliers: all,
+        total: all.length,
+        source: 'supabase'
+      });
+    } catch (err: any) {
+      console.error('Supabase nha_cung_cap query error:', err);
+      return res.status(500).json({
+        error: `Không thể tải nhà cung cấp từ ${SUPABASE_SUPPLIERS_TABLE}. ${err.message || ''}`.trim()
+      });
+    }
+  });
+
+  app.post('/api/nha-cung-cap', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+
+    try {
+      const source = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const name = pickRowField(source, ['ten_nha_cung_cap', 'ten_ncc', 'ten', 'name'], '');
+      let code = pickRowField(source, ['ma_nha_cung_cap', 'ma_ncc', 'ma', 'code'], '');
+      if (!name) return res.status(400).json({ error: 'Vui lòng nhập tên nhà cung cấp.' });
+
+      if (!code) {
+        const existing = await supabase
+          .from(SUPABASE_SUPPLIERS_TABLE)
+          .select('ma_nha_cung_cap')
+          .order('ma_nha_cung_cap', { ascending: false })
+          .limit(200);
+        let max = 0;
+        for (const row of existing.data || []) {
+          const raw = String((row as { ma_nha_cung_cap?: unknown }).ma_nha_cung_cap || '').trim().toUpperCase();
+          const match = raw.match(/^NCC(\d+)$/);
+          if (!match) continue;
+          const num = Number(match[1]);
+          if (Number.isFinite(num) && num > max) max = num;
+        }
+        const next = max + 1;
+        code = `NCC${String(next).padStart(Math.max(3, String(next).length), '0')}`;
+      }
+
+      const record: Record<string, unknown> = {
+        ma_nha_cung_cap: code,
+        ten_nha_cung_cap: name,
+        ...buildSupplierOptionalFields(source)
+      };
+
+      const { data, error } = await supabase
+        .from(SUPABASE_SUPPLIERS_TABLE)
+        .insert(record)
+        .select('*')
+        .single();
+
+      if (error) {
+        return res.status(500).json({ error: supplierWriteError(error, SUPABASE_SUPPLIERS_TABLE) });
+      }
+
+      return res.status(201).json({ success: true, supplier: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi thêm nhà cung cấp.' });
+    }
+  });
+
+  app.post('/api/nha-cung-cap/import-batch', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+
+    try {
+      const createsInput = Array.isArray(req.body?.creates) ? req.body.creates : [];
+      const updatesInput = Array.isArray(req.body?.updates) ? req.body.updates : [];
+      if (createsInput.length === 0 && updatesInput.length === 0) {
+        return res.status(400).json({ error: 'Không có dòng nhà cung cấp hợp lệ để import.' });
+      }
+      if (createsInput.length + updatesInput.length > 1000) {
+        return res.status(400).json({ error: 'Mỗi batch tối đa 1000 dòng (client gửi 200 dòng/batch).' });
+      }
+
+      const parseBatch = (items: unknown[]) => {
+        const records: Record<string, unknown>[] = [];
+        for (let index = 0; index < items.length; index += 1) {
+          const parsed = parseSupplierBatchRecord(items[index]);
+          if ('error' in parsed) {
+            return { error: `Dòng batch ${index + 1}: ${parsed.error}` } as const;
+          }
+          records.push(parsed.record);
+        }
+        return { records, error: null } as const;
+      };
+
+      const parsedCreates = parseBatch(createsInput);
+      if (parsedCreates.error) return res.status(400).json({ error: parsedCreates.error });
+      const parsedUpdates = parseBatch(updatesInput);
+      if (parsedUpdates.error) return res.status(400).json({ error: parsedUpdates.error });
+
+      let createdCount = 0;
+      if (parsedCreates.records.length > 0) {
+        const { data, error } = await supabase
+          .from(SUPABASE_SUPPLIERS_TABLE)
+          .insert(parsedCreates.records)
+          .select('ma_nha_cung_cap');
+        if (error) {
+          console.error('Supabase nha_cung_cap batch insert error:', error);
+          return res.status(500).json({ error: supplierWriteError(error, SUPABASE_SUPPLIERS_TABLE) });
+        }
+        createdCount = data?.length ?? parsedCreates.records.length;
+      }
+
+      let updatedCount = 0;
+      if (parsedUpdates.records.length > 0) {
+        const { data, error } = await supabase
+          .from(SUPABASE_SUPPLIERS_TABLE)
+          .upsert(parsedUpdates.records, { onConflict: 'ma_nha_cung_cap' })
+          .select('ma_nha_cung_cap');
+        if (error) {
+          console.error('Supabase nha_cung_cap batch update error:', error);
+          return res.status(500).json({ error: supplierWriteError(error, SUPABASE_SUPPLIERS_TABLE) });
+        }
+        updatedCount = data?.length ?? parsedUpdates.records.length;
+      }
+
+      return res.status(200).json({ success: true, createdCount, updatedCount });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi import hàng loạt nhà cung cấp.' });
+    }
+  });
+
+  app.put('/api/nha-cung-cap/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID nhà cung cấp.' });
+
+    try {
+      const source = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+      const name = pickRowField(source, ['ten_nha_cung_cap', 'ten_ncc', 'ten', 'name'], '');
+      const code = pickRowField(source, ['ma_nha_cung_cap', 'ma_ncc', 'ma', 'code'], '');
+      if (!name) return res.status(400).json({ error: 'Vui lòng nhập tên nhà cung cấp.' });
+
+      const record: Record<string, unknown> = {
+        ...(code ? { ma_nha_cung_cap: code } : {}),
+        ten_nha_cung_cap: name,
+        ...buildSupplierOptionalFields(source)
+      };
+
+      const { data, error } = await supabase
+        .from(SUPABASE_SUPPLIERS_TABLE)
+        .update(record)
+        .eq('ma_nha_cung_cap', id)
+        .select('*')
+        .single();
+
+      if (error) {
+        return res.status(500).json({ error: supplierWriteError(error, SUPABASE_SUPPLIERS_TABLE) });
+      }
+
+      return res.json({ success: true, supplier: data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật nhà cung cấp.' });
+    }
+  });
+
+  app.delete('/api/nha-cung-cap/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID nhà cung cấp.' });
+
+    try {
+      const { error } = await supabase.from(SUPABASE_SUPPLIERS_TABLE).delete().eq('ma_nha_cung_cap', id);
+      if (error) {
+        return res.status(500).json({ error: supplierWriteError(error, SUPABASE_SUPPLIERS_TABLE) });
+      }
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa nhà cung cấp.' });
+    }
+  });
+
   app.get('/api/lenh-xuat-hang', async (_req, res) => {
     if (!supabase) {
       return res.json({ orders: [], total: 0, source: 'local' });
@@ -16047,7 +16351,7 @@ async function loadKiemKhoLiveTongHopForDot(
   /* ================= Lệnh cắt lẻ =================
    * Một lệnh, nhiều SP trong JSON san_pham.
    * Tạo mới: xuất Kho cắt lẻ, nhập Kho thành phẩm, nhập phần còn lại lại Kho cắt lẻ.
-   * Phần còn lại dưới 2m thêm phiếu chuyển kho Kho tái chế.
+   * Phần còn lại nhập lại kho cắt lẻ (không nhập kho tái chế).
    */
   const LENH_CAT_LE_SELECT =
     'id, ma_lenh, ngay_cat, trang_thai, kho_nguon, kho_dich, kho_tai_che, san_pham, ma_phieu_xuat, ma_phieu_nhap_tp, ma_phieu_nhap_thua, ma_phieu_chuyen_tai_che, ma_phieu_xuat_tai_che, ma_phieu_nhap_tai_che, nguoi_thuc_hien, nguoi_lap, ghi_chu, created_at, updated_at';
@@ -16374,8 +16678,7 @@ async function loadKiemKhoLiveTongHopForDot(
 
   /**
    * Ghi kho cho lệnh đã lưu JSON san_pham:
-   * xuất mẹ (kho cắt lẻ) + nhập đích (kho thành phẩm) + nhập phần còn lại (kho cắt lẻ).
-   * Phần còn lại dưới 2m: thêm phiếu chuyển kho tái chế (xuất cắt lẻ + nhập tái chế).
+   * xuất mẹ (kho cắt lẻ) + nhập đích (kho thành phẩm) + nhập mọi phần còn lại lại kho cắt lẻ.
    */
   async function executeLenhCatLe(
     lenh: any,
@@ -16416,15 +16719,13 @@ async function loadKiemKhoLiveTongHopForDot(
     const maLenh = String(lenh.ma_lenh || '').trim();
     const lyDo = `Cắt lẻ ${maLenh}`.trim();
     const khoDich = String(lenh.kho_dich || KHO_THANH_PHAM);
-    const khoTaiChe = String(lenh.kho_tai_che || KHO_TAI_CHE);
     const maKhoNguonCat = await resolveMaKho(khoNguon);
     const maKhoDichCat = await resolveMaKho(khoDich);
-    const maKhoTaiCheCat = await resolveMaKho(khoTaiChe);
     const usedCodes = new Set<string>();
     const maXuat = takeSlipCode('xuat', usedCodes);
     const maNhapTp = takeSlipCode('nhap', usedCodes);
-    const conLaiOLai = lines.filter(line => line.san_pham_cat_2 && !line.di_tai_che);
-    const taiChe = lines.filter(line => line.san_pham_cat_2 && line.di_tai_che);
+    const conLaiOLai = lines.filter(line => line.san_pham_cat_2);
+    const sanPhamVeKhoCatLe = lines.map(line => ({ ...line, di_tai_che: false }));
     const maNhapThua = conLaiOLai.length > 0 ? takeSlipCode('nhap', usedCodes) : '';
     const written: string[] = [];
     const rollback = async () => {
@@ -16506,61 +16807,17 @@ async function loadKiemKhoLiveTongHopForDot(
       ...lines.map(line => catLeCatalogRow(line, 'cat_1', khoDich, maKhoDichCat)),
       ...conLaiOLai.map(line => catLeCatalogRow(line, 'cat_2', khoNguon, maKhoNguonCat))
     ]);
-    let maNhapCk = '';
-    if (taiChe.length > 0) {
-      maNhapCk = takeSlipCode('nhap', usedCodes);
-      const ckLines = taiChe.map(line => ({
-        ma_sp: line.san_pham_nguon.ma_sp,
-        ten_sp: line.san_pham_cat_2?.ten_sp || '',
-        don_vi: line.san_pham_nguon.don_vi,
-        nhom_vthh: line.san_pham_nguon.nhom_vthh,
-        so_luong: line.san_pham_nguon.so_luong,
-        kg_mot_sp: line.san_pham_cat_2?.kg ?? null,
-        m2_mot_sp: line.san_pham_cat_2?.m2 ?? null,
-        m_dai_mot_sp: line.san_pham_cat_2?.m_dai ?? null,
-        ten_goc: line.san_pham_nguon.ten_goc || null,
-        do_li: line.san_pham_cat_2?.do_li || null,
-        do_li_dm: line.san_pham_cat_2?.do_li_dm || null,
-        do_day_m: line.san_pham_cat_2?.do_day_m || null,
-        do_dai_m: line.san_pham_cat_2?.do_dai_m || null,
-        mang: line.san_pham_nguon.mang || null,
-        hang_phe: line.san_pham_nguon.hang_phe || null,
-        ma_amis: line.san_pham_nguon.ma_amis || null
-      }));
-      const nhapCk = buildWarehouseSlipInsertRecords(
-        {
-          ...header,
-          loaiPhieu: 'nhap',
-          loaiKho: 'san_pham',
-          maKho: maKhoTaiCheCat,
-          lyDo,
-          ghiChu: `Lệnh cắt ${maLenh} — phần còn lại dưới 2m nhập thẳng ${khoTaiChe}`,
-          tenKho: khoTaiChe,
-          loaiNhapKho: 'Cắt lẻ',
-          items: buildChuyenKhoSlipItems(ckLines, '')
-        },
-        maNhapCk
-      );
-      const c2 = await insertWarehouseSlipRecordsResilient(tableNhap, stripChuyenKhoCa(nhapCk));
-      if (c2.error) {
-        await rollback();
-        return { ok: false, status: 500, error: `Không ghi được phiếu nhập tái chế. ${c2.error.message}` };
-      }
-      written.push(maNhapCk);
-      await insertNhapKhoCatalogRows(
-        taiChe.map(line => catLeCatalogRow(line, 'cat_2', khoTaiChe, maKhoTaiCheCat))
-      );
-    }
     const { data: updated, error: updateError } = await saveLenhCatLe(
       'update',
       {
         trang_thai: 'hoan_thanh',
+        san_pham: sanPhamVeKhoCatLe,
         ma_phieu_xuat: maXuat,
         ma_phieu_nhap_tp: maNhapTp,
         ma_phieu_nhap_thua: maNhapThua || null,
         ma_phieu_chuyen_tai_che: null,
         ma_phieu_xuat_tai_che: null,
-        ma_phieu_nhap_tai_che: maNhapCk || null
+        ma_phieu_nhap_tai_che: null
       },
       String(lenh.id || '')
     );
@@ -16574,7 +16831,7 @@ async function loadKiemKhoLiveTongHopForDot(
           ma_phieu_nhap_tp: maNhapTp,
           ma_phieu_nhap_thua: maNhapThua || null,
           ma_phieu_chuyen_tai_che: null,
-          ma_phieu_nhap_tai_che: maNhapCk || null
+          ma_phieu_nhap_tai_che: null
         }
       };
     }
@@ -16587,8 +16844,8 @@ async function loadKiemKhoLiveTongHopForDot(
         ma_phieu_nhap_tp: maNhapTp,
         ma_phieu_nhap_thua: maNhapThua || null,
         ma_phieu_chuyen_tai_che: null,
-        ma_phieu_nhap_tai_che: maNhapCk || null,
-        di_tai_che: taiChe.length > 0,
+        ma_phieu_nhap_tai_che: null,
+        di_tai_che: false,
         ...(catResult.saved ? {} : { warning: catResult.error || 'Không ghi được catalog nhap_kho.' })
       }
     };
