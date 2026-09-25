@@ -396,7 +396,7 @@ export function SearchableSelect({
         <div
           ref={menuRef}
           className="fixed z-[200] flex flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg"
-          style={{ ...menuStyle, zIndex: 200 }}
+          style={{ ...menuStyle, zIndex: 9999 }}
         >
           {comboboxSearchable ? (
             <div className="border-b border-zinc-100 bg-white p-2">
@@ -417,7 +417,7 @@ export function SearchableSelect({
               </div>
             </div>
           ) : null}
-          <div className="min-h-0 flex-1 overflow-y-auto py-1">
+          <div className="min-h-0 flex-1 overflow-y-auto py-1 pb-2">
             {allowEmpty && !query.trim() ? (
               <button
                 type="button"
