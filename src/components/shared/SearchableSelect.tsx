@@ -236,9 +236,9 @@ export function SearchableSelect({
     const left = Math.min(Math.max(margin, rect.left), Math.max(margin, viewportWidth - width - margin));
     const isDesktop = window.matchMedia('(min-width: 1280px)').matches;
     const viewportHeight = document.documentElement.clientHeight;
-    const preferredHeight = 208;
     const spaceBelow = Math.max(0, viewportHeight - rect.bottom - margin);
     const spaceAbove = Math.max(0, rect.top - margin);
+    const preferredHeight = openUpward ? spaceAbove : 208;
 
     if (openUpward && spaceAbove > 0) {
       setMenuStyle({
@@ -395,8 +395,8 @@ export function SearchableSelect({
       return createPortal(
         <div
           ref={menuRef}
-          className="fixed z-[200] overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg"
-          style={menuStyle}
+          className="fixed z-[200] flex flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg"
+          style={{ ...menuStyle, zIndex: 9999 }}
         >
           {comboboxSearchable ? (
             <div className="border-b border-zinc-100 bg-white p-2">
@@ -417,7 +417,7 @@ export function SearchableSelect({
               </div>
             </div>
           ) : null}
-          <div className={`${comboboxSearchable ? 'max-h-44' : 'max-h-52'} overflow-y-auto py-1`}>
+          <div className="min-h-0 flex-1 overflow-y-auto py-1 pb-2">
             {allowEmpty && !query.trim() ? (
               <button
                 type="button"

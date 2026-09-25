@@ -438,13 +438,6 @@ export const BUSINESS_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'customers'
   },
   {
-    title: 'Nhà cung cấp',
-    desc: 'Danh mục nhà cung cấp, công nợ, MST/CCCD, rủi ro hóa đơn và văn bản tham chiếu.',
-    icon: BriefcaseBusiness,
-    icon3d: idCard3d,
-    tab: 'suppliers'
-  },
-  {
     title: 'Đơn đặt hàng',
     desc: 'Tạo đơn hàng, theo dõi mã đơn, khách hàng, mã hàng và lệnh sản xuất.',
     icon: ClipboardList,
@@ -731,6 +724,13 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'inventory-catalog'
   },
   {
+    title: 'Nhà cung cấp',
+    desc: 'Danh mục nhà cung cấp, công nợ, MST/CCCD, rủi ro hóa đơn và văn bản tham chiếu.',
+    icon: BriefcaseBusiness,
+    icon3d: idCard3d,
+    tab: 'suppliers'
+  },
+  {
     title: 'Phiếu xuất nhập kho',
     desc: 'Lập phiếu nhập hoặc xuất NVL theo từng mã NPL.',
     icon: ArrowDownToLine,
@@ -770,6 +770,20 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     icon: ArrowLeftRight,
     icon3d: warehouseSlip3d,
     tab: 'chuyen-kho'
+  },
+  {
+    title: 'Phiếu nhập xuất tổng hợp',
+    desc: 'Hai tab nhập và xuất. Kho chọn trên từng dòng: nhập là kho nhận, xuất là kho lấy hàng.',
+    icon: ArrowDownToLine,
+    icon3d: warehouseSlip3d,
+    tab: 'phieu-nhap-xuat-tong-hop'
+  },
+  {
+    title: 'Danh sách nhập xuất tổng hợp',
+    desc: 'Phiếu nhập và xuất tổng hợp đã ghi sổ. In, sửa hoặc hủy từ đây.',
+    icon: History,
+    icon3d: warehouseHistory3d,
+    tab: 'phieu-nhap-xuat-tong-hop-list'
   },
   {
     title: 'Lịch sử xuất nhập',
@@ -1013,7 +1027,6 @@ export const PRIMARY_NAV_GROUPS: {
     children: [
       { label: 'Sản phẩm', tab: 'products' },
       { label: 'Khách hàng', tab: 'customers' },
-      { label: 'Nhà cung cấp', tab: 'suppliers' },
       { label: 'Đơn đặt hàng', tab: 'orders' },
       { label: 'Lệnh giao / xuất hàng', tab: 'shipping-orders' },
       { label: 'Tồn kho tối thiểu - Tồn kho tối đa', tab: 'inventory-limits' },
@@ -1069,6 +1082,7 @@ export const PRIMARY_NAV_GROUPS: {
     children: [
       { label: 'Danh mục kho', tab: 'quan-ly-kho' },
       { label: 'Kho hàng', tab: 'inventory-catalog' },
+      { label: 'Nhà cung cấp', tab: 'suppliers' },
       { label: 'Phiếu xuất nhập kho', tab: 'warehouse-slip' },
       { label: 'Kiểm kho', tab: 'kiem-kho' },
       { label: 'Cân kiểm kho', tab: 'can-kiem-kho' },
@@ -1076,6 +1090,8 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Lịch sử xuất nhập', tab: 'warehouse-history' },
       { label: 'Lệnh cắt lẻ', tab: 'lenh-cat-le' },
       { label: 'Chuyển kho', tab: 'chuyen-kho' },
+      { label: 'Phiếu nhập xuất tổng hợp', tab: 'phieu-nhap-xuat-tong-hop' },
+      { label: 'Danh sách nhập xuất tổng hợp', tab: 'phieu-nhap-xuat-tong-hop-list' },
       { label: 'Tồn kho', tab: 'ton-kho' },
       { label: 'Chuẩn bị xuất hàng', tab: 'factory-kho', disabled: true }
     ]
@@ -1150,6 +1166,8 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'warehouse-history': { group: 'Kho', sub: 'Lịch sử xuất nhập' },
   'lenh-cat-le': { group: 'Kho', sub: 'Lệnh cắt lẻ' },
   'chuyen-kho': { group: 'Kho', sub: 'Chuyển kho' },
+  'phieu-nhap-xuat-tong-hop': { group: 'Kho', sub: 'Phiếu nhập xuất tổng hợp' },
+  'phieu-nhap-xuat-tong-hop-list': { group: 'Kho', sub: 'Danh sách nhập xuất tổng hợp' },
   'warehouse-history-detail': { group: 'Kho', sub: 'Chi tiết phiếu' },
   'damaged-goods-warehouse': { group: 'Kho', sub: 'Kho hàng hỏng' },
   'ton-kho': { group: 'Kho', sub: 'Tồn kho' },
@@ -1160,7 +1178,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'vehicles': { group: 'Trang chủ', sub: 'Lái xe' },
   'orders': { group: 'Kinh doanh', sub: 'Đơn đặt hàng' },
   'customers': { group: 'Kinh doanh', sub: 'Khách hàng' },
-  'suppliers': { group: 'Kinh doanh', sub: 'Nhà cung cấp' },
+  'suppliers': { group: 'Kho', sub: 'Nhà cung cấp' },
   'shipping-orders': { group: 'Kinh doanh', sub: 'Lệnh giao / xuất hàng' },
   'production-orders': { group: 'Quản Đốc', sub: 'Lệnh sản xuất' },
   'dieu-dong-nhan-su': { group: 'Quản Đốc', sub: 'Điều động nhân sự' },

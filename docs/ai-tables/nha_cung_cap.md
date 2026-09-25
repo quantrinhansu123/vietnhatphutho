@@ -13,4 +13,4 @@
 - **Xuất Excel** — xuất danh sách hiện tại
 - **Tải Excel/CSV lên** — parse chung qua `XLSX.read` (`.csv` đọc dạng text); phân loại client thành insert batch (mã mới) / update batch (mã đã có theo `ma_nha_cung_cap`, thiếu mã → tự sinh `NCCxxx`); trùng mã trong file thì dòng sau ghi đè (last-wins); chỉ bắt buộc tên; gửi chunk 200 dòng/lần tới `POST /api/nha-cung-cap/import-batch`
 
-Liên kết: `Kinh doanh` (`/kinh-doanh`) cùng nhóm với `khach_hang`, `don_hang`, `lenh_xuat_hang`
+Liên kết: `Kho` (`/nha-may/kho`, card **Nhà cung cấp** trong `FACTORY_KHO_MENU_ITEMS`) cùng nhóm với `quan_ly_kho`, `kho_nvl`

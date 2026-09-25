@@ -53,6 +53,7 @@ export type TableId =
   | 'chi_phi_bao_duong'
   | 'lenh_cat_le'
   | 'phieu_chuyen_kho'
+  | 'phieu_nhap_xuat_tong_hop'
   | 'control_board';
 
 export interface TableRegistryEntry {
@@ -665,6 +666,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appLines: 'src/features/lenh-cat-le/index.tsx',
     components: ['src/features/lenh-cat-le/index.tsx'],
     utils: ['src/features/lenh-cat-le/logic.ts', 'src/utils/productProductionName.ts']
+  },
+  phieu_nhap_xuat_tong_hop: {
+    table: 'phieu_nhap_xuat_tong_hop',
+    label: 'Phiếu nhập / xuất tổng hợp (kho hoặc máy từng dòng)',
+    sql: ['supabase-phieu-nhap-xuat-tong-hop.sql', 'supabase-nhap-kho-ma-may.sql'],
+    apiPrefix: '/api/xuat-nhap-tong-hop',
+    serverLines: 'registerXuatNhapTongHopRoutes + GET /api/ton-may',
+    appTab: 'phieu-nhap-xuat-tong-hop',
+    appLines: 'src/features/xuat-nhap-tong-hop/index.tsx + list.tsx',
+    components: ['src/components/WarehouseSlipPrintModal.tsx', 'src/components/shared/SearchableSelect.tsx'],
+    utils: ['src/features/xuat-nhap-tong-hop/registerRoutes.ts']
   },
   phieu_chuyen_kho: {
     table: 'phieu_chuyen_kho',

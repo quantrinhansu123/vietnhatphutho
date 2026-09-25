@@ -1592,7 +1592,6 @@ export function SoTronPanel({
       try {
         const params = new URLSearchParams({
           ngay_phieu: ngay,
-          loai_phieu: 'xuat',
           loai_kho: 'nvl'
         });
         const res = await fetch(`/api/phieu-xuat-nhap-kho?${params.toString()}`);
@@ -1601,12 +1600,16 @@ export function SoTronPanel({
         const rows = normalizeWarehouseMovements(data);
         // Lọc theo ngày - máy - ca
         const filtered = rows.filter(row => {
-          if (row.slipType !== 'xuat' || row.warehouseKind !== 'nvl') return false;
+          if (row.warehouseKind !== 'nvl') return false;
+          if (row.slipType !== 'xuat' && row.slipType !== 'nhap') return false;
           if (row.slipDate && row.slipDate !== ngay) return false;
-          // Kiểm tra máy khớp
           if (!machineMatches(row.machine, maMay, tenMay)) return false;
-          // Kiểm tra ca (nếu đã chọn ca)
           if (caVal && !shiftMatchesSingle(row.shift, caVal)) return false;
+          const tenKho = String(row.warehouseName || '').trim();
+          // Xuất từ kho tới máy = nhập trong ngày. Nhập thẳng vào máy (ten_kho trống) cũng tính.
+          // Xuất khỏi máy (không tên kho) không cộng vào Nhập Trong Ngày.
+          if (row.slipType === 'xuat' && !tenKho) return false;
+          if (row.slipType === 'nhap' && tenKho) return false;
           return true;
         });
         // Gộp số lượng theo mã NVL (itemCode = ma_npl), index thêm canonical key từ kho NVL
