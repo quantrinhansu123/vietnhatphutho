@@ -5297,6 +5297,21 @@ function parseWarehouseSlipLines(
       return { error: `Giá của ${code} không hợp lệ.` };
     }
 
+    // ĐVT kg → Quy đổi = SL thực, không nhân hệ số (chặn sai số float FE cũ: 850 → 850,003).
+    const normUnitForKg = String(unit || '').trim().toLowerCase();
+    const isKgUnitForKg =
+      normUnitForKg === 'kg' ||
+      normUnitForKg === 'kgs' ||
+      normUnitForKg === 'kg.' ||
+      normUnitForKg === 'kilogram' ||
+      normUnitForKg === 'kilogam' ||
+      normUnitForKg === 'kilograms' ||
+      normUnitForKg.startsWith('kg/') ||
+      normUnitForKg.startsWith('kg ');
+    if (loaiKho === 'nvl' && isKgUnitForKg && quantity !== null && quantity > 0) {
+      weightKg = roundWarehouseQty(quantity);
+    }
+
     if (loaiKho === 'nvl' && (weightKg === null || weightKg <= 0)) {
       const perUnit = resolveAuxiliaryWeightPerUnit(name || code, nhomVthh, unit);
       if (perUnit && perUnit > 0) {

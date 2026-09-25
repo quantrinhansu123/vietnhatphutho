@@ -186,12 +186,26 @@ function str(value: unknown) {
 }
 
 function parseNum(value: unknown) {
-  const parsed = Number(str(value).replace(',', '.'));
+  let text = str(value).replace(/\s/g, '');
+  if (text.includes(',')) text = text.replace(/\./g, '').replace(',', '.');
+  const parsed = Number(text);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function round2(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function round3(value: number) {
+  return Math.round((value + Number.EPSILON) * 1000) / 1000;
+}
+
+/** Phần nghìn `.`, thập phân `,`, tối đa 3 chữ số (vd 1.234,568). */
+function formatKg3(value: number) {
+  return new Intl.NumberFormat('vi-VN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3
+  }).format(round3(value));
 }
 
 /** Tổng trọng lượng SP: phần nghìn dấu `.`, thập phân dấu `,`, luôn 2 chữ số (vd 1.234,50). */
@@ -211,6 +225,120 @@ function formatTongTrongLuongSp(value: string) {
 function formatQty(value: number) {
   const rounded = round2(value);
   return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
+/** Lần trộn đã chọn sản phẩm + kg cối thực tế. `lan` lưu 1-based khi ghi jsonb. */
+type LanCoiItem = {
+  ma_sp: string;
+  ten_sp: string;
+  trong_luong_coi: string;
+};
+
+function emptyLanCoi(): LanCoiItem {
+  return { ma_sp: '', ten_sp: '', trong_luong_coi: '' };
+}
+
+function nvlIdentity(materialId: string, ma: string) {
+  return (materialId || ma).trim().toLowerCase();
+}
+
+function isLanCoiMarker(item: unknown): item is { loai: string; items?: unknown } {
+  return Boolean(item) && typeof item === 'object' && str((item as { loai?: unknown }).loai) === 'lan_coi';
+}
+
+function parseLanCoiItems(raw: unknown): LanCoiItem[] {
+  const list = Array.isArray(raw) ? raw : [];
+  const slots: LanCoiItem[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as Record<string, unknown>;
+    const lan = Math.trunc(Number(rec.lan));
+    if (!Number.isFinite(lan) || lan < 1 || lan > SO_LAN_TRON_TOI_DA) continue;
+    while (slots.length < lan) slots.push(emptyLanCoi());
+    slots[lan - 1] = {
+      ma_sp: str(rec.ma_sp),
+      ten_sp: str(rec.ten_sp),
+      trong_luong_coi: str(rec.trong_luong_coi)
+    };
+  }
+  return slots;
+}
+
+function splitSavedCoiMau(raw: unknown[]): { blocks: CoiMauItem[]; lanCoi: LanCoiItem[] } {
+  const blocks: CoiMauItem[] = [];
+  let lanCoi: LanCoiItem[] = [];
+  for (const item of raw) {
+    if (isLanCoiMarker(item)) {
+      lanCoi = parseLanCoiItems(item.items);
+      continue;
+    }
+    if (item && typeof item === 'object') blocks.push(item as CoiMauItem);
+  }
+  return { blocks, lanCoi };
+}
+
+function withLanCoi(blocks: CoiMauItem[], entries: LanCoiItem[]): CoiMauItem[] {
+  const clean = blocks.filter(item => !isLanCoiMarker(item));
+  const items = entries
+    .map((item, i) => ({
+      lan: i + 1,
+      ma_sp: item.ma_sp.trim(),
+      ten_sp: item.ten_sp.trim(),
+      trong_luong_coi: item.trong_luong_coi.trim()
+    }))
+    .filter(item => item.ma_sp || item.ten_sp || item.trong_luong_coi);
+  if (items.length === 0) return clean;
+  return [...clean, { loai: 'lan_coi', items } as unknown as CoiMauItem];
+}
+
+/** Kg thực tế một lần = kg cối mẫu × (cối thực tế / định lượng cối). Chỉ NVL của sản phẩm đã chọn. */
+function applyLanCoiWeights(
+  rows: NvlRow[],
+  blocks: CoiMauItem[],
+  lanIdx: number,
+  actualPot: number
+): { rows: NvlRow[]; warning: string } {
+  const weights = new Map<string, number>();
+  const seen = new Set<string>();
+  let missingDose = false;
+  for (const block of blocks) {
+    const dinh = parseNum(block.dinh_luong_coi);
+    for (const line of block.nvl || []) {
+      const key = nvlIdentity(line.material_id, line.ma_nvl);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      if (dinh <= 0) {
+        missingDose = true;
+        continue;
+      }
+      const gia = parseNum(line.gia_tri);
+      const sample = line.dvt === '%' ? (dinh * gia) / 100 : gia;
+      weights.set(key, round3((sample * actualPot) / dinh));
+    }
+  }
+  if (seen.size === 0) {
+    return { rows, warning: 'Sản phẩm chưa có NVL cối mẫu — không tính trọng lượng.' };
+  }
+  if (weights.size === 0) {
+    return { rows, warning: 'Thiếu định lượng cối mẫu — không tính trọng lượng NVL.' };
+  }
+  let matched = 0;
+  const next = rows.map(row => {
+    const key = nvlIdentity(row.material_id, row.ma_nvl);
+    if (!weights.has(key)) return row;
+    matched += 1;
+    const lan = [...row.lan];
+    while (lan.length <= lanIdx) lan.push('');
+    lan[lanIdx] = formatKg3(weights.get(key) || 0);
+    return { ...row, lan };
+  });
+  if (matched === 0) {
+    return { rows, warning: 'Không thấy NVL của sản phẩm này trên bảng — không ghi đè.' };
+  }
+  return {
+    rows: next,
+    warning: missingDose ? 'Một số NVL thiếu định lượng cối — giữ nguyên số đã nhập.' : ''
+  };
 }
 
 /** Số dương làm tròn 2 chữ số — dùng cho snapshot quy đổi (undefined nếu trống/không hợp lệ). */
@@ -709,6 +837,10 @@ export function SoTronPanel({
   const [isLoadingCoi, setIsLoadingCoi] = useState(false);
 
   const [numLan, setNumLan] = useState(SO_LAN_TRON_MAC_DINH);
+  const [lanIndex, setLanIndex] = useState(0);
+  const [coiRowLans, setCoiRowLans] = useState<number[]>([0]);
+  const [lanCoi, setLanCoi] = useState<LanCoiItem[]>([]);
+  const [lanCoiNote, setLanCoiNote] = useState('');
   const [nvlRows, setNvlRows] = useState<NvlRow[]>([]);
   const [spRows, setSpRows] = useState<SanPhamRow[]>([]);
   const [loiRows, setLoiRows] = useState<HangLoiRow[]>([]);
@@ -1236,6 +1368,7 @@ export function SoTronPanel({
       { material_id: string; ma: string; ten: string; sx: string; dvt: string; nguon: Set<string>; dinhMucKg: number }
     >();
     for (const item of coiMau) {
+      if (isLanCoiMarker(item)) continue;
       const tokens = splitLenhCodes(item.ma_lenh_sx);
       const matched = tokens.filter(t => selectedSet.has(t.toLowerCase()));
       const owners = matched.length > 0 ? matched : [...selectedLenh];
@@ -1618,6 +1751,7 @@ export function SoTronPanel({
       { key: string; ma_sp: string; ten_sp: string; lenh: Set<string>; blocks: CoiMauItem[] }
     >();
     for (const b of coiMau) {
+      if (isLanCoiMarker(b)) continue;
       const key = b.ma_sp || b.ten_sp || 'san-pham';
       const g = map.get(key) || {
         key,
@@ -1639,6 +1773,7 @@ export function SoTronPanel({
   const uncoveredLenh = useMemo(() => {
     const covered = new Set<string>();
     for (const b of coiMau) {
+      if (isLanCoiMarker(b)) continue;
       for (const token of splitLenhCodes(b.ma_lenh_sx)) covered.add(token.toLowerCase());
     }
     return selectedLenh.filter(code => !covered.has(code.trim().toLowerCase()));
@@ -1734,9 +1869,19 @@ export function SoTronPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedReports, ngay, saveCombos, machines, editingId]);
 
-  const resizeLan = (next: number) => {
+  const resizeLan = (next: number, selectIndex?: number) => {
     const clamped = Math.max(1, Math.min(SO_LAN_TRON_TOI_DA, next));
     setNumLan(clamped);
+    setLanIndex(index => {
+      const kept = Math.min(index, clamped - 1);
+      if (selectIndex === undefined) return kept;
+      return Math.max(0, Math.min(selectIndex, clamped - 1));
+    });
+    setCoiRowLans(rows => {
+      const kept = rows.filter(lan => lan < clamped);
+      return kept.length > 0 ? kept : [0];
+    });
+    setLanCoi(prev => prev.slice(0, clamped));
     setNvlRows(rows =>
       rows.map(row => {
         const lan = [...row.lan];
@@ -1744,6 +1889,56 @@ export function SoTronPanel({
         return { ...row, lan: lan.slice(0, clamped) };
       })
     );
+  };
+
+  const saveLanDraft = (index: number, next: LanCoiItem) => {
+    setLanCoi(prev => {
+      const copy = [...prev];
+      while (copy.length <= index) copy.push(emptyLanCoi());
+      copy[index] = next;
+      return copy;
+    });
+    setLanCoiNote('');
+  };
+
+  const confirmLanCoi = (index: number) => {
+    const next = lanCoi[index] || emptyLanCoi();
+    const savedKey = next.ma_sp || next.ten_sp;
+    const group =
+      coiMauGroups.find(item => item.key === savedKey) ||
+      coiMauGroups.find(item => next.ten_sp && (item.ten_sp === next.ten_sp || item.key === next.ten_sp)) ||
+      coiMauGroups.find(item => next.ma_sp && item.ma_sp === next.ma_sp);
+    const potText = next.trong_luong_coi.trim();
+    if (!group) {
+      setLanCoiNote(`L${index + 1}: chọn sản phẩm trước khi xác nhận.`);
+      return;
+    }
+    if (!potText) {
+      setLanCoiNote(`L${index + 1}: nhập trọng lượng cối thực tế trước khi xác nhận.`);
+      return;
+    }
+    const pot = parseNum(potText);
+    if (!Number.isFinite(pot) || potText === '') {
+      setLanCoiNote(`L${index + 1}: trọng lượng cối thực tế không hợp lệ.`);
+      return;
+    }
+    const applied = applyLanCoiWeights(nvlRows, group.blocks, index, pot);
+    setNvlRows(applied.rows);
+    setLanIndex(index);
+    setLanCoiNote(applied.warning || `Đã tính L${index + 1} theo cối ${formatKg3(pot)} kg.`);
+  };
+
+  const addCoiRow = () => {
+    const last = coiRowLans[coiRowLans.length - 1] ?? 0;
+    const next = last + 1;
+    if (next >= SO_LAN_TRON_TOI_DA) {
+      setLanCoiNote('Đã đủ số lần tối đa.');
+      return;
+    }
+    if (next >= numLan) resizeLan(next + 1);
+    setCoiRowLans(rows => (rows.includes(next) ? rows : [...rows, next]));
+    setLanIndex(next);
+    setLanCoiNote('');
   };
 
   const applyPrevTon = () => {
@@ -1859,6 +2054,10 @@ export function SoTronPanel({
     setNhanSuTouched(false);
     setStaffGroups([]);
     setCoiMau([]);
+    setLanCoi([]);
+    setCoiRowLans([0]);
+    setLanIndex(0);
+    setLanCoiNote('');
     setNvlRows([]);
     setSpRows([]);
     setLoiRows([]);
@@ -1898,9 +2097,18 @@ export function SoTronPanel({
     );
     const codes = report.lenh_sx.map(l => str(l.ma_lenh)).filter(Boolean);
     setSelectedLenh(codes);
-    setCoiMau(report.coi_tron_mau || []);
+    const savedCoi = splitSavedCoiMau(report.coi_tron_mau || []);
+    setCoiMau(savedCoi.blocks);
+    setLanCoi(savedCoi.lanCoi);
+    const savedRows = savedCoi.lanCoi
+      .map((item, index) => (item.ma_sp || item.ten_sp || item.trong_luong_coi ? index : -1))
+      .filter(index => index >= 0);
+    setCoiRowLans(savedRows.length > 0 ? savedRows : [0]);
+    setLanIndex(savedRows[0] ?? 0);
+    setLanCoiNote('');
     const maxLan = Math.max(
       SO_LAN_TRON_MAC_DINH,
+      savedCoi.lanCoi.length,
       ...report.bang_nvl.map(l => (Array.isArray(l.lan) ? l.lan.length : 0))
     );
     setNumLan(Math.min(SO_LAN_TRON_TOI_DA, maxLan));
@@ -2003,7 +2211,7 @@ export function SoTronPanel({
       const bangNvl = nvlRows
         .filter(row => row.ma_nvl.trim() !== '')
         .map(row => {
-          const lan = row.lan.map(parseNum).map(round2);
+          const lan = row.lan.map(parseNum).map(round3);
           return {
             material_id: row.material_id,
             ma_nvl: row.ma_nvl.trim(),
@@ -2039,7 +2247,7 @@ export function SoTronPanel({
         nhan_su: nhanSuText.trim(),
         nhan_su_chi_tiet: phanCong,
         lenh_sx: selectedOrders.map(o => ({ id: o.id, ma_lenh: o.code })),
-        coi_tron_mau: coiMau,
+        coi_tron_mau: withLanCoi(coiMau, lanCoi.slice(0, numLan)),
         bang_nvl: bangNvl,
         bang_san_pham: spRows
           .filter(row => row.ten_sp.trim() !== '' || row.ma_sp.trim() !== '')
@@ -2144,6 +2352,14 @@ export function SoTronPanel({
   const paperTh =
     'border border-slate-800 bg-slate-100 px-1 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-700';
   const paperTd = 'border border-slate-700 px-0.5 py-0.5';
+  const fieldOf = (index: number) => {
+    const item = lanCoi[index] || emptyLanCoi();
+    const group =
+      coiMauGroups.find(entry => entry.key === (item.ma_sp || item.ten_sp)) ||
+      coiMauGroups.find(entry => item.ten_sp && (entry.ten_sp === item.ten_sp || entry.key === item.ten_sp)) ||
+      coiMauGroups.find(entry => item.ma_sp && entry.ma_sp === item.ma_sp);
+    return { item, key: group?.key || item.ma_sp || item.ten_sp };
+  };
 
   const filteredSavedReports = useMemo(() => {
     // Chưa chọn ngày thì không hiển thị gì (đúng yêu cầu: chọn ngày mới hiện danh sách).
@@ -2632,7 +2848,7 @@ export function SoTronPanel({
                               <span>Tổng trọng lượng sản phẩm: <span className="tabular-nums text-slate-700">{formatTongTrongLuongSp(block.tong_trong_luong)} kg</span></span>
                             ) : null}
                             {block.dinh_luong_coi ? (
-                              <span>Định lượng cối: <span className="tabular-nums text-slate-700">{block.dinh_luong_coi} kg</span></span>
+                              <span>Định lượng cối: <span className="tabular-nums text-slate-700">{formatKg3(parseNum(block.dinh_luong_coi))} kg</span></span>
                             ) : null}
                           </div>
                           <table className="w-full min-w-[480px] text-left text-[12px]">
@@ -2659,7 +2875,7 @@ export function SoTronPanel({
                                       <div>{line.ten_nvl_sx || line.ten_nvl}</div>
                                     </td>
                                     <td className="px-3 py-1.5">{line.dvt}</td>
-                                    <td className="px-3 py-1.5 text-right tabular-nums">{line.gia_tri}</td>
+                                    <td className="px-3 py-1.5 text-right tabular-nums">{line.gia_tri ? formatKg3(parseNum(line.gia_tri)) : ''}</td>
                                   </tr>
                                 ))
                               )}
@@ -3231,7 +3447,7 @@ export function SoTronPanel({
                     Máy-Ca sẽ lưu: <span className="font-bold text-slate-800" title={selectedCa.trim() ? `Chỉ tạo phiếu cho ca ${selectedCa.trim()} (Lọc theo ca ở mục 1)` : 'Chưa lọc ca — sẽ tạo cho tất cả combo máy-ca của lệnh'}>{saveCombos.map(c => formatMayCa(c.machine, c.ca)).join(' · ') || '...'}</span>
                     {' '}· Lệnh: <span className="font-bold text-slate-800">{selectedLenh.join(', ')}</span>
                   </span>
-                  <span className="flex items-center gap-1.5">
+                  <span className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => resizeLan(numLan - 1)}
@@ -3253,6 +3469,116 @@ export function SoTronPanel({
                     </button>
                   </span>
                 </div>
+                <div className="border-b border-slate-300 bg-slate-50 px-3 py-2">
+                  <div className="flex flex-col gap-1.5">
+                    {coiRowLans.map((rowLan, rowPos) => {
+                      const field = fieldOf(rowLan);
+                      return (
+                        <span key={`${rowLan}-${rowPos}`} className="flex flex-wrap items-center justify-start gap-2">
+                    <label className="flex items-center gap-1">
+                      Lần
+                      <select
+                        value={rowLan}
+                        onChange={e => {
+                          const next = Number(e.target.value) || 0;
+                          setCoiRowLans(rows => rows.map((lan, i) => (i === rowPos ? next : lan)));
+                          setLanIndex(next);
+                          setLanCoiNote('');
+                        }}
+                        className="h-7 rounded-md border border-slate-300 bg-white px-1.5 text-[12px] font-bold text-slate-800"
+                      >
+                        {Array.from({ length: numLan }, (_, i) => (
+                          <option key={i} value={i}>
+                            L{i + 1}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex items-center gap-1">
+                      Sản phẩm
+                      <select
+                        value={field.key}
+                        onChange={e => {
+                          const key = e.target.value;
+                          const group = coiMauGroups.find(item => item.key === key);
+                          const current = lanCoi[rowLan] || emptyLanCoi();
+                          saveLanDraft(
+                            rowLan,
+                            group
+                              ? {
+                                  ma_sp: group.ma_sp,
+                                  ten_sp: group.ten_sp || group.ma_sp,
+                                  trong_luong_coi: current.trong_luong_coi
+                                }
+                              : { ...emptyLanCoi(), trong_luong_coi: current.trong_luong_coi }
+                          );
+                          setLanIndex(rowLan);
+                        }}
+                        className="h-7 w-[260px] max-w-full rounded-md border border-slate-300 bg-white px-1.5 text-[12px] font-bold text-slate-800"
+                      >
+                        <option value="">Chọn sản phẩm</option>
+                        {coiMauGroups.map(group => (
+                          <option key={group.key} value={group.key}>
+                            {group.ten_sp || group.ma_sp || 'Sản phẩm'}
+                          </option>
+                        ))}
+                        {field.key && !coiMauGroups.some(group => group.key === field.key) ? (
+                          <option value={field.key}>{field.item.ten_sp || field.item.ma_sp}</option>
+                        ) : null}
+                      </select>
+                    </label>
+                    <label className="flex items-center gap-1">
+                      Cối thực tế
+                      <input
+                        inputMode="decimal"
+                        value={field.item.trong_luong_coi}
+                        onChange={e => {
+                          const current = lanCoi[rowLan] || emptyLanCoi();
+                          saveLanDraft(rowLan, { ...current, trong_luong_coi: e.target.value });
+                          setLanIndex(rowLan);
+                        }}
+                        placeholder="kg"
+                        title="Trọng lượng cối trộn thực tế"
+                        className="h-7 w-[88px] rounded-md border border-rose-400 bg-rose-50 px-1.5 text-center text-[12px] font-bold tabular-nums text-slate-900 outline-none focus:border-rose-500"
+                      />
+                      <span>kg</span>
+                    </label>
+                    <span className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => confirmLanCoi(rowLan)}
+                        className="h-7 rounded-md bg-slate-900 px-2.5 text-[12px] font-bold text-white hover:bg-slate-800"
+                      >
+                        Xác nhận
+                      </button>
+                      {rowPos === 0 ? (
+                        <button
+                          type="button"
+                          onClick={addCoiRow}
+                          className="h-7 rounded-md border border-slate-800 bg-white px-2.5 text-[12px] font-bold text-slate-800 hover:bg-slate-50"
+                        >
+                          Thêm
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setCoiRowLans(rows => rows.filter((_, i) => i !== rowPos))}
+                          className="h-7 rounded-md border border-slate-300 bg-white px-2 text-[12px] font-bold text-slate-500 hover:bg-rose-50 hover:text-rose-600"
+                        >
+                          Bỏ
+                        </button>
+                      )}
+                    </span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+                {lanCoiNote ? (
+                  <p className="border-b border-amber-200 bg-amber-50 px-3 py-1 text-[12px] font-semibold text-amber-800">
+                    {lanCoiNote}
+                  </p>
+                ) : null}
 
                 {/* Bảng NVL trộn thực tế: Nguyên liệu | ĐVT | L1..Ln | Tổng | Định mức vật tư */}
                 <div className="overflow-x-auto">
@@ -3330,7 +3656,7 @@ export function SoTronPanel({
                             </td>
                           ))}
                           <td className="border border-slate-700 px-1 py-0.5 text-right text-[13px] font-bold tabular-nums w-[76px] min-w-[76px]">
-                            {formatQty(round2(row.lan.reduce((sum, v) => sum + parseNum(v), 0)))}
+                            {formatKg3(row.lan.reduce((sum, v) => sum + parseNum(v), 0))}
                           </td>
                           <td className="border border-slate-700 px-1 py-0.5 text-right text-[12.5px] font-bold tabular-nums text-slate-800 w-[96px] min-w-[96px]" title="Tổng trọng lượng NVL trên phiếu trộn định mức">
                             {row.dinh_muc}
@@ -3855,9 +4181,9 @@ export function SoTronPanel({
                     nhan_su: nhanSuText.trim(),
                     nhan_su_chi_tiet: phanCong,
                     lenh_sx: selectedOrders.map(o => ({ id: o.id, ma_lenh: o.code })),
-                    coi_tron_mau: coiMau,
+                    coi_tron_mau: withLanCoi(coiMau, lanCoi.slice(0, numLan)),
                     bang_nvl: nvlRows.map(row => {
-                      const lan = row.lan.map(parseNum).map(round2);
+                      const lan = row.lan.map(parseNum).map(round3);
                       return {
                         material_id: row.material_id,
                         ma_nvl: row.ma_nvl.trim(),
