@@ -3158,6 +3158,8 @@ export default function MixingNormMaterialsTab() {
                     getSearchText={item => `${(item as { code: string; name: string }).code} ${(item as { code: string; name: string }).name}`}
                     inputClassName={inputClass}
                     maxResults={60}
+                    showAllWhenQueryMatchesSelection
+                    selectedOptionClassName="bg-yellow-50 font-black text-yellow-800 ring-2 ring-inset ring-yellow-400"
                   />
                 </label>
                 <div className="space-y-1.5 sm:col-span-4">
@@ -3177,6 +3179,7 @@ export default function MixingNormMaterialsTab() {
                     hideSelectedFromList
                     keepOptionsOrder
                     maxResults={200}
+                    openUpward
                     inputClassName={inputClass}
                   />
                   {unresolvedOrderCodes.length > 0 ? (
@@ -3291,6 +3294,7 @@ export default function MixingNormMaterialsTab() {
                             getSearchText={productSearchText}
                             allowCustomValues={false}
                             hideSelectedFromList
+                            openUpward
                             placeholder={
                               pickerOptions.length || product.maSpCodes.length
                                 ? 'Tìm mã SP...'
@@ -3438,6 +3442,9 @@ export default function MixingNormMaterialsTab() {
                                       getLabel={item => materialOptionLabel(item as MaterialOption)}
                                       getSearchText={item => `${(item as MaterialOption).code} ${(item as MaterialOption).name} ${(item as MaterialOption).productionName}`}
                                       inputClassName={inputClass}
+                                      openUpward
+                                      showAllWhenQueryMatchesSelection
+                                      selectedOptionClassName="bg-yellow-50 font-black text-yellow-800 ring-2 ring-inset ring-yellow-400"
                                     />
                                     <SearchableSelect
                                       value={line.tenNvlSanXuat}
@@ -3450,6 +3457,9 @@ export default function MixingNormMaterialsTab() {
                                       getSearchText={item => String(item)}
                                       allowEmpty
                                       inputClassName={inputClass}
+                                      openUpward
+                                      showAllWhenQueryMatchesSelection
+                                      selectedOptionClassName="bg-yellow-50 font-black text-yellow-800 ring-2 ring-inset ring-yellow-400"
                                     />
                                     <input
                                       value={line.giaTri}
@@ -3592,6 +3602,7 @@ export default function MixingNormMaterialsTab() {
                               getSearchText={productSearchText}
                               allowCustomValues={false}
                               hideSelectedFromList
+                              openUpward
                               placeholder={
                                 pickerOptions.length || product.maSpCodes.length
                                   ? 'Tìm mã SP...'
@@ -3663,6 +3674,9 @@ export default function MixingNormMaterialsTab() {
                                         getLabel={item => materialOptionLabel(item as MaterialOption)}
                                         getSearchText={item => (item as MaterialOption).code + ' ' + (item as MaterialOption).name + ' ' + (item as MaterialOption).productionName + ' ' + ((item as MaterialOption).nhomVatTuPhu || '')}
                                         inputClassName={inputClass}
+                                        openUpward
+                                        showAllWhenQueryMatchesSelection
+                                        selectedOptionClassName="bg-yellow-50 font-black text-yellow-800 ring-2 ring-inset ring-yellow-400"
                                       />
                                       <input
                                         value={line.tenNvl}
@@ -3683,18 +3697,23 @@ export default function MixingNormMaterialsTab() {
                                             getSearchText={item => String(item)}
                                             allowEmpty
                                             inputClassName={inputClass + ' bg-zinc-50'}
+                                            openUpward
+                                            showAllWhenQueryMatchesSelection
+                                            selectedOptionClassName="bg-yellow-50 font-black text-yellow-800 ring-2 ring-inset ring-yellow-400"
                                           />
-                                          <select
+                                          <SearchableSelect
                                             value={line.nhomVthh || ''}
-                                            onChange={event => updateSecondaryLine(product.key, line.key, { nhomVthh: event.target.value })}
-                                            className={inputClass + ' border-amber-300 bg-amber-50 text-xs font-bold text-amber-900'}
-                                            title="Nhóm VTHH (bắt buộc với Băng dính/Tem)"
-                                          >
-                                            <option value="">-- Chọn VTHH * --</option>
-                                            {CANONICAL_NHOM_VTHH.map(item => (
-                                              <option key={item} value={item}>{item}</option>
-                                            ))}
-                                          </select>
+                                            onChange={value => updateSecondaryLine(product.key, line.key, { nhomVthh: value })}
+                                            options={[...CANONICAL_NHOM_VTHH]}
+                                            placeholder="Chọn VTHH *"
+                                            getValue={item => String(item)}
+                                            getLabel={item => String(item)}
+                                            allowEmpty
+                                            inputClassName={inputClass + ' border-amber-300 bg-amber-50 text-xs font-bold text-amber-900'}
+                                            openUpward
+                                            showAllWhenQueryMatchesSelection
+                                            selectedOptionClassName="bg-yellow-50 font-black text-yellow-800 ring-2 ring-inset ring-yellow-400"
+                                          />
                                         </div>
                                       ) : (
                                         <SearchableSelect
@@ -3708,6 +3727,9 @@ export default function MixingNormMaterialsTab() {
                                           getSearchText={item => String(item)}
                                           allowEmpty
                                           inputClassName={inputClass + ' bg-zinc-50'}
+                                          openUpward
+                                          showAllWhenQueryMatchesSelection
+                                          selectedOptionClassName="bg-yellow-50 font-black text-yellow-800 ring-2 ring-inset ring-yellow-400"
                                         />
                                       )}
                                       <input

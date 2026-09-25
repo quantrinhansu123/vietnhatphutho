@@ -4369,7 +4369,7 @@ export function SoTronListView({
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <h2 className="font-display text-base font-semibold tracking-tight text-slate-900">
-            Danh sách sổ trộn
+            Danh sách phiếu giao ca
           </h2>
         </div>
         <button
