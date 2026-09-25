@@ -84,14 +84,45 @@ function esc(value: unknown): string {
 }
 
 function num(value: unknown): number {
-  const parsed = Number(String(value ?? '').trim().replace(',', '.'));
-  return Number.isFinite(parsed) ? parsed : 0;
+  let text = String(value ?? '').trim().replace(/\s/g, '');
+  if (!text) return 0;
+  const negative = text.startsWith('-');
+  if (negative) text = text.slice(1);
+  if (text.includes(',')) text = text.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(text)) text = text.replace(/\./g, '');
+  const parsed = Number(text);
+  if (!Number.isFinite(parsed)) return 0;
+  return negative ? -parsed : parsed;
 }
 
+/** In đủ số, không dấu chấm hàng nghìn và không dấu chấm thập phân (thập phân dùng dấu phẩy). */
 function fmt(value: number): string {
-  if (value === 0) return '';
-  const rounded = Math.round((value + Number.EPSILON) * 100) / 100;
-  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+  if (!Number.isFinite(value) || value === 0) return '';
+  const rounded = Math.round((value + Number.EPSILON) * 1000) / 1000;
+  const negative = rounded < 0;
+  const abs = Math.abs(rounded);
+  const text = Number.isInteger(abs) ? String(abs) : String(abs).replace('.', ',');
+  return negative ? `-${text}` : text;
+}
+
+function printNum(value: unknown): string {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  return fmt(num(text));
+}
+
+/** Khổ in A4 dọc, lề 7mm mỗi bên. */
+const PRINT_CONTENT_MM = 196;
+
+function numCell(value: unknown, widthPct: number, extraClass = ''): string {
+  const text = printNum(value);
+  if (!text) return `<td class="num ${extraClass}"></td>`;
+  const innerMm = Math.max(4, PRINT_CONTENT_MM * (widthPct / 100) - 0.6);
+  const digitMm = 0.5 * 7 * 0.3528;
+  const fitPt = text.length * digitMm <= innerMm
+    ? 7
+    : Math.max(5, innerMm / (text.length * 0.5 * 0.3528));
+  return `<td class="num ${extraClass}"><span style="font-size:${fitPt.toFixed(2)}pt">${esc(text)}</span></td>`;
 }
 
 function splitNgay(ngay: string) {
@@ -126,22 +157,19 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
   const paddedVatTu = padList(input.vatTu, Math.max(input.vatTu.length, VAT_TU_GRID_ROWS));
   const vatTuRowsHtml = paddedVatTu
     .map((row) => {
-      const lanCells = Array.from({ length: 10 }, (_, li) => {
-        const val = row?.lan?.[li] ?? '';
-        return `<td>${esc(val)}</td>`;
-      }).join('');
+      const lanCells = Array.from({ length: 10 }, (_, li) => numCell(row?.lan?.[li] ?? '', 3.2)).join('');
 
       return `
       <tr>
         <td class="c font-mono">${esc(row?.ma_nvl ?? '')}</td>
         <td class="l">${esc(row?.ten_nvl ?? '')}${row?.ten_nvl_sx ? ` <span class="sub">(${esc(row.ten_nvl_sx)})</span>` : ''}</td>
         <td class="c">${esc(row?.dvt ?? (row ? 'Kg' : ''))}</td>
-        <td class="c">${esc(row?.dinh_muc ?? '')}</td>
-        <td class="r">${row ? (row.ton_dau_ca !== '' && row.ton_dau_ca !== 0 ? esc(row.ton_dau_ca) : '') : ''}</td>
-        <td class="r">${row ? (row.lay_trong_kho !== '' && row.lay_trong_kho !== 0 ? esc(row.lay_trong_kho) : '') : ''}</td>
+        ${numCell(row?.dinh_muc ?? '', 8)}
+        ${numCell(row && row.ton_dau_ca !== '' && row.ton_dau_ca !== 0 ? row.ton_dau_ca : '', 7.5)}
+        ${numCell(row && row.lay_trong_kho !== '' && row.lay_trong_kho !== 0 ? row.lay_trong_kho : '', 7.5)}
         ${lanCells}
-        <td class="r b">${row && row.tong_su_dung > 0 ? fmt(row.tong_su_dung) : ''}</td>
-        <td class="r b">${row ? fmt(row.ton_cuoi_ca) : ''}</td>
+        ${numCell(row && row.tong_su_dung > 0 ? row.tong_su_dung : '', 7.5, 'b')}
+        ${numCell(row ? row.ton_cuoi_ca : '', 7.5, 'b')}
       </tr>
     `;
     })
@@ -157,12 +185,12 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       <tr>
         <td class="c font-mono">${esc(row?.ma_sp ?? '')}</td>
         <td class="l">${esc(row?.ten_sp ?? '')}</td>
-        <td class="r">${esc(row?.dinh_muc ?? '')}</td>
-        <td class="c">${esc(row?.lan_1 ?? '')}</td>
-        <td class="c">${esc(row?.lan_2 ?? '')}</td>
-        <td class="c">${esc(row?.lan_3 ?? '')}</td>
-        <td class="r b">${row ? esc(row.so_luong) : ''}</td>
-        <td class="r b">${row ? esc(row.trong_luong) : ''}</td>
+        ${numCell(row?.dinh_muc ?? '', 13)}
+        ${numCell(row?.lan_1 ?? '', 8)}
+        ${numCell(row?.lan_2 ?? '', 8)}
+        ${numCell(row?.lan_3 ?? '', 8)}
+        ${numCell(row ? row.so_luong : '', 12, 'b')}
+        ${numCell(row ? row.trong_luong : '', 12, 'b')}
       </tr>
     `;
     })
@@ -177,7 +205,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       <tr>
         <td class="l">${esc(row?.ten_loi ?? '')}</td>
         <td class="c">${esc(row?.dvt ?? (row ? 'Kg' : ''))}</td>
-        <td class="r b">${row ? esc(row.so_luong) : ''}</td>
+        ${numCell(row ? row.so_luong : '', 30, 'b')}
       </tr>
     `;
     })
@@ -313,6 +341,20 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
     table.data-table td.c { text-align: center; }
     table.data-table td.l { text-align: left; }
     table.data-table td.r { text-align: right; font-variant-numeric: tabular-nums; }
+    table.data-table td.num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      overflow: visible;
+      text-overflow: clip;
+      white-space: nowrap;
+      padding: 0 0.3mm;
+      font-size: 7pt;
+    }
+    table.data-table td.num span {
+      display: inline-block;
+      white-space: nowrap;
+      letter-spacing: -0.15pt;
+    }
     table.data-table td.b, table.data-table th.b { font-weight: bold; }
     .font-mono { font-family: monospace, Courier, monospace; font-size: 8pt; }
     .sub { font-size: 6.5pt; color: #444; font-style: italic; }
@@ -465,10 +507,10 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
         ${vatTuRowsHtml}
         <tr style="background-color: #f7f7f7;">
           <td colspan="6" class="l b" style="text-align: right; padding-right: 8px;">Cộng tổng sử dụng:</td>
-          <td colspan="10" class="r b" style="font-size: 8pt; padding-right: 6px;">
-            ${tongCongSuDungVatTu > 0 ? fmt(tongCongSuDungVatTu) : ''}
+          <td colspan="10" class="num b" style="text-align: right; padding-right: 1mm;">
+            ${tongCongSuDungVatTu > 0 ? esc(fmt(tongCongSuDungVatTu)) : ''}
           </td>
-          <td class="r b" style="font-size: 8.5pt;">${tongCongSuDungVatTu > 0 ? fmt(tongCongSuDungVatTu) : ''}</td>
+          <td class="num b">${tongCongSuDungVatTu > 0 ? esc(fmt(tongCongSuDungVatTu)) : ''}</td>
           <td></td>
         </tr>
       </tbody>
@@ -480,7 +522,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
         ${input.giaoCaNote ? `Giao ca: <span class="underline-fill" style="min-width: 100px; text-align: left;">${esc(input.giaoCaNote)}</span>` : `Giao ca: <span class="underline-fill" style="min-width: 120px;"></span>`}
       </div>
       <div>
-        Tổng sử dụng: <b>${fmt(tongCongSuDungVatTu)} kg</b>
+        Tổng sử dụng: <b>${esc(fmt(tongCongSuDungVatTu))} kg</b>
       </div>
     </div>
   </div>
@@ -512,8 +554,8 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
             ${thanhPhamRowsHtml}
             <tr style="background-color: #f7f7f7;">
               <td colspan="6" class="l b" style="text-align: right; padding-right: 6px;">Cộng:</td>
-              <td class="r b">${tongNhapKhoThanhPham > 0 ? fmt(tongNhapKhoThanhPham) : ''}</td>
-              <td class="r b">${tongTrongLuongThanhPham > 0 ? fmt(tongTrongLuongThanhPham) : ''}</td>
+              <td class="num b">${tongNhapKhoThanhPham > 0 ? esc(fmt(tongNhapKhoThanhPham)) : ''}</td>
+              <td class="num b">${tongTrongLuongThanhPham > 0 ? esc(fmt(tongTrongLuongThanhPham)) : ''}</td>
             </tr>
           </tbody>
         </table>
@@ -535,7 +577,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
               ${hangLoiRowsHtml}
               <tr style="background-color: #f7f7f7;">
                 <td colspan="2" class="l b" style="text-align: right; padding-right: 6px;">Cộng:</td>
-                <td class="r b">${tongHangLoi > 0 ? fmt(tongHangLoi) : ''}</td>
+                <td class="num b">${tongHangLoi > 0 ? esc(fmt(tongHangLoi)) : ''}</td>
               </tr>
             </tbody>
           </table>

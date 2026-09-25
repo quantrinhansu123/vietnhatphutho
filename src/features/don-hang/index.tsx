@@ -78,15 +78,15 @@ interface OrderRowExt extends OrderRow {
   khu_vuc?: string;
 }
 
-const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1260px]';
-const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1500px]';
+const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1340px]';
+const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1580px]';
 const ORDER_CUT_TABLE_MIN_WIDTH = 'min-w-[1560px]';
 const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2140px]';
 export const PRODUCTION_ORDER_TYPE = 'Đơn sản xuất';
 const orderProductGridClass =
-  'grid-cols-[2.25rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(12rem,1.35fr)_minmax(7rem,0.9fr)_5rem_5.5rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
+  'grid-cols-[7rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(12rem,1.35fr)_minmax(7rem,0.9fr)_5rem_5.5rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
 const orderProductionProductGridClass =
-  'grid-cols-[2.25rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(11rem,1.25fr)_minmax(6.5rem,0.85fr)_5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_5rem_5rem_5rem_6.5rem]';
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(11rem,1.25fr)_minmax(6.5rem,0.85fr)_5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_5rem_5rem_5rem_6.5rem]';
 const orderCutProductGridClass =
   'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_6rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const orderSouthProductGridClass =
@@ -1626,7 +1626,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       onMoveUp={() => moveProductLine(index, index - 1)}
       onMoveDown={() => moveProductLine(index, index + 1)}
       onDuplicate={() => duplicateProductLineBelow(index)}
-      moveButtonsInStt={isFormCutLikeOrder}
+      moveButtonsInStt
       onDragStart={event => handleProductDragStart(event, index)}
       onDragOver={handleProductDragOver}
       onDrop={() => handleProductDrop(index)}
