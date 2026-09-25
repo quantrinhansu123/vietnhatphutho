@@ -137,6 +137,15 @@ function warehouseMaterialClassLabel(value: unknown): string {
   return 'Chưa phân loại';
 }
 
+/** Nhóm VTHH chuẩn cho Băng Dính/Tem — đồng bộ với PTĐM (CANONICAL_NHOM_VTHH). */
+const WAREHOUSE_VTHH_OPTIONS = ['TP; PX Rỗng', 'TP; PX Đặc', 'TP; PX Sóng'] as const;
+
+/** Cặp mã NPL + tên sản xuất cho ô Tên SX (tìm được theo cả mã lẫn tên). */
+interface MaterialProductionNamePair {
+  code: string;
+  productionName: string;
+}
+
 const WAREHOUSE_HISTORY_TABS = [
   ['nvl', 'Kho NVL', Boxes],
   ['san_pham', 'Kho thành phẩm', Package],
@@ -547,7 +556,7 @@ const warehouseXuatMaterialLineGridClass =
   'grid min-w-0 grid-cols-[minmax(0,1.2fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] items-center gap-1.5 border-b border-zinc-200/80 py-1.5 md:min-w-[64rem] md:grid-cols-[2.25rem_minmax(7rem,0.9fr)_minmax(7rem,1.05fr)_minmax(6.5rem,0.95fr)_3.25rem_4.5rem_6.25rem_5.5rem_4.5rem_5.75rem_2rem]';
 
 const warehouseXuatNvlLineGridClass =
-  'grid min-w-0 grid-cols-[minmax(0,1.2fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] items-center gap-1.5 border-b border-zinc-200/80 py-1.5 md:min-w-[82rem] md:grid-cols-[2.25rem_minmax(6.5rem,0.85fr)_minmax(6.5rem,0.95fr)_minmax(6rem,0.85fr)_3.25rem_6.25rem_4.5rem_4.25rem_4.25rem_5.75rem_5rem_4.25rem_5.5rem_2rem]';
+  'grid min-w-0 grid-cols-[minmax(0,1.2fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] items-center gap-1.5 border-b border-zinc-200/80 py-1.5 md:min-w-[87rem] md:grid-cols-[2.25rem_minmax(6.5rem,0.85fr)_minmax(6.5rem,0.95fr)_minmax(6rem,0.85fr)_3.25rem_5rem_6.25rem_4.5rem_4.25rem_4.25rem_5.75rem_5rem_4.25rem_5.5rem_2rem]';
 
 const warehouseNhapHeaderGridClass =
   'mb-1 grid min-w-0 grid-cols-[minmax(0,1.2fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-2 py-2 md:min-w-[50rem] md:grid-cols-[2.25rem_minmax(7rem,0.95fr)_minmax(7rem,1.15fr)_3.25rem_5.5rem_5.5rem_4.5rem_5.75rem_2rem]';
@@ -568,7 +577,7 @@ const warehouseXuatMaterialHeaderGridClass =
   'mb-1 grid min-w-0 grid-cols-[minmax(0,1.2fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-2 py-2 md:min-w-[64rem] md:grid-cols-[2.25rem_minmax(7rem,0.9fr)_minmax(7rem,1.05fr)_minmax(6.5rem,0.95fr)_3.25rem_4.5rem_6.25rem_5.5rem_4.5rem_5.75rem_2rem]';
 
 const warehouseXuatNvlHeaderGridClass =
-  'mb-1 grid min-w-0 grid-cols-[minmax(0,1.2fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-2 py-2 md:min-w-[82rem] md:grid-cols-[2.25rem_minmax(6.5rem,0.85fr)_minmax(6.5rem,0.95fr)_minmax(6rem,0.85fr)_3.25rem_6.25rem_4.5rem_4.25rem_4.25rem_5.75rem_5rem_4.25rem_5.5rem_2rem]';
+  'mb-1 grid min-w-0 grid-cols-[minmax(0,1.2fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-2 py-2 md:min-w-[87rem] md:grid-cols-[2.25rem_minmax(6.5rem,0.85fr)_minmax(6.5rem,0.95fr)_minmax(6rem,0.85fr)_3.25rem_5rem_6.25rem_4.5rem_4.25rem_4.25rem_5.75rem_5rem_4.25rem_5.5rem_2rem]';
 
 const warehouseLineMobileHiddenClass = 'hidden md:block';
 
@@ -909,16 +918,20 @@ export function parseWarehouseSlipPayloadItems(
       const weightKgFromLine = parsePercentInput(line.weightKg ?? '');
       const areaM2 = parsePercentInput(line.areaM2 ?? '');
       const lengthM = parsePercentInput(line.lengthM ?? '');
+      // ĐVT kg → Quy đổi = SL thực, không nhân hệ số (tránh sai số float).
+      const isKgUnit = isNvlKind && isWarehouseKgUnit(line.unit);
       const weightKg =
-        isNvlKind &&
-        Number.isFinite(quantity) &&
-        quantity > 0 &&
-        Number.isFinite(effectivePerUnit) &&
-        effectivePerUnit > 0
-          ? Math.round(quantity * effectivePerUnit * 1000) / 1000
-          : warehouseKind === 'san_pham' && Number.isFinite(weightKgFromLine) && weightKgFromLine > 0
-            ? weightKgFromLine
-            : undefined;
+        isKgUnit && Number.isFinite(quantity) && quantity > 0
+          ? Math.round(quantity * 1000) / 1000
+          : isNvlKind &&
+            Number.isFinite(quantity) &&
+            quantity > 0 &&
+            Number.isFinite(effectivePerUnit) &&
+            effectivePerUnit > 0
+            ? Math.round(quantity * effectivePerUnit * 1000) / 1000
+            : warehouseKind === 'san_pham' && Number.isFinite(weightKgFromLine) && weightKgFromLine > 0
+              ? weightKgFromLine
+              : undefined;
       const nhomVthh = String(line.nhomVthh || '').trim() || undefined;
       const lineMachine = String(line.machine || '').trim();
       return {
@@ -1090,13 +1103,37 @@ function materialHasCatalogTotalWeight(material: { totalWeight?: string }) {
   return Boolean(value && value !== '-');
 }
 
-/** Gộp mã NVL trùng — ưu tiên bản ghi đúng kho phiếu và có cột Tổng kg (quy đổi kg). */
-export function dedupeWarehouseSlipMaterials<T extends { code: string; warehouse?: string; totalWeight?: string }>(
-  materials: T[],
-  selectedWarehouseName: string
-): T[] {
+function materialCatalogIdentity(
+  material: { code: string; name?: string; productionName?: string; unit?: string; phanLoai?: string }
+) {
+  const fold = (value: string | undefined) => String(value || '').trim().toLocaleLowerCase('vi');
+  return [
+    normalizeMaterialCodeKey(material.code),
+    fold(material.name),
+    fold(material.productionName),
+    fold(material.unit),
+    fold(material.phanLoai)
+  ].join('|');
+}
+
+/**
+ * Gộp bản ghi danh mục trùng hẳn (cùng mã + tên + tên SX + ĐVT + phân loại),
+ * ưu tiên dòng đúng kho phiếu và có cột Tổng kg.
+ * Cùng mã nhưng khác tên hoặc tên sản xuất vẫn giữ riêng — mã NPL được dùng lại cho nhiều dòng kho.
+ */
+export function dedupeWarehouseSlipMaterials<
+  T extends {
+    code: string;
+    name?: string;
+    productionName?: string;
+    unit?: string;
+    phanLoai?: string;
+    warehouse?: string;
+    totalWeight?: string;
+  }
+>(materials: T[], selectedWarehouseName: string): T[] {
   const selectedWarehouseKey = normalizeWarehouseNameKey(selectedWarehouseName);
-  const byCode = new Map<string, T>();
+  const byIdentity = new Map<string, T>();
 
   const score = (item: T) => {
     const warehouseKey = materialWarehouseNameKey(item);
@@ -1110,13 +1147,14 @@ export function dedupeWarehouseSlipMaterials<T extends { code: string; warehouse
   for (const material of materials) {
     const codeKey = normalizeMaterialCodeKey(material.code);
     if (!codeKey) continue;
-    const existing = byCode.get(codeKey);
+    const identity = materialCatalogIdentity(material);
+    const existing = byIdentity.get(identity);
     if (!existing || score(material) > score(existing)) {
-      byCode.set(codeKey, material);
+      byIdentity.set(identity, material);
     }
   }
 
-  return [...byCode.values()];
+  return [...byIdentity.values()];
 }
 
 function warehouseExportLineDraftMergeKey(line: Pick<WarehouseSlipLineDraft, 'code' | 'unit'>) {
@@ -2487,9 +2525,14 @@ export function WarehouseSlipPanel({
    * Mã có thể mang hậu tố lô/serial (quét QR, VD "L30cm_3701190208G") không khớp đúng danh mục
    * — tra tên/ĐVT theo tiền tố trước "_", nhưng vẫn lưu nguyên mã đầy đủ vào dòng phiếu.
    */
-  const resolveLinePatchForCode = (fullCode: string, currentLine?: WarehouseSlipLineDraft) => {
+  const resolveLinePatchForCode = (
+    fullCode: string,
+    currentLine?: WarehouseSlipLineDraft,
+    picked?: MaterialOption
+  ) => {
     const prefixKey = normalizeMaterialCodeKey(warehouseCodePrefix(fullCode));
-    const item = itemOptions.find(option => normalizeMaterialCodeKey(option.code) === prefixKey);
+    const item =
+      picked ?? itemOptions.find(option => normalizeMaterialCodeKey(option.code) === prefixKey);
     // Mã quét mang hậu tố lô/serial chỉ dùng để tra danh mục và chống trùng khi quét — dòng
     // phiếu (ô Mã NPL/SP) chỉ lưu đúng mã gốc/tiền tố, không mang hậu tố.
     const canonicalCode = item?.code || warehouseCodePrefix(fullCode);
@@ -2538,11 +2581,11 @@ export function WarehouseSlipPanel({
     };
   };
 
-  const pickItem = (key: string, code: string) => {
-    const materialCode = code.trim();
+  const pickItem = (key: string, code: string, picked?: MaterialOption) => {
+    const materialCode = (picked?.code || code).trim();
     const isExportNvl = (warehouseKind === 'nvl' || warehouseKind === 'tai_che') && slipType === 'xuat';
     const currentLine = lines.find(line => line.key === key);
-    updateLine(key, resolveLinePatchForCode(materialCode, currentLine));
+    updateLine(key, resolveLinePatchForCode(materialCode, currentLine, picked));
     if (isExportNvl && materialCode) {
       void loadNvlAvgInboundPrice(materialCode, slipDate, {
         lineKey: key,
@@ -2550,6 +2593,38 @@ export function WarehouseSlipPanel({
         forceOverwrite: true
       });
     }
+  };
+
+  /** Tên sản xuất thuộc đúng mã NPL của dòng (không lẫn mã khác). */
+  const getMaterialProductionNameOptions = (code: string, productionName = ''): MaterialProductionNamePair[] => {
+    const codeKey = String(code || '').trim().toLocaleLowerCase('vi');
+    if (!codeKey) {
+      const current = String(productionName || '').trim();
+      return current ? [{ code: '', productionName: current }] : [];
+    }
+    const seen = new Set<string>();
+    const pairs: MaterialProductionNamePair[] = [];
+    for (const option of itemOptions) {
+      if (String(option.code || '').trim().toLocaleLowerCase('vi') !== codeKey) continue;
+      const optName = String(option.productionName || '').trim();
+      const nameKey = optName.toLocaleLowerCase('vi');
+      if (!optName || seen.has(nameKey)) continue;
+      seen.add(nameKey);
+      pairs.push({ code: String(option.code || '').trim(), productionName: optName });
+    }
+    const current = String(productionName || '').trim();
+    if (current && !seen.has(current.toLocaleLowerCase('vi'))) {
+      pairs.push({ code: String(code || '').trim(), productionName: current });
+    }
+    return pairs.sort(
+      (a, b) =>
+        a.productionName.localeCompare(b.productionName, 'vi') || a.code.localeCompare(b.code, 'vi')
+    );
+  };
+
+  /** Ô Tên sản xuất NVL: dropdown mở ngược lên trên như màn đơn hàng (mục đang chọn nền vàng). */
+  const pickMaterialProductionName = (key: string, productionName: string) => {
+    updateLine(key, { productionName });
   };
 
   /** Xuất TP: mỗi dòng chọn đúng 1 SP từ tồn (khóa ma + tên). */
@@ -3477,10 +3552,13 @@ export function WarehouseSlipPanel({
             machine: line.machine,
             // NVL chính không có hệ số phụ: lấy kg/đơn vị từ định mức
             // (tong_khoi_luong / SL) để tổng TL toàn phiếu gồm cả chính + phụ.
-            normWeightPerUnitKg: line.normWeightPerUnitKg
-              ?? (line.warehouseClass === 'nvl_chinh' && line.documentQuantity > 0 && line.normWeightKg > 0
-                ? Math.round((line.normWeightKg / line.documentQuantity) * 1000000) / 1000000
-                : undefined),
+            // ĐVT kg → hệ số = 1 tuyệt đối, không chia lại (tránh sai số float).
+            normWeightPerUnitKg: isWarehouseKgUnit(line.unit)
+              ? 1
+              : (line.normWeightPerUnitKg
+                ?? (line.warehouseClass === 'nvl_chinh' && line.documentQuantity > 0 && line.normWeightKg > 0
+                  ? Math.round((line.normWeightKg / line.documentQuantity) * 1000000) / 1000000
+                  : undefined)),
             nhomVthh: line.nhomVthh,
             auxiliaryGroup: line.auxiliaryGroup
           }))
@@ -4082,6 +4160,10 @@ export function WarehouseSlipPanel({
       if (Number.isFinite(stored) && stored > 0) return stored;
     }
     const perUnit = Number(line.normWeightPerUnitKg);
+    // ĐVT kg → Quy đổi = SL thực, không nhân hệ số (tránh sai số float 850 → 850,003).
+    if (isWarehouseKgUnit(line.unit) && Number.isFinite(quantity) && quantity > 0) {
+      return Math.round(quantity * 1000) / 1000;
+    }
     if (
       Number.isFinite(quantity) &&
       quantity > 0 &&
@@ -5394,6 +5476,11 @@ export function WarehouseSlipPanel({
                 </span>
               ) : null}
               <span className={`${warehouseLineHeaderClass} ${warehouseLineMobileHiddenClass}`}>ĐVT</span>
+              {isNvlExport ? (
+                <span className={`${warehouseLineHeaderClass} ${warehouseLineMobileHiddenClass}`}>
+                  Nhóm VTHH
+                </span>
+              ) : null}
               {slipType === 'xuat' ? (
                 <>
                   {isNvlExport ? (
@@ -5494,31 +5581,17 @@ export function WarehouseSlipPanel({
                       onChange={code =>
                         isTpExport ? pickTpStockItem(line.key, code) : pickItem(line.key, code)
                       }
+                      onSelectOption={item => {
+                        if (isTpExport || !item) return;
+                        const option = item as MaterialOption;
+                        pickItem(line.key, option.code, option);
+                      }}
                       options={
                         isTpExport
                           ? tpStockSelectable
                           : isTpInbound
                             ? tpInboundItemOptions
-                            : warehouseKind === 'nvl' || warehouseKind === 'tai_che'
-                              ? (() => {
-                                  const lineClass = normalizeWarehouseMaterialClass(line.warehouseClass);
-                                  const byClass = (cls: WarehouseMaterialClass) =>
-                                    itemOptions.filter(
-                                      opt =>
-                                        normalizeWarehouseMaterialClass((opt as MaterialOption).phanLoai) ===
-                                        cls
-                                    );
-                                  if (lineClass === 'nvl_chinh') {
-                                    const filtered = byClass('nvl_chinh');
-                                    return filtered.length > 0 ? filtered : itemOptions;
-                                  }
-                                  if (lineClass === 'nvl_phu') {
-                                    const filtered = byClass('nvl_phu');
-                                    return filtered.length > 0 ? filtered : itemOptions;
-                                  }
-                                  return itemOptions;
-                                })()
-                              : itemOptions
+                            : itemOptions
                       }
                       placeholder={
                         isTpExport
@@ -5552,13 +5625,21 @@ export function WarehouseSlipPanel({
                       }
                       inputClassName={warehouseLineFieldClass}
                       desktopAutoFlip
+                      // Kho NVL: chọn xong ô Mã chỉ hiển thị mã (dropdown vẫn hiện mã · tên).
+                      displaySelectedAsValue={warehouseKind === 'nvl' || warehouseKind === 'tai_che'}
                       getLabel={item => {
                         if (isTpExport) {
                           const row = item as TpStockOption;
                           return `${row.ma_sp || '—'} · ${row.ten_sp || '—'} · ${row.trong_luong_kg_mot_sp || 0} kg · ${row.so_m2_mot_sp || 0} m² · ${row.so_m_dai_mot_sp || 0} m (tồn ${row.ton_cuoi_sl} ${row.don_vi || ''})`;
                         }
                         const option = item as MaterialOption;
-                        return `${option.code} · ${option.name}`;
+                        const name = String(option.name || '').trim();
+                        const productionName = String(option.productionName || '').trim();
+                        const sameName =
+                          productionName.toLocaleLowerCase('vi') === name.toLocaleLowerCase('vi');
+                        return productionName && !sameName
+                          ? `${option.code} · ${name} · ${productionName}`
+                          : `${option.code} · ${name}`;
                       }}
                       getValue={item =>
                         isTpExport
@@ -5571,7 +5652,7 @@ export function WarehouseSlipPanel({
                           return `${row.ma_sp} ${row.ten_sp} ${row.don_vi} ${row.nhom_vthh}`;
                         }
                         const option = item as MaterialOption;
-                        return `${option.code} ${option.name}`;
+                        return `${option.code} ${option.name} ${option.productionName || ''}`;
                       }}
                     />
                   </div>
@@ -5586,13 +5667,71 @@ export function WarehouseSlipPanel({
                   </div>
                   {isMaterialWarehouse ? (
                     <div className={`min-w-0 ${warehouseLineMobileHiddenClass}`}>
-                      <input
+                      <SearchableSelect
                         value={resolveWarehouseLineProductionName(line, itemOptions)}
-                        readOnly
-                        tabIndex={-1}
-                        className={`${warehouseLineFieldClass} bg-zinc-50 text-zinc-700`}
-                        title="Tên sản xuất NVL (theo kho NVL / phiếu định mức)"
-                        placeholder="—"
+                        onChange={productionName => pickMaterialProductionName(line.key, productionName)}
+                        onSelectOption={item => {
+                          // Đổi tên SX → chốt đúng dòng kho (mã + tên SX): đồng bộ materialId,
+                          // tên, ĐVT, nhóm phụ và hệ số quy đổi theo đúng id NVL đó.
+                          const pair = item as MaterialProductionNamePair | null;
+                          const picked = String(pair?.productionName || '').trim();
+                          if (!picked) return;
+                          const codeKey = line.code.trim().toLocaleLowerCase('vi');
+                          const match = itemOptions.find(
+                            option =>
+                              String(option.code || '').trim().toLocaleLowerCase('vi') === codeKey &&
+                              String(option.productionName || '').trim() === picked
+                          );
+                          if (!match) {
+                            updateLine(line.key, { productionName: picked });
+                            return;
+                          }
+                          const nextUnit = String(match.unit || '').trim() || line.unit;
+                          const nextAuxiliaryGroup =
+                            String(match.nhomVatTuPhu || '').trim() || line.auxiliaryGroup || '';
+                          const patch: Partial<WarehouseSlipLineDraft> = {
+                            materialId: String(match.id || '').trim(),
+                            name: String(match.name || '').trim() || line.name,
+                            unit: nextUnit,
+                            productionName: picked,
+                            auxiliaryGroup: nextAuxiliaryGroup
+                          };
+                          if (isWarehouseKgUnit(nextUnit)) {
+                            patch.normWeightPerUnitKg = 1;
+                          } else if (
+                            isTapeOrStampMaterial(
+                              normalizeNhomVatTuPhuKey(nextAuxiliaryGroup || picked)
+                            )
+                          ) {
+                            const perUnit = resolveAuxiliaryWeightPerUnit(
+                              normalizeNhomVatTuPhuKey(nextAuxiliaryGroup || picked),
+                              line.nhomVthh,
+                              nextUnit
+                            );
+                            if (perUnit && perUnit > 0) patch.normWeightPerUnitKg = perUnit;
+                          }
+                          updateLine(line.key, patch);
+                        }}
+                        options={getMaterialProductionNameOptions(
+                          line.code,
+                          resolveWarehouseLineProductionName(line, itemOptions)
+                        )}
+                        placeholder={line.code.trim() ? 'Chọn tên sản xuất' : 'Chọn mã NPL trước'}
+                        disabled={!line.code.trim()}
+                        skipUnchangedBlurCommit
+                        openUpward
+                        showAllWhenQueryMatchesSelection
+                        selectedOptionClassName="bg-yellow-50 font-black text-yellow-800 ring-2 ring-inset ring-yellow-400"
+                        inputClassName={warehouseLineFieldClass}
+                        getLabel={item => String((item as MaterialProductionNamePair).productionName || '')}
+                        getValue={item => String((item as MaterialProductionNamePair).productionName || '')}
+                        getSearchText={item =>
+                          `${(item as MaterialProductionNamePair).code || ''} ${(item as MaterialProductionNamePair).productionName || ''}`
+                        }
+                        getOptionLabel={item =>
+                          `${(item as MaterialProductionNamePair).code || '—'} · ${(item as MaterialProductionNamePair).productionName || ''}`
+                        }
+                        allowEmpty
                       />
                     </div>
                   ) : null}
@@ -5603,6 +5742,41 @@ export function WarehouseSlipPanel({
                       className={warehouseLineFieldClass}
                     />
                   </div>
+                  {isNvlExport ? (
+                    <div className={`min-w-0 ${warehouseLineMobileHiddenClass}`}>
+                      {(() => {
+                        const groupKey = normalizeNhomVatTuPhuKey(
+                          line.auxiliaryGroup || line.productionName || line.name || line.code
+                        );
+                        if (!isTapeOrStampMaterial(groupKey)) {
+                          return <span className="block text-center text-xs text-zinc-300">—</span>;
+                        }
+                        return (
+                          <select
+                            aria-label="Nhóm VTHH"
+                            value={line.nhomVthh || ''}
+                            onChange={event => {
+                              const nextVthh = event.target.value;
+                              const perUnit = resolveAuxiliaryWeightPerUnit(groupKey, nextVthh, line.unit);
+                              updateLine(line.key, {
+                                nhomVthh: nextVthh,
+                                ...(perUnit && perUnit > 0 ? { normWeightPerUnitKg: perUnit } : {})
+                              });
+                            }}
+                            className={`${warehouseLineFieldClass} ${line.nhomVthh ? '' : 'border-amber-300 bg-amber-50/60'}`}
+                            title="Nhóm VTHH (Băng dính/Tem) — quyết định hệ số quy đổi kg"
+                          >
+                            <option value="">-- VTHH --</option>
+                            {WAREHOUSE_VTHH_OPTIONS.map(option => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        );
+                      })()}
+                    </div>
+                  ) : null}
                   {slipType === 'xuat' ? (
                     <>
                       {isNvlExport ? (
