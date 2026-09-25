@@ -14,8 +14,7 @@ Không có cột mẹ/con, `kho_tp`, hay `di_tai_che` trên bảng — `CREATE T
 
 **Tạo mới / Sửa** chỉ lưu lệnh trạng thái `moi` (chờ duyệt), không ghi kho.
 Trong form, khi đủ thông tin sản phẩm có nút **Xác nhận**: xem sản phẩm nguồn cắt thành cắt 1 / cắt 2 (mã, tên, số lượng, kg/m²/m dài và thông số sẽ ghi `nhap_kho`).
-Bấm **Duyệt** (`POST /:id/hoan-thanh`) mới xuất **Kho cắt lẻ**, nhập **Kho thành phẩm**, nhập phần còn lại lại **Kho cắt lẻ**.
-Phần còn lại **dưới 2m** nhập thẳng **Kho tái chế** (không xuất, vì sản phẩm còn lại chưa có tồn ở Kho cắt lẻ). Từ 2m thì nhập lại Kho cắt lẻ. Sau khi duyệt (`hoan_thanh`) không sửa được.
+Bấm **Duyệt** (`POST /:id/hoan-thanh`) mới xuất **Kho cắt lẻ**, nhập **Kho thành phẩm**, nhập mọi phần còn lại lại **Kho cắt lẻ** (mọi chiều dài, mọi máy — không nhập Kho tái chế). Sau khi duyệt (`hoan_thanh`) không sửa được.
 
 - Được hạ một chiều (xẻ khổ giữ dài / cắt ngắn giữ rộng) hoặc hạ cả khổ lẫn m dài (`kieu_cat = ca_hai`). Độ li đích đổi riêng được: khi đổi, `do_day_m` của sản phẩm cắt ghép lại theo số li (vd `1` → `1m`) rồi ghi `nhap_kho`; phần còn lại giữ `do_day_m` mẹ. Hạ khổ thì khổ còn lại = khổ mẹ − khổ cắt, m dài phần còn lại giữ của mẹ. Tên SP cắt và phần còn lại nối thêm `mo_ta_tem` của mẹ.
 - Gốc trọng lượng là 3 hệ số 1 SP của mẹ (`kg/m2/m dài`): `kg2 = kg1 × (w2×l2)/(w1×l1)`.
@@ -39,8 +38,8 @@ resilient khi DB chưa migrate) — xem [nhap_kho.md](./nhap_kho.md).
 
 | File | Nội dung |
 |------|----------|
-| `src/features/lenh-cat-le/index.tsx` | Modal lớn. Xác nhận và Xem trước phiếu (bản tạm): 1 phiếu xuất Kho cắt lẻ sản phẩm nguồn, nhập thành phẩm, nhập phần còn lại từ 2m về Kho cắt lẻ, phần dưới 2m chỉ nhập Kho tái chế. Duyệt mới ghi kho |
-| `src/features/lenh-cat-le/logic.ts` | Pure: `computeCatLe` (tên + quy đổi + rule <2m), `motherFromNhapKhoRow`, parse/format mét |
+| `src/features/lenh-cat-le/index.tsx` | Modal lớn. Xác nhận và Xem trước phiếu (bản tạm): 1 phiếu xuất Kho cắt lẻ sản phẩm nguồn, nhập thành phẩm, nhập mọi phần còn lại về Kho cắt lẻ. Duyệt mới ghi kho |
+| `src/features/lenh-cat-le/logic.ts` | Pure: `computeCatLe` (tên + quy đổi; phần thừa luôn về kho cắt lẻ), `motherFromNhapKhoRow`, parse/format mét |
 | `tests/unit/lenhCatLe.test.ts` | Chuỗi 20m→12m→10m, xẻ khổ, validate, cân tay |
 
 ## Không đọc

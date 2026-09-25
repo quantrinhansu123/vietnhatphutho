@@ -102,6 +102,7 @@ export const BACK_TAB_MAP: Record<string, string> = {
   'settings': 'quan-tri',
   'orders': 'business',
   'customers': 'business',
+  'suppliers': 'business',
   'shipping-orders': 'business',
   'production-orders': 'factory-quan-doc',
   'production-plan-history': 'factory-quan-doc',

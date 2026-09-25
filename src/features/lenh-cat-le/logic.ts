@@ -6,7 +6,7 @@
  *    Được hạ một chiều hoặc cả khổ lẫn m dài. Độ li đổi riêng.
  *  - Gốc tính trọng lượng là 3 hệ số 1 SP của dòng mẹ trong `nhap_kho`
  *    (kg1 / a1 / l1): kg2 = kg1 × (w2×l2)/(w1×l1), với w1 = a1/l1.
- *  - Phần thừa < 2m dài thì đi Kho tái chế thay vì nhập lại Kho cắt lẻ.
+ *  - Phần thừa (mọi chiều dài, mọi máy) nhập lại Kho cắt lẻ, không nhập Kho tái chế.
  */
 import {
   calculateDoLiDm,
@@ -17,8 +17,6 @@ import {
 export const KHO_CAT_LE = 'Kho cắt lẻ';
 export const KHO_THANH_PHAM = 'Kho thành phẩm';
 export const KHO_TAI_CHE = 'Kho tái chế';
-/** Ngưỡng tái chế: m dài thừa DƯỚI mức này thì đi tái chế (đúng 2m vẫn nhập lại). */
-export const TAI_CHE_MIN_M = 2;
 
 export interface CatLeSpecs {
   tenGoc: string;
@@ -315,7 +313,7 @@ export function computeCatLe(
         nhomVthh
       ))
     : '';
-  const diTaiChe = conThua && mDaiThua < TAI_CHE_MIN_M - EPS;
+  const diTaiChe = false;
 
   return {
     kieuCat,
@@ -585,8 +583,8 @@ function slipLineFromProduct(
 
 /** Bộ phiếu in của 1 lệnh.
  * Một phiếu xuất Kho cắt lẻ: chỉ sản phẩm nguồn đang có tồn, chuẩn bị cắt.
- * Nhập thành phẩm, nhập phần còn lại từ 2m về Kho cắt lẻ.
- * Phần dưới 2m nhập thẳng Kho tái chế — không xuất, vì sản phẩm còn lại chưa có trong kho.
+ * Nhập thành phẩm, nhập mọi phần còn lại về Kho cắt lẻ.
+ * Phiếu Kho tái chế chỉ còn khi lệnh cũ đã ghi `ma_phieu_nhap_tai_che`.
  * `preview`: vẫn dựng phiếu khi chưa có số phiếu (bản xem trước, chưa ghi kho).
  */
 export function buildCatLePrintSlips(lenh: {
@@ -671,7 +669,7 @@ export function buildCatLePrintSlips(lenh: {
       slipType: 'nhap',
       slipDate: ngay,
       reason: `Cắt lẻ ${maLenh}`,
-      note: `Nhập ${khoNguon} — sản phẩm còn lại từ 2m`,
+      note: `Nhập ${khoNguon} — sản phẩm còn lại`,
       warehouseName: khoNguon,
       createdBy: nguoi,
       lines: conLai.map(line =>
@@ -702,7 +700,7 @@ export function buildCatLePrintSlips(lenh: {
         slipType: 'nhap',
         slipDate: ngay,
         reason: `Cắt lẻ ${maLenh}`,
-        note: `Nhập ${khoTaiChe} — phần còn lại dưới ${TAI_CHE_MIN_M}m, chưa từng có trong kho`,
+        note: `Nhập ${khoTaiChe} — phần còn lại (phiếu cũ)`,
         warehouseName: khoTaiChe,
         createdBy: nguoi,
         lines: ckLines

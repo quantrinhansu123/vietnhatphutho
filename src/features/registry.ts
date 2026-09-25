@@ -17,6 +17,7 @@ export type TableId =
   | 'phieu_xuat_kho'
   | 'don_hang'
   | 'khach_hang'
+  | 'nha_cung_cap'
   | 'lenh_xuat_hang'
   | 'lenh_sx'
   | 'ke_hoach_san_xuat'
@@ -224,6 +225,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appLines: 'src/features/khach-hang/index.tsx',
     components: [],
     utils: ['src/utils/customerExcel.ts']
+  },
+  nha_cung_cap: {
+    table: 'nha_cung_cap',
+    label: 'Nhà cung cấp',
+    sql: ['supabase-nha-cung-cap.sql'],
+    apiPrefix: '/api/nha-cung-cap',
+    serverLines: 'GET/POST /api/nha-cung-cap + POST /api/nha-cung-cap/import-batch + PUT/DELETE /api/nha-cung-cap/:id (sau khach-hang)',
+    appTab: 'suppliers',
+    appLines: 'src/features/nha-cung-cap/index.tsx',
+    components: [],
+    utils: ['src/utils/supplierExcel.ts']
   },
   lenh_xuat_hang: {
     table: 'lenh_xuat_hang',
@@ -645,7 +657,7 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   },
   lenh_cat_le: {
     table: 'lenh_cat_le',
-    label: 'Lệnh cắt lẻ (kho cắt lẻ → TP + thừa/tái chế)',
+    label: 'Lệnh cắt lẻ (kho cắt lẻ → TP + thừa nhập lại kho cắt lẻ)',
     sql: ['supabase-lenh-cat-le.sql', 'supabase-nhap-kho-cat-le.sql', 'supabase-nhap-kho-loai-kho.sql'],
     apiPrefix: '/api/lenh-cat-le',
     serverLines: 'GET/POST /api/lenh-cat-le (POST sanPham[] chỉ lưu moi) + PUT/DELETE /:id + POST /:id/hoan-thanh (duyệt, ghi kho) + POST /:id/huy',

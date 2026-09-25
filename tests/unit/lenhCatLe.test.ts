@@ -58,7 +58,7 @@ describe('lenh-cat-le — chuỗi: 12m cắt tiếp 10m', () => {
     assert.match(second.tenSpThua, /2m/);
   });
 
-  it('thừa dưới 2m thì đi tái chế', () => {
+  it('thừa dưới 2m vẫn nhập lại kho cắt lẻ', () => {
     const first = computeCatLe(mother20m, { w2: 1.22, l2: 12, qty: 1 });
     const mother12m: CatLeMother = {
       ...mother20m,
@@ -70,7 +70,7 @@ describe('lenh-cat-le — chuỗi: 12m cắt tiếp 10m', () => {
     };
     const r = computeCatLe(mother12m, { w2: 1.22, l2: 11, qty: 1 });
     assert.equal(r.mDaiThua, 1);
-    assert.equal(r.diTaiChe, true);
+    assert.equal(r.diTaiChe, false);
   });
 });
 
@@ -133,7 +133,7 @@ describe('lenh-cat-le — tên theo độ li, khổ rộng, m dài', () => {
     assert.equal(r.kgThua, 4);
   });
 
-  it('một lệnh nhiều SP lưu id nguồn và cờ chuyển tái chế khi còn dưới 2m', () => {
+  it('một lệnh nhiều SP lưu id nguồn và phần thừa dưới 2m vẫn về kho cắt lẻ', () => {
     const line = buildCatLeSanPhamLine({
       idSanPhamTrongKho: '11111111-1111-1111-1111-111111111111',
       mother: mother20m,
@@ -145,7 +145,7 @@ describe('lenh-cat-le — tên theo độ li, khổ rộng, m dài', () => {
     assert.equal(line.san_pham_nguon.id_san_pham_trong_kho, '11111111-1111-1111-1111-111111111111');
     assert.equal(line.san_pham_nguon.ma_sp, 'SP-CAT');
     assert.equal(line.san_pham_cat_2?.m_dai, 1);
-    assert.equal(line.di_tai_che, true);
+    assert.equal(line.di_tai_che, false);
     assert.match(line.san_pham_cat_1.ten_sp, /19m/);
     assert.match(line.san_pham_cat_2?.ten_sp || '', /1m/);
     assert.equal('ma_sp_me' in line, false);
@@ -163,14 +163,15 @@ describe('lenh-cat-le — tên theo độ li, khổ rộng, m dài', () => {
     });
     assert.deepEqual(
       slips.map(slip => slip.slipCode),
-      ['PX-1', 'PN-1', 'PN-3']
+      ['PX-1', 'PN-1', 'PN-2']
     );
     assert.equal(slips[0].slipType, 'xuat');
     assert.equal(slips[0].warehouseName, 'Kho cắt lẻ');
     assert.equal(slips[1].warehouseName, 'Kho thành phẩm');
     assert.match(slips[0].note, /sản phẩm chuẩn bị cắt/);
     assert.equal(slips[2].slipType, 'nhap');
-    assert.match(slips[2].note, /tái chế|Kho tái chế/);
+    assert.equal(slips[2].warehouseName, 'Kho cắt lẻ');
+    assert.match(slips[2].note, /còn lại/);
     assert.equal(slips.some(slip => slip.slipType === 'xuat' && /tái chế/i.test(slip.reason + slip.note)), false);
     const preview = buildCatLePrintSlips({ ma_lenh: 'CL-1', ngay_cat: '2026-09-23', san_pham: [line] }, { preview: true });
     assert.deepEqual(
@@ -178,7 +179,7 @@ describe('lenh-cat-le — tên theo độ li, khổ rộng, m dài', () => {
       ['xuat', 'nhap', 'nhap']
     );
     assert.ok(preview.every(slip => slip.slipCode === 'Chưa sinh'));
-    assert.match(preview[2].warehouseName, /tái chế/i);
+    assert.equal(preview[2].warehouseName, 'Kho cắt lẻ');
   });
 });
 

@@ -438,6 +438,13 @@ export const BUSINESS_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'customers'
   },
   {
+    title: 'Nhà cung cấp',
+    desc: 'Danh mục nhà cung cấp, công nợ, MST/CCCD, rủi ro hóa đơn và văn bản tham chiếu.',
+    icon: BriefcaseBusiness,
+    icon3d: idCard3d,
+    tab: 'suppliers'
+  },
+  {
     title: 'Đơn đặt hàng',
     desc: 'Tạo đơn hàng, theo dõi mã đơn, khách hàng, mã hàng và lệnh sản xuất.',
     icon: ClipboardList,
@@ -752,7 +759,7 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
   },
   {
     title: 'Lệnh cắt lẻ',
-    desc: 'Cắt cuộn/tấm ở kho cắt lẻ: SP con về kho thành phẩm, thừa nhập lại hoặc chuyển tái chế.',
+    desc: 'Cắt cuộn/tấm ở kho cắt lẻ: SP con về kho thành phẩm, phần thừa nhập lại kho cắt lẻ.',
     icon: Scissors,
     icon3d: warehouseSlip3d,
     tab: 'lenh-cat-le'
@@ -1006,6 +1013,7 @@ export const PRIMARY_NAV_GROUPS: {
     children: [
       { label: 'Sản phẩm', tab: 'products' },
       { label: 'Khách hàng', tab: 'customers' },
+      { label: 'Nhà cung cấp', tab: 'suppliers' },
       { label: 'Đơn đặt hàng', tab: 'orders' },
       { label: 'Lệnh giao / xuất hàng', tab: 'shipping-orders' },
       { label: 'Tồn kho tối thiểu - Tồn kho tối đa', tab: 'inventory-limits' },
@@ -1152,6 +1160,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'vehicles': { group: 'Trang chủ', sub: 'Lái xe' },
   'orders': { group: 'Kinh doanh', sub: 'Đơn đặt hàng' },
   'customers': { group: 'Kinh doanh', sub: 'Khách hàng' },
+  'suppliers': { group: 'Kinh doanh', sub: 'Nhà cung cấp' },
   'shipping-orders': { group: 'Kinh doanh', sub: 'Lệnh giao / xuất hàng' },
   'production-orders': { group: 'Quản Đốc', sub: 'Lệnh sản xuất' },
   'dieu-dong-nhan-su': { group: 'Quản Đốc', sub: 'Điều động nhân sự' },

@@ -72,6 +72,7 @@ import { WarehouseSlipPanel, WarehouseHistoryPanel } from './features/phieu-xuat
 import { LenCatLePanel } from './features/lenh-cat-le';
 import { ChuyenKhoPanel } from './features/chuyen-kho';
 import { CustomersPanel } from './features/khach-hang';
+import { SuppliersPanel } from './features/nha-cung-cap';
 import { ShippingOrdersPanel } from './features/lenh-xuat-hang';
 import { OrdersPanel } from './features/don-hang';
 import { ProductionOrdersPanel } from './features/lenh-sx';
@@ -1723,6 +1724,16 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <CustomersPanel onBack={() => goBack('business')} />
+              </motion.div>
+            ) : activeTab === 'suppliers' ? (
+              <motion.div
+                key="suppliers"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <SuppliersPanel onBack={() => goBack('business')} />
               </motion.div>
             ) : activeTab === 'shipping-orders' ? (
               <motion.div

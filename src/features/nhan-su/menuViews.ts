@@ -41,6 +41,7 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
     label: 'Kinh doanh',
     children: [
       { tab: 'customers', label: 'Khách hàng' },
+      { tab: 'suppliers', label: 'Nhà cung cấp' },
       { tab: 'orders', label: 'Đơn đặt hàng' },
       { tab: 'shipping-orders', label: 'Lệnh giao / xuất hàng' },
       { tab: 'inventory-limits', label: 'Tồn kho tối thiểu - Tồn kho tối đa' },
