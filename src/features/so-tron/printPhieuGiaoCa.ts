@@ -1,6 +1,6 @@
 /**
  * Mô-đun tạo HTML và kích hoạt in Phiếu giao ca kiêm nhật ký sản xuất
- * Thiết kế chuẩn xác theo 2 mặt/trang giấy (A4 Portrait):
+ * Thiết kế 2 trang A4 ngang để cột số 14px hiện đủ, không bị cắt:
  * - Trang 1: Header + I. VẬT TƯ (Bảng theo dõi vật tư sử dụng L1..L10, tồn đầu, lấy kho, tồn cuối, giao ca)
  * - Trang 2: II. THÀNH PHẨM (trái) + III. HÀNG LỖI PHẾ (phải trên) + IV. SỰ CỐ / LƯU Ý (phải dưới) + 4 Chữ ký chân trang
  */
@@ -83,46 +83,54 @@ function esc(value: unknown): string {
     .replace(/"/g, '&quot;');
 }
 
-function num(value: unknown): number {
+/** Số từ JSON giữ dấu chấm thập phân. Chuỗi có dấu phẩy: phẩy là thập phân, chấm là hàng nghìn. */
+export function parseSlipNumber(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
   let text = String(value ?? '').trim().replace(/\s/g, '');
   if (!text) return 0;
   const negative = text.startsWith('-');
   if (negative) text = text.slice(1);
   if (text.includes(',')) text = text.replace(/\./g, '').replace(',', '.');
-  else if (/^\d{1,3}(\.\d{3})+$/.test(text)) text = text.replace(/\./g, '');
+  else if ((text.match(/\./g) || []).length > 1) text = text.replace(/\./g, '');
   const parsed = Number(text);
   if (!Number.isFinite(parsed)) return 0;
   return negative ? -parsed : parsed;
 }
 
-/** In đủ số, không dấu chấm hàng nghìn và không dấu chấm thập phân (thập phân dùng dấu phẩy). */
+function num(value: unknown): number {
+  return parseSlipNumber(value);
+}
+
+/** Không dấu chấm hàng nghìn. Làm tròn 1 chữ số sau dấu phẩy. */
 function fmt(value: number): string {
   if (!Number.isFinite(value) || value === 0) return '';
-  const rounded = Math.round((value + Number.EPSILON) * 1000) / 1000;
+  const rounded = Math.round((value + Number.EPSILON) * 10) / 10;
   const negative = rounded < 0;
-  const abs = Math.abs(rounded);
-  const text = Number.isInteger(abs) ? String(abs) : String(abs).replace('.', ',');
+  const text = Math.abs(rounded).toFixed(1).replace('.', ',');
   return negative ? `-${text}` : text;
+}
+
+/** Hiển thị số trên xem trước và bản in. Giữ nguyên khi đang gõ dở `12,`. */
+export function formatSlipNumber(value: unknown): string {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  if (/^-?\d+,$/.test(text)) return text;
+  const parsed = parseSlipNumber(text);
+  if (!Number.isFinite(parsed)) return text;
+  if (parsed === 0) return /^-?0(?:[,.]0*)?$/.test(text) ? '0,0' : '';
+  return fmt(parsed);
 }
 
 function printNum(value: unknown): string {
   const text = String(value ?? '').trim();
   if (!text) return '';
-  return fmt(num(text));
+  return fmt(num(value));
 }
 
-/** Khổ in A4 dọc, lề 7mm mỗi bên. */
-const PRINT_CONTENT_MM = 196;
-
-function numCell(value: unknown, widthPct: number, extraClass = ''): string {
+function numCell(value: unknown, _widthPct?: number, extraClass = ''): string {
   const text = printNum(value);
-  if (!text) return `<td class="num ${extraClass}"></td>`;
-  const innerMm = Math.max(4, PRINT_CONTENT_MM * (widthPct / 100) - 0.6);
-  const digitMm = 0.5 * 7 * 0.3528;
-  const fitPt = text.length * digitMm <= innerMm
-    ? 7
-    : Math.max(5, innerMm / (text.length * 0.5 * 0.3528));
-  return `<td class="num ${extraClass}"><span style="font-size:${fitPt.toFixed(2)}pt">${esc(text)}</span></td>`;
+  if (!text) return `<td class="num ${extraClass}">&nbsp;</td>`;
+  return `<td class="num ${extraClass}">${esc(text)}</td>`;
 }
 
 function splitNgay(ngay: string) {
@@ -160,10 +168,10 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       const lanCells = Array.from({ length: 10 }, (_, li) => numCell(row?.lan?.[li] ?? '', 3.2)).join('');
 
       return `
-      <tr>
-        <td class="c font-mono">${esc(row?.ma_nvl ?? '')}</td>
-        <td class="l">${esc(row?.ten_nvl ?? '')}${row?.ten_nvl_sx ? ` <span class="sub">(${esc(row.ten_nvl_sx)})</span>` : ''}</td>
-        <td class="c">${esc(row?.dvt ?? (row ? 'Kg' : ''))}</td>
+      <tr class="grid-row">
+        <td class="c font-mono">${esc(row?.ma_nvl ?? '') || '&nbsp;'}</td>
+        <td class="l" style="color:#000;font-size:16px;">${esc(row?.ten_nvl_sx || row?.ten_nvl || '') || '&nbsp;'}</td>
+        <td class="c">${esc(row?.dvt ?? (row ? 'Kg' : '')) || '&nbsp;'}</td>
         ${numCell(row?.dinh_muc ?? '', 8)}
         ${numCell(row && row.ton_dau_ca !== '' && row.ton_dau_ca !== 0 ? row.ton_dau_ca : '', 7.5)}
         ${numCell(row && row.lay_trong_kho !== '' && row.lay_trong_kho !== 0 ? row.lay_trong_kho : '', 7.5)}
@@ -182,9 +190,9 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
   const thanhPhamRowsHtml = paddedThanhPham
     .map(row => {
       return `
-      <tr>
-        <td class="c font-mono">${esc(row?.ma_sp ?? '')}</td>
-        <td class="l">${esc(row?.ten_sp ?? '')}</td>
+      <tr class="grid-row">
+        <td class="c font-mono">${esc(row?.ma_sp ?? '') || '&nbsp;'}</td>
+        <td class="l">${esc(row?.ten_sp ?? '') || '&nbsp;'}</td>
         ${numCell(row?.dinh_muc ?? '', 13)}
         ${numCell(row?.lan_1 ?? '', 8)}
         ${numCell(row?.lan_2 ?? '', 8)}
@@ -202,9 +210,9 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
   const hangLoiRowsHtml = paddedHangLoi
     .map(row => {
       return `
-      <tr>
-        <td class="l">${esc(row?.ten_loi ?? '')}</td>
-        <td class="c">${esc(row?.dvt ?? (row ? 'Kg' : ''))}</td>
+      <tr class="grid-row">
+        <td class="l">${esc(row?.ten_loi ?? '') || '&nbsp;'}</td>
+        <td class="c">${esc(row?.dvt ?? (row ? 'Kg' : '')) || '&nbsp;'}</td>
         ${numCell(row ? row.so_luong : '', 30, 'b')}
       </tr>
     `;
@@ -218,8 +226,8 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
   <title>${esc(tenMayUpper)} - NHẬT KÝ SẢN XUẤT KIÊM PHIẾU GIAO CA</title>
   <style>
     @page {
-      size: A4 portrait;
-      margin: 6mm 7mm 6mm 7mm;
+      size: A4 landscape;
+      margin: 6mm 6mm 6mm 6mm;
     }
     * {
       box-sizing: border-box;
@@ -228,7 +236,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
     }
     body {
       font-family: "Times New Roman", Times, serif, Arial;
-      font-size: 8pt;
+      font-size: 10pt;
       line-height: 1.25;
       color: #000;
       margin: 0;
@@ -319,44 +327,47 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
     table.data-table th,
     table.data-table td {
       border: 1px solid #000;
-      padding: 0 4px;
-      font-size: 8pt;
-      line-height: 1.15;
-      height: 6.4mm;
+      padding: 0 1px;
+      font-size: 16px;
+      color: #000;
       vertical-align: middle;
       overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
     }
     table.data-table th {
       background-color: #f7f7f7;
       font-weight: bold;
       text-align: center;
-      font-size: 7pt;
+      font-size: 16px;
+      color: #000;
       height: auto;
       white-space: normal;
-      line-height: 1.15;
-      padding: 2px 3px;
+      line-height: 1.05;
+      padding: 1px 2px;
     }
-    table.data-table td.c { text-align: center; }
-    table.data-table td.l { text-align: left; }
-    table.data-table td.r { text-align: right; font-variant-numeric: tabular-nums; }
+    table.data-table tbody tr.grid-row,
+    table.data-table tbody tr.grid-row td {
+      height: 8mm;
+      max-height: 8mm;
+    }
+    table.data-table tbody tr.grid-row td {
+      line-height: 8mm;
+      padding: 0 1px;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+    table.data-table td.c { text-align: center; color: #000; }
+    table.data-table td.l { text-align: left; color: #000; font-size: 16px; }
+    table.data-table td.r { text-align: right; font-variant-numeric: tabular-nums; color: #000; }
     table.data-table td.num {
       text-align: right;
       font-variant-numeric: tabular-nums;
-      overflow: visible;
-      text-overflow: clip;
-      white-space: nowrap;
-      padding: 0 0.3mm;
-      font-size: 7pt;
-    }
-    table.data-table td.num span {
-      display: inline-block;
-      white-space: nowrap;
-      letter-spacing: -0.15pt;
+      font-size: 16px;
+      color: #000;
+      padding: 0 1px;
     }
     table.data-table td.b, table.data-table th.b { font-weight: bold; }
-    .font-mono { font-family: monospace, Courier, monospace; font-size: 8pt; }
+    .font-mono { font-family: monospace, Courier, monospace; font-size: 16px; color: #000; }
     .sub { font-size: 6.5pt; color: #444; font-style: italic; }
 
     .bottom-note-row {
@@ -478,34 +489,54 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
     <div class="sheet-body">
     <div class="sec-title">I. VẬT TƯ</div>
     <table class="data-table">
+      <colgroup>
+        <col style="width:7%" />
+        <col style="width:14%" />
+        <col style="width:4%" />
+        <col style="width:5%" />
+        <col style="width:5%" />
+        <col style="width:5%" />
+        <col style="width:5%" />
+        <col style="width:5%" />
+        <col style="width:5%" />
+        <col style="width:5%" />
+        <col style="width:5%" />
+        <col style="width:5%" />
+        <col style="width:5%" />
+        <col style="width:5%" />
+        <col style="width:5%" />
+        <col style="width:5%" />
+        <col style="width:5%" />
+        <col style="width:5%" />
+      </colgroup>
       <thead>
         <tr>
-          <th rowspan="2" style="width: 9%;">Mã vật tư</th>
-          <th rowspan="2" style="width: 16%;">Tên vật tư (Kế hoạch chi tiết kể vật tư cần sử dụng, mã vật tư và định mức vật tư sử dụng (Kg))</th>
-          <th rowspan="2" style="width: 4.5%;">ĐVT</th>
-          <th rowspan="2" style="width: 8%;">Định mức vật tư</th>
-          <th rowspan="2" style="width: 7.5%;">Tồn đầu ca</th>
-          <th rowspan="2" style="width: 7.5%;">Lấy trong kho</th>
-          <th colspan="10" style="width: 32%;">SỬ DỤNG</th>
-          <th rowspan="2" style="width: 7.5%;">Tổng sử dụng</th>
-          <th rowspan="2" style="width: 7.5%;">Tồn cuối ca</th>
+          <th rowspan="2">Mã vật tư</th>
+          <th rowspan="2">Tên vật tư (Kế hoạch chi tiết kể vật tư cần sử dụng, mã vật tư và định mức vật tư sử dụng (Kg))</th>
+          <th rowspan="2">ĐVT</th>
+          <th rowspan="2">Định mức vật tư</th>
+          <th rowspan="2">Tồn đầu ca</th>
+          <th rowspan="2">Lấy trong kho</th>
+          <th colspan="10">SỬ DỤNG</th>
+          <th rowspan="2">Tổng sử dụng</th>
+          <th rowspan="2">Tồn cuối ca</th>
         </tr>
         <tr>
-          <th style="width: 3.2%;">Lần 1</th>
-          <th style="width: 3.2%;">Lần 2</th>
-          <th style="width: 3.2%;">Lần 3</th>
-          <th style="width: 3.2%;">Lần 4</th>
-          <th style="width: 3.2%;">Lần 5</th>
-          <th style="width: 3.2%;">Lần 6</th>
-          <th style="width: 3.2%;">Lần 7</th>
-          <th style="width: 3.2%;">Lần 8</th>
-          <th style="width: 3.2%;">Lần 9</th>
-          <th style="width: 3.2%;">Lần 10</th>
+          <th>Lần 1</th>
+          <th>Lần 2</th>
+          <th>Lần 3</th>
+          <th>Lần 4</th>
+          <th>Lần 5</th>
+          <th>Lần 6</th>
+          <th>Lần 7</th>
+          <th>Lần 8</th>
+          <th>Lần 9</th>
+          <th>Lần 10</th>
         </tr>
       </thead>
       <tbody>
         ${vatTuRowsHtml}
-        <tr style="background-color: #f7f7f7;">
+        <tr class="grid-row" style="background-color: #f7f7f7;">
           <td colspan="6" class="l b" style="text-align: right; padding-right: 8px;">Cộng tổng sử dụng:</td>
           <td colspan="10" class="num b" style="text-align: right; padding-right: 1mm;">
             ${tongCongSuDungVatTu > 0 ? esc(fmt(tongCongSuDungVatTu)) : ''}
@@ -552,7 +583,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
           </thead>
           <tbody>
             ${thanhPhamRowsHtml}
-            <tr style="background-color: #f7f7f7;">
+            <tr class="grid-row" style="background-color: #f7f7f7;">
               <td colspan="6" class="l b" style="text-align: right; padding-right: 6px;">Cộng:</td>
               <td class="num b">${tongNhapKhoThanhPham > 0 ? esc(fmt(tongNhapKhoThanhPham)) : ''}</td>
               <td class="num b">${tongTrongLuongThanhPham > 0 ? esc(fmt(tongTrongLuongThanhPham)) : ''}</td>
@@ -575,7 +606,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
             </thead>
             <tbody>
               ${hangLoiRowsHtml}
-              <tr style="background-color: #f7f7f7;">
+              <tr class="grid-row" style="background-color: #f7f7f7;">
                 <td colspan="2" class="l b" style="text-align: right; padding-right: 6px;">Cộng:</td>
                 <td class="num b">${tongHangLoi > 0 ? esc(fmt(tongHangLoi)) : ''}</td>
               </tr>
