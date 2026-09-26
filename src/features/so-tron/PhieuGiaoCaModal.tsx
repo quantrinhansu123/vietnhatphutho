@@ -8,6 +8,8 @@ import {
   type PhieuGiaoCaThanhPhamRow,
   type PhieuGiaoCaHangLoiRow,
   type PhieuGiaoCaInput,
+  formatSlipNumber,
+  parseSlipNumber,
   printPhieuGiaoCaSlip
 } from './printPhieuGiaoCa';
 import type { SoTronSavedReport } from './index';
@@ -34,8 +36,7 @@ function str(val: unknown): string {
 }
 
 function num(val: unknown): number {
-  const parsed = Number(str(val).replace(',', '.'));
-  return Number.isFinite(parsed) ? parsed : 0;
+  return parseSlipNumber(val);
 }
 
 function round2(val: number): number {
@@ -43,9 +44,49 @@ function round2(val: number): number {
 }
 
 function fmt(val: number): string {
-  if (val === 0) return '';
-  const r = round2(val);
-  return Number.isInteger(r) ? String(r) : String(r);
+  if (!Number.isFinite(val) || val === 0) return '';
+  return formatSlipNumber(val);
+}
+
+function round1(val: number): number {
+  return Math.round((val + Number.EPSILON) * 10) / 10;
+}
+
+const SU_CO_MAU = [
+  { ten: 'Đổi màu', gio: 0.5 },
+  { ten: 'Đổi khổ', gio: 1 }
+] as const;
+
+type SuCoRow = { key: string; ten: string; lan: string };
+
+function gioSuCo(ten: string, lan: string): string {
+  const hit = SU_CO_MAU.find(item => item.ten === ten);
+  const times = num(lan);
+  if (!hit || !(times > 0)) return '';
+  const hours = round1(hit.gio * times);
+  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1).replace('.', ',');
+}
+
+function composeSuCo(rows: SuCoRow[], note: string): string {
+  const lines = rows
+    .filter(row => row.ten && num(row.lan) > 0)
+    .map(row => `${row.ten} — ${String(row.lan).trim()} lần — ${gioSuCo(row.ten, row.lan)} giờ`);
+  return [...lines, note.trim()].filter(Boolean).join('\n');
+}
+
+function parseSuCo(text: string): { rows: SuCoRow[]; note: string } {
+  const rows: SuCoRow[] = [];
+  const notes: string[] = [];
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const match = line.match(/^(.+?)\s+—\s+(\d+(?:[.,]\d+)?)\s+lần\s+—\s+.+$/);
+    const ten = match?.[1]?.trim() || '';
+    if (match && SU_CO_MAU.some(item => item.ten === ten)) {
+      rows.push({ key: uid(), ten, lan: match[2] });
+    } else if (line.trim()) {
+      notes.push(line);
+    }
+  }
+  return { rows, note: notes.join('\n') };
 }
 
 export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
@@ -73,6 +114,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
   const [thanhPhamRows, setThanhPhamRows] = useState<PhieuGiaoCaThanhPhamRow[]>([]);
   const [hangLoiRows, setHangLoiRows] = useState<PhieuGiaoCaHangLoiRow[]>([]);
   const [suCoLuuY, setSuCoLuuY] = useState('');
+  const [suCoRows, setSuCoRows] = useState<SuCoRow[]>([]);
   const [chuKy, setChuKy] = useState({
     thuKhoVatTu: '',
     truongCa: '',
@@ -112,17 +154,18 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
     // Tạm giữ giá trị đã lưu để vẫn hiện nếu chưa tải được phiếu định mức.
     const combinedVatTu: PhieuGiaoCaVatTuRow[] = (report.bang_nvl || []).map(nvl => {
       const bg = banGiaoMap.get(nvl.material_id) || banGiaoMap.get(nvl.ma_nvl);
-      const dm = str((nvl as { dinh_muc?: unknown }).dinh_muc);
+      const dmRaw = str((nvl as { dinh_muc?: unknown }).dinh_muc);
+      const dm = dmRaw ? formatSlipNumber(dmRaw) : '';
 
       const lanArr = Array.from({ length: 10 }, (_, i) => {
         const val = nvl.lan?.[i];
-        return val !== undefined && val !== null && val !== 0 ? String(val) : '';
+        return val !== undefined && val !== null && num(val) !== 0 ? formatSlipNumber(val) : '';
       });
 
-      const tonDau = bg?.ton_dau_ca !== undefined ? String(bg.ton_dau_ca) : '';
-      const layKho = bg?.lay_trong_kho !== undefined ? String(bg.lay_trong_kho) : '';
+      const tonDau = bg?.ton_dau_ca !== undefined && num(bg.ton_dau_ca) !== 0 ? formatSlipNumber(bg.ton_dau_ca) : '';
+      const layKho = bg?.lay_trong_kho !== undefined && num(bg.lay_trong_kho) !== 0 ? formatSlipNumber(bg.lay_trong_kho) : '';
       const tongSd = round2(lanArr.reduce((s, v) => s + num(v), 0));
-      const tonCuoi = round2(num(tonDau) + num(layKho) - tongSd);
+      const tonCuoi = round1(num(tonDau) + num(layKho) - tongSd);
 
       return {
         key: uid(),
@@ -151,7 +194,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
         const tonDau = bg.ton_dau_ca ? String(bg.ton_dau_ca) : '';
         const layKho = bg.lay_trong_kho ? String(bg.lay_trong_kho) : '';
         const tongSd = bg.tong_su_dung || 0;
-        const tonCuoi = round2(num(tonDau) + num(layKho) - tongSd);
+        const tonCuoi = round1(num(tonDau) + num(layKho) - tongSd);
         combinedVatTu.push({
           key: uid(),
           material_id: bg.material_id || '',
@@ -174,7 +217,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
     // Thành phẩm
     const tpList: PhieuGiaoCaThanhPhamRow[] = (report.bang_san_pham || []).map(sp => {
       const sl = str(sp.so_luong);
-      const dm = str(sp.dinh_muc);
+      const dm = str(sp.dinh_muc) || str((sp as { kg_1_sp?: unknown }).kg_1_sp);
       let tl = str(sp.trong_luong);
       if (!tl && sl && dm) {
         tl = fmt(round2(num(sl) * num(dm)));
@@ -204,7 +247,9 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
     setHangLoiRows(hlList);
 
     // Ghi chú / sự cố
-    setSuCoLuuY(report.ghi_chu || '');
+    const parsedSuCo = parseSuCo(report.ghi_chu || '');
+    setSuCoRows(parsedSuCo.rows);
+    setSuCoLuuY(parsedSuCo.note);
     setGiaoCaNote('');
     setSaveSuccess(false);
     setErrorMessage('');
@@ -225,40 +270,27 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
         if (!alive || !res.ok) return;
         const records = Array.isArray(data?.records) ? data.records : [];
         const index = auxiliaryNormWeightIndex(records);
-        setVatTuRows(prev => {
-          const next = prev.map(row => {
-            const formatted = formatNormWeight(
-              lookupAuxiliaryNormWeight(index, row.material_id, row.ma_nvl)
-            );
-            if (!formatted) return row;
-            return { ...row, dinh_muc: formatted };
-          });
-          for (const line of index.lines.filter(item => item.source === 'phu')) {
-            const exists = next.some(
-              row =>
-                (line.materialId && row.material_id && row.material_id === line.materialId) ||
-                (line.code && str(row.ma_nvl).toLowerCase() === line.code.toLowerCase())
-            );
-            if (exists) continue;
-            const formatted = formatNormWeight(line.weightKg);
-            if (!formatted) continue;
-            next.push({
-              key: uid(),
-              material_id: line.materialId,
-              ma_nvl: line.code,
-              ten_nvl: line.name,
-              ten_nvl_sx: '',
-              dvt: line.unit || 'Kg',
-              dinh_muc: formatted,
-              ton_dau_ca: '',
-              lay_trong_kho: '',
-              lan: Array(10).fill(''),
-              tong_su_dung: 0,
-              ton_cuoi_ca: 0
-            });
-          }
-          return next;
-        });
+        const phuKeys = new Set(
+          index.lines
+            .filter(item => item.source === 'phu')
+            .flatMap(item => [item.materialId, item.code].map(value => str(value).toLowerCase()).filter(Boolean))
+        );
+        const isPhuRow = (materialId: string, ma: string) => {
+          const id = str(materialId).toLowerCase();
+          const code = str(ma).toLowerCase();
+          return (id && phuKeys.has(id)) || (code && phuKeys.has(code));
+        };
+        setVatTuRows(prev =>
+          prev
+            .filter(row => !isPhuRow(row.material_id || '', row.ma_nvl))
+            .map(row => {
+              const formatted = formatNormWeight(
+                lookupAuxiliaryNormWeight(index, row.material_id, row.ma_nvl)
+              );
+              if (!formatted) return row;
+              return { ...row, dinh_muc: formatted };
+            })
+        );
       } catch {
         /* giữ định mức đã lưu */
       }
@@ -277,7 +309,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
 
         // Recalculate tong_su_dung và ton_cuoi_ca
         const tongSd = round2(updated.lan.reduce((sum, v) => sum + num(v), 0));
-        const tonCuoi = round2(num(updated.ton_dau_ca) + num(updated.lay_trong_kho) - tongSd);
+        const tonCuoi = round1(num(updated.ton_dau_ca) + num(updated.lay_trong_kho) - tongSd);
         return {
           ...updated,
           tong_su_dung: tongSd,
@@ -294,7 +326,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
         const nextLan = [...row.lan];
         nextLan[lanIndex] = val;
         const tongSd = round2(nextLan.reduce((sum, v) => sum + num(v), 0));
-        const tonCuoi = round2(num(row.ton_dau_ca) + num(row.lay_trong_kho) - tongSd);
+        const tonCuoi = round1(num(row.ton_dau_ca) + num(row.lay_trong_kho) - tongSd);
         return {
           ...row,
           lan: nextLan,
@@ -379,10 +411,10 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
       giaoCaNote,
       thanhPham: thanhPhamRows,
       hangLoi: hangLoiRows,
-      suCoLuuY,
+      suCoLuuY: composeSuCo(suCoRows, suCoLuuY),
       chuKy
     }),
-    [header, vatTuRows, giaoCaNote, thanhPhamRows, hangLoiRows, suCoLuuY, chuKy]
+    [header, vatTuRows, giaoCaNote, thanhPhamRows, hangLoiRows, suCoLuuY, suCoRows, chuKy]
   );
 
   // Lưu dữ liệu vào CSDL
@@ -493,7 +525,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
         tong_sp_khong_mang: Number((report as unknown as Record<string, unknown>).tong_sp_khong_mang) || 0,
         tong_loi_hong: Number((report as unknown as Record<string, unknown>).tong_loi_hong) || 0,
         chi_tieu_phan_tram: Number((report as unknown as Record<string, unknown>).chi_tieu_phan_tram) || 0,
-        ghi_chu: suCoLuuY
+        ghi_chu: composeSuCo(suCoRows, suCoLuuY)
       };
 
       const res = await fetch(`/api/so-tron/${encodeURIComponent(report.id)}`, {
@@ -530,11 +562,16 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
   if (!open || !report) return null;
 
   const inputStyle =
-    'w-full bg-transparent border-b border-dotted border-slate-400 focus:border-solid focus:border-indigo-600 focus:bg-indigo-50/50 outline-none px-1 py-0.5 text-[11px] text-slate-800 transition';
-  const numInputStyle = `${inputStyle} text-right tabular-nums`;
+    'box-border h-8 w-full bg-transparent border-0 px-1 py-0 text-[16px] leading-8 text-black outline-none focus:bg-indigo-50/50';
+  const numInputStyle =
+    'box-border h-8 w-full max-w-full bg-transparent px-0.5 py-0 text-right text-[16px] font-semibold leading-8 text-black tabular-nums outline-none';
   const centerInputStyle = `${inputStyle} text-center`;
   const readOnlyCell =
-    'block w-full px-1 py-0.5 text-[11px] text-slate-800 min-h-[22px]';
+    'block h-8 w-full max-w-full truncate px-1 py-0 text-[16px] leading-8 text-black';
+  const numReadStyle =
+    'px-0.5 text-right text-[16px] font-semibold leading-8 text-black tabular-nums';
+  const slipTableClass =
+    'w-full table-fixed border-collapse border border-slate-800 text-center text-[16px] leading-none text-black [&_tbody_tr]:h-9 [&_tbody_td]:h-9 [&_tbody_td]:box-border [&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap [&_tbody_td]:p-0 [&_tbody_td]:align-middle [&_th]:box-border [&_th]:px-1 [&_th]:py-1 [&_th]:align-middle [&_th]:text-[16px] [&_th]:leading-tight [&_th]:text-black';
   const paperFontStyle = { fontFamily: '"Times New Roman", Times, serif' } as const;
 
   const dateParts = (() => {
@@ -632,7 +669,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
       )}
 
       {/* VÙNG HIỂN THỊ CÁC TỜ PHIẾU GIẤY (CHUẨN FORM ẢNH 1 & 2) */}
-      <div className="mx-auto my-4 flex w-full max-w-[1180px] flex-col gap-6">
+      <div className="mx-auto my-4 flex w-full max-w-[1680px] flex-col gap-6">
         
         {/* ===================== TRANG 1: ẢNH 1 (I. VẬT TƯ) ===================== */}
         {(activeTab === 'all' || activeTab === 'p1') && (
@@ -762,25 +799,39 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full table-fixed border-collapse border border-slate-800 text-center text-[12px] [&_tbody_td]:h-7 [&_tbody_td]:px-1.5 [&_tbody_td]:py-0 [&_th]:px-1.5 [&_th]:py-1">
+                <table className={slipTableClass} style={{ minWidth: 1560 }}>
+                  <colgroup>
+                    <col style={{ width: 88 }} />
+                    <col style={{ width: 220 }} />
+                    <col style={{ width: 48 }} />
+                    <col style={{ width: 76 }} />
+                    <col style={{ width: 76 }} />
+                    <col style={{ width: 76 }} />
+                    {Array.from({ length: 10 }, (_, i) => (
+                      <col key={i} style={{ width: 76 }} />
+                    ))}
+                    <col style={{ width: 76 }} />
+                    <col style={{ width: 76 }} />
+                    <col style={{ width: 32 }} />
+                  </colgroup>
                   <thead>
-                    <tr className="bg-slate-100 text-[10px]">
-                      <th rowSpan={2} className="border border-slate-800 w-[9%]">Mã VT</th>
-                      <th rowSpan={2} className="border border-slate-800 w-[16%]">
+                    <tr className="bg-slate-100 text-black">
+                      <th rowSpan={2} className="border border-slate-800">Mã VT</th>
+                      <th rowSpan={2} className="border border-slate-800">
                         Tên vật tư (Kế hoạch chi tiết kể vật tư cần sử dụng, mã vật tư và định mức sử dụng (Kg))
                       </th>
-                      <th rowSpan={2} className="border border-slate-800 w-[4.5%]">ĐVT</th>
-                      <th rowSpan={2} className="border border-slate-800 w-[8%]">Định mức vật tư</th>
-                      <th rowSpan={2} className="border border-slate-800 w-[7.5%]">Tồn đầu ca</th>
-                      <th rowSpan={2} className="border border-slate-800 w-[7.5%]">Lấy kho</th>
+                      <th rowSpan={2} className="border border-slate-800">ĐVT</th>
+                      <th rowSpan={2} className="border border-slate-800">Định mức vật tư</th>
+                      <th rowSpan={2} className="border border-slate-800">Tồn đầu ca</th>
+                      <th rowSpan={2} className="border border-slate-800">Lấy kho</th>
                       <th colSpan={10} className="border border-slate-800">SỬ DỤNG</th>
-                      <th rowSpan={2} className="border border-slate-800 w-[7.5%]">Tổng SD</th>
-                      <th rowSpan={2} className="border border-slate-800 w-[7.5%]">Tồn cuối</th>
-                      <th rowSpan={2} className="border border-slate-800 w-[3%] no-print" />
+                      <th rowSpan={2} className="border border-slate-800">Tổng SD</th>
+                      <th rowSpan={2} className="border border-slate-800">Tồn cuối</th>
+                      <th rowSpan={2} className="border border-slate-800 no-print" />
                     </tr>
-                    <tr className="bg-slate-100 text-[9px]">
+                    <tr className="bg-slate-100 text-black">
                       {Array.from({ length: 10 }, (_, i) => (
-                        <th key={i} className="border border-slate-800 w-[3.2%]">
+                        <th key={i} className="border border-slate-800">
                           L{i + 1}
                         </th>
                       ))}
@@ -795,7 +846,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                       </tr>
                     )}
                     {vatTuRows.map((row, ri) => (
-                      <tr key={row.key} className="hover:bg-slate-50/80">
+                      <tr key={row.key} className="h-9 hover:bg-slate-50/80" style={{ height: 36 }}>
                         <td className="border border-slate-800 p-0.5">
                           <input
                             value={row.ma_nvl}
@@ -805,10 +856,13 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                         </td>
                         <td className="border border-slate-800 p-0.5">
                           <input
-                            value={row.ten_nvl}
-                            onChange={e => updateVatTuRow(ri, { ten_nvl: e.target.value })}
-                            className={inputStyle}
-                            placeholder="Tên nguyên vật liệu"
+                            value={row.ten_nvl_sx || row.ten_nvl}
+                            onChange={e =>
+                              updateVatTuRow(ri, row.ten_nvl_sx ? { ten_nvl_sx: e.target.value } : { ten_nvl: e.target.value })
+                            }
+                            className={`${inputStyle} font-semibold text-black`}
+                            style={{ color: '#000', fontSize: 16 }}
+                            placeholder="Tên sản xuất"
                           />
                         </td>
                         <td className="border border-slate-800 p-0.5">
@@ -821,15 +875,15 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                         <td className="border border-slate-800 p-0.5">
                           <input
                             title="Tổng trọng lượng (kg) của NVL trên phiếu trộn định mức"
-                            value={row.dinh_muc}
+                            value={formatSlipNumber(row.dinh_muc)}
                             onChange={e => updateVatTuRow(ri, { dinh_muc: e.target.value })}
-                            className={centerInputStyle}
+                            className={numInputStyle}
                           />
                         </td>
                         <td className="border border-slate-800 p-0.5">
                           <input
                             inputMode="decimal"
-                            value={row.ton_dau_ca}
+                            value={formatSlipNumber(row.ton_dau_ca)}
                             onChange={e => updateVatTuRow(ri, { ton_dau_ca: e.target.value })}
                             className={numInputStyle}
                           />
@@ -837,7 +891,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                         <td className="border border-slate-800 p-0.5">
                           <input
                             inputMode="decimal"
-                            value={row.lay_trong_kho}
+                            value={formatSlipNumber(row.lay_trong_kho)}
                             onChange={e => updateVatTuRow(ri, { lay_trong_kho: e.target.value })}
                             className={numInputStyle}
                           />
@@ -846,17 +900,17 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                           <td key={li} className="border border-slate-800 p-0.5">
                             <input
                               inputMode="decimal"
-                              value={cellVal}
+                              value={formatSlipNumber(cellVal)}
                               onChange={e => updateVatTuLan(ri, li, e.target.value)}
-                              className={centerInputStyle}
+                              className={numInputStyle}
                             />
                           </td>
                         ))}
-                        <td className="border border-slate-800 p-1 text-right font-bold tabular-nums">
-                          {row.tong_su_dung > 0 ? fmt(row.tong_su_dung) : ''}
+                        <td className={`border border-slate-800 ${numReadStyle}`}>
+                          {row.tong_su_dung > 0 ? fmt(row.tong_su_dung) : '\u00a0'}
                         </td>
-                        <td className="border border-slate-800 p-1 text-right font-bold tabular-nums text-indigo-900">
-                          {fmt(row.ton_cuoi_ca)}
+                        <td className={`border border-slate-800 ${numReadStyle}`}>
+                          {fmt(row.ton_cuoi_ca) || '\u00a0'}
                         </td>
                         <td className="border border-slate-800 p-0.5 text-center">
                           <button
@@ -872,11 +926,10 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                     ))}
 
                     {Array.from({ length: Math.max(0, 30 - vatTuRows.length) }, (_, i) => (
-                      <tr key={`vt-blank-${i}`} aria-hidden>
-                        {Array.from({ length: 18 }, (_, ci) => (
-                          <td key={ci} className="border border-slate-800" />
+                      <tr key={`vt-blank-${i}`} className="h-9" style={{ height: 36 }} aria-hidden>
+                        {Array.from({ length: 19 }, (_, ci) => (
+                          <td key={ci} className="h-9 border border-slate-800" style={{ height: 36 }}>{'\u00a0'}</td>
                         ))}
-                        <td className="border border-slate-800" />
                       </tr>
                     ))}
 
@@ -885,11 +938,11 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                       <td colSpan={6} className="border border-slate-800 p-1 text-right pr-2">
                         Cộng tổng sử dụng:
                       </td>
-                      <td colSpan={10} className="border border-slate-800 p-1 text-right tabular-nums pr-2 font-black text-indigo-700">
-                        {tongCongSuDungVatTu > 0 ? fmt(tongCongSuDungVatTu) : ''}
+                      <td colSpan={10} className={`border border-slate-800 pr-2 ${numReadStyle}`}>
+                        {tongCongSuDungVatTu > 0 ? fmt(tongCongSuDungVatTu) : '\u00a0'}
                       </td>
-                      <td className="border border-slate-800 p-1 text-right tabular-nums font-black text-indigo-700">
-                        {tongCongSuDungVatTu > 0 ? fmt(tongCongSuDungVatTu) : ''}
+                      <td className={`border border-slate-800 ${numReadStyle}`}>
+                        {tongCongSuDungVatTu > 0 ? fmt(tongCongSuDungVatTu) : '\u00a0'}
                       </td>
                       <td className="border border-slate-800 p-1"></td>
                       <td className="border border-slate-800"></td>
@@ -910,7 +963,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                   />
                 </div>
                 <div>
-                  Tổng sử dụng: <span className="tabular-nums text-indigo-700">{fmt(tongCongSuDungVatTu)} kg</span>
+                  Tổng sử dụng: <span className="text-[16px] font-semibold tabular-nums text-black">{fmt(tongCongSuDungVatTu)} kg</span>
                 </div>
               </div>
             </div>
@@ -934,22 +987,32 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="w-full table-fixed border-collapse border border-slate-800 text-center text-[12px] [&_tbody_td]:h-7 [&_tbody_td]:px-1.5 [&_tbody_td]:py-0 [&_th]:px-1.5 [&_th]:py-1">
+                  <table className={slipTableClass} style={{ minWidth: 860 }}>
+                    <colgroup>
+                      <col style={{ width: 90 }} />
+                      <col style={{ width: 240 }} />
+                      <col style={{ width: 90 }} />
+                      <col style={{ width: 80 }} />
+                      <col style={{ width: 80 }} />
+                      <col style={{ width: 80 }} />
+                      <col style={{ width: 100 }} />
+                      <col style={{ width: 100 }} />
+                    </colgroup>
                     <thead>
-                      <tr className="bg-slate-100 text-[11px]">
-                        <th rowSpan={2} className="border border-slate-800 w-[12%]">Mã TP</th>
-                        <th rowSpan={2} className="border border-slate-800 w-[28%]">
+                      <tr className="bg-slate-100 text-black">
+                        <th rowSpan={2} className="border border-slate-800">Mã TP</th>
+                        <th rowSpan={2} className="border border-slate-800">
                           THÀNH PHẨM (Kế hoạch sản xuất liệt kê các thành phẩm trừ khi dự kiến...)
                         </th>
-                        <th rowSpan={2} className="border border-slate-800 w-[14%]">TL định mức / tấm (Kg)</th>
+                        <th rowSpan={2} className="border border-slate-800">TL định mức / tấm (Kg)</th>
                         <th colSpan={3} className="border border-slate-800">TP Nhập kho</th>
-                        <th rowSpan={2} className="border border-slate-800 w-[12%]">Tổng nhập</th>
-                        <th rowSpan={2} className="border border-slate-800 w-[12%]">Tổng TL (Kg)</th>
+                        <th rowSpan={2} className="border border-slate-800">Tổng nhập</th>
+                        <th rowSpan={2} className="border border-slate-800">Tổng TL (Kg)</th>
                       </tr>
-                      <tr className="bg-slate-100 text-[10px]">
-                        <th className="border border-slate-800 w-[8%]">Lần 1</th>
-                        <th className="border border-slate-800 w-[8%]">Lần 2</th>
-                        <th className="border border-slate-800 w-[8%]">Lần 3</th>
+                      <tr className="bg-slate-100 text-black">
+                        <th className="border border-slate-800">Lần 1</th>
+                        <th className="border border-slate-800">Lần 2</th>
+                        <th className="border border-slate-800">Lần 3</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -961,39 +1024,37 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                         </tr>
                       )}
                       {thanhPhamRows.map(row => (
-                        <tr key={row.key} className="bg-slate-50/40">
+                        <tr key={row.key} className="h-9 bg-slate-50/40" style={{ height: 36 }}>
                           <td className="border border-slate-800 p-0.5">
                             <span className={`${readOnlyCell} text-center`}>{row.ma_sp}</span>
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <span className={`${readOnlyCell} text-left`}>{row.ten_sp}</span>
+                            <span className={`${readOnlyCell} text-left font-semibold`} style={{ color: '#000', fontSize: 16 }}>{row.ten_sp}</span>
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <span className={`${readOnlyCell} text-right tabular-nums`}>{row.dinh_muc}</span>
+                            <span className={numReadStyle}>{formatSlipNumber(row.dinh_muc)}</span>
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <span className={`${readOnlyCell} text-center`}>{row.lan_1}</span>
+                            <span className={numReadStyle}>{formatSlipNumber(row.lan_1)}</span>
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <span className={`${readOnlyCell} text-center`}>{row.lan_2}</span>
+                            <span className={numReadStyle}>{formatSlipNumber(row.lan_2)}</span>
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <span className={`${readOnlyCell} text-center`}>{row.lan_3}</span>
+                            <span className={numReadStyle}>{formatSlipNumber(row.lan_3)}</span>
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <span className={`${readOnlyCell} text-right tabular-nums font-bold`}>{row.so_luong}</span>
+                            <span className={numReadStyle}>{formatSlipNumber(row.so_luong)}</span>
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <span className={`${readOnlyCell} text-right tabular-nums font-bold text-indigo-900`}>
-                              {row.trong_luong}
-                            </span>
+                            <span className={numReadStyle}>{formatSlipNumber(row.trong_luong)}</span>
                           </td>
                         </tr>
                       ))}
                       {Array.from({ length: Math.max(0, 30 - thanhPhamRows.length) }, (_, i) => (
-                        <tr key={`tp-blank-${i}`} aria-hidden>
+                        <tr key={`tp-blank-${i}`} className="h-9" style={{ height: 36 }} aria-hidden>
                           {Array.from({ length: 8 }, (_, ci) => (
-                            <td key={ci} className="border border-slate-800" />
+                            <td key={ci} className="h-9 border border-slate-800" style={{ height: 36 }}>{'\u00a0'}</td>
                           ))}
                         </tr>
                       ))}
@@ -1001,11 +1062,11 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                         <td colSpan={6} className="border border-slate-800 p-1 text-right pr-2">
                           Cộng:
                         </td>
-                        <td className="border border-slate-800 p-1 text-right tabular-nums text-indigo-700">
-                          {tongNhapKhoThanhPham > 0 ? fmt(tongNhapKhoThanhPham) : ''}
+                        <td className={`border border-slate-800 ${numReadStyle}`}>
+                          {tongNhapKhoThanhPham > 0 ? fmt(tongNhapKhoThanhPham) : '\u00a0'}
                         </td>
-                        <td className="border border-slate-800 p-1 text-right tabular-nums text-indigo-700">
-                          {tongTrongLuongThanhPham > 0 ? fmt(tongTrongLuongThanhPham) : ''}
+                        <td className={`border border-slate-800 ${numReadStyle}`}>
+                          {tongTrongLuongThanhPham > 0 ? fmt(tongTrongLuongThanhPham) : '\u00a0'}
                         </td>
                       </tr>
                     </tbody>
@@ -1027,12 +1088,13 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                     </button>
                   </div>
 
-                  <table className="w-full table-fixed border-collapse border border-slate-800 text-center text-[12px] [&_tbody_td]:h-7 [&_tbody_td]:px-1.5 [&_tbody_td]:py-0 [&_th]:px-1.5 [&_th]:py-1">
+                  <div className="overflow-x-auto">
+                  <table className={slipTableClass}>
                     <thead>
-                      <tr className="bg-slate-100 text-[10px]">
+                      <tr className="bg-slate-100 text-black">
                         <th className="border border-slate-800 p-1 w-[55%]">TÊN LỖI/PHẾ</th>
                         <th className="border border-slate-800 p-1 w-[15%]">ĐVT</th>
-                        <th className="border border-slate-800 p-1 w-[22%]">SỐ LƯỢNG</th>
+                        <th className="border border-slate-800 p-1">SỐ LƯỢNG</th>
                         <th className="border border-slate-800 p-0.5 w-[8%]" />
                       </tr>
                     </thead>
@@ -1045,7 +1107,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                         </tr>
                       )}
                       {hangLoiRows.map((row, ri) => (
-                        <tr key={row.key} className="hover:bg-slate-50/80">
+                        <tr key={row.key} className="h-9 hover:bg-slate-50/80" style={{ height: 36 }}>
                           <td className="border border-slate-800 p-0.5">
                             <input
                               value={row.ten_loi}
@@ -1064,9 +1126,9 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                           <td className="border border-slate-800 p-0.5">
                             <input
                               inputMode="decimal"
-                              value={row.so_luong}
+                              value={formatSlipNumber(row.so_luong)}
                               onChange={e => updateHangLoiRow(ri, { so_luong: e.target.value })}
-                              className={`${numInputStyle} font-bold`}
+                              className={numInputStyle}
                               placeholder="708"
                             />
                           </td>
@@ -1082,9 +1144,9 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                         </tr>
                       ))}
                       {Array.from({ length: Math.max(0, 7 - hangLoiRows.length) }, (_, i) => (
-                        <tr key={`hl-blank-${i}`} aria-hidden>
+                        <tr key={`hl-blank-${i}`} className="h-9" style={{ height: 36 }} aria-hidden>
                           {Array.from({ length: 4 }, (_, ci) => (
-                            <td key={ci} className="border border-slate-800" />
+                            <td key={ci} className="h-9 border border-slate-800" style={{ height: 36 }}>{'\u00a0'}</td>
                           ))}
                         </tr>
                       ))}
@@ -1092,24 +1154,90 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                         <td colSpan={2} className="border border-slate-800 p-1 text-right pr-2">
                           Cộng:
                         </td>
-                        <td className="border border-slate-800 p-1 text-right tabular-nums text-indigo-700 font-black">
-                          {tongHangLoi > 0 ? fmt(tongHangLoi) : ''}
+                        <td className={`border border-slate-800 ${numReadStyle}`}>
+                          {tongHangLoi > 0 ? fmt(tongHangLoi) : '\u00a0'}
                         </td>
                         <td className="border border-slate-800"></td>
                       </tr>
                     </tbody>
                   </table>
+                  </div>
                 </div>
 
                 {/* Bảng IV: Sự cố */}
                 <div className="mt-4">
-                  <h4 className="text-xs font-bold uppercase tracking-wide mb-1">IV. SỰ CỐ SẢN XUẤT / LƯU Ý KHÁC</h4>
+                  <div className="mb-1 flex items-center justify-between">
+                    <h4 className="text-xs font-bold uppercase tracking-wide">IV. SỰ CỐ SẢN XUẤT / LƯU Ý KHÁC</h4>
+                    <button
+                      type="button"
+                      onClick={() => setSuCoRows(rows => [...rows, { key: uid(), ten: 'Đổi màu', lan: '1' }])}
+                      className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50"
+                    >
+                      <Plus className="h-3 w-3" /> Thêm sự cố
+                    </button>
+                  </div>
+                  <table className="mb-2 w-full border-collapse text-[16px] text-black">
+                    <thead>
+                      <tr className="bg-slate-100 text-black">
+                        <th className="border border-slate-800 px-1 py-1 text-left">Sự cố</th>
+                        <th className="border border-slate-800 px-1 py-1 w-[72px]">Số lần</th>
+                        <th className="border border-slate-800 px-1 py-1 w-[72px]">Số giờ</th>
+                        <th className="border border-slate-800 w-[28px]" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {suCoRows.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="border border-slate-800 px-2 py-2 text-center text-slate-400 italic">
+                            Chưa có sự cố. Bấm Thêm sự cố.
+                          </td>
+                        </tr>
+                      )}
+                      {suCoRows.map((row, index) => (
+                        <tr key={row.key}>
+                          <td className="border border-slate-800 p-0.5">
+                            <select
+                              value={row.ten}
+                              onChange={e => setSuCoRows(rows => rows.map((item, i) => (i === index ? { ...item, ten: e.target.value } : item)))}
+                              className="w-full bg-transparent px-1 py-1 text-[16px] font-semibold text-black outline-none"
+                            >
+                              {SU_CO_MAU.map(item => (
+                                <option key={item.ten} value={item.ten}>
+                                  {item.ten} — {item.gio}h
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="border border-slate-800 p-0.5">
+                            <input
+                              inputMode="decimal"
+                              value={row.lan}
+                              onChange={e => setSuCoRows(rows => rows.map((item, i) => (i === index ? { ...item, lan: e.target.value } : item)))}
+                              className="w-full bg-transparent px-1 py-1 text-center text-[16px] font-bold text-black outline-none"
+                            />
+                          </td>
+                          <td className="border border-slate-800 px-1 text-center text-[16px] font-bold tabular-nums text-black">
+                            {gioSuCo(row.ten, row.lan)}
+                          </td>
+                          <td className="border border-slate-800 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setSuCoRows(rows => rows.filter((_, i) => i !== index))}
+                              className="text-slate-400 hover:text-rose-600"
+                            >
+                              <Trash2 className="mx-auto h-3 w-3" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                   <textarea
-                    rows={6}
+                    rows={4}
                     value={suCoLuuY}
                     onChange={e => setSuCoLuuY(e.target.value)}
                     className="w-full rounded border border-slate-800 bg-slate-50/50 p-2 text-xs leading-relaxed outline-none focus:bg-white focus:ring-1 focus:ring-indigo-500"
-                    placeholder="+ Máy chạy ổn định&#10;+ Đổi màu 1 lần..."
+                    placeholder="Ghi chú thêm..."
                   />
                 </div>
               </div>
