@@ -41,6 +41,21 @@ type CoiMauNvl = {
   /** Tổng trọng lượng kg trên phiếu trộn định mức — hiện ở cột Định mức vật tư. */
   tong_khoi_luong: string;
 };
+type LenhSlipChoice = {
+  id: string;
+  /** Hậu tố hiển thị, ví dụ `tỷ lệ 4`. Trống nếu phiếu không có số tỷ lệ. */
+  label: string;
+  tenPhieu: string;
+  sort: number;
+};
+
+type LenhPick = {
+  key: string;
+  order: ProductionOrderRow;
+  slipId: string;
+  ratioLabel: string;
+};
+
 type CoiMauItem = {
   ma_lenh_sx: string;
   ten_phieu: string;
@@ -254,12 +269,14 @@ function formatQty(value: number) {
 type LanCoiItem = {
   ma_sp: string;
   ten_sp: string;
+  /** `tỷ lệ 4` khi lệnh có nhiều phiếu trộn định mức. */
+  ty_le: string;
   trong_luong_coi: string;
   so_lan_tron: string;
 };
 
 function emptyLanCoi(): LanCoiItem {
-  return { ma_sp: '', ten_sp: '', trong_luong_coi: '', so_lan_tron: '' };
+  return { ma_sp: '', ten_sp: '', ty_le: '', trong_luong_coi: '', so_lan_tron: '' };
 }
 
 function nvlIdentity(materialId: string, ma: string) {
@@ -282,6 +299,7 @@ function parseLanCoiItems(raw: unknown): LanCoiItem[] {
     slots[lan - 1] = {
       ma_sp: str(rec.ma_sp),
       ten_sp: str(rec.ten_sp),
+      ty_le: str(rec.ty_le),
       trong_luong_coi: str(rec.trong_luong_coi),
       so_lan_tron: str(rec.so_lan_tron)
     };
@@ -309,6 +327,7 @@ function withLanCoi(blocks: CoiMauItem[], entries: LanCoiItem[]): CoiMauItem[] {
       lan: i + 1,
       ma_sp: item.ma_sp.trim(),
       ten_sp: item.ten_sp.trim(),
+      ty_le: str(item.ty_le).trim(),
       trong_luong_coi: item.trong_luong_coi.trim(),
       so_lan_tron: item.so_lan_tron.trim()
     }))
@@ -860,8 +879,10 @@ export function SoTronPanel({
 
   const [selectedLenh, setSelectedLenh] = useState<string[]>([]);
   const [coiMau, setCoiMau] = useState<CoiMauItem[]>([]);
-  /** Nhãn tỷ lệ phiếu trộn định mức, chỉ khi một lệnh có nhiều phiếu. */
-  const [slipTagsByLenh, setSlipTagsByLenh] = useState<Map<string, string[]>>(new Map());
+  /** Phiếu trộn định mức theo mã lệnh. Nhiều tỷ lệ thì mỗi phiếu là một lựa chọn riêng. */
+  const [slipsByLenh, setSlipsByLenh] = useState<Map<string, LenhSlipChoice[]>>(new Map());
+  /** Id phiếu trộn định mức đang chọn — phân biệt tỷ lệ 4 với tỷ lệ 5 của cùng một lệnh. */
+  const [selectedSlipIds, setSelectedSlipIds] = useState<string[]>([]);
   const [isLoadingCoi, setIsLoadingCoi] = useState(false);
 
   const [numLan, setNumLan] = useState(SO_LAN_TRON_MAC_DINH);
@@ -1183,8 +1204,8 @@ export function SoTronPanel({
       .sort((a, b) => a.code.localeCompare(b.code, 'vi'));
   }, [orders, ngay]);
 
-  /** Nhãn 1 lệnh trong ô chọn nhiều lệnh (kiểu phiếu trộn định mức): `<mã> - <máy> · <ngày> · <ca>`. */
-  const lenhOptionLabel = (order: ProductionOrderRow) => {
+  /** Nhãn 1 lệnh: `<mã> - <máy> · <ngày> · <ca>`. Mỗi tỷ lệ thêm hậu tố riêng. */
+  const lenhOrderLabel = (order: ProductionOrderRow) => {
     const machine = str(order.machine) && str(order.machine) !== '-' ? str(order.machine) : '';
     const base = machine ? `${order.code} - ${machine}` : order.code;
     const dispDay = (k: string) => (k ? `${k.slice(6, 8)}/${k.slice(4, 6)}/${k.slice(0, 4)}` : '');
@@ -1192,10 +1213,11 @@ export function SoTronPanel({
     const end = orderDateKey(order, 'end');
     const range = start || end ? ` · ${dispDay(start) || '—'} → ${dispDay(end) || '—'}` : ' · thiếu ngày';
     const shift = str(order.shift) && str(order.shift) !== '-' ? ` · ${str(order.shift)}` : '';
-    const tags = slipTagsByLenh.get(order.code.trim().toLowerCase());
-    const phieu = tags && tags.length > 0 ? ` · ${tags.join(', ')}` : '';
-    return `${base}${range}${shift}${phieu}`;
+    return `${base}${range}${shift}`;
   };
+
+  const lenhPickLabel = (pick: LenhPick) =>
+    pick.ratioLabel ? `${lenhOrderLabel(pick.order)} · ${pick.ratioLabel}` : lenhOrderLabel(pick.order);
 
   const lenhOptionSearchText = (order: ProductionOrderRow) => {
     const products = Array.isArray(order.products)
@@ -1226,7 +1248,7 @@ export function SoTronPanel({
   useEffect(() => {
     const codes = lenhOptionCodes.split('|').map(code => code.trim()).filter(Boolean);
     if (codes.length === 0) {
-      setSlipTagsByLenh(new Map());
+      setSlipsByLenh(new Map());
       return;
     }
     let alive = true;
@@ -1238,32 +1260,33 @@ export function SoTronPanel({
         const data = await res.json().catch(() => ({}));
         if (!alive || !res.ok) return;
         const records = Array.isArray(data?.records) ? data.records : [];
-        const byLenh = new Map<string, Map<string, string>>();
+        const byLenh = new Map<string, LenhSlipChoice[]>();
         for (const raw of records) {
           if (!raw || typeof raw !== 'object') continue;
           const row = raw as Record<string, unknown>;
           const tenPhieu = str(row.ten_phieu ?? row.tenPhieu);
-          const slipId = str(row.id_phieu_tron_dm_ban_dau) || str(row.id) || tenPhieu;
-          if (!slipId) continue;
+          const id = str(row.id) || tenPhieu;
+          if (!id) continue;
           const ratio = tenPhieu.match(/tỷ lệ\s+(\d+)/iu);
-          const label = ratio ? `tỷ lệ ${ratio[1]}` : tenPhieu || 'phiếu trộn';
+          const choice: LenhSlipChoice = {
+            id,
+            label: ratio ? `tỷ lệ ${ratio[1]}` : '',
+            tenPhieu,
+            sort: ratio ? Number(ratio[1]) : 0
+          };
           for (const code of splitLenhCodes(str(row.ma_lenh_sx ?? row.maLenhSx))) {
             const key = code.toLowerCase();
-            const slips = byLenh.get(key) || new Map<string, string>();
-            const prev = slips.get(slipId) || '';
-            const prevRatio = Number(prev.match(/(\d+)/)?.[1] || 0);
-            const nextRatio = Number(ratio?.[1] || 0);
-            if (!prev || nextRatio >= prevRatio) slips.set(slipId, label);
+            const slips = byLenh.get(key) || [];
+            if (!slips.some(slip => slip.id === id)) slips.push(choice);
             byLenh.set(key, slips);
           }
         }
-        const tags = new Map<string, string[]>();
-        for (const [code, slips] of byLenh) {
-          if (slips.size > 1) tags.set(code, [...slips.values()]);
+        for (const slips of byLenh.values()) {
+          slips.sort((a, b) => a.sort - b.sort || a.tenPhieu.localeCompare(b.tenPhieu, 'vi'));
         }
-        setSlipTagsByLenh(tags);
+        setSlipsByLenh(byLenh);
       } catch {
-        if (alive) setSlipTagsByLenh(new Map());
+        if (alive) setSlipsByLenh(new Map());
       }
     })();
     return () => {
@@ -1271,10 +1294,48 @@ export function SoTronPanel({
     };
   }, [lenhOptionCodes]);
 
+  const slipsOf = (code: string) => slipsByLenh.get(code.trim().toLowerCase()) || [];
+
+  /** Một lệnh nhiều phiếu tỷ lệ → mỗi tỷ lệ một dòng để chọn riêng. */
+  const lenhPicks = useMemo(() => {
+    const picks: LenhPick[] = [];
+    for (const order of lenhOptions) {
+      const slips = slipsOf(order.code);
+      if (slips.length > 1) {
+        for (const slip of slips) {
+          picks.push({
+            key: `${order.code}::${slip.id}`,
+            order,
+            slipId: slip.id,
+            ratioLabel: slip.label || 'phiếu trộn'
+          });
+        }
+      } else {
+        picks.push({
+          key: order.code,
+          order,
+          slipId: slips[0]?.id || '',
+          ratioLabel: ''
+        });
+      }
+    }
+    return picks;
+  }, [lenhOptions, slipsByLenh]);
+
   const lenhValues = useMemo(
-    () => lenhOptions.filter(o => selectedLenh.includes(o.code)),
-    [lenhOptions, selectedLenh]
+    () =>
+      lenhPicks.filter(pick => {
+        if (!selectedLenh.includes(pick.order.code)) return false;
+        if (slipsOf(pick.order.code).length > 1) return selectedSlipIds.includes(pick.slipId);
+        return true;
+      }),
+    [lenhPicks, selectedLenh, selectedSlipIds, slipsByLenh]
   );
+
+  const applyLenhPicks = (sel: LenhPick[]) => {
+    setSelectedLenh([...new Set(sel.map(pick => pick.order.code))]);
+    setSelectedSlipIds([...new Set(sel.map(pick => pick.slipId).filter(Boolean))]);
+  };
 
   // Mã lệnh đã chọn nhưng không còn trong danh sách tải về (chip cảnh báo kiểu định mức)
   const unresolvedLenhCodes = useMemo(() => {
@@ -1420,7 +1481,21 @@ export function SoTronPanel({
         const data = await res.json().catch(() => ({}));
         if (!alive) return;
         if (res.ok) {
-          const { products } = normalizeCoiMau(data);
+          const selectedSet = new Set(selectedLenh.map(code => code.trim().toLowerCase()));
+          const chosenSlips = new Set(selectedSlipIds);
+          const rawRecords = Array.isArray(data?.records) ? data.records : [];
+          const records = rawRecords.filter(raw => {
+            if (!raw || typeof raw !== 'object') return false;
+            const row = raw as Record<string, unknown>;
+            const id = str(row.id);
+            const codes = splitLenhCodes(str(row.ma_lenh_sx ?? row.maLenhSx)).map(code => code.toLowerCase());
+            const pickedCodes = codes.filter(code => selectedSet.has(code));
+            if (pickedCodes.length === 0) return false;
+            const needsRatio = pickedCodes.some(code => (slipsByLenh.get(code) || []).length > 1);
+            if (!needsRatio) return true;
+            return chosenSlips.has(id);
+          });
+          const { products } = normalizeCoiMau({ records });
           setCoiMau(products);
         } else {
           setCoiMau([]);
@@ -1434,7 +1509,7 @@ export function SoTronPanel({
     return () => {
       alive = false;
     };
-  }, [selectedLenh]);
+  }, [selectedLenh, selectedSlipIds, slipsByLenh]);
 
   // Gộp NVL từ cối mẫu vào bảng 1 (giữ số đã nhập).
   // Fill toàn bộ NVL của mọi lệnh đã chọn; gộp theo ID kho NVL
@@ -1897,15 +1972,19 @@ export function SoTronPanel({
   const coiMauGroups = useMemo(() => {
     const map = new Map<
       string,
-      { key: string; ma_sp: string; ten_sp: string; lenh: Set<string>; blocks: CoiMauItem[] }
+      { key: string; ma_sp: string; ten_sp: string; ratioLabel: string; lenh: Set<string>; blocks: CoiMauItem[] }
     >();
     for (const b of coiMau) {
       if (isLanCoiMarker(b)) continue;
-      const key = b.ma_sp || b.ten_sp || 'san-pham';
+      const ratioMatch = str(b.ten_phieu).match(/tỷ lệ\s+(\d+)/iu);
+      const ratioLabel = ratioMatch ? `tỷ lệ ${ratioMatch[1]}` : '';
+      const baseKey = b.ma_sp || b.ten_sp || 'san-pham';
+      const key = ratioLabel ? `${baseKey}::${ratioLabel}` : baseKey;
       const g = map.get(key) || {
         key,
         ma_sp: b.ma_sp,
         ten_sp: b.ten_sp,
+        ratioLabel,
         lenh: new Set<string>(),
         blocks: [] as CoiMauItem[]
       };
@@ -2056,6 +2135,9 @@ export function SoTronPanel({
     const savedKey = next.ma_sp || next.ten_sp;
     const group =
       coiMauGroups.find(item => item.key === savedKey) ||
+      (next.ty_le
+        ? coiMauGroups.find(item => item.ratioLabel === next.ty_le && (item.ma_sp === next.ma_sp || item.ten_sp === next.ten_sp))
+        : undefined) ||
       coiMauGroups.find(item => next.ten_sp && (item.ten_sp === next.ten_sp || item.key === next.ten_sp)) ||
       coiMauGroups.find(item => next.ma_sp && item.ma_sp === next.ma_sp);
     const potText = next.trong_luong_coi.trim();
@@ -2096,6 +2178,7 @@ export function SoTronPanel({
       copy[next] = {
         ma_sp: source.ma_sp,
         ten_sp: source.ten_sp,
+        ty_le: source.ty_le,
         trong_luong_coi: '',
         so_lan_tron: ''
       };
@@ -2243,6 +2326,7 @@ export function SoTronPanel({
     setMachineRef('');
     setSelectedCa('');
     setSelectedLenh([]);
+    setSelectedSlipIds([]);
     setPhanCong([]);
     setNhanSuText('');
     setNhanSuTouched(false);
@@ -2291,6 +2375,18 @@ export function SoTronPanel({
     );
     const codes = report.lenh_sx.map(l => str(l.ma_lenh)).filter(Boolean);
     setSelectedLenh(codes);
+    const savedNames = new Set(
+      (report.coi_tron_mau || [])
+        .map(item => (item && typeof item === 'object' ? str((item as CoiMauItem).ten_phieu) : ''))
+        .filter(Boolean)
+    );
+    const restoredIds: string[] = [];
+    for (const code of codes) {
+      for (const slip of slipsOf(code)) {
+        if (savedNames.has(slip.tenPhieu)) restoredIds.push(slip.id);
+      }
+    }
+    setSelectedSlipIds([...new Set(restoredIds)]);
     const savedCoi = splitSavedCoiMau(report.coi_tron_mau || []);
     setCoiMau(savedCoi.blocks);
     setLanCoi(savedCoi.lanCoi);
@@ -2559,6 +2655,9 @@ export function SoTronPanel({
   const fieldOf = (index: number) => {
     const item = lanCoi[index] || emptyLanCoi();
     const group =
+      (item.ty_le
+        ? coiMauGroups.find(entry => entry.ratioLabel === item.ty_le && (entry.ma_sp === item.ma_sp || entry.ten_sp === item.ten_sp))
+        : undefined) ||
       coiMauGroups.find(entry => entry.key === (item.ma_sp || item.ten_sp)) ||
       coiMauGroups.find(entry => item.ten_sp && (entry.ten_sp === item.ten_sp || entry.key === item.ten_sp)) ||
       coiMauGroups.find(entry => item.ma_sp && entry.ma_sp === item.ma_sp);
@@ -2967,24 +3066,24 @@ export function SoTronPanel({
             <SectionHeader
               index="2"
               title="Lệnh sản xuất"
-              desc="Lọc theo máy + ngày trong khoảng ngay_bat_dau → ngay_ket_thuc + ca đã chọn. Mỗi lệnh hiển thị lệnh - máy · ngày · ca, chọn nhiều (gõ để tìm)."
+              desc="Lọc theo máy + ngày trong khoảng ngay_bat_dau → ngay_ket_thuc + ca đã chọn. Mỗi lệnh hiển thị lệnh - máy · ngày · ca. Lệnh có nhiều tỷ lệ thì mỗi tỷ lệ là một lựa chọn riêng."
             />
             <div>
               <label className={labelClass}>
                 Lệnh SX (chọn nhiều) <span className="text-rose-500">*</span>
               </label>
-              <SearchableMultiSelect<ProductionOrderRow>
+              <SearchableMultiSelect<LenhPick>
                 values={lenhValues}
-                onChange={sel => setSelectedLenh(sel.map(o => o.code))}
-                options={lenhOptions}
+                onChange={applyLenhPicks}
+                options={lenhPicks}
                 placeholder={
-                  lenhOptions.length > 0
+                  lenhPicks.length > 0
                     ? 'Gõ để tìm lệnh SX...'
                     : 'Chưa có lệnh SX phù hợp ngày chọn'
                 }
-                getValue={item => item.code}
-                getLabel={lenhOptionLabel}
-                getSearchText={lenhOptionSearchText}
+                getValue={item => item.key}
+                getLabel={lenhPickLabel}
+                getSearchText={pick => `${lenhOptionSearchText(pick.order)} ${pick.ratioLabel}`}
                 allowCustomValues={false}
                 hideSelectedFromList
                 keepOptionsOrder
@@ -3002,7 +3101,11 @@ export function SoTronPanel({
                       <span className="truncate">{code}</span>
                       <button
                         type="button"
-                        onClick={() => setSelectedLenh(prev => prev.filter(c => c !== code))}
+                        onClick={() => {
+                          const drop = new Set(slipsOf(code).map(slip => slip.id));
+                          setSelectedLenh(prev => prev.filter(c => c !== code));
+                          setSelectedSlipIds(prev => prev.filter(id => !drop.has(id)));
+                        }}
                         className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-amber-800 transition hover:bg-amber-100"
                         title="Bỏ mã này"
                       >
@@ -3048,6 +3151,9 @@ export function SoTronPanel({
                         <div key={`${group.key}-${bi}`} className="overflow-x-auto border-t border-slate-100">
                           <div className="flex flex-wrap gap-x-3 gap-y-0.5 px-3 pt-1.5 text-[13px] font-semibold text-slate-500">
                             {block.ma_lenh_sx ? <span>Lệnh SX: {block.ma_lenh_sx}</span> : null}
+                            {str(block.ten_phieu).match(/tỷ lệ\s+\d+/iu)?.[0] ? (
+                              <span>{str(block.ten_phieu).match(/tỷ lệ\s+\d+/iu)?.[0]}</span>
+                            ) : null}
                             {block.tong_trong_luong ? (
                               <span>Tổng trọng lượng sản phẩm: <span className="tabular-nums text-slate-700">{formatTongTrongLuongSp(block.tong_trong_luong)} kg</span></span>
                             ) : null}
@@ -3710,7 +3816,7 @@ export function SoTronPanel({
                     const total = group.blocks.reduce((sum, block) => sum + parseNum(block.tong_trong_luong), 0);
                     lines.push({
                       key: picked.key,
-                      name: group.ten_sp || group.ma_sp || 'Sản phẩm',
+                      name: `${group.ten_sp || group.ma_sp || 'Sản phẩm'}${group.ratioLabel ? ` · ${group.ratioLabel}` : ''}`,
                       total: formatTongTrongLuongSp(String(total)) || '0,00'
                     });
                   }
@@ -3751,6 +3857,7 @@ export function SoTronPanel({
                               ? {
                                   ma_sp: group.ma_sp,
                                   ten_sp: group.ten_sp || group.ma_sp,
+                                  ty_le: group.ratioLabel,
                                   trong_luong_coi: current.trong_luong_coi,
                                   so_lan_tron: ''
                                 }
@@ -3765,6 +3872,7 @@ export function SoTronPanel({
                         {coiMauGroups.map(group => (
                           <option key={group.key} value={group.key}>
                             {group.ten_sp || group.ma_sp || 'Sản phẩm'}
+                            {group.ratioLabel ? ` · ${group.ratioLabel}` : ''}
                           </option>
                         ))}
                         {field.key && !coiMauGroups.some(group => group.key === field.key) ? (
