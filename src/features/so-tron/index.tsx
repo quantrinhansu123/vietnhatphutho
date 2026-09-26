@@ -883,6 +883,8 @@ export function SoTronPanel({
   const [slipsByLenh, setSlipsByLenh] = useState<Map<string, LenhSlipChoice[]>>(new Map());
   /** Id phiếu trộn định mức đang chọn — phân biệt tỷ lệ 4 với tỷ lệ 5 của cùng một lệnh. */
   const [selectedSlipIds, setSelectedSlipIds] = useState<string[]>([]);
+  /** Tên phiếu / tỷ lệ đã lưu, dùng để gắn lại chip khi mở sổ sửa. */
+  const [savedLenhSlipHint, setSavedLenhSlipHint] = useState<{ names: string[]; ratios: string[] } | null>(null);
   const [isLoadingCoi, setIsLoadingCoi] = useState(false);
 
   const [numLan, setNumLan] = useState(SO_LAN_TRON_MAC_DINH);
@@ -1244,9 +1246,13 @@ export function SoTronPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateMatchedOrders, datelessOrders, machineRef, selectedCa, machines]);
 
-  const lenhOptionCodes = lenhOptions.map(order => order.code).join('|');
+  const slipQueryCodes = useMemo(() => {
+    const codes = new Set(lenhOptions.map(order => order.code));
+    for (const code of selectedLenh) if (code.trim()) codes.add(code.trim());
+    return [...codes].sort().join('|');
+  }, [lenhOptions, selectedLenh]);
   useEffect(() => {
-    const codes = lenhOptionCodes.split('|').map(code => code.trim()).filter(Boolean);
+    const codes = slipQueryCodes.split('|').map(code => code.trim()).filter(Boolean);
     if (codes.length === 0) {
       setSlipsByLenh(new Map());
       return;
@@ -1292,14 +1298,43 @@ export function SoTronPanel({
     return () => {
       alive = false;
     };
-  }, [lenhOptionCodes]);
+  }, [slipQueryCodes]);
+
+  useEffect(() => {
+    if (!savedLenhSlipHint) return;
+    const ids: string[] = [];
+    let catalogReady = false;
+    for (const code of selectedLenh) {
+      const slips = slipsByLenh.get(code.trim().toLowerCase()) || [];
+      if (slips.length === 0) continue;
+      catalogReady = true;
+      for (const slip of slips) {
+        const byName = savedLenhSlipHint.names.includes(slip.tenPhieu);
+        const byRatio = Boolean(slip.label) && savedLenhSlipHint.ratios.includes(slip.label);
+        if (byName || byRatio) ids.push(slip.id);
+      }
+    }
+    if (!catalogReady) return;
+    setSelectedSlipIds([...new Set(ids)]);
+    setSavedLenhSlipHint(null);
+  }, [savedLenhSlipHint, slipsByLenh, selectedLenh]);
 
   const slipsOf = (code: string) => slipsByLenh.get(code.trim().toLowerCase()) || [];
+
+  const ordersForPicks = useMemo(() => {
+    const map = new Map(lenhOptions.map(order => [order.code, order]));
+    for (const code of selectedLenh) {
+      if (map.has(code)) continue;
+      const order = orders.find(item => item.code === code);
+      if (order) map.set(code, order);
+    }
+    return [...map.values()];
+  }, [lenhOptions, selectedLenh, orders]);
 
   /** Một lệnh nhiều phiếu tỷ lệ → mỗi tỷ lệ một dòng để chọn riêng. */
   const lenhPicks = useMemo(() => {
     const picks: LenhPick[] = [];
-    for (const order of lenhOptions) {
+    for (const order of ordersForPicks) {
       const slips = slipsOf(order.code);
       if (slips.length > 1) {
         for (const slip of slips) {
@@ -1320,19 +1355,61 @@ export function SoTronPanel({
       }
     }
     return picks;
-  }, [lenhOptions, slipsByLenh]);
+  }, [ordersForPicks, slipsByLenh]);
 
-  const lenhValues = useMemo(
-    () =>
-      lenhPicks.filter(pick => {
-        if (!selectedLenh.includes(pick.order.code)) return false;
-        if (slipsOf(pick.order.code).length > 1) return selectedSlipIds.includes(pick.slipId);
-        return true;
-      }),
-    [lenhPicks, selectedLenh, selectedSlipIds, slipsByLenh]
-  );
+  const lenhValues = useMemo(() => {
+    const picks: LenhPick[] = [];
+    for (const code of selectedLenh) {
+      const order = ordersForPicks.find(item => item.code === code);
+      if (!order) continue;
+      const slips = slipsOf(code);
+      if (slips.length > 1) {
+        const chosen = slips.filter(slip => selectedSlipIds.includes(slip.id));
+        const hinted =
+          chosen.length > 0
+            ? chosen
+            : slips.filter(
+                slip =>
+                  Boolean(savedLenhSlipHint) &&
+                  (savedLenhSlipHint!.names.includes(slip.tenPhieu) ||
+                    (Boolean(slip.label) && savedLenhSlipHint!.ratios.includes(slip.label)))
+              );
+        const use = hinted.length > 0 ? hinted : [];
+        if (use.length > 0) {
+          for (const slip of use) {
+            picks.push({
+              key: `${order.code}::${slip.id}`,
+              order,
+              slipId: slip.id,
+              ratioLabel: slip.label || 'phiếu trộn'
+            });
+          }
+          continue;
+        }
+        if (savedLenhSlipHint && savedLenhSlipHint.ratios.length > 0) {
+          for (const ratio of savedLenhSlipHint.ratios) {
+            picks.push({
+              key: `${order.code}::${ratio}`,
+              order,
+              slipId: '',
+              ratioLabel: ratio
+            });
+          }
+          continue;
+        }
+      }
+      picks.push({
+        key: order.code,
+        order,
+        slipId: slips[0]?.id || '',
+        ratioLabel: ''
+      });
+    }
+    return picks;
+  }, [selectedLenh, ordersForPicks, selectedSlipIds, slipsByLenh, savedLenhSlipHint]);
 
   const applyLenhPicks = (sel: LenhPick[]) => {
+    setSavedLenhSlipHint(null);
     setSelectedLenh([...new Set(sel.map(pick => pick.order.code))]);
     setSelectedSlipIds([...new Set(sel.map(pick => pick.slipId).filter(Boolean))]);
   };
@@ -1471,6 +1548,10 @@ export function SoTronPanel({
       setCoiMau([]);
       return;
     }
+    const awaitingRatio =
+      selectedSlipIds.length === 0 &&
+      selectedLenh.some(code => (slipsByLenh.get(code.trim().toLowerCase()) || []).length > 1);
+    if (awaitingRatio) return;
     let alive = true;
     setIsLoadingCoi(true);
     (async () => {
@@ -2327,6 +2408,7 @@ export function SoTronPanel({
     setSelectedCa('');
     setSelectedLenh([]);
     setSelectedSlipIds([]);
+    setSavedLenhSlipHint(null);
     setPhanCong([]);
     setNhanSuText('');
     setNhanSuTouched(false);
@@ -2375,19 +2457,30 @@ export function SoTronPanel({
     );
     const codes = report.lenh_sx.map(l => str(l.ma_lenh)).filter(Boolean);
     setSelectedLenh(codes);
-    const savedNames = new Set(
-      (report.coi_tron_mau || [])
-        .map(item => (item && typeof item === 'object' ? str((item as CoiMauItem).ten_phieu) : ''))
-        .filter(Boolean)
-    );
+    const savedCoiEarly = splitSavedCoiMau(report.coi_tron_mau || []);
+    const savedNames = [
+      ...new Set(
+        savedCoiEarly.blocks.map(block => str(block.ten_phieu)).filter(Boolean)
+      )
+    ];
+    const savedRatios = [
+      ...new Set(savedCoiEarly.lanCoi.map(item => str(item.ty_le)).filter(Boolean))
+    ];
     const restoredIds: string[] = [];
     for (const code of codes) {
       for (const slip of slipsOf(code)) {
-        if (savedNames.has(slip.tenPhieu)) restoredIds.push(slip.id);
+        const byName = savedNames.includes(slip.tenPhieu);
+        const byRatio = Boolean(slip.label) && savedRatios.includes(slip.label);
+        if (byName || byRatio) restoredIds.push(slip.id);
       }
     }
     setSelectedSlipIds([...new Set(restoredIds)]);
-    const savedCoi = splitSavedCoiMau(report.coi_tron_mau || []);
+    setSavedLenhSlipHint(
+      restoredIds.length > 0 || (savedNames.length === 0 && savedRatios.length === 0)
+        ? null
+        : { names: savedNames, ratios: savedRatios }
+    );
+    const savedCoi = savedCoiEarly;
     setCoiMau(savedCoi.blocks);
     setLanCoi(savedCoi.lanCoi);
     const savedRows = savedCoi.lanCoi
