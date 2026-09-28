@@ -79,15 +79,23 @@ function esc(value: unknown): string {
     .replace(/"/g, '&quot;');
 }
 
-/** Số từ JSON giữ dấu chấm thập phân. Chuỗi có dấu phẩy: phẩy là thập phân, chấm là hàng nghìn. */
+/** Phần nghìn `,`, thập phân `.`. Số cũ `178,4` hoặc `1.234,6` vẫn đọc đúng. */
 export function parseSlipNumber(value: unknown): number {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
   let text = String(value ?? '').trim().replace(/\s/g, '');
   if (!text) return 0;
   const negative = text.startsWith('-');
   if (negative) text = text.slice(1);
-  if (text.includes(',')) text = text.replace(/\./g, '').replace(',', '.');
-  else if ((text.match(/\./g) || []).length > 1) text = text.replace(/\./g, '');
+  const lastComma = text.lastIndexOf(',');
+  const lastDot = text.lastIndexOf('.');
+  if (lastComma >= 0 && lastDot >= 0) {
+    if (lastDot > lastComma) text = text.replace(/,/g, '');
+    else text = text.replace(/\./g, '').replace(',', '.');
+  } else if (lastComma >= 0) {
+    text = /^\d{1,3}(,\d{3})+$/.test(text) ? text.replace(/,/g, '') : text.replace(/,/g, '.');
+  } else if ((text.match(/\./g) || []).length > 1) {
+    text = text.replace(/\./g, '');
+  }
   const parsed = Number(text);
   if (!Number.isFinite(parsed)) return 0;
   return negative ? -parsed : parsed;
@@ -97,23 +105,25 @@ function num(value: unknown): number {
   return parseSlipNumber(value);
 }
 
-/** Không dấu chấm hàng nghìn. Làm tròn 1 chữ số sau dấu phẩy. */
+/** Phần nghìn `,`, thập phân `.`, một chữ số (vd 1,234.6). */
 function fmt(value: number): string {
   if (!Number.isFinite(value) || value === 0) return '';
   const rounded = Math.round((value + Number.EPSILON) * 10) / 10;
-  const negative = rounded < 0;
-  const text = Math.abs(rounded).toFixed(1).replace('.', ',');
-  return negative ? `-${text}` : text;
+  if (rounded === 0) return '';
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1
+  }).format(rounded);
 }
 
-/** Hiển thị số trên xem trước và bản in. Giữ nguyên khi đang gõ dở `12,`. */
+/** Hiển thị số trên xem trước và bản in. Giữ nguyên khi đang gõ dở `12.` hoặc `12,`. */
 export function formatSlipNumber(value: unknown): string {
   const text = String(value ?? '').trim();
   if (!text) return '';
-  if (/^-?\d+,$/.test(text)) return text;
+  if (text.endsWith('.') || text.endsWith(',')) return text;
   const parsed = parseSlipNumber(text);
   if (!Number.isFinite(parsed)) return text;
-  if (parsed === 0) return /^-?0(?:[,.]0*)?$/.test(text) ? '0,0' : '';
+  if (parsed === 0) return /^-?0(?:[,.]0*)?$/.test(text) ? '0.0' : '';
   return fmt(parsed);
 }
 
@@ -155,19 +165,19 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
   );
   const vatTuCells = 8 + usedLan.length;
   const vatTuColWidths = (() => {
-    const lanWidth = 4;
-    const tenWidth = 100 - (52 + lanWidth * usedLan.length);
-    return [
-      6,
-      tenWidth,
-      5,
-      10,
-      10,
-      7,
-      ...usedLan.map(() => lanWidth),
-      7,
-      7
-    ];
+    const ma = 5;
+    const dvt = 4;
+    const numCols = 5 + usedLan.length;
+    const minTen = 10;
+    let num = 6.5;
+    let ten = 100 - ma - dvt - num * numCols;
+    if (ten < minTen) {
+      ten = minTen;
+      num = numCols > 0 ? (100 - ma - dvt - ten) / numCols : num;
+    }
+    num = Math.round(num * 10) / 10;
+    ten = Math.round((100 - ma - dvt - num * numCols) * 10) / 10;
+    return [ma, ten, dvt, num, num, num, ...usedLan.map(() => num), num, num];
   })();
   const vatTuColsHtml = vatTuColWidths.map(width => `<col style="width:${width}%" />`).join('');
   const headSpan = usedLan.length > 0 ? ' rowspan="2"' : '';
@@ -407,15 +417,17 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
     table.data-table td.l { text-align: left; color: #000; }
     table.data-table td.r { text-align: right; font-variant-numeric: tabular-nums; color: #000; }
     table.data-table td.num {
-      font-size: 14px;
+      font-size: 13px;
       text-align: center;
       font-variant-numeric: tabular-nums;
       color: #000;
       white-space: nowrap;
       word-break: normal;
       overflow-wrap: normal;
-      line-height: 1.15;
-      padding: 1px 0;
+      overflow: hidden;
+      text-overflow: clip;
+      line-height: 1.1;
+      padding: 0 1px;
     }
     table.data-table th.th-lan {
       font-size: 14px;
@@ -464,6 +476,8 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       page-break-inside: avoid;
       break-before: avoid;
       page-break-before: avoid;
+      break-after: avoid;
+      page-break-after: avoid;
     }
 
     /* Page 2 2-column layout */
@@ -630,11 +644,11 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
         <table class="data-table" data-fill="page" data-cells="8">
           <colgroup>
             <col style="width:11%" />
-            <col style="width:29%" />
+            <col style="width:23%" />
             <col style="width:12%" />
-            <col style="width:8%" />
-            <col style="width:8%" />
-            <col style="width:8%" />
+            <col style="width:10%" />
+            <col style="width:10%" />
+            <col style="width:10%" />
             <col style="width:12%" />
             <col style="width:12%" />
           </colgroup>
@@ -744,72 +758,112 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
     return tr;
   }
   var pagePx = mm(287);
-  var slack = mm(14);
+  var slack = mm(6);
+  var reserve = mm(18);
   var rowNeed = mm(8);
-  function tryAdd(page, tbody, total, cells) {
-    var before = page.offsetHeight;
-    var used = before % pagePx;
-    if (used === 0 || used <= slack) return false;
-    if (pagePx - used - slack < rowNeed) return false;
+  function edgeY(page, el, edge) {
+    var pageTop = page.getBoundingClientRect().top;
+    var box = el.getBoundingClientRect();
+    var y = (edge === 'bottom' ? box.bottom : box.top) - pageTop;
+    if (edge === 'bottom') y = Math.max(0, y - 1);
+    return Math.max(0, y);
+  }
+  function pageIndex(page, el, edge) {
+    return Math.floor(edgeY(page, el, edge) / pagePx);
+  }
+  function lastDataRow(tbody) {
+    var rows = tbody ? tbody.rows : [];
+    for (var i = rows.length - 1; i >= 0; i--) {
+      if (!rows[i].classList.contains('blank-row') && !rows[i].classList.contains('total-row')) return rows[i];
+    }
+    return null;
+  }
+  function totalFitsOnDataPage(page, tbody, total, note) {
+    if (!total) return true;
+    var dataRow = lastDataRow(tbody);
+    var dataPage = dataRow ? pageIndex(page, dataRow, 'top') : 0;
+    var limit = (dataPage + 1) * pagePx - reserve;
+    var totalBottom = edgeY(page, total, 'bottom');
+    var noteBottom = note ? edgeY(page, note, 'bottom') : totalBottom;
+    return pageIndex(page, total, 'top') <= dataPage && noteBottom <= limit;
+  }
+  function tryAdd(page, tbody, total, cells, note, keepWithData) {
+    var anchor = note || total;
+    if (keepWithData && anchor && !totalFitsOnDataPage(page, tbody, total, note)) return false;
+    if (keepWithData && anchor) {
+      var dataRow = lastDataRow(tbody);
+      var dataPage = dataRow ? pageIndex(page, dataRow, 'top') : 0;
+      var room = (dataPage + 1) * pagePx - reserve - edgeY(page, anchor, 'bottom');
+      if (room < rowNeed) return false;
+    } else {
+      var before = page.offsetHeight;
+      var used = before % pagePx;
+      if (used === 0 || used <= slack) return false;
+      if (pagePx - used - slack < rowNeed) return false;
+    }
     var tr = makeRow(cells);
-    if (total) tbody.insertBefore(tr, total);
+    if (total && total.parentNode === tbody) tbody.insertBefore(tr, total);
     else tbody.appendChild(tr);
+    if (keepWithData) {
+      if (!totalFitsOnDataPage(page, tbody, total, note)) {
+        tr.remove();
+        return false;
+      }
+      return true;
+    }
     var after = page.offsetHeight;
-    var crossed = Math.floor(Math.max(0, after - slack) / pagePx) > Math.floor(Math.max(0, before - slack) / pagePx);
+    var crossed = Math.floor(after / pagePx) > Math.floor((after - tr.offsetHeight) / pagePx);
     if (crossed) {
       tr.remove();
       return false;
     }
     return true;
   }
-  document.querySelectorAll('table[data-fill="min"]').forEach(function (table) {
-    var cells = Number(table.getAttribute('data-cells')) || 1;
-    var min = Number(table.getAttribute('data-min')) || 0;
-    var page = table.closest('.page');
-    var tbody = table.tBodies[0];
-    if (!page || !tbody) return;
-    var total = tbody.querySelector('tr.total-row');
-    var data = Array.prototype.filter.call(tbody.rows, function (row) {
-      return !row.classList.contains('total-row');
-    }).length;
-    for (var i = data; i < min; i++) {
-      if (!tryAdd(page, tbody, total, cells)) break;
-    }
-  });
-  document.querySelectorAll('table[data-fill="page"]').forEach(function (table) {
-    var cells = Number(table.getAttribute('data-cells')) || 1;
-    var page = table.closest('.page');
-    var tbody = table.tBodies[0];
-    if (!page || !tbody) return;
-    var total = tbody.querySelector('tr.total-row');
-    var guard = 0;
-    while (guard++ < 80 && tryAdd(page, tbody, total, cells)) {}
-  });
-  document.querySelectorAll('table[data-keep-total]').forEach(function (table) {
-    var page = table.closest('.page');
-    var total = table.querySelector('tr.total-row');
-    var note = page ? page.querySelector('.bottom-note-row') : null;
-    if (!page || !total) return;
-    var theadH = table.tHead ? table.tHead.getBoundingClientRect().height : 0;
-    function place(el) {
-      var pageTop = page.getBoundingClientRect().top;
-      var top = el.getBoundingClientRect().top - pageTop;
-      var index = Math.floor(Math.max(0, top) / pagePx);
-      var above = top - index * pagePx;
-      if (index > 0) above -= theadH;
-      return { index: index, above: above };
-    }
-    var guard = 0;
-    while (guard++ < 40) {
-      var totalPlace = place(total);
-      var notePlace = note ? place(note) : totalPlace;
-      var orphan = (totalPlace.index > 0 && totalPlace.above < mm(8)) || notePlace.index > totalPlace.index;
-      if (!orphan) break;
-      var blanks = table.querySelectorAll('tr.blank-row');
-      if (!blanks.length) break;
-      blanks[blanks.length - 1].remove();
-    }
-  });
+  function layoutSlip() {
+    document.querySelectorAll('tr.blank-row').forEach(function (row) { row.remove(); });
+    document.querySelectorAll('table[data-fill="min"]').forEach(function (table) {
+      var cells = Number(table.getAttribute('data-cells')) || 1;
+      var min = Number(table.getAttribute('data-min')) || 0;
+      var page = table.closest('.page');
+      var tbody = table.tBodies[0];
+      if (!page || !tbody) return;
+      var total = tbody.querySelector('tr.total-row');
+      var note = page.querySelector('.bottom-note-row');
+      var data = Array.prototype.filter.call(tbody.rows, function (row) {
+        return !row.classList.contains('total-row');
+      }).length;
+      for (var i = data; i < min; i++) {
+        if (!tryAdd(page, tbody, total, cells, note, false)) break;
+      }
+    });
+    document.querySelectorAll('table[data-fill="page"]').forEach(function (table) {
+      var cells = Number(table.getAttribute('data-cells')) || 1;
+      var page = table.closest('.page');
+      var tbody = table.tBodies[0];
+      if (!page || !tbody) return;
+      var total = tbody.querySelector('tr.total-row');
+      var note = page.querySelector('.bottom-note-row');
+      var keepWithData = table.hasAttribute('data-keep-total');
+      var guard = 0;
+      while (guard++ < 80 && tryAdd(page, tbody, total, cells, note, keepWithData)) {}
+    });
+    document.querySelectorAll('table[data-keep-total]').forEach(function (table) {
+      var page = table.closest('.page');
+      var tbody = table.tBodies[0];
+      var total = table.querySelector('tr.total-row');
+      var note = page ? page.querySelector('.bottom-note-row') : null;
+      if (!page || !tbody || !total) return;
+      var guard = 0;
+      while (guard++ < 40 && !totalFitsOnDataPage(page, tbody, total, note)) {
+        var blanks = table.querySelectorAll('tr.blank-row');
+        if (!blanks.length) break;
+        blanks[blanks.length - 1].remove();
+      }
+    });
+  }
+  layoutSlip();
+  window.layoutPhieuGiaoCa = layoutSlip;
+  window.addEventListener('load', layoutSlip);
 })();
 </script>
 </body>
@@ -824,9 +878,13 @@ export function printPhieuGiaoCaSlip(input: PhieuGiaoCaInput): void {
   }
   win.document.write(buildPhieuGiaoCaHtml(input));
   win.document.close();
-  win.focus();
-  setTimeout(() => {
+  const printWhenReady = () => {
+    const layout = (win as Window & { layoutPhieuGiaoCa?: () => void }).layoutPhieuGiaoCa;
+    if (layout) layout();
+    win.focus();
     win.print();
     win.close();
-  }, 250);
+  };
+  if (win.document.readyState === 'complete') setTimeout(printWhenReady, 80);
+  else win.addEventListener('load', () => setTimeout(printWhenReady, 80));
 }
