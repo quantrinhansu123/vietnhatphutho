@@ -149,9 +149,40 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
   // Tính tổng sử dụng vật tư
   const tongCongSuDungVatTu = input.vatTu.reduce((sum, r) => sum + (r.tong_su_dung || 0), 0);
 
+  // Cột lần trống trên mọi dòng thì không in.
+  const usedLan = Array.from({ length: 10 }, (_, index) => index).filter(index =>
+    input.vatTu.some(row => printNum(row?.lan?.[index] ?? '') !== '')
+  );
+  const vatTuCells = 8 + usedLan.length;
+  const vatTuColWidths = (() => {
+    const dropped = (10 - usedLan.length) * 5;
+    return [
+      6,
+      9 + dropped,
+      3.5,
+      6.5,
+      6,
+      6,
+      ...usedLan.map(() => 5),
+      6.5,
+      6.5
+    ];
+  })();
+  const vatTuColsHtml = vatTuColWidths.map(width => `<col style="width:${width}%" />`).join('');
+  const headSpan = usedLan.length > 0 ? ' rowspan="2"' : '';
+  const lanHeadHtml = usedLan.length > 0
+    ? `<tr>${usedLan.map(index => `<th class="th-lan">Lần<br>${index + 1}</th>`).join('')}</tr>`
+    : '';
+  const suDungHeadHtml = usedLan.length > 0
+    ? `<th colspan="${usedLan.length}">SỬ DỤNG</th>`
+    : '';
+  const tongLanHtml = usedLan.length > 0
+    ? `<td colspan="${usedLan.length}" class="num b">${tongCongSuDungVatTu > 0 ? esc(fmt(tongCongSuDungVatTu)) : ''}</td>`
+    : '';
+
   const vatTuRowsHtml = input.vatTu
     .map((row) => {
-      const lanCells = Array.from({ length: 10 }, (_, li) => numCell(row?.lan?.[li] ?? '', 3.2)).join('');
+      const lanCells = usedLan.map(index => numCell(row?.lan?.[index] ?? '', 5)).join('');
 
       return `
       <tr class="grid-row">
@@ -191,6 +222,11 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
 
   // Hàng lỗi
   const tongHangLoi = input.hangLoi.reduce((sum, r) => sum + num(r.so_luong), 0);
+  const suCoText = String(input.suCoLuuY || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .join('\n')
+    .trim();
   const hangLoiRowsHtml = input.hangLoi
     .map(row => {
       return `
@@ -383,6 +419,17 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       line-height: 1.15;
       padding: 1px 0;
     }
+    table.data-table th.th-ma {
+      font-size: 12px;
+    }
+    table.data-table td.font-mono {
+      font-family: "Times New Roman", Times, serif;
+      font-size: 12px;
+      color: #000;
+      white-space: nowrap;
+      word-break: normal;
+      overflow-wrap: normal;
+    }
     table.data-table td.b, table.data-table th.b { font-weight: bold; }
     table.data-table tr.total-row {
       break-before: avoid;
@@ -390,7 +437,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
     }
     .font-mono {
       font-family: "Times New Roman", Times, serif;
-      font-size: 14px;
+      font-size: 12px;
       color: #000;
       white-space: nowrap;
       word-break: normal;
@@ -442,6 +489,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       line-height: 1.3;
       background: #fafafa;
       overflow-wrap: anywhere;
+      text-align: left;
     }
 
     /* Chữ ký luôn một khối ở cuối trang 2. Nếu thành phẩm tràn, cả khối sang trang sau. */
@@ -525,59 +573,29 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
 
     <div class="sheet-body">
     <div class="sec-title">I. VẬT TƯ</div>
-    <table class="data-table" data-fill="page" data-keep-total="1" data-cells="18">
+    <table class="data-table" data-fill="page" data-keep-total="1" data-cells="${vatTuCells}">
       <colgroup>
-        <col style="width:6%" />
-        <col style="width:9%" />
-        <col style="width:3.5%" />
-        <col style="width:6.5%" />
-        <col style="width:6%" />
-        <col style="width:6%" />
-        <col style="width:5%" />
-        <col style="width:5%" />
-        <col style="width:5%" />
-        <col style="width:5%" />
-        <col style="width:5%" />
-        <col style="width:5%" />
-        <col style="width:5%" />
-        <col style="width:5%" />
-        <col style="width:5%" />
-        <col style="width:5%" />
-        <col style="width:6.5%" />
-        <col style="width:6.5%" />
+        ${vatTuColsHtml}
       </colgroup>
       <thead>
         <tr>
-          <th rowspan="2">Mã vật tư</th>
-          <th rowspan="2" class="th-ten">Tên vật tư (Kế hoạch chi tiết kể vật tư cần sử dụng, mã vật tư và định mức vật tư sử dụng (Kg))</th>
-          <th rowspan="2">ĐVT</th>
-          <th rowspan="2">Định mức vật tư</th>
-          <th rowspan="2">Tồn đầu ca</th>
-          <th rowspan="2">Lấy trong kho</th>
-          <th colspan="10">SỬ DỤNG</th>
-          <th rowspan="2">Tổng sử dụng</th>
-          <th rowspan="2">Tồn cuối ca</th>
+          <th${headSpan} class="th-ma">Mã vật tư</th>
+          <th${headSpan} class="th-ten">Tên vật tư</th>
+          <th${headSpan}>ĐVT</th>
+          <th${headSpan}>Định mức vật tư</th>
+          <th${headSpan}>Tồn đầu ca</th>
+          <th${headSpan}>Lấy trong kho</th>
+          ${suDungHeadHtml}
+          <th${headSpan}>Tổng sử dụng</th>
+          <th${headSpan}>Tồn cuối ca</th>
         </tr>
-        <tr>
-          <th class="th-lan">Lần<br>1</th>
-          <th class="th-lan">Lần<br>2</th>
-          <th class="th-lan">Lần<br>3</th>
-          <th class="th-lan">Lần<br>4</th>
-          <th class="th-lan">Lần<br>5</th>
-          <th class="th-lan">Lần<br>6</th>
-          <th class="th-lan">Lần<br>7</th>
-          <th class="th-lan">Lần<br>8</th>
-          <th class="th-lan">Lần<br>9</th>
-          <th class="th-lan">Lần<br>10</th>
-        </tr>
+        ${lanHeadHtml}
       </thead>
       <tbody>
         ${vatTuRowsHtml}
         <tr class="grid-row total-row" style="background-color: #f7f7f7;">
           <td colspan="6" class="l b" style="text-align: right; padding-right: 8px;">Cộng tổng sử dụng:</td>
-          <td colspan="10" class="num b">
-            ${tongCongSuDungVatTu > 0 ? esc(fmt(tongCongSuDungVatTu)) : ''}
-          </td>
+          ${tongLanHtml}
           <td class="num b">${tongCongSuDungVatTu > 0 ? esc(fmt(tongCongSuDungVatTu)) : ''}</td>
           <td></td>
         </tr>
@@ -605,8 +623,8 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
         <table class="data-table" data-fill="page" data-cells="8">
           <thead>
             <tr>
-              <th rowspan="2" style="width: 11%;">Mã TP</th>
-              <th rowspan="2" style="width: 28%;">THÀNH PHẨM (Kế hoạch sản xuất liệt kê các thành phẩm trừ khi dự kiến, dự kiến số lượng thành phẩm trừ khi thu kho)</th>
+              <th rowspan="2" class="th-ma" style="width: 11%;">Mã TP</th>
+              <th rowspan="2" style="width: 28%;">Thành phẩm</th>
               <th rowspan="2" style="width: 13%;">TL định mức/tấm (Kg)</th>
               <th colspan="3" style="width: 24%;">TP Nhập kho</th>
               <th rowspan="2" style="width: 12%;">Tổng nhập kho</th>
@@ -651,11 +669,9 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
           </table>
         </div>
 
-        <div style="margin-top: 8px; flex: 1; display: flex; flex-direction: column;">
-          <div class="sec-title">IV. SỰ CỐ SẢN XUẤT / LƯU Ý KHÁC</div>
-          <div class="notes-box">
-            ${esc(input.suCoLuuY || '').trim() || '<span style="color:#888;">(Không có sự cố ghi nhận)</span>'}
-          </div>
+        <div style="margin-top: 8px; flex: 1; display: flex; flex-direction: column; text-align: left;">
+          <div class="sec-title" style="text-align: left;">IV. SỰ CỐ SẢN XUẤT / LƯU Ý KHÁC</div>
+          <div class="notes-box">${suCoText ? esc(suCoText) : '<span style="color:#888;">(Không có sự cố ghi nhận)</span>'}</div>
         </div>
       </div>
 
