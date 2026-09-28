@@ -28,7 +28,7 @@ import { mainLineTotalWeightKg } from './dinhMucVatTu';
 const CHI_NHANH_MAC_DINH = 'Phú Thọ';
 const SO_LAN_TRON_MAC_DINH = 5;
 const SO_LAN_TRON_TOI_DA = 20;
-/** Số lần trộn = làm tròn lên (tổng trọng lượng sản phẩm / cối mẫu × hệ số này). */
+/** Số lần trộn = làm tròn lên (tổng trọng lượng sản phẩm / (cối mẫu × hệ số này)). */
 const HE_SO_LAN_TRON = 5;
 
 type CoiMauNvl = {
@@ -229,12 +229,12 @@ function formatTonCuoi(value: number) {
   return negative ? `-${text}` : text;
 }
 
-/** Số lần trộn = làm tròn lên (tổng trọng lượng sản phẩm / cối mẫu × 5). */
+/** Số lần trộn = làm tròn lên (tổng trọng lượng sản phẩm / (cối mẫu × 5)). */
 function soLanTronTuCacCoi(blocks: { tong_trong_luong?: string; dinh_luong_coi?: string }[]) {
   const total = blocks.reduce((sum, block) => sum + parseNum(block.tong_trong_luong), 0);
   const coiMau = blocks.map(block => parseNum(block.dinh_luong_coi)).find(value => value > 0) || 0;
   if (!(total > 0) || !(coiMau > 0)) return 0;
-  return Math.ceil((total / coiMau) * HE_SO_LAN_TRON - 1e-9);
+  return Math.ceil(total / (coiMau * HE_SO_LAN_TRON) - 1e-9);
 }
 
 /** Không dấu chấm hàng nghìn. Một chữ số sau dấu phẩy (vd 1234,6). */
