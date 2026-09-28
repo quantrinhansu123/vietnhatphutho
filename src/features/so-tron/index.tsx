@@ -204,7 +204,15 @@ function str(value: unknown) {
 
 function parseNum(value: unknown) {
   let text = str(value).replace(/\s/g, '');
-  if (text.includes(',')) text = text.replace(/\./g, '').replace(',', '.');
+  if (!text) return 0;
+  const lastComma = text.lastIndexOf(',');
+  const lastDot = text.lastIndexOf('.');
+  if (lastComma >= 0 && lastDot >= 0) {
+    if (lastDot > lastComma) text = text.replace(/,/g, '');
+    else text = text.replace(/\./g, '').replace(',', '.');
+  } else if (lastComma >= 0) {
+    text = /^-?\d{1,3}(,\d{3})+$/.test(text) ? text.replace(/,/g, '') : text.replace(/,/g, '.');
+  }
   const parsed = Number(text);
   return Number.isFinite(parsed) ? parsed : 0;
 }
@@ -221,12 +229,18 @@ function round1(value: number) {
   return Math.round((value + Number.EPSILON) * 10) / 10;
 }
 
-/** Tồn cuối ca: 1 chữ số sau dấu phẩy, hiển thị dấu phẩy. */
+/** Phần nghìn `,`, thập phân `.`, một chữ số (vd 1,234.6). */
+function formatSoTronSo(value: number): string {
+  if (!Number.isFinite(value)) return '';
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1
+  }).format(round1(value));
+}
+
+/** Tồn cuối ca: phần nghìn `,`, thập phân `.`. */
 function formatTonCuoi(value: number) {
-  const rounded = round1(value);
-  const negative = rounded < 0;
-  const text = Math.abs(rounded).toFixed(1).replace('.', ',');
-  return negative ? `-${text}` : text;
+  return formatSoTronSo(value);
 }
 
 /** Số lần trộn = làm tròn lên (tổng trọng lượng sản phẩm / (cối mẫu × 5)). */
@@ -237,32 +251,41 @@ function soLanTronTuCacCoi(blocks: { tong_trong_luong?: string; dinh_luong_coi?:
   return Math.ceil(total / (coiMau * HE_SO_LAN_TRON) - 1e-9);
 }
 
-/** Không dấu chấm hàng nghìn. Một chữ số sau dấu phẩy (vd 1234,6). */
+/** Phần nghìn `,`, thập phân `.`, một chữ số (vd 1,234.6). */
 function formatKg3(value: number) {
-  if (!Number.isFinite(value)) return '';
-  const rounded = round1(value);
-  const negative = rounded < 0;
-  const text = Math.abs(rounded).toFixed(1).replace('.', ',');
-  return negative ? `-${text}` : text;
+  return formatSoTronSo(value);
 }
 
-/** Tổng trọng lượng SP: phần nghìn dấu `.`, thập phân dấu `,`, luôn 2 chữ số (vd 1.234,50). */
+/** Giữ nguyên khi đang gõ `12` hoặc `12.`. Số cũ dạng `178,4` thì đổi sang `178.4`. */
+function formatSoTronInput(value: string): string {
+  const text = str(value);
+  if (!text || text.endsWith('.') || text.endsWith(',')) return text;
+  if (/^-?\d{1,3}(,\d{3})*$/.test(text)) return text;
+  const lastComma = text.lastIndexOf(',');
+  const lastDot = text.lastIndexOf('.');
+  const commaIsDecimal = lastComma >= 0 && (lastDot < 0 || lastComma > lastDot);
+  return commaIsDecimal ? formatKg3(parseNum(text)) : text;
+}
+
+/** Tổng trọng lượng SP: phần nghìn `,`, thập phân `.`, luôn 2 chữ số (vd 1,234.50). */
 function formatTongTrongLuongSp(value: string) {
   const raw = value.trim();
   if (!raw) return '';
-  let normalized = raw.replace(/\s/g, '');
-  if (normalized.includes(',')) normalized = normalized.replace(/\./g, '').replace(',', '.');
-  const num = Number(normalized);
-  if (!Number.isFinite(num)) return raw;
-  return new Intl.NumberFormat('vi-VN', {
+  const text = raw.replace(/\s/g, '');
+  if (!/^-?[\d.,]+$/.test(text)) return raw;
+  return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
-  }).format(round2(num));
+  }).format(round2(parseNum(text)));
 }
 
 function formatQty(value: number) {
   const rounded = round2(value);
-  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+  const digits = Number.isInteger(rounded) ? 0 : 1;
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits
+  }).format(rounded);
 }
 
 /** Lần trộn đã chọn sản phẩm + kg cối thực tế. `lan` lưu 1-based khi ghi jsonb. */
@@ -803,7 +826,7 @@ function SoTronRowActions({
 
 const inputClass =
   'w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[13px] font-semibold text-slate-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20';
-const numInputClass = `${inputClass} text-right tabular-nums`;
+const numInputClass = `${inputClass} whitespace-nowrap text-right tabular-nums`;
 const labelClass = 'mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-500';
 const cardClass = 'rounded-xl border border-slate-200 bg-white shadow-card';
 const sectionTitleClass = 'font-display text-[14px] font-semibold tracking-tight text-slate-900';
@@ -1933,39 +1956,6 @@ export function SoTronPanel({
   const nvlUsageOf = (materialId: string, ma: string) =>
     round2(nvlTotals.get((materialId || ma).toLowerCase()) || 0);
 
-  const banGiaoOf = (row: NvlRow) => {
-    const key = (row.material_id || row.ma_nvl).toLowerCase();
-    return banGiaoRows.find(item => (item.material_id || item.ma_nvl).toLowerCase() === key);
-  };
-
-  const updateBanGiaoField = (nvl: NvlRow, field: 'lay_trong_kho' | 'ton_dau_ca', value: string) => {
-    const key = (nvl.material_id || nvl.ma_nvl).toLowerCase();
-    setBanGiaoRows(rows => {
-      const idx = rows.findIndex(item => (item.material_id || item.ma_nvl).toLowerCase() === key);
-      if (idx < 0) {
-        return [
-          ...rows,
-          {
-            key: uid(),
-            material_id: nvl.material_id,
-            ma_nvl: nvl.ma_nvl,
-            ten_nvl: nvl.ten_nvl,
-            ten_nvl_sx: nvl.ten_nvl_sx,
-            lay_trong_kho: field === 'lay_trong_kho' ? value : '',
-            ton_dau_ca: field === 'ton_dau_ca' ? value : '',
-            lay_kho_tu_dong: field !== 'lay_trong_kho',
-            ton_dau_tu_dong: field !== 'ton_dau_ca'
-          }
-        ];
-      }
-      return rows.map((item, index) => {
-        if (index !== idx) return item;
-        if (field === 'lay_trong_kho') return { ...item, lay_trong_kho: value, lay_kho_tu_dong: false };
-        return { ...item, ton_dau_ca: value, ton_dau_tu_dong: false };
-      });
-    });
-  };
-
   // NVL chính trong kho = NVL không thuộc nhóm vật tư phụ (để picker "Thêm NVL khác")
   const mainMaterials = useMemo(() => {
     return materials
@@ -2753,6 +2743,8 @@ export function SoTronPanel({
   );
   const paperCellInput =
     'w-full bg-transparent px-1 py-1 text-center text-[15px] font-semibold tabular-nums text-slate-900 outline-none focus:bg-brand-50';
+  const paperNumInput =
+    'w-full overflow-hidden whitespace-nowrap bg-transparent px-0.5 py-1 text-center text-[13px] font-semibold tabular-nums text-slate-900 outline-none focus:bg-brand-50';
   const paperCellInputLeft =
     'w-full bg-transparent px-1 py-1 text-left text-[15px] font-semibold text-slate-900 outline-none focus:bg-brand-50';
   const paperTh =
@@ -2769,6 +2761,93 @@ export function SoTronPanel({
       coiMauGroups.find(entry => item.ma_sp && entry.ma_sp === item.ma_sp);
     return { item, key: group?.key || item.ma_sp || item.ten_sp };
   };
+
+  const nvlPaperSections = useMemo(() => {
+    const materialKey = (materialId: string, ma: string) => (materialId || ma).trim().toLowerCase();
+    const groupKeyOfLan = (index: number) => {
+      const item = lanCoi[index] || emptyLanCoi();
+      const matched =
+        (item.ty_le
+          ? coiMauGroups.find(entry => entry.ratioLabel === item.ty_le && (entry.ma_sp === item.ma_sp || entry.ten_sp === item.ten_sp))
+          : undefined) ||
+        coiMauGroups.find(entry => entry.key === (item.ma_sp || item.ten_sp)) ||
+        coiMauGroups.find(entry => item.ten_sp && (entry.ten_sp === item.ten_sp || entry.key === item.ten_sp)) ||
+        coiMauGroups.find(entry => item.ma_sp && entry.ma_sp === item.ma_sp);
+      return matched?.key || '';
+    };
+    const dinhByGroup = new Map<string, Map<string, number>>();
+    const membersByGroup = new Map<string, Set<string>>();
+    for (const group of coiMauGroups) {
+      const dinh = new Map<string, number>();
+      const members = new Set<string>();
+      for (const block of group.blocks) {
+        for (const line of block.nvl || []) {
+          const key = materialKey(line.material_id, line.ma_nvl);
+          if (!key) continue;
+          members.add(key);
+          dinh.set(key, round2((dinh.get(key) || 0) + parseNum(line.tong_khoi_luong)));
+        }
+      }
+      dinhByGroup.set(group.key, dinh);
+      membersByGroup.set(group.key, members);
+    }
+    const allLan = Array.from({ length: numLan }, (_, index) => index);
+    if (coiMauGroups.length <= 1) {
+      const group = coiMauGroups[0];
+      const dinh = group ? dinhByGroup.get(group.key) : undefined;
+      return [{
+        key: group?.key || 'tat-ca',
+        title: group
+          ? `${group.ten_sp || group.ma_sp || 'Sản phẩm'}${group.ratioLabel ? ` · ${group.ratioLabel}` : ''}`
+          : 'Tất cả',
+        showTitle: !group,
+        lanIndexes: allLan,
+        lines: nvlRows.map(row => {
+          const kg = dinh?.get(materialKey(row.material_id, row.ma_nvl)) || 0;
+          return { row, dinhMuc: kg > 0 ? formatKg3(kg) : row.dinh_muc };
+        })
+      }];
+    }
+    const unassigned = allLan.filter(index => !groupKeyOfLan(index));
+    const used = new Set<string>();
+    const sections = coiMauGroups.map((group, index) => {
+      const members = membersByGroup.get(group.key) || new Set<string>();
+      const dinh = dinhByGroup.get(group.key) || new Map<string, number>();
+      const ownedLan = allLan.filter(lan => groupKeyOfLan(lan) === group.key);
+      const lanIndexes = index === 0 ? [...ownedLan, ...unassigned] : ownedLan;
+      const lines = nvlRows
+        .filter(row => {
+          const key = materialKey(row.material_id, row.ma_nvl);
+          if (!key) return false;
+          if (members.has(key)) return true;
+          return ownedLan.some(lan => str(row.lan[lan]) !== '');
+        })
+        .map(row => {
+          const key = materialKey(row.material_id, row.ma_nvl);
+          used.add(key);
+          const kg = dinh.get(key) || 0;
+          return { row, dinhMuc: kg > 0 ? formatKg3(kg) : '' };
+        });
+      return {
+        key: group.key,
+        title: `${group.ten_sp || group.ma_sp || 'Sản phẩm'}${group.ratioLabel ? ` · ${group.ratioLabel}` : ''}`,
+        showTitle: true,
+        lanIndexes,
+        lines
+      };
+    });
+    const extras = nvlRows.filter(row => !used.has(materialKey(row.material_id, row.ma_nvl)));
+    if (extras.length > 0) {
+      sections.push({
+        key: 'nvl-khac',
+        title: 'NVL khác',
+        showTitle: true,
+        lanIndexes: [],
+        lines: extras.map(row => ({ row, dinhMuc: row.dinh_muc }))
+      });
+    }
+    return sections;
+  }, [coiMauGroups, nvlRows, lanCoi, numLan]);
 
   const filteredSavedReports = useMemo(() => {
     // Chưa chọn ngày thì không hiển thị gì (đúng yêu cầu: chọn ngày mới hiện danh sách).
@@ -3923,7 +4002,7 @@ export function SoTronPanel({
                     lines.push({
                       key: picked.key,
                       name: `${group.ten_sp || group.ma_sp || 'Sản phẩm'}${group.ratioLabel ? ` · ${group.ratioLabel}` : ''}`,
-                      total: formatTongTrongLuongSp(String(total)) || '0,00'
+                      total: formatTongTrongLuongSp(String(total)) || '0.00'
                     });
                   }
                   if (lines.length === 0) return null;
@@ -4055,56 +4134,52 @@ export function SoTronPanel({
                   </p>
                 ) : null}
 
-                {/* Bảng NVL: Nguyên liệu | ĐVT | Định mức | Tồn đầu | Lấy kho | SỬ DỤNG | Tổng SD | Tồn cuối */}
+                <div className="flex flex-col gap-5 px-2 py-3">
+                {nvlPaperSections.map(section => (
+                <div key={section.key} className="overflow-hidden rounded-md border border-slate-800 bg-white">
+                  {section.showTitle ? (
+                    <p className="border-b border-slate-800 bg-slate-50 px-3 py-1.5 text-[14px] font-bold text-black">
+                      {section.title}
+                    </p>
+                  ) : null}
                 <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-center" style={{ minWidth: 826 + numLan * 64 }}>
+                  <table className="w-full table-fixed border-collapse text-center" style={{ minWidth: 520 + section.lanIndexes.length * 96 }}>
                     <colgroup>
                       <col style={{ width: '320px', minWidth: '320px' }} />
                       <col style={{ width: '56px', minWidth: '56px' }} />
-                      <col style={{ width: '96px', minWidth: '96px' }} />
-                      <col style={{ width: '84px', minWidth: '84px' }} />
-                      <col style={{ width: '84px', minWidth: '84px' }} />
-                      {Array.from({ length: numLan }, (_, i) => (
-                        <col key={i} style={{ width: '64px', minWidth: '64px' }} />
+                      <col style={{ width: '110px', minWidth: '110px' }} />
+                      {section.lanIndexes.map(lan => (
+                        <col key={lan} style={{ width: '96px', minWidth: '96px' }} />
                       ))}
-                      <col style={{ width: '76px', minWidth: '76px' }} />
-                      <col style={{ width: '76px', minWidth: '76px' }} />
                       <col style={{ width: '34px', minWidth: '34px' }} />
                     </colgroup>
                     <thead>
                       <tr>
                         <th rowSpan={2} className={`${paperTh} w-[320px] min-w-[320px]`}>Nguyên Liệu</th>
                         <th rowSpan={2} className={`${paperTh} w-[56px] min-w-[56px]`}>ĐVT</th>
-                        <th rowSpan={2} className={`${paperTh} w-[96px] min-w-[96px] leading-tight`} title="Tổng trọng lượng NVL trên phiếu trộn định mức">Định mức vật tư</th>
-                        <th rowSpan={2} className={`${paperTh} w-[84px] min-w-[84px] leading-tight`}>Tồn đầu ca</th>
-                        <th rowSpan={2} className={`${paperTh} w-[84px] min-w-[84px] leading-tight`} title="Nhập trong ngày">Lấy kho</th>
-                        <th colSpan={numLan} className={paperTh}>SỬ DỤNG</th>
-                        <th rowSpan={2} className={`${paperTh} w-[76px] min-w-[76px]`}>Tổng SD</th>
-                        <th rowSpan={2} className={`${paperTh} w-[76px] min-w-[76px]`}>Tồn cuối</th>
+                        <th rowSpan={2} className={`${paperTh} w-[96px] min-w-[96px] leading-tight`} title="Tổng trọng lượng NVL trên phiếu trộn định mức của sản phẩm này">Định mức vật tư</th>
+                        {section.lanIndexes.length > 0 ? (
+                          <th colSpan={section.lanIndexes.length} className={paperTh}>SỬ DỤNG</th>
+                        ) : null}
                         <th rowSpan={2} className={`${paperTh} w-[34px] min-w-[34px]`} />
                       </tr>
                       <tr>
-                        {Array.from({ length: numLan }, (_, i) => (
-                          <th key={i} className="border border-slate-800 bg-slate-50 px-0 py-1 text-[11px] font-bold tabular-nums text-slate-700 w-[64px] min-w-[64px]">
-                            L{i + 1}
+                        {section.lanIndexes.map(lan => (
+                          <th key={lan} className="w-[96px] min-w-[96px] border border-slate-800 bg-slate-50 px-0 py-1 text-[11px] font-bold tabular-nums text-slate-700">
+                            L{lan + 1}
                           </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {nvlRows.length === 0 && (
+                      {section.lines.length === 0 && (
                         <tr>
-                          <td colSpan={numLan + 8} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
-                            Chưa có NVL — kiểm tra cối trộn mẫu của lệnh hoặc thêm NVL khác bên dưới.
+                          <td colSpan={section.lanIndexes.length + 4} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
+                            Chưa có NVL của sản phẩm này.
                           </td>
                         </tr>
                       )}
-                      {nvlRows.map((row, ri) => {
-                        const giao = banGiaoOf(row);
-                        const tongSd = nvlUsageOf(row.material_id, row.ma_nvl);
-                        const layKho = parseNum(giao?.lay_trong_kho);
-                        const tonDau = parseNum(giao?.ton_dau_ca);
-                        const tonCuoi = round1(layKho + tonDau - tongSd);
+                      {section.lines.map(({ row, dinhMuc }) => {
                         const sx = row.ten_nvl_sx.trim();
                         const ten = row.ten_nvl.trim();
                         const ma = row.ma_nvl.trim();
@@ -4135,58 +4210,48 @@ export function SoTronPanel({
                             <input
                               value={row.dvt}
                               onChange={e =>
-                                setNvlRows(rows => rows.map((r, i) => (i === ri ? { ...r, dvt: e.target.value } : r)))
+                                setNvlRows(rows => rows.map(item => (item.key === row.key ? { ...item, dvt: e.target.value } : item)))
                               }
                               className={paperCellInput}
                             />
                           </td>
-                          <td className="border border-slate-700 px-1 py-0.5 text-right text-[12.5px] font-bold tabular-nums text-slate-800 w-[96px] min-w-[96px]" title="Tổng trọng lượng NVL trên phiếu trộn định mức">
-                            {row.dinh_muc}
+                          <td className="w-[110px] min-w-[110px] overflow-hidden whitespace-nowrap border border-slate-700 px-1 py-0.5 text-right text-[13px] font-bold leading-none tabular-nums text-slate-800" title="Tổng trọng lượng NVL trên phiếu trộn định mức của sản phẩm này">
+                            {dinhMuc ? formatKg3(parseNum(dinhMuc)) : ''}
                           </td>
-                          <td className={`${paperTd} w-[84px] min-w-[84px]`}>
-                            <input
-                              inputMode="decimal"
-                              value={giao?.ton_dau_ca || ''}
-                              onChange={e => updateBanGiaoField(row, 'ton_dau_ca', e.target.value)}
-                              className={`${paperCellInput} text-black`}
-                            />
-                          </td>
-                          <td className={`${paperTd} w-[84px] min-w-[84px]`}>
-                            <input
-                              inputMode="decimal"
-                              value={giao?.lay_trong_kho || ''}
-                              onChange={e => updateBanGiaoField(row, 'lay_trong_kho', e.target.value)}
-                              title="Nhập trong ngày"
-                              className={`${paperCellInput} text-black`}
-                            />
-                          </td>
-                          {row.lan.map((cell, li) => (
-                            <td key={li} className={`${paperTd} w-[64px] min-w-[64px]`}>
+                          {section.lanIndexes.map(lan => (
+                            <td key={lan} className={`${paperTd} w-[96px] min-w-[96px] overflow-hidden`}>
                               <input
                                 inputMode="decimal"
-                                value={cell}
+                                value={formatSoTronInput(row.lan[lan] || '')}
                                 onChange={e =>
                                   setNvlRows(rows =>
-                                    rows.map((r, i) =>
-                                      i === ri ? { ...r, lan: r.lan.map((c, j) => (j === li ? e.target.value : c)) } : r
+                                    rows.map(item =>
+                                      item.key === row.key
+                                        ? { ...item, lan: item.lan.map((cell, index) => (index === lan ? e.target.value : cell)) }
+                                        : item
                                     )
                                   )
                                 }
-                                className={paperCellInput}
+                                onBlur={e => {
+                                  const next = str(e.target.value) ? formatKg3(parseNum(e.target.value)) : '';
+                                  setNvlRows(rows =>
+                                    rows.map(item =>
+                                      item.key === row.key
+                                        ? { ...item, lan: item.lan.map((cell, index) => (index === lan ? next : cell)) }
+                                        : item
+                                    )
+                                  );
+                                }}
+                                className={paperNumInput}
                               />
                             </td>
                           ))}
-                          <td className="border border-slate-700 px-1 py-0.5 text-right text-[13px] font-bold tabular-nums text-black w-[76px] min-w-[76px]">
-                            {formatKg3(tongSd)}
-                          </td>
-                          <td className="border border-slate-700 px-1 py-0.5 text-right text-[13px] font-bold tabular-nums text-black w-[76px] min-w-[76px]">
-                            {formatTonCuoi(tonCuoi)}
-                          </td>
                           <td className="border border-slate-700 px-0.5 py-0.5 w-[34px] min-w-[34px]">
                             <button
                               type="button"
-                              onClick={() => setNvlRows(rows => rows.filter((_, i) => i !== ri))}
+                              onClick={() => setNvlRows(rows => rows.filter(item => item.key !== row.key))}
                               className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:bg-rose-50 hover:text-rose-600"
+                              title="Xóa NVL khỏi sổ"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -4197,7 +4262,10 @@ export function SoTronPanel({
                     </tbody>
                   </table>
                 </div>
-                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-300 px-3 py-1.5">
+                </div>
+                ))}
+                </div>
+                <div className="mx-2 mb-1 flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-300 px-3 py-1.5">
                   <div className="min-w-[220px] flex-1">
                     <SearchableMultiSelect<MaterialRow>
                       values={[]}
@@ -4223,7 +4291,7 @@ export function SoTronPanel({
                 </div>
 
                 {/* Sản phẩm | Hàng lỗi hỏng. Bàn giao ca sau nằm trên bảng nguyên liệu. */}
-                <div className="border-t-2 border-slate-800 flex flex-col lg:flex-row divide-y-2 lg:divide-y-0 lg:divide-x-2 divide-slate-800">
+                <div className="mx-2 mt-5 flex flex-col divide-y-2 divide-slate-800 overflow-hidden rounded-md border border-slate-800 lg:flex-row lg:divide-x-2 lg:divide-y-0">
                   {/* Sản phẩm */}
                   <div className="min-w-[880px] flex-1 flex flex-col justify-between">
                     <div>
@@ -4316,7 +4384,7 @@ export function SoTronPanel({
                                         rows.map((r, i) => (i === ri ? withAutoTrongLuong(r, e.target.value) : r))
                                       )
                                     }
-                                    className={paperCellInput}
+                                    className={paperNumInput}
                                   />
                                 </td>
                                 <td className={`${paperTd} w-[62px] min-w-[56px]`}>
@@ -4325,7 +4393,7 @@ export function SoTronPanel({
                                     onChange={e =>
                                       setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, dinh_muc: e.target.value } : r)))
                                     }
-                                    className={paperCellInput}
+                                    className={paperNumInput}
                                   />
                                 </td>
                                 <td className={`${paperTd} w-[68px] min-w-[60px]`}>
@@ -4334,7 +4402,7 @@ export function SoTronPanel({
                                     onChange={e =>
                                       setSpRows(rows => rows.map((r, i) => (i === ri ? { ...r, trong_luong: e.target.value } : r)))
                                     }
-                                    className={paperCellInput}
+                                    className={paperNumInput}
                                   />
                                 </td>
                                 <td className={`${paperTd} w-[62px] min-w-[56px]`}>
@@ -4346,7 +4414,7 @@ export function SoTronPanel({
                                         rows.map((r, i) => (i === ri ? updateSpMetric(r, 'kg_1_sp', e.target.value) : r))
                                       )
                                     }
-                                    className={paperCellInput}
+                                    className={paperNumInput}
                                   />
                                 </td>
                                 <td className={`${paperTd} w-[62px] min-w-[56px]`}>
@@ -4358,7 +4426,7 @@ export function SoTronPanel({
                                         rows.map((r, i) => (i === ri ? updateSpMetric(r, 'm2_1_sp', e.target.value) : r))
                                       )
                                     }
-                                    className={paperCellInput}
+                                    className={paperNumInput}
                                   />
                                 </td>
                                 <td className={`${paperTd} w-[62px] min-w-[56px]`}>
@@ -4370,7 +4438,7 @@ export function SoTronPanel({
                                         rows.map((r, i) => (i === ri ? updateSpMetric(r, 'm_dai_1_sp', e.target.value) : r))
                                       )
                                     }
-                                    className={paperCellInput}
+                                    className={paperNumInput}
                                   />
                                 </td>
                                 <td className={`${paperTd} w-[70px] min-w-[64px]`}>
@@ -4481,7 +4549,7 @@ export function SoTronPanel({
                                   onChange={e =>
                                     setLoiRows(rows => rows.map((r, i) => (i === ri ? { ...r, so_luong: e.target.value } : r)))
                                   }
-                                  className={paperCellInput}
+                                  className={paperNumInput}
                                 />
                               </td>
                               <td className="border border-slate-700 px-0.5 py-0.5 w-[28px] min-w-[28px]">
@@ -4514,6 +4582,99 @@ export function SoTronPanel({
                         <Plus className="h-3.5 w-3.5" /> Thêm lỗi
                       </button>
                     </div>
+                  </div>
+                </div>
+                <div className="mx-2 mb-3 mt-5 overflow-hidden rounded-md border border-slate-800">
+                  <p className="border-b border-slate-800 bg-slate-100 py-1 text-center text-[12px] font-bold uppercase tracking-wide">
+                    Nhựa bàn giao ca sau
+                  </p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[720px] border-collapse text-center">
+                      <thead>
+                        <tr>
+                          <th className={`${paperTh} min-w-[220px]`}>Loại nhựa</th>
+                          <th className={`${paperTh} w-[110px]`}>Tồn đầu ca</th>
+                          <th className={`${paperTh} w-[110px]`} title="Nhập trong ngày">Lấy kho</th>
+                          <th className={`${paperTh} w-[110px]`}>Tổng SD</th>
+                          <th className={`${paperTh} w-[110px]`}>Tồn cuối</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {banGiaoRows.length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
+                              Chưa có nhựa bàn giao.
+                            </td>
+                          </tr>
+                        )}
+                        {banGiaoRows.map(row => {
+                          const suDung = nvlUsageOf(row.material_id, row.ma_nvl);
+                          const tonCuoi = round1(parseNum(row.lay_trong_kho) + parseNum(row.ton_dau_ca) - suDung);
+                          const ten = (row.ten_nvl_sx || row.ten_nvl || row.ma_nvl).trim();
+                          return (
+                            <tr key={row.key}>
+                              <td className="border border-slate-700 px-2 py-1 text-left">
+                                <div className="font-semibold leading-snug" style={{ fontSize: 16, color: '#000' }}>{ten || '—'}</div>
+                                {row.ma_nvl ? (
+                                  <div className="font-semibold leading-snug" style={{ fontSize: 14, color: '#000' }}>{row.ma_nvl}</div>
+                                ) : null}
+                              </td>
+                              <td className={paperTd}>
+                                <input
+                                  inputMode="decimal"
+                                  value={formatSoTronInput(row.ton_dau_ca)}
+                                  onChange={e =>
+                                    setBanGiaoRows(rows =>
+                                      rows.map(item =>
+                                        item.key === row.key ? { ...item, ton_dau_ca: e.target.value, ton_dau_tu_dong: false } : item
+                                      )
+                                    )
+                                  }
+                                  onBlur={e => {
+                                    const next = str(e.target.value) ? formatKg3(parseNum(e.target.value)) : '';
+                                    setBanGiaoRows(rows =>
+                                      rows.map(item =>
+                                        item.key === row.key ? { ...item, ton_dau_ca: next, ton_dau_tu_dong: false } : item
+                                      )
+                                    );
+                                  }}
+                                  className={`${paperNumInput} text-black`}
+                                />
+                              </td>
+                              <td className={paperTd}>
+                                <input
+                                  inputMode="decimal"
+                                  value={formatSoTronInput(row.lay_trong_kho)}
+                                  onChange={e =>
+                                    setBanGiaoRows(rows =>
+                                      rows.map(item =>
+                                        item.key === row.key ? { ...item, lay_trong_kho: e.target.value, lay_kho_tu_dong: false } : item
+                                      )
+                                    )
+                                  }
+                                  onBlur={e => {
+                                    const next = str(e.target.value) ? formatKg3(parseNum(e.target.value)) : '';
+                                    setBanGiaoRows(rows =>
+                                      rows.map(item =>
+                                        item.key === row.key ? { ...item, lay_trong_kho: next, lay_kho_tu_dong: false } : item
+                                      )
+                                    );
+                                  }}
+                                  title="Nhập trong ngày"
+                                  className={`${paperNumInput} text-black`}
+                                />
+                              </td>
+                              <td className="overflow-hidden whitespace-nowrap border border-slate-700 px-1 py-0.5 text-right text-[13px] font-bold tabular-nums text-black">
+                                {formatKg3(suDung)}
+                              </td>
+                              <td className="overflow-hidden whitespace-nowrap border border-slate-700 px-1 py-0.5 text-right text-[13px] font-bold tabular-nums text-black">
+                                {formatTonCuoi(tonCuoi)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>

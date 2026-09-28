@@ -64,7 +64,7 @@ function gioSuCo(ten: string, lan: string): string {
   const times = num(lan);
   if (!hit || !(times > 0)) return '';
   const hours = round1(hit.gio * times);
-  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1).replace('.', ',');
+  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
 }
 
 function composeSuCo(rows: SuCoRow[], note: string): string {
@@ -564,12 +564,12 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
   const inputStyle =
     'box-border h-8 w-full bg-transparent border-0 px-1 py-0 text-[16px] leading-8 text-black outline-none focus:bg-indigo-50/50';
   const numInputStyle =
-    'box-border h-8 w-full max-w-full bg-transparent px-0.5 py-0 text-right text-[16px] font-semibold leading-8 text-black tabular-nums outline-none';
+    'box-border h-8 w-full max-w-full overflow-hidden whitespace-nowrap bg-transparent px-0.5 py-0 text-right text-[13px] font-semibold leading-8 text-black tabular-nums outline-none';
   const centerInputStyle = `${inputStyle} text-center`;
   const readOnlyCell =
     'block h-8 w-full max-w-full truncate px-1 py-0 text-[16px] leading-8 text-black';
   const numReadStyle =
-    'px-0.5 text-right text-[16px] font-semibold leading-8 text-black tabular-nums';
+    '!whitespace-nowrap ![text-overflow:clip] px-0.5 text-right text-[13px] font-semibold leading-8 text-black tabular-nums';
   const slipTableClass =
     'w-full table-fixed border-collapse border border-slate-800 text-center text-[16px] leading-none text-black [&_tbody_tr]:h-9 [&_tbody_td]:h-9 [&_tbody_td]:box-border [&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap [&_tbody_td]:p-0 [&_tbody_td]:align-middle [&_th]:box-border [&_th]:px-1 [&_th]:py-1 [&_th]:align-middle [&_th]:text-[16px] [&_th]:leading-tight [&_th]:text-black';
   const paperFontStyle = { fontFamily: '"Times New Roman", Times, serif' } as const;
@@ -962,7 +962,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                   />
                 </div>
                 <div>
-                  Tổng sử dụng: <span className="text-[16px] font-semibold tabular-nums text-black">{fmt(tongCongSuDungVatTu)} kg</span>
+                  Tổng sử dụng: <span className="whitespace-nowrap text-[13px] font-semibold tabular-nums text-black">{fmt(tongCongSuDungVatTu)} kg</span>
                 </div>
               </div>
             </div>
@@ -1210,10 +1210,10 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                               inputMode="decimal"
                               value={row.lan}
                               onChange={e => setSuCoRows(rows => rows.map((item, i) => (i === index ? { ...item, lan: e.target.value } : item)))}
-                              className="w-full bg-transparent px-1 py-1 text-center text-[16px] font-bold text-black outline-none"
+                              className="w-full overflow-hidden whitespace-nowrap bg-transparent px-1 py-1 text-center text-[13px] font-bold text-black outline-none"
                             />
                           </td>
-                          <td className="border border-slate-800 px-1 text-center text-[16px] font-bold tabular-nums text-black">
+                          <td className="overflow-hidden whitespace-nowrap border border-slate-800 px-1 text-center text-[13px] font-bold tabular-nums text-black">
                             {gioSuCo(row.ten, row.lan)}
                           </td>
                           <td className="border border-slate-800 text-center">
