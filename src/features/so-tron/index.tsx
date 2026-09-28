@@ -28,8 +28,8 @@ import { mainLineTotalWeightKg } from './dinhMucVatTu';
 const CHI_NHANH_MAC_DINH = 'Phú Thọ';
 const SO_LAN_TRON_MAC_DINH = 5;
 const SO_LAN_TRON_TOI_DA = 20;
-/** Chia tổng trọng lượng sản phẩm cho 565 kg để ra số cối; cối cuối là phần dư. */
-const COI_MAU_CHIA_KG = 565;
+/** Số lần trộn = làm tròn lên (tổng trọng lượng sản phẩm / cối mẫu × hệ số này). */
+const HE_SO_LAN_TRON = 5;
 
 type CoiMauNvl = {
   material_id: string;
@@ -229,12 +229,12 @@ function formatTonCuoi(value: number) {
   return negative ? `-${text}` : text;
 }
 
-/** Số cối = ceil(tổng kg / 565). Cối cuối = phần còn lại sau các cối đủ 565 kg. */
-function splitCoiMau(totalKg: number) {
-  if (!(totalKg > 0)) return { soLuong: 0, coiCuoi: 0 };
-  const soLuong = Math.max(1, Math.ceil(totalKg / COI_MAU_CHIA_KG - 1e-9));
-  const coiCuoi = round3(totalKg - (soLuong - 1) * COI_MAU_CHIA_KG);
-  return { soLuong, coiCuoi };
+/** Số lần trộn = làm tròn lên (tổng trọng lượng sản phẩm / cối mẫu × 5). */
+function soLanTronTuCacCoi(blocks: { tong_trong_luong?: string; dinh_luong_coi?: string }[]) {
+  const total = blocks.reduce((sum, block) => sum + parseNum(block.tong_trong_luong), 0);
+  const coiMau = blocks.map(block => parseNum(block.dinh_luong_coi)).find(value => value > 0) || 0;
+  if (!(total > 0) || !(coiMau > 0)) return 0;
+  return Math.ceil((total / coiMau) * HE_SO_LAN_TRON - 1e-9);
 }
 
 /** Không dấu chấm hàng nghìn. Một chữ số sau dấu phẩy (vd 1234,6). */
@@ -2222,6 +2222,12 @@ export function SoTronPanel({
       coiMauGroups.find(item => next.ten_sp && (item.ten_sp === next.ten_sp || item.key === next.ten_sp)) ||
       coiMauGroups.find(item => next.ma_sp && item.ma_sp === next.ma_sp);
     const potText = next.trong_luong_coi.trim();
+    if (group) {
+      const soLan = soLanTronTuCacCoi(group.blocks);
+      if (String(soLan || '') !== next.so_lan_tron) {
+        saveLanDraft(index, { ...next, so_lan_tron: soLan > 0 ? String(soLan) : '' });
+      }
+    }
     if (!group) {
       setLanCoiNote(`L${index + 1}: chọn sản phẩm trước khi xác nhận.`);
       return;
@@ -2256,12 +2262,19 @@ export function SoTronPanel({
       const copy = [...prev];
       while (copy.length <= next) copy.push(emptyLanCoi());
       const source = copy[last] || prevItem;
+      const sourceKey = source.ma_sp || source.ten_sp;
+      const sourceGroup =
+        coiMauGroups.find(item => item.key === sourceKey) ||
+        (source.ty_le
+          ? coiMauGroups.find(item => item.ratioLabel === source.ty_le && (item.ma_sp === source.ma_sp || item.ten_sp === source.ten_sp))
+          : undefined);
+      const soLan = sourceGroup ? soLanTronTuCacCoi(sourceGroup.blocks) : 0;
       copy[next] = {
         ma_sp: source.ma_sp,
         ten_sp: source.ten_sp,
         ty_le: source.ty_le,
         trong_luong_coi: '',
-        so_lan_tron: ''
+        so_lan_tron: soLan > 0 ? String(soLan) : ''
       };
       return copy;
     });
@@ -3944,6 +3957,7 @@ export function SoTronPanel({
                           const key = e.target.value;
                           const group = coiMauGroups.find(item => item.key === key);
                           const current = lanCoi[rowLan] || emptyLanCoi();
+                          const soLan = group ? soLanTronTuCacCoi(group.blocks) : 0;
                           saveLanDraft(
                             rowLan,
                             group
@@ -3952,7 +3966,7 @@ export function SoTronPanel({
                                   ten_sp: group.ten_sp || group.ma_sp,
                                   ty_le: group.ratioLabel,
                                   trong_luong_coi: current.trong_luong_coi,
-                                  so_lan_tron: ''
+                                  so_lan_tron: soLan > 0 ? String(soLan) : ''
                                 }
                               : { ...emptyLanCoi(), trong_luong_coi: current.trong_luong_coi }
                           );
@@ -3976,16 +3990,15 @@ export function SoTronPanel({
                     {(() => {
                       const group = coiMauGroups.find(item => item.key === field.key);
                       if (!group) return null;
-                      const total = (group.blocks || []).reduce((sum, block) => sum + parseNum(block.tong_trong_luong), 0);
-                      const split = splitCoiMau(total);
                       const dinhMau = (group.blocks || []).map(block => parseNum(block.dinh_luong_coi)).find(value => value > 0) || 0;
+                      const soLan = soLanTronTuCacCoi(group.blocks);
                       return (
                         <>
                           <span className="text-[14px] font-bold text-black">
                             Cối mẫu {dinhMau > 0 ? `${formatKg3(dinhMau)} kg` : '—'}
                           </span>
                           <span className="text-[14px] font-bold text-black">
-                            Số lần trộn {split.soLuong > 0 ? split.soLuong : '—'}
+                            Số lần trộn {soLan > 0 ? soLan : '—'}
                           </span>
                         </>
                       );

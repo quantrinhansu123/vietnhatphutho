@@ -1,7 +1,8 @@
 /**
  * Mô-đun tạo HTML và kích hoạt in Phiếu giao ca kiêm nhật ký sản xuất
- * Thiết kế 2 trang A4 ngang để cột số 14px hiện đủ, không bị cắt:
- * - Trang 1: Header + I. VẬT TƯ (Bảng theo dõi vật tư sử dụng L1..L10, tồn đầu, lấy kho, tồn cuối, giao ca)
+ * Thiết kế 2 trang A4 dọc. Mọi chữ xuống dòng, không cắt bằng dấu ba chấm.
+ * Phần chưa kín trang được chèn ô trống cho đủ trang, không tràn thêm trang.
+ * - Trang 1: Header + I. VẬT TƯ (L1..L10, tồn đầu, lấy kho, tồn cuối, giao ca)
  * - Trang 2: II. THÀNH PHẨM (trái) + III. HÀNG LỖI PHẾ (phải trên) + IV. SỰ CỐ / LƯU Ý (phải dưới) + 4 Chữ ký chân trang
  */
 
@@ -69,11 +70,6 @@ export interface PhieuGiaoCaInput {
     keHoachSanXuat: string;
   };
 }
-
-/** Số dòng dữ liệu (chưa kể dòng Cộng) để lưới ô trắng kín một trang A4, mỗi ô cao cố định. */
-const VAT_TU_GRID_ROWS = 30;
-const THANH_PHAM_GRID_ROWS = 30;
-const HANG_LOI_GRID_ROWS = 7;
 
 function esc(value: unknown): string {
   return String(value ?? '')
@@ -146,14 +142,6 @@ function splitNgay(ngay: string) {
   return { d: m[3], m: m[2], y: m[1] };
 }
 
-function padList<T>(rows: T[], minCount: number): (T | null)[] {
-  const result: (T | null)[] = [...rows];
-  while (result.length < minCount) {
-    result.push(null);
-  }
-  return result;
-}
-
 export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
   const { d, m, y } = splitNgay(input.header.ngay);
   const tenMayUpper = (input.header.tieuDeMay || input.header.tenMay || 'SÓNG 2').trim().toUpperCase();
@@ -161,16 +149,14 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
   // Tính tổng sử dụng vật tư
   const tongCongSuDungVatTu = input.vatTu.reduce((sum, r) => sum + (r.tong_su_dung || 0), 0);
 
-  // Pad vật tư
-  const paddedVatTu = padList(input.vatTu, Math.max(input.vatTu.length, VAT_TU_GRID_ROWS));
-  const vatTuRowsHtml = paddedVatTu
+  const vatTuRowsHtml = input.vatTu
     .map((row) => {
       const lanCells = Array.from({ length: 10 }, (_, li) => numCell(row?.lan?.[li] ?? '', 3.2)).join('');
 
       return `
       <tr class="grid-row">
         <td class="c font-mono">${esc(row?.ma_nvl ?? '') || '&nbsp;'}</td>
-        <td class="l" style="color:#000;font-size:16px;">${esc(row?.ten_nvl_sx || row?.ten_nvl || '') || '&nbsp;'}</td>
+        <td class="l ten">${esc(row?.ten_nvl_sx || row?.ten_nvl || '') || '&nbsp;'}</td>
         <td class="c">${esc(row?.dvt ?? (row ? 'Kg' : '')) || '&nbsp;'}</td>
         ${numCell(row?.dinh_muc ?? '', 8)}
         ${numCell(row && row.ton_dau_ca !== '' && row.ton_dau_ca !== 0 ? row.ton_dau_ca : '', 7.5)}
@@ -186,13 +172,12 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
   // Thành phẩm
   const tongNhapKhoThanhPham = input.thanhPham.reduce((sum, r) => sum + num(r.so_luong), 0);
   const tongTrongLuongThanhPham = input.thanhPham.reduce((sum, r) => sum + num(r.trong_luong), 0);
-  const paddedThanhPham = padList(input.thanhPham, Math.max(input.thanhPham.length, THANH_PHAM_GRID_ROWS));
-  const thanhPhamRowsHtml = paddedThanhPham
+  const thanhPhamRowsHtml = input.thanhPham
     .map(row => {
       return `
       <tr class="grid-row">
         <td class="c font-mono">${esc(row?.ma_sp ?? '') || '&nbsp;'}</td>
-        <td class="l">${esc(row?.ten_sp ?? '') || '&nbsp;'}</td>
+        <td class="l ten">${esc(row?.ten_sp ?? '') || '&nbsp;'}</td>
         ${numCell(row?.dinh_muc ?? '', 13)}
         ${numCell(row?.lan_1 ?? '', 8)}
         ${numCell(row?.lan_2 ?? '', 8)}
@@ -206,8 +191,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
 
   // Hàng lỗi
   const tongHangLoi = input.hangLoi.reduce((sum, r) => sum + num(r.so_luong), 0);
-  const paddedHangLoi = padList(input.hangLoi, Math.max(input.hangLoi.length, HANG_LOI_GRID_ROWS));
-  const hangLoiRowsHtml = paddedHangLoi
+  const hangLoiRowsHtml = input.hangLoi
     .map(row => {
       return `
       <tr class="grid-row">
@@ -226,13 +210,16 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
   <title>${esc(tenMayUpper)} - NHẬT KÝ SẢN XUẤT KIÊM PHIẾU GIAO CA</title>
   <style>
     @page {
-      size: A4 landscape;
-      margin: 6mm 6mm 6mm 6mm;
+      size: A4 portrait;
+      margin: 5mm;
     }
     * {
       box-sizing: border-box;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
+    }
+    html, body {
+      width: 200mm;
     }
     body {
       font-family: "Times New Roman", Times, serif, Arial;
@@ -272,49 +259,58 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       object-fit: contain;
     }
     .main-title {
-      font-size: 11.5pt;
+      font-size: 16px;
       font-weight: bold;
       text-align: center;
-      letter-spacing: 0.5px;
+      letter-spacing: 0;
       text-transform: uppercase;
-      padding: 0 4px;
+      padding: 0 2px;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      line-height: 1.25;
     }
     .iso-box {
-      border: 1px solid #000;
-      padding: 3px 5px;
-      font-size: 7pt;
+      border: 0.5pt solid #000;
+      padding: 2px 4px;
+      font-size: 12px;
       line-height: 1.2;
-      width: 125px;
+      width: 132px;
       margin-left: auto;
     }
 
     /* Sub-header meta */
     .meta-bar {
-      margin-top: 4px;
-      margin-bottom: 4px;
-      font-size: 8.5pt;
-      line-height: 1.35;
+      margin-top: 2px;
+      margin-bottom: 2px;
+      font-size: 16px;
+      line-height: 1.3;
     }
     .meta-row {
       display: flex;
+      flex-wrap: wrap;
       justify-content: space-between;
       align-items: baseline;
+      gap: 2px 10px;
       margin-bottom: 2px;
     }
     .underline-fill {
       border-bottom: 1px dotted #444;
       display: inline-block;
-      min-width: 45px;
+      min-width: 28px;
+      max-width: 100%;
       text-align: center;
       font-weight: bold;
       padding: 0 2px;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      vertical-align: bottom;
     }
 
     /* Section titles */
     .sec-title {
-      font-size: 8.5pt;
+      font-size: 16px;
       font-weight: bold;
-      margin: 4px 0 2px 0;
+      margin: 2px 0 2px 0;
       text-transform: uppercase;
     }
 
@@ -326,57 +322,94 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
     }
     table.data-table th,
     table.data-table td {
-      border: 1px solid #000;
-      padding: 0 1px;
+      border: 0.5pt solid #000;
+      padding: 1px 1px;
       font-size: 16px;
       color: #000;
       vertical-align: middle;
-      overflow: hidden;
+      height: auto;
+      max-height: none;
+      overflow: visible;
+      white-space: normal;
+      text-overflow: clip;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      line-height: 1.2;
     }
     table.data-table th {
       background-color: #f7f7f7;
       font-weight: bold;
       text-align: center;
-      font-size: 16px;
-      color: #000;
-      height: auto;
-      white-space: normal;
-      line-height: 1.05;
-      padding: 1px 2px;
+      font-size: 14px;
+      padding: 2px 1px;
+    }
+    table.data-table th.th-ten {
+      text-align: center;
+      padding: 2px 2px;
     }
     table.data-table tbody tr.grid-row,
     table.data-table tbody tr.grid-row td {
-      height: 8mm;
-      max-height: 8mm;
+      height: auto;
+      min-height: 8mm;
+      max-height: none;
     }
-    table.data-table tbody tr.grid-row td {
+    table.data-table tbody tr.blank-row,
+    table.data-table tbody tr.blank-row td {
+      height: 8mm;
+      min-height: 8mm;
+      max-height: 8mm;
       line-height: 8mm;
-      padding: 0 1px;
-      white-space: nowrap;
-      text-overflow: ellipsis;
+      padding: 0;
       overflow: hidden;
+      white-space: nowrap;
     }
     table.data-table td.c { text-align: center; color: #000; }
-    table.data-table td.l { text-align: left; color: #000; font-size: 16px; }
+    table.data-table td.l { text-align: left; color: #000; }
     table.data-table td.r { text-align: right; font-variant-numeric: tabular-nums; color: #000; }
     table.data-table td.num {
-      text-align: right;
+      font-size: 14px;
+      text-align: center;
       font-variant-numeric: tabular-nums;
-      font-size: 16px;
       color: #000;
-      padding: 0 1px;
+      white-space: nowrap;
+      word-break: normal;
+      overflow-wrap: normal;
+      line-height: 1.15;
+      padding: 1px 0;
+    }
+    table.data-table th.th-lan {
+      font-size: 14px;
+      white-space: normal;
+      line-height: 1.15;
+      padding: 1px 0;
     }
     table.data-table td.b, table.data-table th.b { font-weight: bold; }
-    .font-mono { font-family: monospace, Courier, monospace; font-size: 16px; color: #000; }
+    table.data-table tr.total-row {
+      break-before: avoid;
+      page-break-before: avoid;
+    }
+    .font-mono {
+      font-family: "Times New Roman", Times, serif;
+      font-size: 14px;
+      color: #000;
+      white-space: nowrap;
+      word-break: normal;
+      overflow-wrap: normal;
+    }
     .sub { font-size: 6.5pt; color: #444; font-style: italic; }
 
     .bottom-note-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-top: 5px;
-      font-size: 8.5pt;
+      gap: 8px;
+      margin-top: 2mm;
+      font-size: 16px;
       font-weight: bold;
+      break-inside: avoid;
+      page-break-inside: avoid;
+      break-before: avoid;
+      page-break-before: avoid;
     }
 
     /* Page 2 2-column layout */
@@ -401,43 +434,47 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
     }
 
     .notes-box {
-      border: 1px solid #000;
-      min-height: 32mm;
-      padding: 6px;
-      font-size: 8.5pt;
+      border: 0.5pt solid #000;
+      min-height: 24mm;
+      padding: 4px;
+      font-size: 16px;
       white-space: pre-wrap;
-      line-height: 1.35;
+      line-height: 1.3;
       background: #fafafa;
+      overflow-wrap: anywhere;
     }
 
     /* Chữ ký luôn một khối ở cuối trang 2. Nếu thành phẩm tràn, cả khối sang trang sau. */
     .signatures-row {
-      margin-top: 6mm;
+      margin-top: 3mm;
       display: flex;
       justify-content: space-between;
       text-align: center;
       break-inside: avoid;
       page-break-inside: avoid;
+      break-before: avoid;
+      page-break-before: avoid;
     }
     .sig-col {
       width: 24%;
     }
     .sig-title {
       font-weight: bold;
-      font-size: 8.5pt;
+      font-size: 16px;
       margin-bottom: 2px;
     }
     .sig-sub {
-      font-size: 7.5pt;
+      font-size: 16px;
       font-style: italic;
       color: #444;
     }
     .sig-space {
-      height: 16mm;
+      height: 50mm;
     }
     .sig-name {
-      font-size: 8pt;
+      font-size: 16px;
       font-weight: bold;
+      overflow-wrap: anywhere;
     }
   </style>
 </head>
@@ -473,26 +510,29 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
           Năm <span class="underline-fill" style="min-width: 50px;">${esc(y)}</span>
         </div>
         <div>
-          Số phiếu: <span class="underline-fill" style="min-width: 80px;">${esc(input.header.soPhieu || '')}</span> / ${esc(y)}
+          Số phiếu: <span class="underline-fill" style="min-width: 36px;">${esc(input.header.soPhieu || '')}</span> / ${esc(y)}
         </div>
       </div>
       <div class="meta-row">
         <div style="flex: 1; margin-right: 20px;">
-          Người thực hiện: <span class="underline-fill" style="min-width: 220px; text-align: left;">${esc(input.header.nguoiThucHien || '—')}</span>
+          Người thực hiện: <span class="underline-fill" style="min-width: 40px; text-align: left;">${esc(input.header.nguoiThucHien || '—')}</span>
         </div>
         <div>
-          Máy: <span class="underline-fill" style="min-width: 90px;">${esc(input.header.tenMay || tenMayUpper)}</span>
+          Máy: <span class="underline-fill" style="min-width: 40px;">${esc(input.header.tenMay || tenMayUpper)}</span>
         </div>
       </div>
     </div>
 
     <div class="sheet-body">
     <div class="sec-title">I. VẬT TƯ</div>
-    <table class="data-table">
+    <table class="data-table" data-fill="page" data-keep-total="1" data-cells="18">
       <colgroup>
-        <col style="width:7%" />
-        <col style="width:14%" />
-        <col style="width:4%" />
+        <col style="width:6%" />
+        <col style="width:9%" />
+        <col style="width:3.5%" />
+        <col style="width:6.5%" />
+        <col style="width:6%" />
+        <col style="width:6%" />
         <col style="width:5%" />
         <col style="width:5%" />
         <col style="width:5%" />
@@ -503,16 +543,13 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
         <col style="width:5%" />
         <col style="width:5%" />
         <col style="width:5%" />
-        <col style="width:5%" />
-        <col style="width:5%" />
-        <col style="width:5%" />
-        <col style="width:5%" />
-        <col style="width:5%" />
+        <col style="width:6.5%" />
+        <col style="width:6.5%" />
       </colgroup>
       <thead>
         <tr>
           <th rowspan="2">Mã vật tư</th>
-          <th rowspan="2">Tên vật tư (Kế hoạch chi tiết kể vật tư cần sử dụng, mã vật tư và định mức vật tư sử dụng (Kg))</th>
+          <th rowspan="2" class="th-ten">Tên vật tư (Kế hoạch chi tiết kể vật tư cần sử dụng, mã vật tư và định mức vật tư sử dụng (Kg))</th>
           <th rowspan="2">ĐVT</th>
           <th rowspan="2">Định mức vật tư</th>
           <th rowspan="2">Tồn đầu ca</th>
@@ -522,23 +559,23 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
           <th rowspan="2">Tồn cuối ca</th>
         </tr>
         <tr>
-          <th>Lần 1</th>
-          <th>Lần 2</th>
-          <th>Lần 3</th>
-          <th>Lần 4</th>
-          <th>Lần 5</th>
-          <th>Lần 6</th>
-          <th>Lần 7</th>
-          <th>Lần 8</th>
-          <th>Lần 9</th>
-          <th>Lần 10</th>
+          <th class="th-lan">Lần<br>1</th>
+          <th class="th-lan">Lần<br>2</th>
+          <th class="th-lan">Lần<br>3</th>
+          <th class="th-lan">Lần<br>4</th>
+          <th class="th-lan">Lần<br>5</th>
+          <th class="th-lan">Lần<br>6</th>
+          <th class="th-lan">Lần<br>7</th>
+          <th class="th-lan">Lần<br>8</th>
+          <th class="th-lan">Lần<br>9</th>
+          <th class="th-lan">Lần<br>10</th>
         </tr>
       </thead>
       <tbody>
         ${vatTuRowsHtml}
-        <tr class="grid-row" style="background-color: #f7f7f7;">
+        <tr class="grid-row total-row" style="background-color: #f7f7f7;">
           <td colspan="6" class="l b" style="text-align: right; padding-right: 8px;">Cộng tổng sử dụng:</td>
-          <td colspan="10" class="num b" style="text-align: right; padding-right: 1mm;">
+          <td colspan="10" class="num b">
             ${tongCongSuDungVatTu > 0 ? esc(fmt(tongCongSuDungVatTu)) : ''}
           </td>
           <td class="num b">${tongCongSuDungVatTu > 0 ? esc(fmt(tongCongSuDungVatTu)) : ''}</td>
@@ -565,7 +602,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       <!-- Cột trái: II. THÀNH PHẨM -->
       <div class="p2-left">
         <div class="sec-title">II. THÀNH PHẨM</div>
-        <table class="data-table">
+        <table class="data-table" data-fill="page" data-cells="8">
           <thead>
             <tr>
               <th rowspan="2" style="width: 11%;">Mã TP</th>
@@ -576,14 +613,14 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
               <th rowspan="2" style="width: 12%;">Tổng TL (Kg)</th>
             </tr>
             <tr>
-              <th style="width: 8%;">Lần 1</th>
-              <th style="width: 8%;">Lần 2</th>
-              <th style="width: 8%;">Lần 3</th>
+              <th class="th-lan" style="width: 8%;">Lần<br>1</th>
+              <th class="th-lan" style="width: 8%;">Lần<br>2</th>
+              <th class="th-lan" style="width: 8%;">Lần<br>3</th>
             </tr>
           </thead>
           <tbody>
             ${thanhPhamRowsHtml}
-            <tr class="grid-row" style="background-color: #f7f7f7;">
+            <tr class="grid-row total-row" style="background-color: #f7f7f7;">
               <td colspan="6" class="l b" style="text-align: right; padding-right: 6px;">Cộng:</td>
               <td class="num b">${tongNhapKhoThanhPham > 0 ? esc(fmt(tongNhapKhoThanhPham)) : ''}</td>
               <td class="num b">${tongTrongLuongThanhPham > 0 ? esc(fmt(tongTrongLuongThanhPham)) : ''}</td>
@@ -596,7 +633,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       <div class="p2-right">
         <div>
           <div class="sec-title">III. HÀNG LỖI HỎNG/PHẾ</div>
-          <table class="data-table">
+          <table class="data-table" data-fill="min" data-min="7" data-cells="3">
             <thead>
               <tr>
                 <th style="width: 48%;">TÊN LỖI/PHẾ</th>
@@ -606,7 +643,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
             </thead>
             <tbody>
               ${hangLoiRowsHtml}
-              <tr class="grid-row" style="background-color: #f7f7f7;">
+              <tr class="grid-row total-row" style="background-color: #f7f7f7;">
                 <td colspan="2" class="l b" style="text-align: right; padding-right: 6px;">Cộng:</td>
                 <td class="num b">${tongHangLoi > 0 ? esc(fmt(tongHangLoi)) : ''}</td>
               </tr>
@@ -653,12 +690,101 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
     </div>
   </div>
 
+<script>
+(function () {
+  function mm(value) {
+    var probe = document.createElement('div');
+    probe.style.cssText = 'position:absolute;left:0;top:0;height:' + value + 'mm;width:0;visibility:hidden;';
+    document.body.appendChild(probe);
+    var height = probe.offsetHeight;
+    probe.remove();
+    return height;
+  }
+  function makeRow(cells) {
+    var tr = document.createElement('tr');
+    tr.className = 'grid-row blank-row';
+    for (var i = 0; i < cells; i++) {
+      var td = document.createElement('td');
+      td.innerHTML = '&nbsp;';
+      tr.appendChild(td);
+    }
+    return tr;
+  }
+  var pagePx = mm(287);
+  var slack = mm(14);
+  var rowNeed = mm(8);
+  function tryAdd(page, tbody, total, cells) {
+    var before = page.offsetHeight;
+    var used = before % pagePx;
+    if (used === 0 || used <= slack) return false;
+    if (pagePx - used - slack < rowNeed) return false;
+    var tr = makeRow(cells);
+    if (total) tbody.insertBefore(tr, total);
+    else tbody.appendChild(tr);
+    var after = page.offsetHeight;
+    var crossed = Math.floor(Math.max(0, after - slack) / pagePx) > Math.floor(Math.max(0, before - slack) / pagePx);
+    if (crossed) {
+      tr.remove();
+      return false;
+    }
+    return true;
+  }
+  document.querySelectorAll('table[data-fill="min"]').forEach(function (table) {
+    var cells = Number(table.getAttribute('data-cells')) || 1;
+    var min = Number(table.getAttribute('data-min')) || 0;
+    var page = table.closest('.page');
+    var tbody = table.tBodies[0];
+    if (!page || !tbody) return;
+    var total = tbody.querySelector('tr.total-row');
+    var data = Array.prototype.filter.call(tbody.rows, function (row) {
+      return !row.classList.contains('total-row');
+    }).length;
+    for (var i = data; i < min; i++) {
+      if (!tryAdd(page, tbody, total, cells)) break;
+    }
+  });
+  document.querySelectorAll('table[data-fill="page"]').forEach(function (table) {
+    var cells = Number(table.getAttribute('data-cells')) || 1;
+    var page = table.closest('.page');
+    var tbody = table.tBodies[0];
+    if (!page || !tbody) return;
+    var total = tbody.querySelector('tr.total-row');
+    var guard = 0;
+    while (guard++ < 80 && tryAdd(page, tbody, total, cells)) {}
+  });
+  document.querySelectorAll('table[data-keep-total]').forEach(function (table) {
+    var page = table.closest('.page');
+    var total = table.querySelector('tr.total-row');
+    var note = page ? page.querySelector('.bottom-note-row') : null;
+    if (!page || !total) return;
+    var theadH = table.tHead ? table.tHead.getBoundingClientRect().height : 0;
+    function place(el) {
+      var pageTop = page.getBoundingClientRect().top;
+      var top = el.getBoundingClientRect().top - pageTop;
+      var index = Math.floor(Math.max(0, top) / pagePx);
+      var above = top - index * pagePx;
+      if (index > 0) above -= theadH;
+      return { index: index, above: above };
+    }
+    var guard = 0;
+    while (guard++ < 40) {
+      var totalPlace = place(total);
+      var notePlace = note ? place(note) : totalPlace;
+      var orphan = (totalPlace.index > 0 && totalPlace.above < mm(8)) || notePlace.index > totalPlace.index;
+      if (!orphan) break;
+      var blanks = table.querySelectorAll('tr.blank-row');
+      if (!blanks.length) break;
+      blanks[blanks.length - 1].remove();
+    }
+  });
+})();
+</script>
 </body>
 </html>`;
 }
 
 export function printPhieuGiaoCaSlip(input: PhieuGiaoCaInput): void {
-  const win = window.open('', '', 'width=1100,height=900');
+  const win = window.open('', '', 'width=820,height=1100');
   if (!win) {
     alert('Trình duyệt chặn mở cửa sổ in. Vui lòng cho phép popup để in phiếu.');
     return;
