@@ -816,10 +816,8 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                   </colgroup>
                   <thead>
                     <tr className="bg-slate-100 text-black">
-                      <th rowSpan={2} className="border border-slate-800">Mã VT</th>
-                      <th rowSpan={2} className="border border-slate-800">
-                        Tên vật tư (Kế hoạch chi tiết kể vật tư cần sử dụng, mã vật tư và định mức sử dụng (Kg))
-                      </th>
+                      <th rowSpan={2} className="border border-slate-800" style={{ fontSize: 12 }}>Mã VT</th>
+                      <th rowSpan={2} className="border border-slate-800">Tên vật tư</th>
                       <th rowSpan={2} className="border border-slate-800">ĐVT</th>
                       <th rowSpan={2} className="border border-slate-800">Định mức vật tư</th>
                       <th rowSpan={2} className="border border-slate-800">Tồn đầu ca</th>
@@ -852,6 +850,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                             value={row.ma_nvl}
                             onChange={e => updateVatTuRow(ri, { ma_nvl: e.target.value })}
                             className={centerInputStyle}
+                            style={{ fontSize: 12 }}
                           />
                         </td>
                         <td className="border border-slate-800 p-0.5">
@@ -1000,10 +999,8 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                     </colgroup>
                     <thead>
                       <tr className="bg-slate-100 text-black">
-                        <th rowSpan={2} className="border border-slate-800">Mã TP</th>
-                        <th rowSpan={2} className="border border-slate-800">
-                          THÀNH PHẨM (Kế hoạch sản xuất liệt kê các thành phẩm trừ khi dự kiến...)
-                        </th>
+                        <th rowSpan={2} className="border border-slate-800" style={{ fontSize: 12 }}>Mã TP</th>
+                        <th rowSpan={2} className="border border-slate-800">Thành phẩm</th>
                         <th rowSpan={2} className="border border-slate-800">TL định mức / tấm (Kg)</th>
                         <th colSpan={3} className="border border-slate-800">TP Nhập kho</th>
                         <th rowSpan={2} className="border border-slate-800">Tổng nhập</th>
@@ -1026,7 +1023,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                       {thanhPhamRows.map(row => (
                         <tr key={row.key} className="h-9 bg-slate-50/40" style={{ height: 36 }}>
                           <td className="border border-slate-800 p-0.5">
-                            <span className={`${readOnlyCell} text-center`}>{row.ma_sp}</span>
+                            <span className={`${readOnlyCell} text-center`} style={{ fontSize: 12 }}>{row.ma_sp}</span>
                           </td>
                           <td className="border border-slate-800 p-0.5">
                             <span className={`${readOnlyCell} text-left font-semibold`} style={{ color: '#000', fontSize: 16 }}>{row.ten_sp}</span>
