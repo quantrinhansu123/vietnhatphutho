@@ -155,17 +155,18 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
   );
   const vatTuCells = 8 + usedLan.length;
   const vatTuColWidths = (() => {
-    const dropped = (10 - usedLan.length) * 5;
+    const lanWidth = 4;
+    const tenWidth = 100 - (52 + lanWidth * usedLan.length);
     return [
       6,
-      9 + dropped,
-      3.5,
-      6.5,
-      6,
-      6,
-      ...usedLan.map(() => 5),
-      6.5,
-      6.5
+      tenWidth,
+      5,
+      10,
+      10,
+      7,
+      ...usedLan.map(() => lanWidth),
+      7,
+      7
     ];
   })();
   const vatTuColsHtml = vatTuColWidths.map(width => `<col style="width:${width}%" />`).join('');
@@ -378,6 +379,9 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       text-align: center;
       font-size: 14px;
       padding: 2px 1px;
+      overflow: hidden;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     table.data-table th.th-ten {
       text-align: center;
@@ -426,9 +430,12 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       font-family: "Times New Roman", Times, serif;
       font-size: 12px;
       color: #000;
-      white-space: nowrap;
-      word-break: normal;
-      overflow-wrap: normal;
+      text-align: center;
+      white-space: normal;
+      word-break: break-all;
+      overflow-wrap: anywhere;
+      overflow: hidden;
+      line-height: 1.15;
     }
     table.data-table td.b, table.data-table th.b { font-weight: bold; }
     table.data-table tr.total-row {
@@ -439,9 +446,9 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       font-family: "Times New Roman", Times, serif;
       font-size: 12px;
       color: #000;
-      white-space: nowrap;
-      word-break: normal;
-      overflow-wrap: normal;
+      white-space: normal;
+      word-break: break-all;
+      overflow-wrap: anywhere;
     }
     .sub { font-size: 6.5pt; color: #444; font-style: italic; }
 
@@ -582,12 +589,12 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
           <th${headSpan} class="th-ma">Mã vật tư</th>
           <th${headSpan} class="th-ten">Tên vật tư</th>
           <th${headSpan}>ĐVT</th>
-          <th${headSpan}>Định mức vật tư</th>
-          <th${headSpan}>Tồn đầu ca</th>
-          <th${headSpan}>Lấy trong kho</th>
+          <th${headSpan}>Định mức<br>vật tư</th>
+          <th${headSpan}>Tồn đầu<br>ca</th>
+          <th${headSpan}>Lấy kho</th>
           ${suDungHeadHtml}
-          <th${headSpan}>Tổng sử dụng</th>
-          <th${headSpan}>Tồn cuối ca</th>
+          <th${headSpan}>Tổng SD</th>
+          <th${headSpan}>Tồn cuối</th>
         </tr>
         ${lanHeadHtml}
       </thead>
@@ -621,19 +628,29 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       <div class="p2-left">
         <div class="sec-title">II. THÀNH PHẨM</div>
         <table class="data-table" data-fill="page" data-cells="8">
+          <colgroup>
+            <col style="width:11%" />
+            <col style="width:29%" />
+            <col style="width:12%" />
+            <col style="width:8%" />
+            <col style="width:8%" />
+            <col style="width:8%" />
+            <col style="width:12%" />
+            <col style="width:12%" />
+          </colgroup>
           <thead>
             <tr>
-              <th rowspan="2" class="th-ma" style="width: 11%;">Mã TP</th>
-              <th rowspan="2" style="width: 28%;">Thành phẩm</th>
-              <th rowspan="2" style="width: 13%;">TL định mức/tấm (Kg)</th>
-              <th colspan="3" style="width: 24%;">TP Nhập kho</th>
-              <th rowspan="2" style="width: 12%;">Tổng nhập kho</th>
-              <th rowspan="2" style="width: 12%;">Tổng TL (Kg)</th>
+              <th rowspan="2" class="th-ma">Mã TP</th>
+              <th rowspan="2">Thành phẩm</th>
+              <th rowspan="2">TL định mức/tấm (Kg)</th>
+              <th colspan="3">TP Nhập kho</th>
+              <th rowspan="2">Tổng nhập kho</th>
+              <th rowspan="2">Tổng TL (Kg)</th>
             </tr>
             <tr>
-              <th class="th-lan" style="width: 8%;">Lần<br>1</th>
-              <th class="th-lan" style="width: 8%;">Lần<br>2</th>
-              <th class="th-lan" style="width: 8%;">Lần<br>3</th>
+              <th class="th-lan">Lần<br>1</th>
+              <th class="th-lan">Lần<br>2</th>
+              <th class="th-lan">Lần<br>3</th>
             </tr>
           </thead>
           <tbody>
