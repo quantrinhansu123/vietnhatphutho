@@ -4055,19 +4055,18 @@ export function SoTronPanel({
                   </p>
                 ) : null}
 
-                {/* Bảng NVL trộn thực tế: Nguyên liệu | ĐVT | L1..Ln | Tổng | Định mức vật tư */}
+                {/* Bảng NVL: Nguyên liệu | ĐVT | Định mức | Tồn đầu | Lấy kho | SỬ DỤNG | Tổng SD | Tồn cuối */}
                 <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-center" style={{ minWidth: 870 + numLan * 64 }}>
+                  <table className="w-full border-collapse text-center" style={{ minWidth: 826 + numLan * 64 }}>
                     <colgroup>
                       <col style={{ width: '320px', minWidth: '320px' }} />
                       <col style={{ width: '56px', minWidth: '56px' }} />
-                      {Array.from({ length: numLan }, (_, i) => (
-                        <col key={i} style={{ width: '64px', minWidth: '64px' }} />
-                      ))}
-                      <col style={{ width: '76px', minWidth: '76px' }} />
                       <col style={{ width: '96px', minWidth: '96px' }} />
                       <col style={{ width: '84px', minWidth: '84px' }} />
                       <col style={{ width: '84px', minWidth: '84px' }} />
+                      {Array.from({ length: numLan }, (_, i) => (
+                        <col key={i} style={{ width: '64px', minWidth: '64px' }} />
+                      ))}
                       <col style={{ width: '76px', minWidth: '76px' }} />
                       <col style={{ width: '76px', minWidth: '76px' }} />
                       <col style={{ width: '34px', minWidth: '34px' }} />
@@ -4076,11 +4075,10 @@ export function SoTronPanel({
                       <tr>
                         <th rowSpan={2} className={`${paperTh} w-[320px] min-w-[320px]`}>Nguyên Liệu</th>
                         <th rowSpan={2} className={`${paperTh} w-[56px] min-w-[56px]`}>ĐVT</th>
-                        <th colSpan={numLan} className={paperTh}>Trọng Lượng</th>
-                        <th rowSpan={2} className={`${paperTh} w-[76px] min-w-[76px]`}>Tổng</th>
                         <th rowSpan={2} className={`${paperTh} w-[96px] min-w-[96px] leading-tight`} title="Tổng trọng lượng NVL trên phiếu trộn định mức">Định mức vật tư</th>
                         <th rowSpan={2} className={`${paperTh} w-[84px] min-w-[84px] leading-tight`}>Tồn đầu ca</th>
                         <th rowSpan={2} className={`${paperTh} w-[84px] min-w-[84px] leading-tight`} title="Nhập trong ngày">Lấy kho</th>
+                        <th colSpan={numLan} className={paperTh}>SỬ DỤNG</th>
                         <th rowSpan={2} className={`${paperTh} w-[76px] min-w-[76px]`}>Tổng SD</th>
                         <th rowSpan={2} className={`${paperTh} w-[76px] min-w-[76px]`}>Tồn cuối</th>
                         <th rowSpan={2} className={`${paperTh} w-[34px] min-w-[34px]`} />
@@ -4096,7 +4094,7 @@ export function SoTronPanel({
                     <tbody>
                       {nvlRows.length === 0 && (
                         <tr>
-                          <td colSpan={numLan + 9} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
+                          <td colSpan={numLan + 8} className="border border-slate-700 px-3 py-5 text-center font-semibold text-slate-400">
                             Chưa có NVL — kiểm tra cối trộn mẫu của lệnh hoặc thêm NVL khác bên dưới.
                           </td>
                         </tr>
@@ -4142,25 +4140,6 @@ export function SoTronPanel({
                               className={paperCellInput}
                             />
                           </td>
-                          {row.lan.map((cell, li) => (
-                            <td key={li} className={`${paperTd} w-[64px] min-w-[64px]`}>
-                              <input
-                                inputMode="decimal"
-                                value={cell}
-                                onChange={e =>
-                                  setNvlRows(rows =>
-                                    rows.map((r, i) =>
-                                      i === ri ? { ...r, lan: r.lan.map((c, j) => (j === li ? e.target.value : c)) } : r
-                                    )
-                                  )
-                                }
-                                className={paperCellInput}
-                              />
-                            </td>
-                          ))}
-                          <td className="border border-slate-700 px-1 py-0.5 text-right text-[13px] font-bold tabular-nums w-[76px] min-w-[76px]">
-                            {formatKg3(row.lan.reduce((sum, v) => sum + parseNum(v), 0))}
-                          </td>
                           <td className="border border-slate-700 px-1 py-0.5 text-right text-[12.5px] font-bold tabular-nums text-slate-800 w-[96px] min-w-[96px]" title="Tổng trọng lượng NVL trên phiếu trộn định mức">
                             {row.dinh_muc}
                           </td>
@@ -4181,6 +4160,22 @@ export function SoTronPanel({
                               className={`${paperCellInput} text-black`}
                             />
                           </td>
+                          {row.lan.map((cell, li) => (
+                            <td key={li} className={`${paperTd} w-[64px] min-w-[64px]`}>
+                              <input
+                                inputMode="decimal"
+                                value={cell}
+                                onChange={e =>
+                                  setNvlRows(rows =>
+                                    rows.map((r, i) =>
+                                      i === ri ? { ...r, lan: r.lan.map((c, j) => (j === li ? e.target.value : c)) } : r
+                                    )
+                                  )
+                                }
+                                className={paperCellInput}
+                              />
+                            </td>
+                          ))}
                           <td className="border border-slate-700 px-1 py-0.5 text-right text-[13px] font-bold tabular-nums text-black w-[76px] min-w-[76px]">
                             {formatKg3(tongSd)}
                           </td>
