@@ -1,6 +1,6 @@
 /** In-memory catalog cache for /kho-hang, /kho-nvl, /san-pham — TTL + inflight dedupe. */
 
-export type CatalogCacheKey = 'warehouses' | 'materials' | 'products';
+export type CatalogCacheKey = 'warehouses' | 'warehouses-full' | 'materials' | 'products';
 
 const TTL_MS = 5 * 60 * 1000;
 

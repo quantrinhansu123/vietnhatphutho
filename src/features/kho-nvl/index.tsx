@@ -19,7 +19,7 @@ import {
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
-import { pickText, formatCell } from '../_shared/recordHelpers';
+import { pickText, formatCell, filterDuplicateZeroWarehouseRows } from '../_shared/recordHelpers';
 import {
   downloadBulkMaterialTotalWeightTemplate,
   parseBulkMaterialTotalWeightExcel,
@@ -37,7 +37,8 @@ import ProductQrPrintModal, {
 import type { WeighingPreviewImage } from '../../components/WeighingImagePreviewModal';
 import { productFieldClass } from '../san-pham/productFieldClass';
 import { readUnitSuggestions, saveUnitSuggestion } from '../_shared/orderHelpers';
-import { matchesWarehouseFilter } from '../kho-hang';
+import { isNvlCoreWarehouse, matchesWarehouseFilter, normalizeWarehouseName, pickNvlCoreWarehouses } from '../kho-hang';
+import { SoTronDatePicker } from '../so-tron/SoTronDatePicker';
 import { getCatalogCache, hasFreshCatalogCache, invalidateCatalogCache } from '../kho-hang/catalogCache';
 import {
   FilterCombobox,
@@ -52,6 +53,34 @@ import {
   RowActionsMenu
 } from '../../components/shared/table';
 
+type NvlPeriodBalance = {
+  ma_npl: string;
+  ten_npl: string;
+  ten_nvl_sx: string;
+  don_vi: string;
+  ten_kho: string;
+  tong_kg: number | null;
+  ton_dau: number;
+  nhap: number;
+  xuat: number;
+  phan_loai: string;
+  nhom_vthh: string;
+};
+
+function formatPeriodQty(value: number) {
+  if (!Number.isFinite(value)) return '0';
+  const rounded = Math.round(value * 100) / 100;
+  return String(rounded);
+}
+
+function periodIdentity(code: string, name: string, productionName: string, warehouse: string) {
+  return `${normalizeMaterialCodeKey(code)}\0${name.trim().toLocaleLowerCase('vi')}\0${productionName.trim().toLocaleLowerCase('vi')}\0${normalizeWarehouseName(warehouse)}`;
+}
+
+function periodCodeWarehouse(code: string, warehouse: string) {
+  return `${normalizeMaterialCodeKey(code)}\0${normalizeWarehouseName(warehouse)}`;
+}
+
 export interface MaterialRow {
   id: string;
   code: string;
@@ -59,6 +88,8 @@ export interface MaterialRow {
   productionName: string;
   unit: string;
   warehouse: string;
+  /** Mã kho (quan_ly_kho.ma_kho) — nguồn thật để lọc theo kho khi đổi tên. */
+  loaiKho: string;
   totalWeight: string;
   plasticWeight: string;
   bagWeight: string;
@@ -137,6 +168,7 @@ export function normalizeMaterialsInventory(data: unknown): MaterialRow[] {
         productionName: String(record.ten_nvl_sx ?? '').trim(),
         unit: formatCell(record.don_vi),
         warehouse: formatCell(record.ten_kho),
+        loaiKho: String(record.loai_kho ?? '').trim(),
         totalWeight: formatCell(record.tong_trong_luong),
         plasticWeight: formatCell(record.trong_luong_nhua),
         bagWeight: formatCell(record.trong_luong_tui),
@@ -225,6 +257,29 @@ const materialFieldClass =
 
 export function normalizeMaterialCodeKey(code: string) {
   return code.trim().replace(/\s+/g, '').toUpperCase();
+}
+
+const MATERIAL_ROW_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const MATERIAL_IMPORT_BATCH_SIZE = 200;
+
+function chunkMaterialImport<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function materialWarehouseKey(warehouse: string) {
+  const text = String(warehouse || '').trim();
+  return text === '-' ? '' : text;
+}
+
+/** Khớp unique mã + tên + tên sản xuất + kho. */
+function materialImportIdentity(code: string, name: string, productionName: string, warehouse = '') {
+  return `${code.trim()}\0${name.trim()}\0${productionName.trim()}\0${materialWarehouseKey(warehouse)}`;
 }
 
 export type BulkMaterialTotalWeightPreviewRow = BulkMaterialTotalWeightImportRow & {
@@ -1057,13 +1112,26 @@ export function MaterialsInventoryPanel({
   onBack,
   warehouseFilter = '',
   includeUnassigned = false,
-  topControls = null
+  topControls = null,
+  showWarehouseColumn
 }: {
   onBack: () => void;
   warehouseFilter?: string;
   includeUnassigned?: boolean;
   topControls?: ReactNode;
+  /** Hiện cột Kho kể cả khi không lọc theo kho (màn /kho-nvl chọn kho). */
+  showWarehouseColumn?: boolean;
 }) {
+  /**
+   * Kho NVL là nhóm gồm Kho NVL / Chính / Phụ / PC
+   * (unique mã + tên + tên SX + kho nên mỗi dòng là một mã trong một kho).
+   * Bỏ trống hoặc chọn đúng "Kho NVL" = toàn bộ bảng, liệt kê tách riêng
+   * từng kho. Chọn kho NVL cụ thể khác (Chính/Phụ/PC) = chỉ kho đó.
+   */
+  const isWholeGroupFilter =
+    !String(warehouseFilter ?? '').trim() || normalizeWarehouseName(warehouseFilter) === 'kho nvl';
+  /** Luôn hiện cột Kho để phân biệt từng dòng (một mã trong một kho). */
+  const showKhoColumn = isWholeGroupFilter || Boolean(warehouseFilter) || showWarehouseColumn === true;
   const { canCreate, canEdit, canDelete } = useTabAccess('materials');
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
   const [searchText, setSearchText] = useState('');
@@ -1084,6 +1152,7 @@ export function MaterialsInventoryPanel({
   const [isImportingCatalog, setIsImportingCatalog] = useState(false);
   const catalogFileInputRef = useRef<HTMLInputElement>(null);
   const [warehouseOptions, setWarehouseOptions] = useState<string[]>([]);
+  const [warehouseMaByName, setWarehouseMaByName] = useState<Record<string, string>>({});
   const [isUploadingMaterialImage, setIsUploadingMaterialImage] = useState(false);
   const [viewingMaterialImage, setViewingMaterialImage] = useState<WeighingPreviewImage | null>(null);
   const [materialQrPrintLabels, setMaterialQrPrintLabels] = useState<WarehouseProductQrPrintLabel[]>([]);
@@ -1093,6 +1162,12 @@ export function MaterialsInventoryPanel({
   const [bulkPrintQty, setBulkPrintQty] = useState('1');
   const [printQtyError, setPrintQtyError] = useState('');
   const [isGeneratingPrintQr, setIsGeneratingPrintQr] = useState(false);
+  const [fromDate, setFromDate] = useState('');
+  const [periodReload, setPeriodReload] = useState(0);
+  const [toDate, setToDate] = useState('');
+  const [periodRows, setPeriodRows] = useState<NvlPeriodBalance[]>([]);
+  const [isLoadingPeriod, setIsLoadingPeriod] = useState(false);
+  const [periodError, setPeriodError] = useState('');
 
   useEffect(() => {
     const loadWarehouses = async () => {
@@ -1105,6 +1180,27 @@ export function MaterialsInventoryPanel({
           return Array.from(new Set(records.map(r => String(r.ten_kho ?? '').trim()).filter(Boolean)));
         });
         setWarehouseOptions(names);
+        // Bản đồ tên kho → mã kho để lọc theo loai_kho (đúng cả khi đổi tên kho).
+        try {
+          const full = await getCatalogCache('warehouses-full', async () => {
+            const res2 = await fetch('/api/quan-ly-kho');
+            const data2 = await res2.json().catch(() => ({}));
+            if (!res2.ok) throw new Error('Không thể tải danh sách kho.');
+            const records: Array<{ ten_kho?: string; ma_kho?: string }> = Array.isArray(data2?.records)
+              ? data2.records
+              : [];
+            return records
+              .map(r => ({ ten: String(r.ten_kho ?? '').trim(), ma: String(r.ma_kho ?? '').trim() }))
+              .filter(r => Boolean(r.ten));
+          });
+          const map: Record<string, string> = {};
+          for (const row of full) {
+            if (row.ma && !map[normalizeWarehouseName(row.ten)]) map[normalizeWarehouseName(row.ten)] = row.ma;
+          }
+          setWarehouseMaByName(map);
+        } catch {
+          setWarehouseMaByName({});
+        }
       } catch {
         setWarehouseOptions([]);
       }
@@ -1157,6 +1253,17 @@ export function MaterialsInventoryPanel({
     loadMaterials();
   }, []);
 
+  const materialWarehouseOptions = useMemo(
+    () => pickNvlCoreWarehouses(warehouseOptions),
+    [warehouseOptions]
+  );
+
+  const resolveMaterialWarehouseName = (value: string) => {
+    const key = normalizeWarehouseName(value);
+    if (!key) return '';
+    return materialWarehouseOptions.find(name => normalizeWarehouseName(name) === key) || '';
+  };
+
   const units = useMemo(
     () =>
       [
@@ -1173,12 +1280,28 @@ export function MaterialsInventoryPanel({
   }, [materials]);
   const unitFilterOptions = useMemo(() => units.filter(unit => unit !== 'all'), [units]);
   const normalizedSearch = searchText.trim().toLowerCase();
+  const coreMaKho = useMemo(() => {
+    const codes = new Set<string>();
+    for (const name of materialWarehouseOptions) {
+      const ma = warehouseMaByName[normalizeWarehouseName(name)];
+      if (ma) codes.add(ma);
+    }
+    return codes;
+  }, [materialWarehouseOptions, warehouseMaByName]);
   const filteredMaterials = useMemo(() => {
+    const hasSpecificFilter = Boolean(warehouseFilter.trim()) && !isWholeGroupFilter;
+    const filterMaKho = hasSpecificFilter ? warehouseMaByName[normalizeWarehouseName(warehouseFilter)] || '' : '';
     return materials.filter(material => {
-      const matchesWarehouse = matchesWarehouseFilter(material.warehouse, warehouseFilter, {
-        includeUnassigned,
-        skipFilter: !warehouseFilter
-      });
+      // Toàn nhóm (Tất cả hoặc đúng "Kho NVL"): lấy toàn bộ bảng kho-nvl,
+      // mỗi dòng giữ riêng kho của nó (unique mã + tên + tên SX + kho).
+      // Chọn kho cụ thể khác: chỉ lấy đúng kho đó.
+      const matchesWarehouse = hasSpecificFilter
+        ? matchesWarehouseFilter(material.warehouse, warehouseFilter, {
+            includeUnassigned,
+            skipFilter: false
+          }) ||
+          (Boolean(filterMaKho) && material.loaiKho === filterMaKho)
+        : isNvlCoreWarehouse(material.warehouse) || (Boolean(material.loaiKho) && coreMaKho.has(material.loaiKho));
       const matchesUnit = selectedUnit === 'all' || material.unit === selectedUnit;
       const matchesSearch =
         !normalizedSearch ||
@@ -1187,7 +1310,150 @@ export function MaterialsInventoryPanel({
           .includes(normalizedSearch);
       return matchesWarehouse && matchesUnit && matchesSearch;
     });
-  }, [includeUnassigned, materials, normalizedSearch, selectedUnit, warehouseFilter]);
+  }, [coreMaKho, includeUnassigned, isWholeGroupFilter, materials, normalizedSearch, selectedUnit, warehouseFilter, warehouseMaByName]);
+
+  const periodReady = Boolean(fromDate && toDate && fromDate <= toDate);
+
+  useEffect(() => {
+    if (!fromDate || !toDate) {
+      setPeriodRows([]);
+      setPeriodError('');
+      setIsLoadingPeriod(false);
+      return;
+    }
+    if (fromDate > toDate) {
+      setPeriodRows([]);
+      setPeriodError('Từ ngày không được lớn hơn Đến ngày.');
+      setIsLoadingPeriod(false);
+      return;
+    }
+    const controller = new AbortController();
+    const loadPeriod = async () => {
+      setIsLoadingPeriod(true);
+      setPeriodError('');
+      try {
+        const params = new URLSearchParams({ from: fromDate, to: toDate });
+        // Toàn nhóm thì không gửi ten_kho để server trả toàn bộ nhóm NVL.
+        if (warehouseFilter.trim() && !isWholeGroupFilter) params.set('ten_kho', warehouseFilter.trim());
+        const response = await fetch(`/api/ton-kho-nvl?${params.toString()}`, { signal: controller.signal });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Không thể tải tồn kho NVL theo ngày.');
+        const rows: NvlPeriodBalance[] = Array.isArray(data.rows) ? data.rows : [];
+        setPeriodRows(rows);
+      } catch (error: unknown) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setPeriodRows([]);
+        setPeriodError(error instanceof Error ? error.message : 'Không thể tải tồn kho NVL theo ngày.');
+      } finally {
+        if (!controller.signal.aborted) setIsLoadingPeriod(false);
+      }
+    };
+    void loadPeriod();
+    return () => controller.abort();
+  }, [fromDate, toDate, periodReload, warehouseFilter]);
+
+  const displayedMaterials = useMemo(() => {
+    // Liệt kê tách riêng từng kho: mỗi dòng là một mã trong một kho
+    // (unique mã + tên + tên SX + kho), tồn/nhập/xuất tính riêng đúng kho đó.
+    // Toàn nhóm (Tất cả / Kho NVL) thì server trả toàn bộ nhóm, frontend giữ riêng từng kho.
+    const effectivePeriodRows = isWholeGroupFilter
+      ? periodRows
+      : periodRows.filter(
+          row => normalizeWarehouseName(row.ten_kho) === normalizeWarehouseName(warehouseFilter)
+        );
+    if (!periodReady) {
+      return filteredMaterials.map(material => ({
+        ...material,
+        openingStock: '—',
+        inbound: '—',
+        outbound: '—'
+      }));
+    }
+
+    const byIdentity = new Map<string, NvlPeriodBalance>();
+    const byCodeWarehouse = new Map<string, NvlPeriodBalance[]>();
+    for (const row of effectivePeriodRows) {
+      byIdentity.set(periodIdentity(row.ma_npl, row.ten_npl, row.ten_nvl_sx, row.ten_kho), row);
+      const bucketKey = periodCodeWarehouse(row.ma_npl, row.ten_kho);
+      const bucket = byCodeWarehouse.get(bucketKey);
+      if (bucket) bucket.push(row);
+      else byCodeWarehouse.set(bucketKey, [row]);
+    }
+
+    const used = new Set<NvlPeriodBalance>();
+    const take = (row: NvlPeriodBalance | undefined) => {
+      if (!row || used.has(row)) return undefined;
+      used.add(row);
+      return row;
+    };
+    const apply = (material: MaterialRow, row: NvlPeriodBalance | undefined): MaterialRow => {
+      if (!row) {
+        return { ...material, openingStock: '0', inbound: '0', outbound: '0' };
+      }
+      return {
+        ...material,
+        openingStock: formatPeriodQty(row.ton_dau),
+        inbound: formatPeriodQty(row.nhap),
+        outbound: formatPeriodQty(row.xuat)
+      };
+    };
+
+    const warehouseOf = (material: MaterialRow) => {
+      if (material.warehouse && material.warehouse !== '-') return material.warehouse;
+      const fromMa = materialWarehouseOptions.find(
+        name => warehouseMaByName[normalizeWarehouseName(name)] === material.loaiKho
+      );
+      return fromMa || material.warehouse;
+    };
+
+    const fromCatalog = filteredMaterials.map(material => {
+      const warehouse = warehouseOf(material);
+      const exact = take(byIdentity.get(periodIdentity(material.code, material.name, material.productionName, warehouse)));
+      if (exact) return apply(material, exact);
+      const bucket = byCodeWarehouse.get(periodCodeWarehouse(material.code, warehouse)) ?? [];
+      const only = bucket.filter(row => !used.has(row));
+      if (only.length === 1) return apply(material, take(only[0]));
+      return apply(material, undefined);
+    });
+
+    const extras: MaterialRow[] = [];
+    for (const row of effectivePeriodRows) {
+      if (used.has(row)) continue;
+      const haystack = `${row.ma_npl} ${row.ten_npl} ${row.ten_nvl_sx} ${row.don_vi} ${row.nhom_vthh} ${row.ten_kho}`.toLowerCase();
+      if (normalizedSearch && !haystack.includes(normalizedSearch)) continue;
+      if (selectedUnit !== 'all' && row.don_vi !== selectedUnit) continue;
+      extras.push({
+        id: `period:${row.ma_npl}:${row.ten_npl}:${row.ten_nvl_sx}:${row.ten_kho}`,
+        code: row.ma_npl,
+        name: row.ten_npl || row.ma_npl,
+        productionName: row.ten_nvl_sx,
+        unit: row.don_vi || '-',
+        warehouse: row.ten_kho,
+        loaiKho: '',
+        totalWeight: row.tong_kg === null || row.tong_kg === undefined ? '-' : String(row.tong_kg),
+        plasticWeight: '-',
+        bagWeight: '-',
+        coreWeight: '-',
+        rollWidth: '-',
+        unitLength: '-',
+        openingStock: formatPeriodQty(row.ton_dau),
+        inbound: formatPeriodQty(row.nhap),
+        outbound: formatPeriodQty(row.xuat),
+        phanLoai: row.phan_loai || '-',
+        auxiliaryMaterialGroup: row.nhom_vthh || '-',
+        inventoryBalanceOnly: true
+      });
+      used.add(row);
+    }
+
+    return [...fromCatalog, ...extras];
+  }, [filteredMaterials, isWholeGroupFilter, materialWarehouseOptions, normalizedSearch, periodReady, periodRows, selectedUnit, warehouseFilter, warehouseMaByName]);
+
+  /** View gộp (Tất cả / Kho NVL): ẩn dòng trùng mã 0/0/0 khi mã đó đã phát sinh ở kho khác. */
+  const visibleMaterials = useMemo(() => {
+    if (!isWholeGroupFilter || !periodReady) return displayedMaterials;
+    return filterDuplicateZeroWarehouseRows(displayedMaterials);
+  }, [displayedMaterials, isWholeGroupFilter, periodReady]);
 
   const hasActiveFilters = selectedUnit !== 'all' || Boolean(searchText);
   const resetFilters = () => {
@@ -1335,15 +1601,25 @@ export function MaterialsInventoryPanel({
         throw new Error('File Excel không có dòng NVL hợp lệ (cần cột Mã NPL).');
       }
 
-      const byCode = new Map<string, MaterialRow>(
-        materials
-          .map(material => [normalizeMaterialCodeKey(material.code), material] as const)
-          .filter(([key]) => Boolean(key))
-      );
+      const byIdentity = new Map<string, MaterialRow>();
+      const byCode = new Map<string, MaterialRow[]>();
+      for (const material of materials) {
+        const code = material.code.trim();
+        if (!code || code === '-') continue;
+        const codeKey = normalizeMaterialCodeKey(code);
+        const siblings = byCode.get(codeKey);
+        if (siblings) siblings.push(material);
+        else byCode.set(codeKey, [material]);
+        if (!MATERIAL_ROW_UUID.test(material.id) || material.inventoryBalanceOnly) continue;
+        byIdentity.set(
+          materialImportIdentity(material.code, material.name, material.productionName, material.warehouse),
+          material
+        );
+      }
 
-      let created = 0;
-      let updated = 0;
       const failures: string[] = [];
+      const createMap = new Map<string, Record<string, unknown>>();
+      const updateMap = new Map<string, Record<string, unknown>>();
 
       for (const row of rows) {
         const code = row.code.trim();
@@ -1352,40 +1628,85 @@ export function MaterialsInventoryPanel({
           continue;
         }
 
-        const existing = byCode.get(normalizeMaterialCodeKey(code));
-        const name = row.name.trim() || existing?.name || '';
+        const siblings = byCode.get(normalizeMaterialCodeKey(code)) ?? [];
+        let name = row.name.trim();
+        let productionName = row.productionName.trim();
+        if (!name || name === '-') {
+          if (siblings.length === 1) {
+            name = siblings[0].name.trim();
+            if (!productionName) productionName = siblings[0].productionName.trim();
+          } else {
+            failures.push(`dòng ${row.rowNumber}: thiếu tên nguyên phụ liệu`);
+            continue;
+          }
+        }
         if (!name || name === '-') {
           failures.push(`dòng ${row.rowNumber}: thiếu tên nguyên phụ liệu`);
           continue;
         }
 
-        const payload = {
+        const payload: Record<string, unknown> = {
           ...materialCatalogRowToPayload(row),
-          name
+          name,
+          productionName
         };
 
-        if (payload.unit) {
+        if (typeof payload.unit === 'string' && payload.unit) {
           saveUnitSuggestion(payload.unit);
         }
 
-        const res = existing
-          ? await fetch(`/api/kho-nvl/${existing.id}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            })
-          : await fetch('/api/kho-nvl', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          failures.push(`dòng ${row.rowNumber}: ${data.error || 'Không lưu được'}`);
-          continue;
+        // Cùng mã có thể nằm nhiều kho. Khớp đúng bộ mã + tên + tên sản xuất + kho.
+        // File không ghi kho: chỉ cập nhật khi bộ 3 khớp đúng một kho.
+        const warehouse = materialWarehouseKey(row.warehouse);
+        const identity = materialImportIdentity(code, name, productionName, warehouse);
+        let existing = byIdentity.get(identity);
+        if (!existing && !warehouse) {
+          const prefix = materialImportIdentity(code, name, productionName, '');
+          const matches = [...byIdentity.entries()]
+            .filter(([key]) => key.startsWith(prefix))
+            .map(([, item]) => item);
+          if (matches.length > 1) {
+            failures.push(`dòng ${row.rowNumber}: mã này có ở nhiều kho, hãy điền cột Kho`);
+            continue;
+          }
+          existing = matches[0];
         }
-        if (existing) updated += 1;
-        else created += 1;
+        if (existing) {
+          updateMap.set(identity, { ...payload, id: existing.id });
+        } else {
+          createMap.set(identity, payload);
+        }
+      }
+
+      const creates = [...createMap.values()];
+      const updates = [...updateMap.values()];
+      let created = 0;
+      let updated = 0;
+
+      const postBatch = async (
+        createsChunk: Record<string, unknown>[],
+        updatesChunk: Record<string, unknown>[],
+        label: string
+      ) => {
+        if (createsChunk.length === 0 && updatesChunk.length === 0) return;
+        const res = await fetch('/api/kho-nvl/import-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ creates: createsChunk, updates: updatesChunk })
+        });
+        const data = await res.json().catch(() => ({}));
+        created += Number(data.createdCount || 0);
+        updated += Number(data.updatedCount || 0);
+        if (!res.ok) {
+          failures.push(`${label}: ${data.error || 'Không lưu được'}`);
+        }
+      };
+
+      for (const [index, chunk] of chunkMaterialImport(creates, MATERIAL_IMPORT_BATCH_SIZE).entries()) {
+        await postBatch(chunk, [], `Insert batch ${index + 1}`);
+      }
+      for (const [index, chunk] of chunkMaterialImport(updates, MATERIAL_IMPORT_BATCH_SIZE).entries()) {
+        await postBatch([], chunk, `Update batch ${index + 1}`);
       }
 
       if (created > 0 || updated > 0) {
@@ -1394,7 +1715,7 @@ export function MaterialsInventoryPanel({
 
       const summary = [
         created || updated ? `Đã nhập Excel NVL: thêm ${created}, cập nhật ${updated}.` : 'Không nhập được dòng nào.',
-        failures.length ? `${failures.length} dòng lỗi (${failures.slice(0, 3).join('; ')}).` : ''
+        failures.length ? `${failures.length} lỗi (${failures.slice(0, 3).join('; ')}).` : ''
       ]
         .filter(Boolean)
         .join(' ');
@@ -1448,13 +1769,19 @@ export function MaterialsInventoryPanel({
       setFormError('Vui lòng nhập tên nguyên phụ liệu.');
       return;
     }
-    if (warehouseFilter && !materialForm.warehouse.trim()) {
-      setFormError('Vui lòng chọn kho lưu trữ.');
+    const warehouseName = resolveMaterialWarehouseName(materialForm.warehouse);
+    if (!warehouseName) {
+      setFormError(
+        materialWarehouseOptions.length === 0
+          ? 'Chưa tải được danh sách kho. Hãy kiểm tra Quản lý kho.'
+          : 'Vui lòng chọn kho trong danh sách Quản lý kho.'
+      );
       return;
     }
 
     const payload = {
       ...materialForm,
+      warehouse: warehouseName,
       code: materialForm.code.trim(),
       unit: materialForm.unit.trim()
     };
@@ -1668,13 +1995,29 @@ export function MaterialsInventoryPanel({
           ) : null}
         </div>
 
-        <div className="mt-2 flex flex-wrap items-center gap-2">
+        <div className="mt-2 flex flex-wrap items-end gap-2">
+          <label className="space-y-1">
+            <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Từ ngày</span>
+            <SoTronDatePicker value={fromDate} onChange={setFromDate} />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Đến ngày</span>
+            <SoTronDatePicker value={toDate} onChange={setToDate} />
+          </label>
           <TableSearchInput
             value={searchText}
             onChange={setSearchText}
-            placeholder="Tìm mã NVL, tên nguyên phụ liệu..."
+            placeholder="Tìm mã / tên / tên sản xuất / nhóm"
             disabled={isLoadingMaterials}
           />
+          <button
+            type="button"
+            onClick={() => setPeriodReload(value => value + 1)}
+            disabled={!periodReady || isLoadingPeriod}
+            className="h-10 rounded-xl bg-[#ef1b2d] px-4 text-xs font-black uppercase tracking-wide text-white transition hover:bg-[#d41424] disabled:cursor-not-allowed disabled:bg-zinc-300"
+          >
+            Tải lại
+          </button>
 
           <FilterCombobox
             label="Đơn vị"
@@ -1685,9 +2028,9 @@ export function MaterialsInventoryPanel({
             compact
           />
 
-          {isLoadingMaterials ? (
+          {isLoadingMaterials || isLoadingPeriod ? (
             <div className="flex h-10 shrink-0 items-center rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs font-bold text-zinc-500">
-              Đang tải...
+              {isLoadingPeriod ? 'Đang tính tồn...' : 'Đang tải...'}
             </div>
           ) : null}
 
@@ -1702,9 +2045,15 @@ export function MaterialsInventoryPanel({
           ) : null}
         </div>
 
-        {materialsError ? (
+        <p className="mt-2 text-xs font-semibold text-zinc-500">
+          {isWholeGroupFilter
+            ? 'Toàn bộ bảng kho-nvl (Kho NVL, Kho NVL Chính, Kho NVL Phụ, Kho PC) — mỗi dòng là một mã trong một kho, Tồn đầu / Nhập / Xuất / Tồn cuối tính riêng đúng kho đó từ phiếu nhập kho và phiếu xuất kho.'
+            : `Chi tiết kho ${warehouseFilter.trim()} — mỗi dòng là một mã trong kho này, Tồn đầu / Nhập / Xuất / Tồn cuối tính riêng đúng kho đó từ phiếu nhập kho và phiếu xuất kho.`}
+          {periodReady ? '' : ' Chưa chọn đủ ngày nên các cột tồn để trống.'}
+        </p>
+        {materialsError || periodError ? (
           <p className="mt-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
-            {materialsError}
+            {materialsError || periodError}
           </p>
         ) : null}
         {actionMessage ? (
@@ -1763,18 +2112,20 @@ export function MaterialsInventoryPanel({
               </label>
               <label className="space-y-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
-                  Kho lưu trữ{warehouseFilter ? ' *' : ''}
+                  Kho *
                 </span>
                 <SearchableSelect
                   value={materialForm.warehouse}
                   onChange={value => setMaterialForm(prev => ({ ...prev, warehouse: value }))}
-                  options={warehouseOptions}
-                  placeholder="Chọn kho lưu trữ"
+                  options={materialWarehouseOptions}
+                  placeholder="Chọn kho trong Quản lý kho"
+                  emptyInputText="Chưa có kho vật tư trong Quản lý kho"
                   searchPlaceholder="Tìm kho..."
                   getLabel={item => String(item)}
                   getValue={item => String(item)}
                   inputClassName={materialFieldClass}
-                  allowEmpty={!warehouseFilter}
+                  allowEmpty={false}
+                  maxResults={200}
                   comboboxMode
                 />
               </label>
@@ -2010,7 +2361,7 @@ export function MaterialsInventoryPanel({
           <TableHeadCell>Nhóm vật tư phụ</TableHeadCell>
           <TableHeadCell>Tên NVL sản xuất</TableHeadCell>
           <TableHeadCell>ĐV</TableHeadCell>
-          {warehouseFilter ? <TableHeadCell>Kho</TableHeadCell> : null}
+            {showKhoColumn ? <TableHeadCell>Kho</TableHeadCell> : null}
           <TableHeadCell align="center">Tổng kg</TableHeadCell>
           <TableHeadCell>Tồn đầu</TableHeadCell>
           <TableHeadCell>Nhập</TableHeadCell>
@@ -2019,7 +2370,7 @@ export function MaterialsInventoryPanel({
           <TableHeadCell align="center">Thao tác</TableHeadCell>
         </TableHead>
         <TableBody>
-          {filteredMaterials.map(material => {
+          {visibleMaterials.map(material => {
             const canSelect = !material.inventoryBalanceOnly && Boolean(material.id);
             return (
             <React.Fragment key={material.id}>
@@ -2044,7 +2395,7 @@ export function MaterialsInventoryPanel({
                 <td className="px-4 py-3 text-xs font-semibold text-zinc-700">{material.auxiliaryMaterialGroup || '-'}</td>
                 <td className="px-4 py-3 font-semibold text-zinc-700">{material.productionName || '-'}</td>
                 <td className="px-4 py-3 text-zinc-700">{material.unit}</td>
-                {warehouseFilter ? (
+                {showKhoColumn ? (
                   <td className="px-4 py-3 text-zinc-700">{material.warehouse || '—'}</td>
                 ) : null}
                 <td className="px-4 py-3 text-right font-mono font-bold text-zinc-800">{material.totalWeight}</td>
@@ -2052,14 +2403,21 @@ export function MaterialsInventoryPanel({
                 <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.inbound}</td>
                 <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.outbound}</td>
                 <td className="px-4 py-3 font-mono font-bold text-zinc-900">
-                  {computeClosingStock(material.openingStock, material.inbound, material.outbound)}
+                  {material.openingStock === '—'
+                    ? '—'
+                    : computeClosingStock(material.openingStock, material.inbound, material.outbound)}
                 </td>
                 <td className="px-4 py-3 text-center">
                   <RowActionsMenu label={`Thao tác ${material.code || material.name}`}>
                   <div className="inline-flex items-center justify-center gap-1.5">
                     <button
                       type="button"
-                      onClick={() => setViewingMaterial(material)}
+                      onClick={() => {
+                        const catalogRow = materials.find(row => row.id === material.id);
+                        setViewingMaterial(
+                          periodReady || material.inventoryBalanceOnly ? material : catalogRow ?? material
+                        );
+                      }}
                       title="Xem"
                       className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-50 active:scale-95"
                     >
@@ -2068,7 +2426,7 @@ export function MaterialsInventoryPanel({
                     {canEdit && !material.inventoryBalanceOnly ? (
                       <button
                         type="button"
-                        onClick={() => openEditForm(material)}
+                        onClick={() => openEditForm(materials.find(row => row.id === material.id) ?? material)}
                         title="Sửa"
                         className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 text-sky-700 transition hover:bg-sky-50 active:scale-95"
                       >
@@ -2098,8 +2456,8 @@ export function MaterialsInventoryPanel({
             );
           })}
 
-          {!isLoadingMaterials && filteredMaterials.length === 0 && (
-            <TableEmptyRow colSpan={warehouseFilter ? 14 : 13}>
+          {!isLoadingMaterials && visibleMaterials.length === 0 && (
+            <TableEmptyRow colSpan={showKhoColumn ? 14 : 13}>
               {warehouseFilter
                 ? 'Không có mã hàng trong kho này.'
                 : 'Chưa có nguyên vật liệu trong danh mục.'}
@@ -2108,6 +2466,62 @@ export function MaterialsInventoryPanel({
         </TableBody>
       </TableShell>
     </div>
+  );
+}
+
+/**
+ * /kho-nvl: danh mục NVL + dropdown chọn kho vật tư (mặc định Tất cả).
+ * Panel con đã hỗ trợ warehouseFilter — trang này chỉ thêm chọn kho rồi truyền xuống.
+ */
+export function MaterialsCatalogPage({ onBack }: { onBack: () => void }) {
+  const [warehouses, setWarehouses] = useState<string[]>([]);
+  // 'all' = Tất cả (quy ước của FilterCombobox).
+  const [selectedWarehouse, setSelectedWarehouse] = useState('all');
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const names = await getCatalogCache('warehouses', async () => {
+          const res = await fetch('/api/quan-ly-kho');
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error('Không thể tải danh sách kho.');
+          const records: Array<{ ten_kho?: string }> = Array.isArray(data?.records) ? data.records : [];
+          return Array.from(new Set(records.map(r => String(r.ten_kho ?? '').trim()).filter(Boolean)));
+        });
+        setWarehouses(names);
+      } catch {
+        setWarehouses([]);
+      }
+    };
+    void load();
+  }, []);
+
+  const vatTuWarehouses = useMemo(() => pickNvlCoreWarehouses(warehouses), [warehouses]);
+
+  useEffect(() => {
+    if (selectedWarehouse !== 'all' && !vatTuWarehouses.includes(selectedWarehouse)) setSelectedWarehouse('all');
+  }, [selectedWarehouse, vatTuWarehouses]);
+
+  const warehousePicker = (
+    <FilterCombobox
+      label="Kho"
+      options={vatTuWarehouses}
+      value={selectedWarehouse}
+      onChange={setSelectedWarehouse}
+      formatOption={value => value}
+      includeAll
+      searchPlaceholder="Tìm kho..."
+    />
+  );
+
+  return (
+    <MaterialsInventoryPanel
+      onBack={onBack}
+      warehouseFilter={selectedWarehouse === 'all' ? '' : selectedWarehouse}
+      includeUnassigned={false}
+      topControls={warehousePicker}
+      showWarehouseColumn
+    />
   );
 }
 

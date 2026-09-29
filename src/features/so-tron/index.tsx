@@ -11,6 +11,7 @@ import {
   type MachineRow
 } from '../danh-sach-may';
 import { normalizeMaterialsInventory, type MaterialRow } from '../kho-nvl';
+import { normalizeWarehouseName } from '../kho-hang';
 import { normalizeProducts } from '../san-pham';
 import { parseProductionNameParts } from '../../utils/productProductionName';
 import { computeSoTronSummary, normalizeMang, SO_TRON_CHI_TIEU_MAU } from './summary';
@@ -88,6 +89,8 @@ type NvlRow = {
   lan: string[];
   /** Các lệnh SX mà NVL này thuộc về (gộp khi trùng mã giữa nhiều lệnh) */
   nguon: string[];
+  /** Khóa sản phẩm trên tờ phiếu khi NVL được thêm tay dưới sản phẩm đó. */
+  gan_sp?: string[];
 };
 type SanPhamRow = {
   key: string;
@@ -1683,7 +1686,11 @@ export function SoTronPanel({
       const rowHas = normalized.lan.some(v => str(v) !== '');
       const keep = rowHas && !curHas ? normalized : cur;
       const other = keep === normalized ? cur : normalized;
-      map.set(key, { ...keep, nguon: [...new Set([...keep.nguon, ...other.nguon])] });
+      map.set(key, {
+        ...keep,
+        nguon: [...new Set([...keep.nguon, ...other.nguon])],
+        gan_sp: [...new Set([...(keep.gan_sp || []), ...(other.gan_sp || [])])]
+      });
     };
     setNvlRows(prev => {
       const map = new Map<string, NvlRow>();
@@ -1727,7 +1734,10 @@ export function SoTronPanel({
         .filter(
           row =>
             !isPhuMaterial(row.material_id, row.ma_nvl) &&
-            (desired.has((row.material_id || row.ma_nvl).toLowerCase()) || row.lan.some(v => str(v) !== '') || !row.ma_nvl.trim())
+            ((row.gan_sp && row.gan_sp.length > 0) ||
+              desired.has((row.material_id || row.ma_nvl).toLowerCase()) ||
+              row.lan.some(v => str(v) !== '') ||
+              !row.ma_nvl.trim())
         )
         .sort((a, b) => nvlRank(a) - nvlRank(b));
     });
@@ -1956,12 +1966,14 @@ export function SoTronPanel({
   const nvlUsageOf = (materialId: string, ma: string) =>
     round2(nvlTotals.get((materialId || ma).toLowerCase()) || 0);
 
-  // NVL chính trong kho = NVL không thuộc nhóm vật tư phụ (để picker "Thêm NVL khác")
+  // Thêm NVL khác: chỉ dòng Kho NVL Chính và phân loại Nguyên vật liệu chính.
   const mainMaterials = useMemo(() => {
     return materials
       .filter(m => {
-        const g = str(m.auxiliaryMaterialGroup);
-        return (!g || g === '-') && (str(m.code) || str(m.name));
+        const warehouse = normalizeWarehouseName(str(m.warehouse) === '-' ? '' : str(m.warehouse));
+        return warehouse === 'kho nvl chinh' &&
+          str(m.phanLoai) === 'Nguyên vật liệu chính' &&
+          (str(m.code) || str(m.name));
       })
       .sort((a, b) => str(a.code || a.name).localeCompare(str(b.code || b.name), 'vi'));
   }, [materials]);
@@ -1973,7 +1985,7 @@ export function SoTronPanel({
     `${m.code} ${m.name} ${m.productionName}`;
 
   // Thêm NVL khác từ picker (chỉ NVL chính): thêm đồng thời vào bảng 1 và bảng 4
-  const addExtraNvls = (mats: MaterialRow[]) => {
+  const addExtraNvls = (mats: MaterialRow[], sectionKey = '') => {
     const norm = mats
       .map(m => ({
         key: `${str(m.id) || str(m.code)}`.toLowerCase(),
@@ -1981,7 +1993,8 @@ export function SoTronPanel({
         ma_nvl: str(m.code),
         ten_nvl: str(m.name),
         ten_nvl_sx: str(m.productionName),
-        dvt: str(m.unit) && str(m.unit) !== '-' ? str(m.unit) : 'kg'
+        dvt: str(m.unit) && str(m.unit) !== '-' ? str(m.unit) : 'kg',
+        gan_sp: sectionKey ? [sectionKey] : []
       }))
       .filter(m => m.key);
     if (norm.length === 0) return;
@@ -2000,7 +2013,8 @@ export function SoTronPanel({
           dvt: m.dvt,
           dinh_muc: '',
           lan: Array(numLan).fill('') as string[],
-          nguon: [] as string[]
+          nguon: [] as string[],
+          gan_sp: m.gan_sp
         }))
       ];
     });
@@ -2819,6 +2833,9 @@ export function SoTronPanel({
         .filter(row => {
           const key = materialKey(row.material_id, row.ma_nvl);
           if (!key) return false;
+          const pinned = row.gan_sp || [];
+          if (pinned.includes(group.key)) return true;
+          if (pinned.length > 0) return false;
           if (members.has(key)) return true;
           return ownedLan.some(lan => str(row.lan[lan]) !== '');
         })
@@ -4262,14 +4279,11 @@ export function SoTronPanel({
                     </tbody>
                   </table>
                 </div>
-                </div>
-                ))}
-                </div>
-                <div className="mx-2 mb-1 flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-300 px-3 py-1.5">
-                  <div className="min-w-[220px] flex-1">
+                {section.key !== 'nvl-khac' ? (
+                  <div className="border-t border-slate-300 px-3 py-2">
                     <SearchableMultiSelect<MaterialRow>
                       values={[]}
-                      onChange={sel => addExtraNvls(sel)}
+                      onChange={sel => addExtraNvls(sel, section.key)}
                       options={mainMaterials}
                       placeholder="Thêm NVL khác (chỉ NVL chính, gõ để tìm)..."
                       getValue={m => m.id || m.code}
@@ -4282,6 +4296,11 @@ export function SoTronPanel({
                       inputClassName={inputClass}
                     />
                   </div>
+                ) : null}
+                </div>
+                ))}
+                </div>
+                <div className="mx-2 mb-1 flex flex-wrap items-center justify-end gap-2 rounded-md border border-slate-300 px-3 py-1.5">
                   <span className="text-[12.5px] font-bold text-slate-700">
                     Tổng sử dụng: <span className="tabular-nums text-brand-600">{formatQty(tongSuDungChung)} kg</span>
                     <span className="ml-2">

@@ -8,14 +8,14 @@
 
 ## Vai trò
 
-Chuyển SP qua lại giữa các kho thành phẩm (TP ↔ cắt lẻ ↔ tái chế...).
+Chuyển SP qua lại giữa các kho cùng nhóm (TP ↔ cắt lẻ ↔ tái chế, hoặc NVL chính/phụ/PC — 2 kho phải cùng nhóm vật tư hoặc cùng nhóm TP).
 1 phiếu CK (`CK-...`) hoàn thành sinh đúng 2 phiếu XN: xuất (kho nguồn) + nhập (kho đích).
 Hủy phiếu đã hoàn thành sinh thêm 2 phiếu đảo (lý do `Hủy chuyển kho ...`).
 **Không có xóa** — hủy nháp chỉ đổi trạng thái.
 
-- Chỉ nhận kho SP (chặn kho vật tư `nvl/nguyên vật liệu`).
-- Dòng SP giữ nguyên mã/tên/hệ số + 7 thông số ghép tên → catalog đích cắt tiếp được.
-- Tồn đối soát tại **đúng kho nguồn** (`strictKho=1` + khớp alias TP, trống = Kho thành phẩm).
+- TP: catalog đích ghi `nhap_kho` (giữ nguyên mã/tên/hệ số + 7 thông số ghép tên → catalog đích cắt tiếp được).
+- **NVL kho-only:** không ghi `nhap_kho`; hoàn thành/hủy ensure master `kho_nvl` theo unique (kho đích / kho nguồn) và ghi phân loại `Nguyên vật liệu chính` / `Nguyên vật liệu phụ` lên vế phiếu (`phan_loai_nvl`) cùng dòng `kho_nvl` nếu kho nhận chưa có phân loại. Hai vế phiếu ghi `id_danh_muc` của dòng `kho_nvl` kho nguồn và kho đích.
+- Tồn đối soát tại **đúng kho nguồn**: TP qua `strictKho=1` trên `/api/nhap-kho`; NVL 4 kho lõi qua `/api/ton-kho-nvl` (`src/features/chuyen-kho/index.tsx` `loadStock`).
 
 ## API (`server.ts`, sau `lenh-cat-le`)
 

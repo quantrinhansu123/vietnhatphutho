@@ -67,7 +67,7 @@ import { ProductsPanel } from './features/san-pham';
 import { InventoryLimitsPanel } from './features/ton-kho-toi-thieu-toi-da';
 import { InventoryCatalogPanel } from './features/kho-hang';
 import { MachinesPanel } from './features/danh-sach-may';
-import { MaterialsInventoryPanel } from './features/kho-nvl';
+import { MaterialsCatalogPage } from './features/kho-nvl';
 import { WarehouseSlipPanel, WarehouseHistoryPanel } from './features/phieu-xuat-nhap-kho';
 import { LenCatLePanel } from './features/lenh-cat-le';
 import { ChuyenKhoPanel } from './features/chuyen-kho';
@@ -1656,7 +1656,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
               >
-                <MaterialsInventoryPanel onBack={() => goBack('factory-kho')} />
+                <MaterialsCatalogPage onBack={() => goBack('factory-kho')} />
               </motion.div>
             ) : activeTab === 'warehouse-slip' ? (
               <motion.div

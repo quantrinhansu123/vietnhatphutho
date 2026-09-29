@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   CalendarDays,
   ChevronDown,
@@ -744,11 +745,16 @@ export function weekdayMondayFirst(nam: number, thang: number, ngay: number): nu
 export function VnCalendarPicker({
   value,
   onChange,
-  alignRight
+  alignRight,
+  compact = false,
+  openUpward = false
 }: {
   value: string;
   onChange: (v: string) => void;
   alignRight?: boolean;
+  /** Ô hẹp trong bảng: cao bằng input dòng, lịch nổi ra ngoài để không tràn cột. */
+  compact?: boolean;
+  openUpward?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const parsed = parseDateStr(value);
@@ -758,6 +764,8 @@ export function VnCalendarPicker({
     nam: parsed?.nam ?? today.getFullYear()
   });
   const boxRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
 
   useEffect(() => {
     if (!open) return;
@@ -765,11 +773,37 @@ export function VnCalendarPicker({
     const t = new Date();
     setView({ thang: p?.thang ?? t.getMonth() + 1, nam: p?.nam ?? t.getFullYear() });
     const handler = (e: MouseEvent) => {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (boxRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [open, value]);
+
+  useLayoutEffect(() => {
+    if (!open || !compact) return;
+    const place = () => {
+      const anchor = boxRef.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const width = 288;
+      const menuHeight = menuRef.current?.offsetHeight || 320;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const up = openUpward || spaceBelow < menuHeight + 8;
+      const rawLeft = alignRight ? rect.right - width : rect.left;
+      const left = Math.max(8, Math.min(rawLeft, window.innerWidth - width - 8));
+      const top = up ? Math.max(8, rect.top - menuHeight - 4) : rect.bottom + 4;
+      setMenuStyle({ position: 'fixed', top, left, width, zIndex: 80 });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open, compact, openUpward, alignRight, view.thang, view.nam]);
 
   const days = daysInMonthCheDo(view.thang, view.nam);
   const offset = weekdayMondayFirst(view.nam, view.thang, 1);
@@ -784,21 +818,17 @@ export function VnCalendarPicker({
     });
   };
 
-  return (
-    <div ref={boxRef} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className="inline-flex w-full items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-800 hover:border-blue-400"
-      >
-        <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" />
-        {parsed ? formatDateVN(value) : 'Chọn ngày'}
-      </button>
-      {open && (
+  const popup = (
         <div
-          className={`absolute top-full z-50 mt-1 w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-xl ${
-            alignRight ? 'right-0' : 'left-0'
-          }`}
+          ref={menuRef}
+          style={compact ? menuStyle : undefined}
+          className={
+            compact
+              ? 'w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-xl'
+              : `absolute top-full z-50 mt-1 w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-xl ${
+                  alignRight ? 'right-0' : 'left-0'
+                }`
+          }
         >
           <div className="mb-1.5 flex items-center gap-1">
             <button
@@ -883,10 +913,27 @@ export function VnCalendarPicker({
             }}
             className="mt-1.5 w-full rounded-lg bg-slate-50 py-1 text-xs font-bold text-slate-600 hover:bg-slate-100"
           >
-            Hôm nay
-          </button>
+          Hôm nay
+        </button>
         </div>
-      )}
+  );
+
+  return (
+    <div ref={boxRef} className={compact ? 'relative min-w-0' : 'relative'}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        title={parsed ? formatDateVN(value) : 'Chọn ngày'}
+        className={
+          compact
+            ? 'inline-flex h-8 w-full min-w-0 items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] font-semibold text-zinc-800 outline-none hover:border-[#ef1b2d]'
+            : 'inline-flex w-full items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-800 hover:border-blue-400'
+        }
+      >
+        <CalendarDays className={compact ? 'h-3.5 w-3.5 shrink-0 text-[#ef1b2d]' : 'h-4 w-4 shrink-0 text-slate-400'} />
+        <span className={compact ? 'truncate' : undefined}>{parsed ? formatDateVN(value) : 'Chọn ngày'}</span>
+      </button>
+      {open ? (compact ? createPortal(popup, document.body) : popup) : null}
     </div>
   );
 }

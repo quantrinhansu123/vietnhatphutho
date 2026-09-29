@@ -30,7 +30,8 @@ export default function OrderPrintSheet({ order, allocatedQtyMap }: { order: Ord
       ? getAllocatedQtyFromMap(allocatedQtyMap, order.orderCode, {
           productId: line.productId,
           productCode: line.productCode,
-          productionName: line.productionName
+          productionName: line.productionName,
+          tenGhep: line.tenGhep
         })
       : 0;
   const totalAllocated = productLines.reduce((sum, line) => sum + allocatedOf(line), 0);

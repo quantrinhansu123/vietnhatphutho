@@ -12,9 +12,15 @@ type SlipLine = {
   quantity: number;
   unitPrice: number;
   lineAmount: number;
-  materialClass: 'chua_phan_loai';
+  materialClass: 'nvl_chinh' | 'nvl_phu' | 'chua_phan_loai';
+  documentQuantity?: number;
   weightKg?: number;
   machine?: string;
+  productionName?: string;
+  nhomVthh?: string;
+  tonDauCaMay?: number;
+  actualWeightImageUrl?: string;
+  actualWeightImagePublicId?: string;
   sourceInboundLineId?: string;
   sourceInboundSlipCode?: string;
 };
@@ -27,16 +33,64 @@ type DetailLine = {
   don_gia: number;
   thanh_tien: number;
   quy_doi_kg: number | null;
-  /** Nhập: kho hoặc nhà cung cấp lấy hàng. Xuất: kho lấy hàng ra. */
+  /** Tên NVL sản xuất (snapshot từng dòng, tra kho_nvl theo mã khi thiếu). */
+  ten_nvl_sx: string;
+  /** Nhập: kho hoặc nhà cung cấp lấy hàng (header). Xuất: nguồn riêng từng dòng (mới)
+   *  hoặc kho lấy hàng ra (cũ, phiếu trước bản nguồn-dòng). */
   nguon_dong_loai: '' | 'kho' | 'may' | 'ncc';
   nguon_dong_id: string;
   nguon_dong_ten: string;
+  /** Xuất kiểu mới: nguồn riêng từng dòng (ghi đè nguon_dong_* sau resolve). */
+  src_loai?: string;
+  src_id?: string;
+  src_ten?: string;
+  /** Ngày / ca riêng từng dòng (trống = theo ngày-ca header). */
+  ngay_dong?: string;
+  ca_dong?: string;
+  /** Tồn đầu ca từng dòng (tham chiếu sổ trộn, sửa tay được). */
+  ton_dau_ca?: number | null;
   /** Kho nhận hàng (nhập: kho đích trên header, copy xuống dòng). */
   kho_dong_id: string;
   kho_dong_ten: string;
   kho_dong_ma: string | null;
   kho_dong_vat_tu: boolean;
+  /** Xuất: nơi xuất đến (giữ nguyên từ payload để không lẫn với hack cũ). */
+  dich_dong_loai?: string;
+  dich_dong_id?: string;
+  /** Phân loại NVL trên lưới xuất (nvl_chinh / nvl_phu / chua_phan_loai). */
+  phan_loai_nvl?: string;
+  /** SL chứng từ (định mức), khác SL thực ở so_luong. */
+  so_luong_ct?: number | null;
+  nhom_vthh?: string;
+  norm_kg_per_unit?: number | null;
+  link_anh_can_thuc_te?: string;
+  link_anh_can_thuc_te_public_id?: string;
 };
+
+/** Nguồn từng dòng của phiếu xuất: ưu tiên src_* (kiểu mới), null = dùng nguồn header (kiểu cũ). */
+function xuatLineSrcOf(line: DetailLine): { loai: 'kho' | 'may'; id: string } | null {
+  const kind = text(line.src_loai).toLowerCase();
+  const id = text(line.src_id || line.src_ten);
+  if ((kind === 'kho' || kind === 'may') && id) return { loai: kind, id };
+  return null;
+}
+
+/** Đích từng dòng của phiếu xuất: ưu tiên dich_* (kiểu mới), fallback hack cũ + kho_dong. */
+function xuatLineDestOf(line: DetailLine): { loai: 'kho' | 'may' | 'ncc'; id: string } {
+  const kind = text(line.dich_dong_loai).toLowerCase();
+  const id = text(line.dich_dong_id);
+  if ((kind === 'kho' || kind === 'may' || kind === 'ncc') && id) return { loai: kind, id };
+  if (line.nguon_dong_loai === 'may' && line.nguon_dong_id) {
+    return { loai: 'may', id: line.nguon_dong_id };
+  }
+  return { loai: 'kho', id: line.kho_dong_id };
+}
+
+function materialClassOf(value: unknown): 'nvl_chinh' | 'nvl_phu' | 'chua_phan_loai' {
+  const raw = text(value).toLowerCase();
+  if (raw === 'nvl_chinh' || raw === 'nvl_phu') return raw;
+  return 'chua_phan_loai';
+}
 
 type Party = { loai: 'kho' | 'may' | 'ncc'; id: string; ten: string; maKho: string | null; vatTu: boolean };
 
@@ -93,6 +147,18 @@ export type TongHopRouteDeps = {
     snapshotMoi: unknown[];
   }) => Promise<void>;
   insertNhapKho: (rows: Array<Record<string, unknown>>) => Promise<{ saved: boolean; error?: string }>;
+  /** Đã có bộ mã + tên + tên sản xuất + kho thì bỏ qua; thiếu thì thêm dòng kho_nvl. */
+  ensureKhoNvlCatalog: (
+    lines: Array<{ code: string; name: string; productionName?: string; unit: string }>,
+    tenKho: string
+  ) => Promise<{ ensured: number; skipped: number; error?: string }>;
+  attachLiveKhoNvlIds: <T extends Record<string, unknown>>(
+    records: T[],
+    lines: Array<{ code: string; name: string; productionName?: string; unit: string; materialClass?: string; phanLoai?: string }>,
+    tenKho: string
+  ) => Promise<{ records: T[]; ensured: number; skipped: number; error?: string }>;
+  liveKhoNvlIds: (code: string, tenKho: string) => Promise<Set<string>>;
+  slipsHaveCatalogStamp: () => Promise<boolean>;
   isMissingTable: (error: { message?: string; code?: string } | null) => boolean;
   isMissingColumn: (error: { message?: string; code?: string } | null) => boolean;
   newSlipCode: (loai: 'nhap' | 'xuat') => string;
@@ -118,9 +184,20 @@ function slipItems(lines: DetailLine[], machine?: string): SlipLine[] {
     quantity: line.so_luong,
     unitPrice: line.don_gia,
     lineAmount: line.thanh_tien,
-    materialClass: 'chua_phan_loai' as const,
+    materialClass: materialClassOf(line.phan_loai_nvl),
+    ...(Number.isFinite(Number(line.so_luong_ct)) && Number(line.so_luong_ct) > 0
+      ? { documentQuantity: Number(line.so_luong_ct) }
+      : {}),
     ...(line.quy_doi_kg && line.quy_doi_kg > 0 ? { weightKg: line.quy_doi_kg } : {}),
-    ...(machine ? { machine } : {})
+    ...(machine ? { machine } : {}),
+    ...(text(line.nhom_vthh) ? { nhomVthh: text(line.nhom_vthh) } : {}),
+    // Snapshot tên SX + tồn đầu ca xuống vế phiếu (server ghi resilient, thiếu cột thì bỏ qua).
+    ...(text(line.ten_nvl_sx) ? { productionName: text(line.ten_nvl_sx) } : {}),
+    ...(Number.isFinite(Number(line.ton_dau_ca)) ? { tonDauCaMay: Number(line.ton_dau_ca) } : {}),
+    ...(text(line.link_anh_can_thuc_te) ? { actualWeightImageUrl: text(line.link_anh_can_thuc_te) } : {}),
+    ...(text(line.link_anh_can_thuc_te_public_id)
+      ? { actualWeightImagePublicId: text(line.link_anh_can_thuc_te_public_id) }
+      : {})
   }));
 }
 
@@ -206,20 +283,54 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       const dichDongLoai = text(item.dich_dong_loai ?? item.dichDongLoai).toLowerCase() || (loai === 'xuat' ? nguonDongLoaiRaw : '');
       const dichDongId = text(item.dich_dong_id ?? item.dichDongId) || (loai === 'xuat' ? nguonDongId || khoNhap : '');
       if (loai === 'xuat') {
-        if (dichDongLoai !== 'kho' && dichDongLoai !== 'may') return { error: `Dòng ${index + 1}: chọn kho hoặc máy xuất đến.` };
+        if (dichDongLoai !== 'kho' && dichDongLoai !== 'may' && dichDongLoai !== 'ncc') {
+          return { error: `Dòng ${index + 1}: chọn kho, máy hoặc nhà cung cấp xuất đến.` };
+        }
         if (!dichDongId) return { error: `Dòng ${index + 1}: chọn nơi xuất đến.` };
       }
+      const classRaw = text(item.phan_loai_nvl ?? item.phanLoaiNvl ?? item.warehouseClass);
+      const slCtRaw = Number(String(item.so_luong_ct ?? item.soLuongCt ?? item.documentQuantity ?? '').replace(',', '.'));
+      const normRaw = Number(String(item.norm_kg_per_unit ?? item.normKgPerUnit ?? '').replace(',', '.'));
+      const imageUrl = text(item.link_anh_can_thuc_te ?? item.linkAnhCanThucTe ?? item.actualWeightImageUrl);
+      const imageId = text(
+        item.link_anh_can_thuc_te_public_id ?? item.linkAnhCanThucTePublicId ?? item.actualWeightImagePublicId
+      );
+      const tenNvlSx = text(
+        item.ten_nvl_sx ?? item.tenNvlSx ?? item.ten_san_xuat ?? item.tenSanXuat ?? item.productionName
+      );
+      const srcLoai = text(item.src_loai ?? item.srcLoai).toLowerCase();
+      const srcId = text(item.src_id ?? item.srcId ?? item.src_ten ?? item.srcTen);
+      const ngayDong = text(item.ngay_dong ?? item.ngayDong).slice(0, 10);
+      const caDong = text(item.ca_dong ?? item.caDong);
+      const tonDauRaw = Number(String(item.ton_dau_ca ?? item.tonDauCa ?? '').replace(',', '.'));
       lines.push({
         ma_hang: ma,
         ten_hang: text(item.ten_hang ?? item.tenHang ?? item.name),
+        ten_nvl_sx: tenNvlSx,
         don_vi: text(item.don_vi ?? item.donVi ?? item.unit),
         so_luong: round3(qty),
         don_gia: donGia,
         thanh_tien: round3(qty * donGia),
         quy_doi_kg: quyDoi,
+        // Nguồn riêng từng dòng (phiếu xuất kiểu mới). Kiểu cũ không gửi 2 key này.
+        ...(srcLoai === 'kho' || srcLoai === 'may' ? { src_loai: srcLoai } : {}),
+        ...(srcId ? { src_id: srcId } : {}),
+        ...(text(item.src_ten ?? item.srcTen) ? { src_ten: text(item.src_ten ?? item.srcTen) } : {}),
+        ...(ngayDong ? { ngay_dong: ngayDong } : {}),
+        ...(caDong ? { ca_dong: caDong } : {}),
+        ...(Number.isFinite(tonDauRaw) ? { ton_dau_ca: round3(tonDauRaw) } : {}),
         nguon_dong_loai: loai === 'xuat' && dichDongLoai === 'may' ? 'may' : '',
         nguon_dong_id: loai === 'xuat' && dichDongLoai === 'may' ? dichDongId : '',
         nguon_dong_ten: loai === 'xuat' && dichDongLoai === 'may' ? dichDongId : '',
+        // Giữ đích tường minh (kiểu mới đọc đích từ đây, không lẫn hack cũ).
+        ...(loai === 'xuat' && dichDongLoai ? { dich_dong_loai: dichDongLoai } : {}),
+        ...(loai === 'xuat' && dichDongId ? { dich_dong_id: dichDongId } : {}),
+        ...(classRaw ? { phan_loai_nvl: materialClassOf(classRaw) } : {}),
+        ...(Number.isFinite(slCtRaw) && slCtRaw > 0 ? { so_luong_ct: round3(slCtRaw) } : {}),
+        ...(text(item.nhom_vthh ?? item.nhomVthh) ? { nhom_vthh: text(item.nhom_vthh ?? item.nhomVthh) } : {}),
+        ...(Number.isFinite(normRaw) && normRaw > 0 ? { norm_kg_per_unit: normRaw } : {}),
+        ...(imageUrl ? { link_anh_can_thuc_te: imageUrl } : {}),
+        ...(imageId ? { link_anh_can_thuc_te_public_id: imageId } : {}),
         kho_dong_id: loai === 'nhap' ? khoNhap : loai === 'xuat' && dichDongLoai === 'kho' ? dichDongId : '',
         kho_dong_ten: loai === 'nhap' ? khoNhap : loai === 'xuat' && dichDongLoai === 'kho' ? dichDongId : '',
         kho_dong_ma: null,
@@ -244,57 +355,136 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
     let nguon: Party | null = null;
     let dich: Party | null = null;
     if (loai === 'nhap') {
-      const loaded = await loadParty(text(source.nguon_loai ?? source.nguonLoai), text(source.nguon_id ?? source.nguonId));
-      if ('error' in loaded) return { error: loaded.error };
-      if (loaded.loai === 'may') return { error: 'Nguồn nhập là kho hoặc nhà cung cấp.' };
-      nguon = loaded;
+      const kind = text(source.nguon_loai ?? source.nguonLoai);
+      const id = text(source.nguon_id ?? source.nguonId);
+      if (kind && id) {
+        const loaded = await loadParty(kind, id);
+        if ('error' in loaded) return { error: loaded.error };
+        if (loaded.loai === 'may') return { error: 'Nguồn nhập là kho hoặc nhà cung cấp.' };
+        nguon = loaded;
+      }
     } else {
-      const loaded = await loadParty(text(source.nguon_loai ?? source.nguonLoai ?? source.dich_loai ?? source.dichLoai), text(source.nguon_id ?? source.nguonId ?? source.dich_id ?? source.dichId));
-      if ('error' in loaded) return { error: loaded.error };
-      if (loaded.loai === 'ncc') return { error: 'Nguồn xuất là kho hoặc máy.' };
-      nguon = loaded;
+      // Phiếu xuất kiểu mới: nguồn nằm trên từng dòng (src_*), header được phép trống.
+      // Kiểu cũ: nguồn chung ở header (nguon_loai/nguon_id).
+      const headerSrcKind = text(source.nguon_loai ?? source.nguonLoai ?? source.dich_loai ?? source.dichLoai);
+      const headerSrcId = text(source.nguon_id ?? source.nguonId ?? source.dich_id ?? source.dichId);
+      if (headerSrcKind || headerSrcId) {
+        const loaded = await loadParty(headerSrcKind, headerSrcId);
+        if ('error' in loaded) return { error: loaded.error };
+        if (loaded.loai === 'ncc') return { error: 'Nguồn xuất là kho hoặc máy.' };
+        nguon = loaded;
+      }
     }
     const parsedLines = parseLines(source.lines ?? source.chi_tiet, loai);
     if ('error' in parsedLines) return parsedLines;
     for (const line of parsedLines.lines) {
-      if (loai === 'nhap' && nguon) {
+      if (loai === 'nhap') {
         const kho = await loadParty('kho', line.kho_dong_id);
         if ('error' in kho) return { error: kho.error };
         line.kho_dong_id = kho.id;
         line.kho_dong_ten = kho.ten;
         line.kho_dong_ma = kho.maKho;
         line.kho_dong_vat_tu = kho.vatTu;
-        const sourceNvl = nguon.loai === 'ncc' || nguon.vatTu;
-        if (sourceNvl !== kho.vatTu) {
-          return { error: `Dòng ${line.ma_hang}: kho nhập phải cùng loại với nguồn nhập.` };
-        }
-        if (nguon.loai === 'kho' && deps.normalizeKho(nguon.ten) === deps.normalizeKho(kho.ten)) {
-          return { error: `Dòng ${line.ma_hang}: kho nguồn và kho nhập phải khác nhau.` };
-        }
-      } else if (loai === 'xuat' && nguon) {
-        const destKind = line.nguon_dong_loai === 'may' ? 'may' : 'kho';
-        const destKey = destKind === 'may' ? line.nguon_dong_id : line.kho_dong_id;
-        const destParty = await loadParty(destKind, destKey);
-        if ('error' in destParty) return { error: destParty.error };
-        const sourceNvl = nguon.loai === 'may' || nguon.vatTu;
-        if (destParty.loai === 'may') {
-          line.nguon_dong_loai = 'may';
-          line.nguon_dong_id = destParty.id;
-          line.nguon_dong_ten = destParty.ten;
-          if (!sourceNvl) return { error: 'Máy chỉ nhận NVL.' };
-          if (nguon.loai === 'may' && nguon.id === destParty.id) return { error: `Dòng ${line.ma_hang}: máy nguồn và máy đến phải khác nhau.` };
-        } else {
-          line.kho_dong_id = destParty.id;
-          line.kho_dong_ten = destParty.ten;
-          line.kho_dong_ma = destParty.maKho;
-          line.kho_dong_vat_tu = destParty.vatTu;
-          line.nguon_dong_loai = '';
-          line.nguon_dong_id = '';
-          if (sourceNvl !== destParty.vatTu) return { error: `Dòng ${line.ma_hang}: nơi đến phải cùng loại với nguồn xuất.` };
-          if (nguon.loai === 'kho' && deps.normalizeKho(nguon.ten) === deps.normalizeKho(destParty.ten)) {
-            return { error: `Dòng ${line.ma_hang}: kho nguồn và kho đến phải khác nhau.` };
+        if (nguon) {
+          const sourceNvl = nguon.loai === 'ncc' || nguon.vatTu;
+          if (sourceNvl !== kho.vatTu) {
+            return { error: `Dòng ${line.ma_hang}: kho nhập phải cùng loại với nguồn nhập.` };
+          }
+          if (nguon.loai === 'kho' && deps.normalizeKho(nguon.ten) === deps.normalizeKho(kho.ten)) {
+            return { error: `Dòng ${line.ma_hang}: kho nguồn và kho nhập phải khác nhau.` };
           }
         }
+      } else if (loai === 'xuat') {
+        // Nguồn riêng từng dòng (src_* kiểu mới) hoặc nguồn header (kiểu cũ).
+        const partyCache = new Map<string, Party>();
+        const loadCached = async (kind: string, id: string): Promise<Party> => {
+          const key = `${kind}|${id}`.toLowerCase();
+          const hit = partyCache.get(key);
+          if (hit) return hit;
+          const loaded = await loadParty(kind, id);
+          if ('error' in loaded) throw new Error(loaded.error);
+          if (loaded.loai === 'ncc') throw new Error('Nguồn xuất là kho hoặc máy.');
+          partyCache.set(key, loaded);
+          return loaded;
+        };
+        const lineSrcs: Party[] = [];
+        let firstDest: Party | null = null;
+        const catalogSet = new Set<'nvl' | 'san_pham'>();
+        for (let li = 0; li < parsedLines.lines.length; li += 1) {
+          const line = parsedLines.lines[li];
+          const tag = `Dòng ${li + 1} (${line.ma_hang})`;
+          const hinted = xuatLineSrcOf(line);
+          let src: Party;
+          try {
+            if (hinted) src = await loadCached(hinted.loai, hinted.id);
+            else if (nguon) src = nguon;
+            else return { error: `${tag}: thiếu nguồn xuất.` };
+          } catch (err: any) {
+            return { error: `${tag}: ${err?.message || 'nguồn xuất không hợp lệ.'}` };
+          }
+          // Chuẩn hóa nguồn lên dòng để legs/stock/hủy đọc thống nhất.
+          line.nguon_dong_loai = src.loai === 'may' ? 'may' : 'kho';
+          line.nguon_dong_id = src.id;
+          line.nguon_dong_ten = src.ten;
+          const dest = xuatLineDestOf(line);
+          let destParty: Party;
+          try {
+            if (dest.loai === 'ncc') {
+              const loaded = await loadParty('ncc', dest.id);
+              if ('error' in loaded) throw new Error(loaded.error);
+              destParty = loaded;
+            } else {
+              destParty = await loadCached(dest.loai, dest.id);
+            }
+          } catch (err: any) {
+            return { error: `${tag}: ${err?.message || 'nơi đến không hợp lệ.'}` };
+          }
+          const sourceNvl = src.loai === 'may' || src.vatTu;
+          if (destParty.loai === 'ncc') {
+            line.kho_dong_id = '';
+            line.kho_dong_ten = '';
+            line.kho_dong_ma = null;
+            line.kho_dong_vat_tu = false;
+            line.dich_dong_loai = 'ncc';
+            line.dich_dong_id = destParty.id;
+            if (!sourceNvl) return { error: `${tag}: trả nhà cung cấp chỉ xuất từ kho NVL.` };
+          } else if (destParty.loai === 'may') {
+            line.kho_dong_id = '';
+            line.kho_dong_ten = '';
+            line.kho_dong_ma = null;
+            line.kho_dong_vat_tu = false;
+            line.dich_dong_loai = 'may';
+            line.dich_dong_id = destParty.id;
+            if (!sourceNvl) return { error: 'Máy chỉ nhận NVL.' };
+            if (src.loai === 'may' && src.id === destParty.id) {
+              return { error: `${tag}: máy nguồn và máy đến phải khác nhau.` };
+            }
+          } else {
+            line.kho_dong_id = destParty.id;
+            line.kho_dong_ten = destParty.ten;
+            line.kho_dong_ma = destParty.maKho;
+            line.kho_dong_vat_tu = destParty.vatTu;
+            line.dich_dong_loai = 'kho';
+            line.dich_dong_id = destParty.id;
+            if (sourceNvl !== destParty.vatTu) {
+              return { error: `${tag}: nơi đến phải cùng loại với nguồn xuất.` };
+            }
+            if (src.loai === 'kho' && deps.normalizeKho(src.ten) === deps.normalizeKho(destParty.ten)) {
+              return { error: `${tag}: kho nguồn và kho đến phải khác nhau.` };
+            }
+          }
+          catalogSet.add(sourceNvl ? 'nvl' : 'san_pham');
+          lineSrcs.push(src);
+          if (!firstDest) firstDest = destParty;
+        }
+        if (catalogSet.size > 1) return { error: 'Một phiếu xuất chỉ dùng một loại hàng (NVL hoặc thành phẩm).' };
+        const firstSrc = lineSrcs[0];
+        // Header giữ nguồn chung khi đồng nhất (list/in tương thích), nhiều nguồn thì null.
+        nguon = lineSrcs.every(s => s.loai === firstSrc.loai && s.id === firstSrc.id) ? firstSrc : null;
+        (parsedLines as { xuatCatalog?: 'nvl' | 'san_pham' }).xuatCatalog = catalogSet.has('san_pham')
+          ? 'san_pham'
+          : 'nvl';
+        (parsedLines as { xuatFirstDest?: Party }).xuatFirstDest = firstDest;
       }
     }
     if (loai === 'nhap') {
@@ -309,16 +499,15 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       };
     }
     if (loai === 'xuat') {
-      const first = parsedLines.lines[0];
-      const firstMay = first?.nguon_dong_loai === 'may';
-      dich = firstMay
-        ? { loai: 'may', id: first?.nguon_dong_id || '', ten: first?.nguon_dong_ten || '', maKho: null, vatTu: true }
-        : { loai: 'kho', id: first?.kho_dong_id || '', ten: first?.kho_dong_ten || '', maKho: first?.kho_dong_ma || null, vatTu: Boolean(first?.kho_dong_vat_tu) };
+      const stored = parsedLines as { xuatFirstDest?: Party };
+      if (!stored.xuatFirstDest) return { error: 'Thiếu nơi xuất đến.' };
+      dich = stored.xuatFirstDest;
     }
     if (!dich) return { error: 'Thiếu nơi xuất đến.' };
     const catalog: 'nvl' | 'san_pham' = loai === 'nhap'
-      ? (nguon?.loai === 'ncc' || nguon?.vatTu ? 'nvl' : 'san_pham')
-      : nguon?.loai === 'may' || nguon?.vatTu ? 'nvl' : 'san_pham';
+      ? (!nguon || nguon.loai === 'ncc' || nguon.vatTu ? 'nvl' : 'san_pham')
+      : ((parsedLines as { xuatCatalog?: 'nvl' | 'san_pham' }).xuatCatalog
+        || (nguon?.loai === 'may' || nguon?.vatTu ? 'nvl' : 'san_pham'));
     if (dich.loai === 'may' && catalog !== 'nvl') return { error: 'Máy chỉ làm việc với NVL.' };
     return {
       header: {
@@ -329,7 +518,7 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
         nguon,
         dich,
         loaiNhap: loai === 'nhap' ? text(source.loai_nhap ?? source.loaiNhap).slice(0, 120) || null : null,
-        loaiXuat: loai === 'xuat' ? text(source.loai_xuat ?? source.loaiXuat).slice(0, 120) || null : null,
+        loaiXuat: loai === 'xuat' ? text(source.loai_xuat ?? source.loaiXuat).slice(0, 200) || null : null,
         nguoiLap: text(source.nguoi_lap ?? source.nguoiLap) || null,
         nguoiGiao: text(source.nguoi_giao ?? source.nguoiGiao) || null,
         diaDiem: text(source.dia_diem ?? source.diaDiem) || null,
@@ -344,9 +533,18 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
   async function stockOf(code: string, party: { loai: 'kho' | 'may'; id: string }, catalog: 'nvl' | 'san_pham') {
     if (!deps.supabase) return 0;
     const tables = await deps.readTables(null);
+    const matchCatalogId = catalog === 'nvl' && party.loai === 'kho' && (await deps.slipsHaveCatalogStamp());
+    const liveIds = matchCatalogId ? await deps.liveKhoNvlIds(code, party.id) : null;
     let ton = 0;
     for (const table of tables) {
-      let query = deps.supabase.from(table).select('ma_npl, ma_sp, ten_kho, may, loai_phieu, so_luong').limit(20000);
+      let query = deps.supabase
+        .from(table)
+        .select(
+          matchCatalogId
+            ? 'ma_npl, ma_sp, ten_kho, may, loai_phieu, so_luong, id_danh_muc, loai_danh_muc'
+            : 'ma_npl, ma_sp, ten_kho, may, loai_phieu, so_luong'
+        )
+        .limit(20000);
       query = catalog === 'nvl' ? query.eq('ma_npl', code) : query.eq('ma_sp', code);
       const { data, error } = await query;
       if (error) {
@@ -359,7 +557,12 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
         const tenKho = text(row.ten_kho);
         const may = text(row.may);
         if (party.loai === 'kho') {
-          if (deps.normalizeKho(tenKho) !== deps.normalizeKho(party.id)) continue;
+          if (matchCatalogId) {
+            const catalogId = text(row.id_danh_muc);
+            if (text(row.loai_danh_muc) !== 'kho_nvl' || !liveIds?.has(catalogId)) continue;
+          } else if (deps.normalizeKho(tenKho) !== deps.normalizeKho(party.id)) {
+            continue;
+          }
           ton += xuat ? -qty : qty;
         } else if (may === party.id || may === party.id) {
           const inbound =
@@ -384,12 +587,13 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       }
     } else {
       for (const line of header.lines) {
-        if (header.nguon && header.nguon.loai !== 'ncc') {
-          sources.push({
-            party: { loai: header.nguon.loai === 'may' ? 'may' : 'kho', id: header.nguon.id },
-            code: line.ma_hang,
-            qty: line.so_luong
-          });
+        // Nguồn riêng từng dòng (kiểu mới), fallback nguồn header (kiểu cũ).
+        const hinted = xuatLineSrcOf(line);
+        const kind = hinted?.loai
+          || (header.nguon && header.nguon.loai !== 'ncc' ? header.nguon.loai : '');
+        const id = hinted?.id || (header.nguon ? header.nguon.id : '');
+        if ((kind === 'kho' || kind === 'may') && id) {
+          sources.push({ party: { loai: kind, id }, code: line.ma_hang, qty: line.so_luong });
         }
       }
     }
@@ -411,7 +615,7 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
     }
   }
 
-  function legPlan(header: ParsedHeader) {
+  async function legPlan(header: ParsedHeader) {
     type Leg = {
       loai: 'nhap' | 'xuat';
       tenKho: string;
@@ -471,79 +675,112 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       }
       return legs;
     }
-    const sourceParty = header.nguon;
-    const toMay = header.lines.filter(line => line.nguon_dong_loai === 'may');
-    const toKho = header.lines.filter(line => line.nguon_dong_loai !== 'may');
-    if (sourceParty?.loai === 'kho') {
-      for (const line of toMay) {
-        push({
+    // Phiếu xuất: mỗi dòng có nguồn + đích riêng (nguon_dong_* = nguồn đã chuẩn hóa,
+    // dich_dong_*/kho_dong_* = đích). Gộp vế giống nhau để ít phiếu lẻ.
+    const partyCache = new Map<string, Party>();
+    const resolveLegParty = async (kind: 'kho' | 'may', id: string): Promise<Party> => {
+      const key = `${kind}|${id}`.toLowerCase();
+      const hit = partyCache.get(key);
+      if (hit) return hit;
+      const loaded = await loadParty(kind, id);
+      if ('error' in loaded) throw new Error(loaded.error);
+      partyCache.set(key, loaded);
+      return loaded;
+    };
+    const mergeLeg = (
+      bucket: Map<string, {
+        loai: 'nhap' | 'xuat';
+        tenKho: string;
+        may: string | null;
+        maKho: string;
+        loaiKho: 'nvl' | 'san_pham';
+        lines: DetailLine[];
+        loaiNhap: string | null;
+        nguoiGiao: string | null;
+      }>,
+      leg: {
+        loai: 'nhap' | 'xuat';
+        tenKho: string;
+        may: string | null;
+        maKho: string;
+        loaiKho: 'nvl' | 'san_pham';
+        lines: DetailLine[];
+        loaiNhap: string | null;
+        nguoiGiao: string | null;
+      }
+    ) => {
+      const key = `${leg.loai}|${leg.tenKho}|${leg.may}|${leg.maKho}|${leg.loaiKho}|${leg.loaiNhap}`;
+      const cur = bucket.get(key);
+      if (cur) cur.lines.push(...leg.lines);
+      else bucket.set(key, leg);
+    };
+    const xuatBucket = new Map<string, Parameters<typeof mergeLeg>[1]>();
+    const nhapBucket = new Map<string, Parameters<typeof mergeLeg>[1]>();
+    for (const line of header.lines) {
+      const srcKind = line.nguon_dong_loai === 'may' ? 'may' : 'kho';
+      if (!line.nguon_dong_id) throw new Error(`Dòng ${line.ma_hang}: thiếu nguồn xuất.`);
+      const src = await resolveLegParty(srcKind, line.nguon_dong_id);
+      if (src.loai === 'ncc') throw new Error(`Dòng ${line.ma_hang}: nguồn xuất là kho hoặc máy.`);
+      const dest = xuatLineDestOf(line);
+      if (dest.loai === 'ncc') {
+        mergeLeg(xuatBucket, {
           loai: 'xuat',
-          tenKho: sourceParty.ten,
-          may: line.nguon_dong_id,
-          maKho: sourceParty.maKho || '',
-          loaiKho: header.catalog,
+          tenKho: src.loai === 'kho' ? src.ten : '',
+          may: src.loai === 'may' ? src.id : null,
+          maKho: src.maKho || '',
+          loaiKho: 'nvl',
           lines: [line],
           loaiNhap: null,
           nguoiGiao: null
         });
+        continue;
       }
-    } else if (sourceParty?.loai === 'may' && toMay.length && !header.skipInbound) {
-      push({
+      const destParty = await resolveLegParty(dest.loai, dest.id);
+      const loaiKho = header.catalog;
+      mergeLeg(xuatBucket, {
         loai: 'xuat',
-        tenKho: '',
-        may: sourceParty.id,
-        maKho: '',
-        loaiKho: 'nvl',
-        lines: toMay,
+        tenKho: src.loai === 'kho' ? src.ten : '',
+        may: src.loai === 'may' ? src.id : destParty.loai === 'may' ? destParty.id : null,
+        maKho: src.maKho || '',
+        loaiKho: src.loai === 'may' ? 'nvl' : loaiKho,
+        lines: [line],
         loaiNhap: null,
         nguoiGiao: null
       });
-      for (const line of toMay) {
-        push({
+      if (header.skipInbound) continue;
+      // Kho → máy: chỉ vế xuất (tồn máy tính từ chính vế này, thêm vế nhập sẽ double).
+      if (src.loai === 'kho' && destParty.loai === 'may') continue;
+      if (destParty.loai === 'may') {
+        mergeLeg(nhapBucket, {
           loai: 'nhap',
           tenKho: '',
-          may: line.nguon_dong_id,
+          may: destParty.id,
           maKho: '',
           loaiKho: 'nvl',
           lines: [line],
           loaiNhap: header.loaiXuat,
           nguoiGiao: null
         });
+      } else {
+        mergeLeg(nhapBucket, {
+          loai: 'nhap',
+          tenKho: destParty.ten,
+          may: null,
+          maKho: destParty.maKho || '',
+          loaiKho,
+          lines: [line],
+          loaiNhap: header.loaiXuat || 'Nhập điều chuyển',
+          nguoiGiao: null
+        });
       }
     }
-    if (toKho.length && sourceParty) {
-      push({
-        loai: 'xuat',
-        tenKho: sourceParty.loai === 'kho' ? sourceParty.ten : '',
-        may: sourceParty.loai === 'may' ? sourceParty.id : null,
-        maKho: sourceParty.maKho || '',
-        loaiKho: header.catalog,
-        lines: toKho,
-        loaiNhap: null,
-        nguoiGiao: null
-      });
-      if (!header.skipInbound) {
-        const byDest = new Map<string, DetailLine[]>();
-        for (const line of toKho) byDest.set(line.kho_dong_ten || line.kho_dong_id, [...(byDest.get(line.kho_dong_ten || line.kho_dong_id) || []), line]);
-        for (const [tenKho, group] of byDest) {
-          push({
-            loai: 'nhap',
-            tenKho,
-            may: null,
-            maKho: group[0]?.kho_dong_ma || '',
-            loaiKho: header.catalog,
-            lines: group,
-            loaiNhap: header.loaiXuat || 'Nhập điều chuyển',
-            nguoiGiao: null
-          });
-        }
-      }
-    }
+    for (const leg of xuatBucket.values()) push(leg);
+    for (const leg of nhapBucket.values()) push(leg);
     return legs;
   }
 
   async function writeLegs(header: ParsedHeader, codes: { nhap?: string; xuat?: string }, reason: string) {
-    const plan = legPlan(header);
+    const plan = await legPlan(header);
     const created: string[] = [];
     let maNhap = codes.nhap || '';
     let maXuat = codes.xuat || '';
@@ -558,7 +795,7 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       const items = slipItems(leg.lines, leg.may || undefined).map(item =>
         link ? { ...item, sourceInboundLineId: link.id, sourceInboundSlipCode: link.code } : item
       );
-      const records = deps.buildSlipRecords(
+      const built = deps.buildSlipRecords(
         {
           loaiPhieu: leg.loai,
           loaiKho: leg.loaiKho,
@@ -578,6 +815,30 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
         },
         maPhieu
       );
+      let records = built.map((record, index) => {
+        const imageUrl = text(items[index]?.actualWeightImageUrl);
+        if (!imageUrl) return record;
+        return {
+          ...record,
+          link_anh_can_thuc_te: imageUrl,
+          link_anh_can_thuc_te_public_id: text(items[index]?.actualWeightImagePublicId) || null
+        };
+      });
+      if (leg.loaiKho === 'nvl' && leg.tenKho) {
+        const attached = await deps.attachLiveKhoNvlIds(
+          records,
+          leg.lines.map(line => ({
+            code: line.ma_hang,
+            name: line.ten_hang,
+            productionName: line.ten_nvl_sx,
+            unit: line.don_vi,
+            materialClass: line.phan_loai_nvl
+          })),
+          leg.tenKho
+        );
+        if (attached.error) throw new Error(attached.error);
+        records = attached.records;
+      }
       const table = await deps.writeTable(leg.loai);
       const saved = await deps.insertSlipRecords(table, records);
       if (saved.error) throw new Error(saved.error.message || 'Không ghi được vế phiếu.');
@@ -775,14 +1036,24 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
         snapshotMoi: await rowsOf(code)
       });
     }
+    // Xuất nhiều nguồn/đích: header giữ tên gộp để list hiển thị, chi tiết từng dòng trong chi_tiet.
+    const xuatSrcLabels = header.loai === 'xuat'
+      ? [...new Set(header.lines.map(line => line.nguon_dong_ten || line.nguon_dong_id).filter(Boolean))]
+      : [];
+    const xuatDestLabels = header.loai === 'xuat'
+      ? [...new Set(header.lines.map(line => {
+        const d = xuatLineDestOf(line);
+        return d.loai === 'may' ? line.dich_dong_id || d.id : line.kho_dong_ten || d.id;
+      }).filter(Boolean))]
+      : [];
     const row = {
       loai: header.loai,
       ngay: header.ngay,
       kho_dich: header.loai === 'nhap'
         ? [...new Set(header.lines.map(line => line.kho_dong_ten).filter(Boolean))].join(', ')
-        : header.dich.loai === 'kho' ? header.dich.ten : '',
+        : xuatDestLabels.join(', ') || (header.dich.loai === 'kho' ? header.dich.ten : ''),
       nguon_loai: header.nguon?.loai || null,
-      nguon_id: header.nguon?.id || null,
+      nguon_id: header.nguon?.id || (xuatSrcLabels.length ? xuatSrcLabels.join(', ') : null),
       dich_loai: header.dich.loai,
       dich_id: header.dich.id,
       ca: header.ca,
@@ -867,15 +1138,39 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       const party = await loadParty(dichLoai, dichId);
       const resolvedCatalog: 'nvl' | 'san_pham' =
         'error' in party ? catalog : party.loai === 'may' || party.vatTu ? 'nvl' : 'san_pham';
+      // Hủy phiếu xuất = lấy lại từ từng nơi đến → holder là đích từng dòng.
+      // Hủy phiếu nhập giữ logic cũ (holder theo đích chung).
+      const huyPartyCache = new Map<string, Party>();
+      const huyParty = async (kind: 'kho' | 'may', id: string): Promise<Party> => {
+        const key = `${kind}|${id}`.toLowerCase();
+        const hit = huyPartyCache.get(key);
+        if (hit) return hit;
+        const loaded = await loadParty(kind, id);
+        if ('error' in loaded) throw new Error(loaded.error);
+        huyPartyCache.set(key, loaded);
+        return loaded;
+      };
       for (const line of lines) {
+        if (text(current.loai) === 'xuat') {
+          const dest = xuatLineDestOf(line);
+          if (!dest.id) return res.status(400).json({ error: `Dòng ${line.ma_hang}: thiếu nơi đến, không hủy được.` });
+          if (dest.loai === 'ncc') continue;
+          const destPartyOf = await huyParty(dest.loai, dest.id);
+          const lineCatalog: 'nvl' | 'san_pham' =
+            destPartyOf.loai === 'may' || destPartyOf.vatTu ? 'nvl' : 'san_pham';
+          const holder = { loai: destPartyOf.loai === 'may' ? ('may' as const) : ('kho' as const), id: destPartyOf.id };
+          const ton = await stockOf(line.ma_hang, holder, lineCatalog);
+          if (ton + 1e-9 < Number(line.so_luong)) {
+            return res.status(400).json({
+              error: `${holder.loai === 'may' ? 'Máy' : 'Kho'} ${destPartyOf.ten || destPartyOf.id} chỉ còn ${ton} ${line.ma_hang} — không đủ để hủy.`
+            });
+          }
+          continue;
+        }
         const holder =
-          text(current.loai) === 'xuat' && dichLoai === 'may'
+          dichLoai === 'may'
             ? { loai: 'may' as const, id: dichId }
-            : text(current.loai) === 'nhap'
-              ? dichLoai === 'may'
-                ? { loai: 'may' as const, id: dichId }
-                : { loai: 'kho' as const, id: text(current.kho_dich) || dichId }
-              : { loai: 'kho' as const, id: text(current.kho_dich) || dichId };
+            : { loai: 'kho' as const, id: text(current.kho_dich) || dichId };
         const ton = await stockOf(line.ma_hang, holder, resolvedCatalog);
         if (ton + 1e-9 < Number(line.so_luong)) {
           return res.status(400).json({
@@ -932,66 +1227,111 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
           merged.maXuat = joinCode(merged.maXuat, codes.maXuat);
         }
       } else {
-        const stamp = {
-          ngay: new Date().toISOString().slice(0, 10),
-          ca: caText || null,
-          caList,
-          nguon: null,
-          loaiNhap: 'Hủy phiếu tổng hợp',
-          loaiXuat: 'Hủy phiếu tổng hợp',
-          nguoiLap: text((req.body as any)?.nguoiLap) || text(current.nguoi_lap) || null,
-          nguoiGiao: text(current.nguoi_giao) || null,
-          diaDiem: text(current.dia_diem) || null,
-          lyDo: reason,
-          ghiChu: `Hủy ${text(current.ma_phieu_chung)}`,
-          catalog: resolvedCatalog
-        };
-        const out = await writeLegs({
-          ...stamp,
-          loai: 'xuat',
-          dich: destParty,
-          skipInbound: true,
-          lines: lines.map(line => ({
-            ...line,
-            nguon_dong_loai: dichLoai === 'may' ? 'may' : 'kho',
-            nguon_dong_id: dichLoai === 'may' ? dichId : destParty.ten || destParty.id,
-            nguon_dong_ten: dichLoai === 'may' ? dichId : destParty.ten || destParty.id
-          }))
-        }, {}, reason);
-        merged.maXuat = joinCode(merged.maXuat, out.maXuat);
-        const bySource = new Map<string, DetailLine[]>();
+        // Đảo phiếu xuất theo cặp (nguồn, đích): lấy từ đích trả về nguồn.
+        // Dòng cũ không có src_* thì nguồn = nguồn header (nguon_loai/nguon_id).
+        const legacySrc = text(current.nguon_loai) === 'kho' || text(current.nguon_loai) === 'may'
+          ? { loai: text(current.nguon_loai) as 'kho' | 'may', id: text(current.nguon_id) }
+          : null;
+        const pairGroups = new Map<string, {
+          src: { loai: 'kho' | 'may'; id: string };
+          dest: { loai: 'kho' | 'may'; id: string };
+          lines: DetailLine[];
+        }>();
+        const nccGroups = new Map<string, {
+          src: { loai: 'kho' | 'may'; id: string };
+          nccId: string;
+          lines: DetailLine[];
+        }>();
         for (const line of lines) {
-          const key = `${line.nguon_dong_loai}|${line.nguon_dong_id}`;
-          bySource.set(key, [...(bySource.get(key) || []), line]);
-        }
-        for (const group of bySource.values()) {
-          const sample = group[0];
-          if (sample?.nguon_dong_loai === 'may') {
-            const machine = await loadParty('may', text(sample.nguon_dong_id));
-            if ('error' in machine) throw new Error(machine.error);
-            const backCodes = await writeLegs({
-              ...stamp,
-              loai: 'nhap',
-              dich: machine,
-              lines: group
-            }, {}, reason);
-            merged.maNhap = joinCode(merged.maNhap, backCodes.maNhap);
+          const s = xuatLineSrcOf(line) || legacySrc;
+          if (!s?.id) return res.status(400).json({ error: `Dòng ${line.ma_hang}: thiếu nguồn xuất, không hủy được.` });
+          const d = xuatLineDestOf(line);
+          if (!d.id) return res.status(400).json({ error: `Dòng ${line.ma_hang}: thiếu nơi đến, không hủy được.` });
+          if (d.loai === 'ncc') {
+            const key = `${s.loai}|${s.id}=>ncc|${d.id}`;
+            const cur = nccGroups.get(key);
+            if (cur) cur.lines.push(line);
+            else nccGroups.set(key, { src: { loai: s.loai, id: s.id }, nccId: d.id, lines: [line] });
             continue;
           }
-          const back = await loadParty('kho', text(sample?.nguon_dong_id));
-          if ('error' in back) throw new Error(back.error);
-          const backCodes = await writeLegs({
-            ...stamp,
-            loai: 'nhap',
-            dich: back,
-            lines: group.map(line => ({
+          const key = `${s.loai}|${s.id}=>${d.loai}|${d.id}`;
+          const cur = pairGroups.get(key);
+          if (cur) cur.lines.push(line);
+          else pairGroups.set(key, { src: { loai: s.loai, id: s.id }, dest: { loai: d.loai, id: d.id }, lines: [line] });
+        }
+        const today = new Date().toISOString().slice(0, 10);
+        for (const pair of pairGroups.values()) {
+          const takeFrom = await huyParty(pair.dest.loai, pair.dest.id);
+          const giveBack = await huyParty(pair.src.loai, pair.src.id);
+          const pairCatalog: 'nvl' | 'san_pham' =
+            takeFrom.loai === 'may' || takeFrom.vatTu || giveBack.loai === 'may' || giveBack.vatTu ? 'nvl' : 'san_pham';
+          const codes = await writeLegs({
+            loai: 'xuat',
+            ngay: today,
+            ca: caText || null,
+            caList,
+            nguon: takeFrom,
+            dich: giveBack,
+            loaiNhap: 'Hủy phiếu tổng hợp',
+            loaiXuat: 'Hủy phiếu tổng hợp',
+            nguoiLap: text((req.body as any)?.nguoiLap) || text(current.nguoi_lap) || null,
+            nguoiGiao: text(current.nguoi_giao) || null,
+            diaDiem: text(current.dia_diem) || null,
+            lyDo: reason,
+            ghiChu: `Hủy ${text(current.ma_phieu_chung)}`,
+            lines: pair.lines.map(line => ({
               ...line,
-              nguon_dong_loai: 'ncc',
-              nguon_dong_id: destParty.id,
-              nguon_dong_ten: destParty.ten
-            }))
+              // Đích mới = nguồn cũ (trả hàng về). legPlan đọc nguồn từ nguon_dong_*,
+              // đích từ dich_dong_*/kho_dong_* — vế kho→máy chỉ sinh vế xuất (không double).
+              dich_dong_loai: pair.src.loai,
+              dich_dong_id: pair.src.id,
+              kho_dong_id: pair.src.loai === 'kho' ? pair.src.id : '',
+              kho_dong_ten: pair.src.loai === 'kho' ? giveBack.ten : '',
+              kho_dong_ma: pair.src.loai === 'kho' ? giveBack.maKho : null,
+              kho_dong_vat_tu: pair.src.loai === 'kho' ? giveBack.vatTu : false,
+              nguon_dong_loai: takeFrom.loai,
+              nguon_dong_id: takeFrom.id,
+              nguon_dong_ten: takeFrom.ten
+            })),
+            catalog: pairCatalog
           }, {}, reason);
-          merged.maNhap = joinCode(merged.maNhap, backCodes.maNhap);
+          merged.maXuat = joinCode(merged.maXuat, codes.maXuat);
+          merged.maNhap = joinCode(merged.maNhap, codes.maNhap);
+        }
+        for (const group of nccGroups.values()) {
+          if (group.src.loai !== 'kho') {
+            return res.status(400).json({ error: 'Không hủy được phiếu trả nhà cung cấp khi nguồn không phải kho.' });
+          }
+          const ncc = await loadParty('ncc', group.nccId);
+          if ('error' in ncc) return res.status(400).json({ error: ncc.error });
+          const kho = await huyParty('kho', group.src.id);
+          const codes = await writeLegs({
+            loai: 'nhap',
+            ngay: today,
+            ca: caText || null,
+            caList,
+            nguon: ncc,
+            dich: kho,
+            loaiNhap: 'Hủy phiếu tổng hợp',
+            loaiXuat: null,
+            nguoiLap: text((req.body as any)?.nguoiLap) || text(current.nguoi_lap) || null,
+            nguoiGiao: text(current.nguoi_giao) || null,
+            diaDiem: text(current.dia_diem) || null,
+            lyDo: reason,
+            ghiChu: `Hủy ${text(current.ma_phieu_chung)}`,
+            lines: group.lines.map(line => ({
+              ...line,
+              kho_dong_id: kho.id,
+              kho_dong_ten: kho.ten,
+              kho_dong_ma: kho.maKho,
+              kho_dong_vat_tu: kho.vatTu,
+              dich_dong_loai: '',
+              dich_dong_id: ''
+            })),
+            catalog: 'nvl'
+          }, {}, reason);
+          merged.maNhap = joinCode(merged.maNhap, codes.maNhap);
+          merged.maXuat = joinCode(merged.maXuat, codes.maXuat);
         }
       }
       const codes = { maNhap: merged.maNhap || null, maXuat: merged.maXuat || null };
@@ -1022,11 +1362,26 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
     const unit = text(source.unit ?? source.don_vi) || (catalog === 'nvl' ? 'kg' : 'Cái');
     if (!code || !name) return res.status(400).json({ error: 'Nhập mã và tên.' });
     if (catalog === 'nvl') {
-      const { data, error } = await deps.supabase
+      // Giữ kho nhận trên master mới — thiếu kho sẽ thành dòng trống kho, view gộp
+      // canonical thành "Kho NVL" 0/0/0 gây nhiễu (thiếu cột trên DB cũ thì ghi không kho).
+      const tenKhoNvl = text(source.ten_kho ?? source.tenKho ?? source.warehouse);
+      const baseRecord: Record<string, unknown> = { ma_npl: code, ten_npl: name, don_vi: unit };
+      const fullRecord: Record<string, unknown> = tenKhoNvl
+        ? { ...baseRecord, ten_kho: tenKhoNvl, loai_kho: await deps.resolveMaKho(tenKhoNvl, 'kho_nvl') }
+        : baseRecord;
+      let nvlResult = await deps.supabase
         .from(deps.tables.materials)
-        .insert({ ma_npl: code, ten_npl: name, don_vi: unit })
+        .insert(fullRecord)
         .select('ma_npl, ten_npl, don_vi')
         .limit(1);
+      if (nvlResult.error && tenKhoNvl && deps.isMissingColumn(nvlResult.error)) {
+        nvlResult = await deps.supabase
+          .from(deps.tables.materials)
+          .insert(baseRecord)
+          .select('ma_npl, ten_npl, don_vi')
+          .limit(1);
+      }
+      const { data, error } = nvlResult;
       if (error) return res.status(500).json({ error: error.message || 'Không thêm được NVL.' });
       return res.status(201).json({ success: true, item: (data || [])[0] || { ma_npl: code, ten_npl: name, don_vi: unit } });
     }

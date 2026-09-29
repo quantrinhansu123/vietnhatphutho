@@ -13,6 +13,7 @@ import {
 } from '../utils/mixingOrderAutofill';
 import { buildOrderTenGhep } from '../utils/productProductionName';
 import { isCuonProduct, isTamProduct } from '../features/_shared/orderHelpers';
+import { normalizeWarehouseName } from '../features/kho-hang';
 import { waitForPrintImagesReady } from '../utils/printReady';
 import {
   MixingNormRatioPrintBatch,
@@ -138,8 +139,19 @@ type MaterialOption = {
   unit: string;
   donViGoc?: string;
   phanLoai: string;
+  /** Tên kho vật lý trên kho_nvl.ten_kho. */
+  warehouse: string;
   nhomVatTuPhu?: string;
 };
+
+const KHO_NVL_CHINH_KEY = 'kho nvl chinh';
+const KHO_NVL_PHU_KEY = 'kho nvl phu';
+
+function materialWarehouseKey(name: string) {
+  const raw = String(name || '').trim();
+  if (!raw || raw === '-') return '';
+  return normalizeWarehouseName(raw);
+}
 
 type ProductOption = {
   id: string;
@@ -328,6 +340,28 @@ function toKgLineForm(line: LineForm, dinhLuongCoi: number): LineForm {
   return { ...line, donVi: 'kg', giaTri: kg !== null ? String(kg) : '' };
 }
 
+function matchMaterialInPool(
+  pool: MaterialOption[],
+  ref: { id?: string; code: string; name?: string; productionName?: string }
+): MaterialOption | undefined {
+  const id = String(ref.id || '').trim();
+  if (id) {
+    const byId = pool.find(item => item.id === id);
+    if (byId) return byId;
+  }
+  const code = normalizeProductLookupKey(ref.code);
+  if (!code) return undefined;
+  const name = String(ref.name || '').trim();
+  const productionName = String(ref.productionName || '').trim();
+  const sameCode = pool.filter(item => normalizeProductLookupKey(item.code) === code);
+  if (sameCode.length === 0) return undefined;
+  return (
+    sameCode.find(item => (!name || item.name.trim() === name) && item.productionName.trim() === productionName) ??
+    sameCode.find(item => !name || item.name.trim() === name) ??
+    sameCode[0]
+  );
+}
+
 const emptyForm = (): NormForm => ({
   ngay: new Date().toISOString().slice(0, 10),
   maLenhSx: '',
@@ -340,24 +374,30 @@ const emptyForm = (): NormForm => ({
 function productToForm(
   product: MixingNormProduct,
   idHint = '',
-  materialsByCode: Map<string, MaterialOption> = new Map()
+  mainPool: MaterialOption[] = []
 ): ProductForm {
   const baseLines = product.chi_tiet.length > 0
-    ? product.chi_tiet.map(line =>
-        toKgLineForm(
+    ? product.chi_tiet.map(line => {
+        const mat = matchMaterialInPool(mainPool, {
+          id: line.material_id,
+          code: line.ma_nvl,
+          name: line.ten_nvl,
+          productionName: line.ten_nvl_san_xuat || ''
+        });
+        return toKgLineForm(
           {
             key: `${idHint}-${line.ma_nvl}-${Math.random().toString(36).slice(2, 6)}`,
-            materialId: '',
+            materialId: mat?.id || '',
             maNvl: line.ma_nvl,
             tenNvl: line.ten_nvl,
             tenNvlSanXuat: line.ten_nvl_san_xuat || '',
-            phanLoai: line.phan_loai || line.kho_ngam_dinh || materialsByCode.get(line.ma_nvl)?.phanLoai || '',
+            phanLoai: mat?.phanLoai || 'Nguyên vật liệu chính',
             giaTri: line.gia_tri === null || line.gia_tri === undefined ? '' : String(line.gia_tri),
             donVi: line.don_vi === '%' ? '%' as const : 'kg' as const
           },
           product.dinh_luong_coi ?? 0
-        )
-    )
+        );
+      })
     : [emptyLine()];
   return {
     key: `${idHint}-${product.ma_sp}-${Math.random().toString(36).slice(2, 6)}`,
@@ -410,6 +450,7 @@ function normalizeMaterials(data: unknown): MaterialOption[] {
         unit: unitRaw === '%' ? '%' : 'kg',
         donViGoc: unitRaw || 'kg',
         phanLoai: String(row.phan_loai ?? row.kho_ngam_dinh ?? '').trim(),
+        warehouse: String(row.ten_kho ?? row.warehouse ?? '').trim(),
         nhomVatTuPhu: String(row.nhom_vat_tu_phu ?? '').trim()
       };
     })
@@ -714,18 +755,23 @@ function nvlPhuSignature(lines: MixingNormLine[]) {
 function nvlPhuToLineForms(
   lines: MixingNormLine[],
   idHint: string,
-  materialsByCode: Map<string, MaterialOption>,
+  secondaryPool: MaterialOption[],
   inferredNhomVthh?: string
 ): LineForm[] {
   return lines.map(line => {
-    const mat = materialsByCode.get(line.ma_nvl);
+    const mat = matchMaterialInPool(secondaryPool, {
+      id: line.material_id,
+      code: line.ma_nvl,
+      name: line.ten_nvl,
+      productionName: line.ten_nvl_san_xuat || ''
+    });
     return {
       key: `${idHint}-secondary-${line.ma_nvl}-${Math.random().toString(36).slice(2, 6)}`,
-      materialId: line.material_id || mat?.id || '',
+      materialId: mat?.id || '',
       maNvl: line.ma_nvl,
       tenNvl: line.ten_nvl,
       tenNvlSanXuat: line.ten_nvl_san_xuat || '',
-      phanLoai: line.phan_loai || line.kho_ngam_dinh || mat?.phanLoai || '',
+      phanLoai: mat?.phanLoai || 'Nguyên vật liệu phụ',
       giaTri: line.gia_tri === null || line.gia_tri === undefined ? '' : String(line.gia_tri),
       donVi: mat?.donViGoc || line.don_vi || mat?.unit || 'kg',
       nhomVthh: line.nhom_vthh || inferredNhomVthh || ''
@@ -735,7 +781,7 @@ function nvlPhuToLineForms(
 
 function collectSavedSecondaryProducts(
   products: MixingNormProduct[],
-  materialsByCode: Map<string, MaterialOption>,
+  secondaryPool: MaterialOption[],
   catalogProducts: ProductOption[] = []
 ): SecondaryProductForm[] {
   const catalogById = new Map<string, ProductOption>();
@@ -779,7 +825,7 @@ function collectSavedSecondaryProducts(
       maSpCodes: group.codes,
       maSpIds,
       maSp: group.codes.join(', '),
-      lines: nvlPhuToLineForms(group.lines, `${index}-${group.codes[0] || 'block'}`, materialsByCode, inferredVthh)
+      lines: nvlPhuToLineForms(group.lines, `${index}-${group.codes[0] || 'block'}`, secondaryPool, inferredVthh)
     };
   });
 }
@@ -1150,20 +1196,18 @@ export default function MixingNormMaterialsTab() {
   const [printDocs, setPrintDocs] = useState<MixingNormRatioPrintDoc[]>([]);
   const [pendingPrint, setPendingPrint] = useState(false);
 
-  const materialsByCode = useMemo(() => {
-    const map = new Map<string, MaterialOption>();
-    for (const item of materials) {
-      if (!map.has(item.code)) map.set(item.code, item);
-    }
-    return map;
-  }, [materials]);
-
   const mainMaterialOptions = useMemo(
-    () => materials.filter(item => item.phanLoai === 'Nguyên vật liệu chính'),
+    () => materials.filter(item =>
+      item.phanLoai === 'Nguyên vật liệu chính' &&
+      materialWarehouseKey(item.warehouse) === KHO_NVL_CHINH_KEY
+    ),
     [materials]
   );
   const secondaryMaterialOptions = useMemo(
-    () => materials.filter(item => item.phanLoai === 'Nguyên vật liệu phụ'),
+    () => materials.filter(item =>
+      item.phanLoai === 'Nguyên vật liệu phụ' &&
+      materialWarehouseKey(item.warehouse) === KHO_NVL_PHU_KEY
+    ),
     [materials]
   );
   const catalogProductsById = useMemo(
@@ -1171,24 +1215,20 @@ export default function MixingNormMaterialsTab() {
     [catalogProducts]
   );
 
-  const findMaterialForLine = (line: LineForm) => {
-    const byId = line.materialId ? materials.find(item => item.id === line.materialId) : undefined;
-    if (byId) return byId;
-
-    const code = normalizeProductLookupKey(line.maNvl);
-    if (!code) return undefined;
-    const name = line.tenNvl.trim();
-    const productionName = line.tenNvlSanXuat.trim();
-    const sameCode = materials.filter(item => normalizeProductLookupKey(item.code) === code);
-    if (sameCode.length === 0) return undefined;
-    return (
-      sameCode.find(item => (!name || item.name.trim() === name) && item.productionName.trim() === productionName) ??
-      sameCode.find(item => !name || item.name.trim() === name) ??
-      sameCode[0]
+  const findMaterialForLine = (line: LineForm, pool?: MaterialOption[]) => {
+    const source = pool ?? (
+      line.phanLoai === 'Nguyên vật liệu phụ' ? secondaryMaterialOptions : mainMaterialOptions
     );
+    return matchMaterialInPool(source, {
+      id: line.materialId,
+      code: line.maNvl,
+      name: line.tenNvl,
+      productionName: line.tenNvlSanXuat
+    });
   };
 
-  const materialSelectValue = (line: LineForm) => findMaterialForLine(line)?.id || line.maNvl;
+  const materialSelectValue = (line: LineForm, pool?: MaterialOption[]) =>
+    findMaterialForLine(line, pool)?.id || line.maNvl;
 
   /** Tên NVL sản xuất được lọc theo đúng mã + tên NVL đang chọn, giống form đơn hàng. */
   const getMaterialProductionNameOptions = (line: LineForm, options: MaterialOption[]) => {
@@ -1663,7 +1703,7 @@ export default function MixingNormMaterialsTab() {
     setEditingId(row.id);
     setCopySourceTitle('');
     const formulaProducts = row.products.filter(isFormulaNormProduct);
-    const savedSecondary = collectSavedSecondaryProducts(row.products, materialsByCode, catalogProducts);
+    const savedSecondary = collectSavedSecondaryProducts(row.products, secondaryMaterialOptions, catalogProducts);
     setForm({
       ngay: row.ngay || new Date().toISOString().slice(0, 10),
       maLenhSx: row.ma_lenh_sx,
@@ -1671,7 +1711,7 @@ export default function MixingNormMaterialsTab() {
       ghiChu: row.ghi_chu,
       products:
         formulaProducts.length > 0
-          ? formulaProducts.map(product => productToForm(product, row.id, materialsByCode))
+          ? formulaProducts.map(product => productToForm(product, row.id, mainMaterialOptions))
           : [emptyProduct()],
       secondaryProducts: savedSecondary
     });
@@ -1694,9 +1734,9 @@ export default function MixingNormMaterialsTab() {
       may: row.may,
       ghiChu: row.ghi_chu,
       products: formulaProducts.length > 0
-        ? formulaProducts.map(product => productToForm(product, `${row.id}-copy`, materialsByCode))
+        ? formulaProducts.map(product => productToForm(product, `${row.id}-copy`, mainMaterialOptions))
         : [emptyProduct()],
-      secondaryProducts: collectSavedSecondaryProducts(row.products, materialsByCode, catalogProducts)
+      secondaryProducts: collectSavedSecondaryProducts(row.products, secondaryMaterialOptions, catalogProducts)
     });
     setShowForm(true);
     setError('');
@@ -2348,7 +2388,7 @@ export default function MixingNormMaterialsTab() {
           lines: product.lines.map(line => {
             if (line.key !== lineKey) return line;
             const patched = patchLineFromMaterial(line, materialId);
-            const lineMat = findMaterialForLine(patched);
+            const lineMat = findMaterialForLine(patched, secondaryMaterialOptions);
             const isTapeOrStamp = isTapeOrStampMaterial(lineMat?.nhomVatTuPhu || patched.tenNvl || patched.maNvl);
             return {
               ...patched,
@@ -2574,7 +2614,7 @@ export default function MixingNormMaterialsTab() {
       }
       for (const [lineIndex, line] of product.lines.entries()) {
         if (!line.maNvl.trim() && !line.tenNvl.trim()) continue;
-        const lineMat = findMaterialForLine(line);
+        const lineMat = findMaterialForLine(line, secondaryMaterialOptions);
         const nhomVatTuPhuKey = normalizeNhomVatTuPhuKey(lineMat?.nhomVatTuPhu || line.tenNvl || line.maNvl);
         if (nhomVatTuPhuKey === 'Băng Dính' || nhomVatTuPhuKey === 'Tem') {
           if (!line.nhomVthh || !CANONICAL_NHOM_VTHH.includes(line.nhomVthh as any)) {
@@ -2704,8 +2744,7 @@ export default function MixingNormMaterialsTab() {
             if (gia_tri !== null && !Number.isFinite(gia_tri)) {
               throw new Error(`Giá trị NVL phụ #${index + 1} của SP ${codes.join(', ')} không hợp lệ.`);
             }
-            const mat = findMaterialForLine(line) || materialsByCode.get(line.maNvl) ||
-              materials.find(m => normalizeProductLookupKey(m.code) === normalizeProductLookupKey(line.maNvl));
+            const mat = findMaterialForLine(line, secondaryMaterialOptions);
             const nhomVatTuPhu = mat?.nhomVatTuPhu || '';
             const donVi = mat?.donViGoc || mat?.unit || line.donVi || 'kg';
             const isTapeOrStamp = isTapeOrStampMaterial(nhomVatTuPhu || line.tenNvl || line.maNvl);
@@ -3651,7 +3690,7 @@ export default function MixingNormMaterialsTab() {
                               </div>
                               <div className="space-y-2">
                                 {product.lines.map((line, index) => {
-                                  const lineMat = findMaterialForLine(line);
+                                  const lineMat = findMaterialForLine(line, secondaryMaterialOptions);
                                   const nhomVatTuPhu = lineMat?.nhomVatTuPhu || '';
                                   const isTapeOrStamp = isTapeOrStampMaterial(nhomVatTuPhu || line.tenNvl || line.maNvl);
                                   const lineVal = parseNumberOrNull(line.giaTri);
@@ -3666,7 +3705,7 @@ export default function MixingNormMaterialsTab() {
                                       className="grid grid-cols-1 gap-1 rounded-lg border border-amber-100 bg-amber-50/30 p-1.5 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_65px_80px_100px_30px]"
                                     >
                                       <SearchableSelect
-                                        value={materialSelectValue(line)}
+                                        value={materialSelectValue(line, secondaryMaterialOptions)}
                                         onChange={value => selectSecondaryMaterialCode(product.key, line.key, value)}
                                         options={filteredOptions}
                                         placeholder={'Tìm NVL phụ #' + (index + 1)}

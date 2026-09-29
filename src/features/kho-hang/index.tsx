@@ -35,7 +35,7 @@ export function normalizeWarehouseName(name: string) {
     .replace(/đ/g, 'd');
 }
 
-function warehouseCatalogKind(name: string): InventoryCatalogKind {
+export function warehouseCatalogKind(name: string): InventoryCatalogKind {
   const normalized = normalizeWarehouseName(name);
   // Kho thành phẩm / cắt lẻ / tái chế đều chứa THÀNH PHẨM (danh mục nhap_kho + phiếu san_pham),
   // không phải kho vật tư — xem ThanhPhamStockPanel (strictKho=1).
@@ -46,6 +46,25 @@ function warehouseCatalogKind(name: string): InventoryCatalogKind {
     normalized.includes('tai che')
     ? 'products'
     : 'materials';
+}
+
+const NVL_CORE_WAREHOUSE_KEYS = ['kho nvl', 'kho nvl chinh', 'kho nvl phu', 'kho pc'] as const;
+
+/** Kho NVL, Kho NVL Chính, Kho NVL Phụ, Kho PC — đúng bốn kho vật tư trên /kho-nvl và /kho-hang. */
+export function isNvlCoreWarehouse(name: string) {
+  return (NVL_CORE_WAREHOUSE_KEYS as readonly string[]).includes(normalizeWarehouseName(name));
+}
+
+/** Giữ tên trong Quản lý kho, thứ tự Kho NVL → Chính → Phụ → PC. */
+export function pickNvlCoreWarehouses(names: string[]) {
+  const byKey = new Map<string, string>();
+  for (const name of names) {
+    const key = normalizeWarehouseName(name);
+    if ((NVL_CORE_WAREHOUSE_KEYS as readonly string[]).includes(key) && !byKey.has(key)) {
+      byKey.set(key, name);
+    }
+  }
+  return NVL_CORE_WAREHOUSE_KEYS.map(key => byKey.get(key)).filter((name): name is string => Boolean(name));
 }
 
 export function isDefaultWarehouse(name: string, kind: InventoryCatalogKind) {
@@ -76,8 +95,15 @@ export function matchesWarehouseFilter(
 }
 
 /**
+ * Kho NVL là nhóm gồm Kho NVL / Kho NVL Chính / Kho NVL Phụ / Kho PC
+ * (unique mã + tên + tên SX + kho nên mỗi dòng là một mã trong một kho).
+ * Chọn đúng "Kho NVL" = toàn bộ bảng, liệt kê tách riêng từng kho.
+ * Chọn kho NVL cụ thể khác (Chính/Phụ/PC) = chỉ kho đó.
+ */
+
+/**
  * Kho hàng: chọn kho rồi xem danh mục NVL/TP giống /kho-nvl và /san-pham
- * (danh sách + thêm/sửa/xóa), lọc theo tên kho đã chọn.
+ * (danh sách + thêm/sửa/xóa). Danh sách liệt kê đầy đủ tất cả các kho.
  */
 export function InventoryCatalogPanel({ onBack }: { onBack: () => void }) {
   const materialsAccess = useTabAccess('materials');
@@ -107,29 +133,41 @@ export function InventoryCatalogPanel({ onBack }: { onBack: () => void }) {
     () =>
       warehouses.filter(name => {
         const kind = warehouseCatalogKind(name);
-        return kind === 'products' ? productsAccess.canView : materialsAccess.canView;
+        if (kind === 'products') return productsAccess.canView;
+        return materialsAccess.canView && isNvlCoreWarehouse(name);
       }),
     [materialsAccess.canView, productsAccess.canView, warehouses]
   );
 
+  // Danh sách đầy đủ tất cả các kho (kể cả từng kho NVL trong nhóm).
+  const warehousePickerOptions = useMemo(() => accessibleWarehouses, [accessibleWarehouses]);
+
+  // Đúng "Kho NVL" = toàn bộ nhóm (liệt kê tách riêng từng kho).
+  const isNvlGroupHead = normalizeWarehouseName(selectedWarehouse) === 'kho nvl';
+
   const kind = selectedWarehouse
     ? warehouseCatalogKind(selectedWarehouse)
     : materialsAccess.canView
-      ? 'materials'
-      : 'products';
+      ? 'materials' as const
+      : 'products' as const;
 
   useEffect(() => {
-    if (!accessibleWarehouses.includes(selectedWarehouse)) {
-      setSelectedWarehouse(accessibleWarehouses[0] || '');
+    if (!warehousePickerOptions.includes(selectedWarehouse)) {
+      // Ưu tiên Kho NVL (đại diện nhóm, hiện toàn bộ bảng kho-nvl tách riêng từng kho).
+      const defaultWarehouse =
+        warehousePickerOptions.find(name => normalizeWarehouseName(name) === 'kho nvl') ??
+        warehousePickerOptions[0] ??
+        '';
+      setSelectedWarehouse(defaultWarehouse);
     }
-  }, [accessibleWarehouses, selectedWarehouse]);
+  }, [selectedWarehouse, warehousePickerOptions]);
 
   if (!materialsAccess.canView && !productsAccess.canView) return null;
 
   const warehousePicker = (
     <FilterCombobox
       label="Kho"
-      options={accessibleWarehouses}
+      options={warehousePickerOptions}
       value={selectedWarehouse}
       onChange={setSelectedWarehouse}
       formatOption={value => value}
@@ -146,8 +184,8 @@ export function InventoryCatalogPanel({ onBack }: { onBack: () => void }) {
     return (
       <MaterialsInventoryPanel
         onBack={onBack}
-        warehouseFilter={selectedWarehouse}
-        includeUnassigned
+        warehouseFilter={isNvlGroupHead ? '' : selectedWarehouse}
+        includeUnassigned={false}
         topControls={warehousePicker}
       />
     );

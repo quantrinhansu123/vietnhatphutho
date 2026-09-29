@@ -5,6 +5,8 @@ export type MaterialCatalogExcelRow = {
   code: string;
   name: string;
   productionName: string;
+  /** Tên kho vật lý (Kho NVL chính / phụ / PC...). Trống = giữ nguyên kho đã gán. */
+  warehouse: string;
   unit: string;
   phanLoai: string;
   auxiliaryMaterialGroup: string;
@@ -28,6 +30,7 @@ export const MATERIAL_CATALOG_EXCEL_HEADERS = [
   'Mã NPL',
   'Tên nguyên vật liệu',
   'Tên NVL sản xuất',
+  'Kho',
   'ĐV',
   'Phân loại',
   'Nhóm vật tư phụ',
@@ -46,6 +49,7 @@ const HEADER_ALIASES: Record<keyof Omit<MaterialCatalogExcelRow, 'rowNumber'>, s
   code: ['ma npl', 'ma_npl', 'ma nvl', 'ma_nvl', 'code'],
   name: ['ten nguyen vat lieu', 'ten nguyen phu lieu', 'ten_npl', 'ten npl', 'ten nvl', 'name'],
   productionName: ['ten nvl san xuat', 'ten nvl sx', 'ten_nvl_sx', 'production name'],
+  warehouse: ['kho', 'ten kho', 'ten_kho', 'kho luu tru', 'warehouse'],
   unit: ['don vi', 'don_vi', 'dv', 'unit'],
   phanLoai: ['phan loai', 'phan_loai', 'kho ngam dinh', 'kho_ngam_dinh', 'loai kho', 'loai_kho', 'warehouse type'],
   auxiliaryMaterialGroup: ['nhom vat tu phu', 'nhom_vat_tu_phu', 'nhom nvl phu', 'auxiliary material group'],
@@ -135,6 +139,7 @@ export async function parseMaterialCatalogExcel(file: File): Promise<MaterialCat
         code: get('code'),
         name: get('name'),
         productionName: get('productionName'),
+        warehouse: get('warehouse'),
         unit: get('unit'),
         phanLoai: get('phanLoai'),
         auxiliaryMaterialGroup: get('auxiliaryMaterialGroup'),
@@ -160,6 +165,7 @@ export function downloadMaterialCatalogExcelTemplate() {
       'NPL-001',
       'Màng PE',
       'Màng PE sản xuất',
+      'Kho NVL chính',
       'kg',
       'Nguyên vật liệu chính',
       'Màng',
@@ -174,7 +180,7 @@ export function downloadMaterialCatalogExcelTemplate() {
       ''
     ],
     // Dòng gần trống — vẫn đẩy lên được khi đã có mã + tên
-    ['NPL-002', 'NVL để trống các cột còn lại', '', '', '', '', '', '', '', '', '', '', '', '', '']
+    ['NPL-002', 'NVL để trống các cột còn lại', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
   ]);
   worksheet['!cols'] = MATERIAL_CATALOG_EXCEL_HEADERS.map(header => ({
     wch: Math.min(28, Math.max(10, header.length + 2))
@@ -190,6 +196,8 @@ export function materialCatalogRowToPayload(row: MaterialCatalogExcelRow) {
     code: row.code.trim(),
     name: row.name.trim(),
     productionName: row.productionName.trim(),
+    // Ô Kho trống = không chạm kho đã gán (server chỉ ghi ten_kho/loai_kho khi có gửi).
+    ...(row.warehouse.trim() ? { warehouse: row.warehouse.trim() } : {}),
     unit: row.unit.trim(),
     phanLoai: row.phanLoai.trim(),
     auxiliaryMaterialGroup: row.auxiliaryMaterialGroup.trim(),
