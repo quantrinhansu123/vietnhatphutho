@@ -3,17 +3,17 @@
 | | |
 |---|---|
 | **Bảng** | `nhap_kho` |
-| **Tab** | `/kho-hang` → Kho thành phẩm; ghi sau phiếu nhập TP |
-| **SQL** | `supabase-nhap-kho.sql` + `supabase-nhap-kho-cat-le.sql` (7 cột thông số) + `supabase-nhap-kho-loai-kho.sql` (backfill `loai_kho`) + `supabase-nhap-kho-mo-ta-tem.sql` (`mo_ta_tem`) + `supabase-kho-cat-le-seed.sql` (20 SP Kho cắt lẻ, phiếu `PNK-CL-SEED` / `PXK-CL-SEED`) |
+| **Tab** | `/kho-hang` → mọi kho (sổ tồn chung SP + NVL, phân biệt `loai_kho` + `ten_kho`); ghi sau phiếu nhập (TP và NVL) |
+| **SQL** | `supabase-nhap-kho.sql` + `supabase-nhap-kho-cat-le.sql` (7 cột thông số) + `supabase-nhap-kho-loai-kho.sql` (backfill `loai_kho`) + `supabase-nhap-kho-mo-ta-tem.sql` (`mo_ta_tem`) + `supabase-nhap-kho-ten-san-xuat.sql` (`ten_san_xuat` = tên NVL SX) + `supabase-nhap-kho-backfill-nvl.sql` (catalog NVL từ phiếu cũ) + `supabase-kho-cat-le-seed.sql` (20 SP Kho cắt lẻ, phiếu `PNK-CL-SEED` / `PXK-CL-SEED`) |
 
 ## Vai trò
 
-Sổ **danh sách sản phẩm** các kho thành phẩm (`loai_kho` = mã kho từ `quan_ly_kho.ma_kho`:
-TP `kho_thanh_pham` | cắt lẻ `kho_cat_le` | tái chế `kho_tai_che`; mã cũ `thanh_pham/cat_le/tai_che` đọc tương thích).  
+Sổ **tồn chung mọi loại hàng** (`ma_sp` = mã hàng — NVL thì `ma_sp = ma_npl`; `ten_sp` = tên hàng; `ten_san_xuat` = tên NVL SX, TP để trống), phân biệt kho bằng `loai_kho` (mã kho từ `quan_ly_kho.ma_kho`: TP `kho_thanh_pham` | cắt lẻ `kho_cat_le` | tái chế `kho_tai_che` | NVL `kho_nvl/kho_nvl_chinh/kho_nvl_phu/kho_pc`; mã cũ đọc tương thích).  
 **Không** dùng bảng `ton_kho_thanh_pham` cho màn Kho hàng.
 
 - Danh sách SP: gộp theo `ma_sp` + `ten_sp` + `trong_luong_kg_mot_sp|so_m2_mot_sp|so_m_dai_mot_sp`. Cùng mã và tên nhưng khác quy đổi là hai dòng.
 - Tồn đầu / Nhập / Xuất / Tồn: tính từ phiếu `phieu_xuat_nhap_kho` (`loai_kho=san_pham`)
+- **NVL kho-only (chốt):** phiếu nhập NVL và chuyển kho NVL **không ghi** `nhap_kho` nữa (dòng NVL cũ vẫn nằm đây để tra cứu legacy). Master NVL nằm ở `kho_nvl` (tự ensure theo unique `ma_npl+ten_npl+ten_nvl_sx`), tồn tính từ phiếu qua `GET /api/ton-kho-nvl`.
 
 Cột: `ma_sp`, `ten_sp`, `don_vi`, `trong_luong_kg_mot_sp`, `so_m2_mot_sp`, `so_m_dai_mot_sp` (hệ số **1 SP**), `loai_kho` (không default), `ten_kho`, `ma_may`, `ten_may` (`supabase-nhap-kho-ma-may.sql`: row kho `ma_may` trống, row máy `ma_may` có giá trị và `ten_kho=''`), `mo_ta_tem`. Báo cáo kho bỏ dòng có `ma_may`.
 

@@ -81,6 +81,8 @@ export type TonKhoThanhPhamPeriodRow = {
   ma_amis?: string;
   /** Mô tả tem đơn miền nam. */
   mo_ta_tem?: string;
+  /** Tên sản xuất của dòng hàng (NVL: tên NVL sản xuất; TP: để trống). */
+  ten_san_xuat?: string;
   /** Id dòng sổ nhap_kho (nguồn cắt lẻ). */
   id?: string;
 };
@@ -89,14 +91,20 @@ function round3(value: number) {
   return Math.round(value * 1000) / 1000;
 }
 
-/** Nhóm catalog nhap_kho: mã kho mới (kho_thanh_pham/...) + mã cũ giữ để đọc tương thích. */
+/** Sổ nhap_kho là sổ tồn chung mọi loại hàng (SP, NVL...), phân biệt bằng loai_kho + ten_kho.
+ * Nhóm catalog: mã kho mới (kho_thanh_pham/.../kho_nvl_chinh/...) + mã cũ giữ để đọc tương thích. */
 export const NHAP_KHO_LOAI_LIST = [
   'kho_thanh_pham',
   'kho_cat_le',
   'kho_tai_che',
+  'kho_nvl',
+  'kho_nvl_chinh',
+  'kho_nvl_phu',
+  'kho_pc',
   'thanh_pham',
   'cat_le',
-  'tai_che'
+  'tai_che',
+  'nvl'
 ] as const;
 
 /**
@@ -511,6 +519,8 @@ export type NhapKhoProductSeed = {
   hang_phe?: string;
   ma_amis?: string;
   mo_ta_tem?: string;
+  /** Tên sản xuất của dòng hàng (NVL: tên NVL sản xuất; TP: để trống). */
+  ten_san_xuat?: string;
   /** Id dòng sổ nhap_kho gốc (dòng cũ nhất trong nhóm). */
   id?: string;
 };
@@ -588,6 +598,7 @@ export function aggregateNhapKhoProducts(
     hang_phe?: string | null;
     ma_amis?: string | null;
     mo_ta_tem?: string | null;
+    ten_san_xuat?: string | null;
     id?: string | null;
   }>
 ): NhapKhoProductSeed[] {
@@ -612,7 +623,8 @@ export function aggregateNhapKhoProducts(
       if (!existing.ten_kho && row.ten_kho) existing.ten_kho = String(row.ten_kho).trim();
       if (!existing.loai_kho && row.loai_kho) existing.loai_kho = String(row.loai_kho).trim();
       // Cắt lẻ: giữ thông số ghép tên đầu tiên gặp (dòng cũ nhất sau sort).
-      const specKeys = ['ten_goc', 'do_li', 'do_li_dm', 'do_day_m', 'do_dai_m', 'mang', 'hang_phe', 'ma_amis', 'mo_ta_tem'] as const;
+      // ten_san_xuat: giữ tên SX đầu tiên gặp (dòng NVL).
+      const specKeys = ['ten_goc', 'do_li', 'do_li_dm', 'do_day_m', 'do_dai_m', 'mang', 'hang_phe', 'ma_amis', 'mo_ta_tem', 'ten_san_xuat'] as const;
       for (const specKey of specKeys) {
         if (!existing[specKey] && row[specKey]) existing[specKey] = String(row[specKey]).trim();
       }
@@ -636,6 +648,7 @@ export function aggregateNhapKhoProducts(
       hang_phe: String(row.hang_phe || '').trim(),
       ma_amis: String(row.ma_amis || '').trim(),
       mo_ta_tem: String(row.mo_ta_tem || '').trim(),
+      ten_san_xuat: String(row.ten_san_xuat || '').trim(),
       id: String(row.id || '').trim()
     });
   }
@@ -682,10 +695,12 @@ export function mergeNhapKhoCatalogWithPeriodBalances(
   }
 
   const result: TonKhoThanhPhamPeriodRow[] = [];
+  const usedBalanceKeys = new Set<string>();
   for (const seed of catalog) {
     const key = nhapKhoBalanceKey(seed);
     const balance = balanceByKey.get(key);
     if (balance) {
+      usedBalanceKeys.add(key);
       result.push({
         ...balance,
         ma_sp: seed.ma_sp || balance.ma_sp,
@@ -705,6 +720,7 @@ export function mergeNhapKhoCatalogWithPeriodBalances(
         hang_phe: seed.hang_phe || balance.hang_phe || '',
         ma_amis: seed.ma_amis || balance.ma_amis || '',
         mo_ta_tem: seed.mo_ta_tem || balance.mo_ta_tem || '',
+        ten_san_xuat: seed.ten_san_xuat || (balance as TonKhoThanhPhamPeriodRow).ten_san_xuat || '',
         id: seed.id || ''
       });
       continue;
@@ -733,8 +749,22 @@ export function mergeNhapKhoCatalogWithPeriodBalances(
       hang_phe: seed.hang_phe || '',
       ma_amis: seed.ma_amis || '',
       mo_ta_tem: seed.mo_ta_tem || '',
-      id: seed.id || ''
+        ten_san_xuat: seed.ten_san_xuat || '',
+        id: seed.id || ''
     });
+  }
+
+  // Chuyển kho / kho-hang strict: phiếu có hàng nhưng sổ nhap_kho chưa có dòng catalog
+  // (vd kho mới, hàng chuyển đến chưa ghi catalog) vẫn phải hiện để chọn theo kho nguồn.
+  for (const [key, balance] of balanceByKey) {
+    if (usedBalanceKeys.has(key)) continue;
+    const hasMovement =
+      balance.ton_dau.sl !== 0 ||
+      balance.nhap.sl !== 0 ||
+      balance.xuat.sl !== 0 ||
+      balance.ton_cuoi.sl !== 0;
+    if (!hasMovement) continue;
+    result.push({ ...balance, ten_kho: displayKho, loai_kho: displayLoaiKho });
   }
 
   return result.sort((a, b) => `${a.ma_sp}${a.ten_sp}`.localeCompare(`${b.ma_sp}${b.ten_sp}`, 'vi'));

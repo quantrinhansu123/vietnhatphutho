@@ -5,7 +5,7 @@
 | **Bảng** | `phieu_nhap_kho` (tách từ `phieu_xuat_nhap_kho`) |
 | **Tab** | `warehouse-slip`, `warehouse-history` (dùng chung panel, lọc nhập) |
 | **DB** | Chính — label `he-thong` |
-| **SQL** | `supabase-phieu-nhap-kho.sql` + `supabase-phieu-nhap-xuat-split-backfill.sql` |
+| **SQL** | `supabase-phieu-nhap-kho.sql` + `supabase-phieu-nhap-xuat-split-backfill.sql` + `supabase-phieu-nhap-xuat-id-danh-muc.sql` (`id_danh_muc`, `loai_danh_muc`) |
 
 ## API (`server.ts`)
 
@@ -25,3 +25,4 @@
 
 - Backfill giữ nguyên `id` → đọc gộp dedupe theo `id` (`mergeWarehouseMovementRows`).
 - Endpoint cũ `/api/phieu-xuat-nhap-kho` là facade đọc/ghi cả 2 bảng mới + bảng cũ.
+- Dòng NVL ghi `id_danh_muc` = `kho_nvl.id` đang sống và `loai_danh_muc = kho_nvl`. Cùng hai cột dùng sau cho id thành phẩm. Không khóa ngoại.

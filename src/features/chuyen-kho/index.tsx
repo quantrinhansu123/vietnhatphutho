@@ -43,6 +43,7 @@ interface SourceStockRow {
   ten_sp: string;
   don_vi: string;
   nhom_vthh: string;
+  phan_loai: string;
   ton_sl: number;
   kg1: number;
   a1: number;
@@ -85,7 +86,27 @@ function isVatTuKhoName(name: string): boolean {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/g, 'd');
-  return n.includes('nvl') || n.includes('nguyen vat lieu') || n.includes('vat tu');
+  if (n.includes('nvl') || n.includes('nguyen vat lieu') || n.includes('vat tu')) return true;
+  // Kho PC tách từ nhóm NVL — khớp token pc độc lập.
+  return /(^|[\s_\-])pc([\s_\-]|$)/.test(n);
+}
+
+/**
+ * NVL kho-only: tồn NVL tính từ phiếu qua /api/ton-kho-nvl, danh mục từ kho_nvl.
+ * Endpoint này chỉ phục vụ 4 kho lõi (Kho NVL / Chính / Phụ / PC) — khớp
+ * isNvlCoreWarehouseName bên server. Kho vật tư ngoài 4 kho lõi vẫn đọc
+ * /api/nhap-kho (dữ liệu legacy) để không vỡ picker.
+ */
+const NVL_CORE_KHO_KEYS = new Set(['kho nvl', 'kho nvl chinh', 'kho nvl phu', 'kho pc']);
+
+function isNvlCoreKhoName(name: string): boolean {
+  const n = String(name || '')
+    .trim()
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+  return NVL_CORE_KHO_KEYS.has(n);
 }
 
 function trangThaiLabel(value: string): string {
@@ -276,7 +297,7 @@ export function ChuyenKhoPanel({ onBack }: { onBack: () => void }) {
         ? (data as { records: Array<{ ten_kho?: string }> }).records
         : [];
       const names = Array.from(
-        new Set(list.map(item => String(item.ten_kho ?? '').trim()).filter(name => name && !isVatTuKhoName(name)))
+        new Set(list.map(item => String(item.ten_kho ?? '').trim()).filter(Boolean))
       ).sort((a, b) => a.localeCompare(b, 'vi'));
       setWarehouses(names);
     } catch (err: any) {
@@ -368,6 +389,61 @@ export function ChuyenKhoPanel({ onBack }: { onBack: () => void }) {
     }
     setStockLoading(true);
     try {
+      // NVL kho-only: 4 kho lõi đọc tồn từ ton-kho-nvl (phiếu + master kho_nvl),
+      // không còn phụ thuộc catalog nhap_kho (phiếu nhập/chuyển NVL mới không ghi nhap_kho).
+      if (isVatTuKhoName(tenKho) && isNvlCoreKhoName(tenKho)) {
+        const params = new URLSearchParams({ from: '2020-01-01', to: todayISO(), ten_kho: tenKho });
+        const res = await fetch(`/api/ton-kho-nvl?${params.toString()}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(readApiErrorMessage(res, data, 'Không tải được tồn kho nguồn.'));
+        const rows: unknown[] = Array.isArray((data as { rows?: unknown }).rows)
+          ? (data as { rows: unknown[] }).rows
+          : [];
+        const mapped: SourceStockRow[] = [];
+        for (const item of rows) {
+          if (!item || typeof item !== 'object') continue;
+          const row = item as Record<string, unknown>;
+          const tonSl = toNum(row.ton_cuoi);
+          const ma = String(row.ma_npl ?? '').trim();
+          const ten = String(row.ten_npl ?? '').trim();
+          const sx = String(row.ten_nvl_sx ?? '').trim();
+          if (!ma && !ten) continue;
+          const text = (v: unknown) => String(v ?? '').trim();
+          mapped.push({
+            // Hậu tố tên SX để phân biệt biến thể cùng mã+tên (NVL không còn hệ số nhap_kho).
+            key: `${ma}||${ten}||0|0|0${sx ? `||${sx}` : ''}`,
+            ma_sp: ma,
+            ten_sp: ten,
+            don_vi: text(row.don_vi),
+            nhom_vthh: text(row.nhom_vthh),
+            phan_loai: text(row.phan_loai),
+            ton_sl: tonSl,
+            kg1: 0,
+            a1: 0,
+            l1: 0,
+            specs: {
+              ten_goc: '',
+              do_li: '',
+              do_li_dm: '',
+              do_day_m: '',
+              do_dai_m: '',
+              mang: '',
+              hang_phe: '',
+              ma_amis: '',
+              mo_ta_tem: '',
+              ten_san_xuat: sx
+            }
+          });
+        }
+        mapped.sort((a, b) => {
+          const aPos = a.ton_sl > 0 ? 0 : 1;
+          const bPos = b.ton_sl > 0 ? 0 : 1;
+          if (aPos !== bPos) return aPos - bPos;
+          return `${a.ma_sp}${a.ten_sp}`.localeCompare(`${b.ma_sp}${b.ten_sp}`, 'vi');
+        });
+        setStock(mapped);
+        return;
+      }
       const params = new URLSearchParams({ from: '2020-01-01', to: todayISO(), tenKho, strictKho: '1' });
       const res = await fetch(`/api/nhap-kho?${params.toString()}`);
       const data = await res.json().catch(() => ({}));
@@ -381,7 +457,6 @@ export function ChuyenKhoPanel({ onBack }: { onBack: () => void }) {
         const row = item as Record<string, unknown>;
         const ton = (row.ton_cuoi ?? {}) as Record<string, unknown>;
         const tonSl = toNum(ton.sl);
-        if (!(tonSl > 0)) continue;
         const ma = String(row.ma_sp ?? '').trim();
         const ten = String(row.ten_sp ?? '').trim();
         if (!ma && !ten) continue;
@@ -395,6 +470,7 @@ export function ChuyenKhoPanel({ onBack }: { onBack: () => void }) {
           ten_sp: ten,
           don_vi: text(row.don_vi),
           nhom_vthh: text(row.nhom_vthh),
+          phan_loai: '',
           ton_sl: tonSl,
           kg1,
           a1,
@@ -408,11 +484,17 @@ export function ChuyenKhoPanel({ onBack }: { onBack: () => void }) {
             mang: text(row.mang),
             hang_phe: text(row.hang_phe),
             ma_amis: text(row.ma_amis),
-            mo_ta_tem: text(row.mo_ta_tem)
+            mo_ta_tem: text(row.mo_ta_tem),
+            ten_san_xuat: text((row as Record<string, unknown>).ten_san_xuat)
           }
         });
       }
-      mapped.sort((a, b) => `${a.ma_sp}${a.ten_sp}`.localeCompare(`${b.ma_sp}${b.ten_sp}`, 'vi'));
+      mapped.sort((a, b) => {
+        const aPos = a.ton_sl > 0 ? 0 : 1;
+        const bPos = b.ton_sl > 0 ? 0 : 1;
+        if (aPos !== bPos) return aPos - bPos;
+        return `${a.ma_sp}${a.ten_sp}`.localeCompare(`${b.ma_sp}${b.ten_sp}`, 'vi');
+      });
       setStock(mapped);
     } catch (err: any) {
       setStock([]);
@@ -463,9 +545,11 @@ export function ChuyenKhoPanel({ onBack }: { onBack: () => void }) {
             const kg = Number(line.kg_mot_sp) || 0;
             const a = Number(line.m2_mot_sp) || 0;
             const l = Number(line.m_dai_mot_sp) || 0;
+            // NVL kho-only: key tồn có hậu tố tên SX để khớp đúng biến thể.
+            const sx = String((line as unknown as Record<string, unknown>).ten_san_xuat || '').trim();
             return {
               key: `tline-edit-${Date.now()}-${lineSeq}-${idx}`,
-              stockKey: `${ma}||${ten}||${kg}|${a}|${l}`,
+              stockKey: `${ma}||${ten}||${kg}|${a}|${l}${sx ? `||${sx}` : ''}`,
               qtyText: String(line.so_luong ?? '')
             };
           })
@@ -546,6 +630,8 @@ export function ChuyenKhoPanel({ onBack }: { onBack: () => void }) {
     if (!khoNguon) return 'Chọn kho nguồn.';
     if (!khoDich) return 'Chọn kho đích.';
     if (khoNguon.trim() === khoDich.trim()) return 'Kho nguồn và kho đích phải khác nhau.';
+    if (isVatTuKhoName(khoNguon) !== isVatTuKhoName(khoDich))
+      return 'Kho nguồn và kho đích phải cùng nhóm (cùng là kho vật tư hoặc cùng là kho thành phẩm).';
     return '';
   }, [khoNguon, khoDich]);
 
@@ -569,6 +655,7 @@ export function ChuyenKhoPanel({ onBack }: { onBack: () => void }) {
           ten_sp: row.ten_sp,
           don_vi: row.don_vi,
           nhom_vthh: row.nhom_vthh,
+          phan_loai: row.phan_loai || null,
           so_luong: view.qty,
           kg_mot_sp: row.kg1 > 0 ? row.kg1 : null,
           m2_mot_sp: row.a1 > 0 ? row.a1 : null,
@@ -665,7 +752,7 @@ export function ChuyenKhoPanel({ onBack }: { onBack: () => void }) {
         <div>
           <h2 className="text-lg font-black text-zinc-900">Chuyển kho</h2>
           <p className="text-xs font-semibold text-zinc-500">
-            Chuyển sản phẩm qua lại giữa các kho — hoàn thành sinh 2 phiếu (xuất + nhập), hủy sinh 2 phiếu đảo.
+            Chuyển hàng qua lại giữa các kho cùng nhóm (TP/cắt lẻ/tái chế hoặc NVL chính/phụ/PC) — hoàn thành sinh 2 phiếu (xuất + nhập), hủy sinh 2 phiếu đảo.
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -906,6 +993,9 @@ export function ChuyenKhoPanel({ onBack }: { onBack: () => void }) {
                 <div className="flex items-center gap-2">
                   <h4 className="text-xs font-black uppercase text-zinc-700">
                     Sản phẩm chuyển {khoNguon ? `(tồn ${khoNguon})` : ''}
+                    {khoNguon && !stockLoading
+                      ? ` — ${stock.length} mặt hàng (${stock.filter(s => s.ton_sl > 0).length} còn tồn)`
+                      : ''}
                   </h4>
                   <button
                     onClick={() => setLines(prev => [...prev, newTransferLine()])}
@@ -916,6 +1006,13 @@ export function ChuyenKhoPanel({ onBack }: { onBack: () => void }) {
                 </div>
                 {!khoNguon ? (
                   <p className="text-xs font-bold text-zinc-400">Chọn kho nguồn để xem tồn.</p>
+                ) : stockLoading ? (
+                  <p className="text-xs font-bold text-zinc-400">Đang tải tồn {khoNguon}...</p>
+                ) : stock.length === 0 ? (
+                  <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                    Kho nguồn {khoNguon} chưa có mặt hàng nào trong sổ (tồn kỳ từ 01/01/2020). Kiểm tra lại tồn ở /kho-hang
+                    hoặc nhập hàng vào kho nguồn trước khi chuyển.
+                  </p>
                 ) : (
                   <div className="overflow-x-auto rounded-xl border">
                     <table className="w-full min-w-[1280px] text-left text-xs">
@@ -963,7 +1060,9 @@ export function ChuyenKhoPanel({ onBack }: { onBack: () => void }) {
                                   isLoading={stockLoading}
                                   getLabel={(item: unknown) => {
                                     const r = item as SourceStockRow;
-                                    return r.ten_sp;
+                                    // NVL kho-only: hiện tên SX để phân biệt biến thể cùng mã+tên.
+                                    const sx = String(r.specs?.ten_san_xuat || '').trim();
+                                    return sx ? `${r.ten_sp} — ${sx}` : r.ten_sp;
                                   }}
                                   getValue={(item: unknown) => (item as SourceStockRow).key}
                                 />

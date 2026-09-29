@@ -18,6 +18,7 @@ test('payload import giữ nhóm vật tư phụ', () => {
     code: ' NPL-001 ',
     name: ' Băng dính ',
     productionName: '',
+    warehouse: ' Kho NVL phụ ',
     unit: ' cuộn ',
     phanLoai: ' Nguyên vật liệu phụ ',
     auxiliaryMaterialGroup: ' Băng Dính ',
@@ -35,6 +36,47 @@ test('payload import giữ nhóm vật tư phụ', () => {
 
   const payload = materialCatalogRowToPayload(row);
   assert.equal(payload.auxiliaryMaterialGroup, 'Băng Dính');
+  assert.equal((payload as Record<string, unknown>).warehouse, 'Kho NVL phụ');
+});
+
+test('ô Kho trống thì payload không chạm kho đã gán', () => {
+  const row: MaterialCatalogExcelRow = {
+    code: 'NPL-003',
+    name: 'Mực in',
+    productionName: '',
+    warehouse: '  ',
+    unit: 'kg',
+    phanLoai: '',
+    auxiliaryMaterialGroup: '',
+    totalWeight: '',
+    plasticWeight: '',
+    bagWeight: '',
+    coreWeight: '',
+    rollWidth: '',
+    unitLength: '',
+    openingStock: '',
+    inbound: '',
+    outbound: '',
+    rowNumber: 4
+  };
+  const payload = materialCatalogRowToPayload(row);
+  assert.ok(!('warehouse' in payload));
+});
+
+test('đọc được cột Kho khi import Excel', async () => {
+  const workbook = XLSX.utils.book_new();
+  const worksheet = XLSX.utils.aoa_to_sheet([
+    ['Mã NPL', 'Tên nguyên vật liệu', 'Kho'],
+    ['NPL-004', 'Màng PE', 'Kho PC']
+  ]);
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Kho_NVL');
+  const bytes = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
+  const file = { arrayBuffer: async () => bytes } as File;
+
+  const rows = await parseMaterialCatalogExcel(file);
+  assert.equal(rows[0]?.warehouse, 'Kho PC');
+  const payload = materialCatalogRowToPayload(rows[0]);
+  assert.equal((payload as Record<string, unknown>).warehouse, 'Kho PC');
 });
 
 test('đọc được tiêu đề DB nhom_vat_tu_phu khi import', async () => {

@@ -78,6 +78,7 @@ import {
   loadProductionOrderProductCatalog
 } from '../ke-hoach-san-xuat';
 import { normalizeMaterialsInventory } from '../kho-nvl';
+import { isNvlCoreWarehouse } from '../kho-hang';
 import {
   composeReasonWithProductionOrderCodes,
   extractLinkedProductionOrderCodes,
@@ -2367,16 +2368,27 @@ export function WarehouseSlipPanel({
           }
 
           const selectedWarehouseKey = normalizeWarehouseNameKey(warehouseName);
-          // Các kho vật tư gợi ý theo tên kho đã chọn trong Quản lý kho; NVL chưa được gán kho
-          // (phần lớn danh mục hiện nay) vẫn hiển thị để không chặn việc chọn mã.
-          const filteredMaterials = selectedWarehouseKey
-            ? materials.filter(material => {
-                const materialWarehouseKey = normalizeWarehouseNameKey(
-                  material.warehouse === '-' ? '' : material.warehouse
-                );
-                return !materialWarehouseKey || materialWarehouseKey === selectedWarehouseKey;
-              })
-            : materials;
+          // Tổng hợp NVL: chọn bất kỳ kho NVL lõi nào cũng hiểu là toàn bộ
+          // (Kho NVL / Chính / Phụ / PC) — gợi ý mã của tất cả kho lõi.
+          // NVL chưa được gán kho vẫn hiển thị để không chặn việc chọn mã.
+          const isAggregateNvlSelection =
+            Boolean(selectedWarehouseKey) && isNvlCoreWarehouse(warehouseName);
+          const filteredMaterials = !selectedWarehouseKey
+            ? materials
+            : isAggregateNvlSelection
+              ? materials.filter(material => {
+                  const materialWarehouseKey = normalizeWarehouseNameKey(
+                    material.warehouse === '-' ? '' : material.warehouse
+                  );
+                  if (!materialWarehouseKey) return true;
+                  return isNvlCoreWarehouse(material.warehouse);
+                })
+              : materials.filter(material => {
+                  const materialWarehouseKey = normalizeWarehouseNameKey(
+                    material.warehouse === '-' ? '' : material.warehouse
+                  );
+                  return !materialWarehouseKey || materialWarehouseKey === selectedWarehouseKey;
+                });
           const selectableMaterials = dedupeWarehouseSlipMaterials(filteredMaterials, warehouseName);
           setItemOptions(
             selectableMaterials.map(material => ({
@@ -4525,9 +4537,26 @@ export function WarehouseSlipPanel({
           ? ` Đã ghi ${Number(nhapKhoInfo.count) || 0} SP vào sổ nhap_kho.`
           : ` Cảnh báo nhap_kho: ${String(nhapKhoInfo.warning || 'không ghi được sổ SP.').trim()}`
         : '';
-      const finalMsg = `${okMsg}${nhapKhoMsg}`;
+      // NVL kho-only: phiếu nhập NVL không ghi nhap_kho mà ensure master kho_nvl (PTĐM đọc từ đây).
+      const khoNvlInfo =
+        data && typeof data === 'object' && data.khoNvl && typeof data.khoNvl === 'object'
+          ? (data.khoNvl as { ensured?: number; skipped?: number; warning?: string })
+          : null;
+      const khoNvlMsg = khoNvlInfo
+        ? khoNvlInfo.warning
+          ? ` Cảnh báo kho NVL: ${String(khoNvlInfo.warning).trim()}`
+          : Number(khoNvlInfo.ensured) > 0
+            ? ` Đã bổ sung ${Number(khoNvlInfo.ensured)} NVL vào danh mục kho NVL.`
+            : ''
+        : '';
+      const finalMsg = `${okMsg}${nhapKhoMsg}${khoNvlMsg}`;
       setActionMessage(finalMsg);
-      showAppToast(finalMsg, nhapKhoInfo && !nhapKhoInfo.saved ? 'error' : undefined);
+      showAppToast(
+        finalMsg,
+        (nhapKhoInfo && !nhapKhoInfo.saved) || (khoNvlInfo && Boolean(khoNvlInfo.warning))
+          ? 'error'
+          : undefined
+      );
       if (reviewingDamagedReportKey) {
         setPendingDamagedReports(current => current.filter(report => report.key !== reviewingDamagedReportKey));
         setReviewingDamagedReportKey('');
@@ -4791,6 +4820,9 @@ export function WarehouseSlipPanel({
               {warehouseName ? (
                 <p className="text-[11px] font-semibold text-zinc-500">
                   Loại: {warehouseKindLabel(warehouseKind)}
+                  {warehouseKind === 'nvl' && isNvlCoreWarehouse(warehouseName)
+                    ? ' · Kho NVL hiểu là toàn bộ (tổng hợp 4 kho NVL)'
+                    : ''}
                   {slipType === 'xuat' &&
                   !isXuatTreoMode &&
                   (warehouseKind === 'nvl' || warehouseKind === 'tai_che')

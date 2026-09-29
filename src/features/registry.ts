@@ -160,9 +160,9 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   kho_nvl: {
     table: 'kho_nvl',
     label: 'Kho nguyên vật liệu',
-    sql: ['supabase-kho-nvl.sql', 'supabase-kho-nvl-rename-phan-loai.sql'],
+    sql: ['supabase-kho-nvl.sql', 'supabase-kho-nvl-rename-phan-loai.sql', 'supabase-kho-nvl-ten-kho.sql', 'supabase-kho-nvl-loai-kho.sql'],
     apiPrefix: '/api/kho-nvl',
-    serverLines: '9104–9370; parser 4180–4225; mixing validation 3330–3390',
+    serverLines: 'POST/PATCH/DELETE /api/kho-nvl + POST /api/kho-nvl/import-batch + GET /api/ton-kho-nvl (tồn kỳ 4 kho NVL)',
     appTab: 'materials',
     appLines: 'src/features/kho-nvl/index.tsx',
     components: ['src/components/MaterialsForm.tsx'],
@@ -186,7 +186,7 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   phieu_nhap_kho: {
     table: 'phieu_nhap_kho',
     label: 'Phiếu nhập kho (tách từ phieu_xuat_nhap_kho)',
-    sql: ['supabase-phieu-nhap-kho.sql', 'supabase-phieu-nhap-xuat-split-backfill.sql'],
+    sql: ['supabase-phieu-nhap-kho.sql', 'supabase-phieu-nhap-xuat-split-backfill.sql', 'supabase-phieu-nhap-xuat-id-danh-muc.sql'],
     apiPrefix: '/api/phieu-nhap-kho',
     serverLines: 'SUPABASE_WAREHOUSE_NHAP_TABLE + handleWarehouse* (forced nhap)',
     appTab: 'warehouse-slip | warehouse-history',
@@ -197,7 +197,7 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   phieu_xuat_kho: {
     table: 'phieu_xuat_kho',
     label: 'Phiếu xuất kho (tách từ phieu_xuat_nhap_kho)',
-    sql: ['supabase-phieu-xuat-kho.sql', 'supabase-phieu-nhap-xuat-split-backfill.sql'],
+    sql: ['supabase-phieu-xuat-kho.sql', 'supabase-phieu-nhap-xuat-split-backfill.sql', 'supabase-phieu-nhap-xuat-id-danh-muc.sql'],
     apiPrefix: '/api/phieu-xuat-kho',
     serverLines: 'SUPABASE_WAREHOUSE_XUAT_TABLE + handleWarehouse* (forced xuat)',
     appTab: 'warehouse-slip | warehouse-history',
@@ -466,8 +466,8 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   },
   nhap_kho: {
     table: 'nhap_kho',
-    label: 'Sổ SP nhập kho thành phẩm + tồn kỳ /kho-hang',
-    sql: ['supabase-nhap-kho.sql', 'supabase-nhap-kho-mo-ta-tem.sql', 'supabase-kho-cat-le-seed.sql'],
+    label: 'Sổ tồn chung mọi loại hàng (SP, NVL...) + tồn kỳ /kho-hang',
+    sql: ['supabase-nhap-kho.sql', 'supabase-nhap-kho-mo-ta-tem.sql', 'supabase-nhap-kho-ten-san-xuat.sql', 'supabase-nhap-kho-backfill-nvl.sql', 'supabase-kho-cat-le-seed.sql'],
     apiPrefix: '/api/nhap-kho',
     serverLines: 'GET /api/nhap-kho (+ from/to) + insertNhapKhoThanhPhamRows',
     appTab: 'inventory-catalog | warehouse-slip',

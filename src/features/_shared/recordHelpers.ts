@@ -21,6 +21,54 @@ export function pickText(record: Record<string, unknown>, keys: string[], fallba
   return fallback;
 }
 
+/** Dòng tồn kho NVL theo kỳ (Tồn đầu / Nhập / Xuất) — dùng để ẩn dòng trùng 0 ở view gộp. */
+export type PeriodActivityRow = {
+  code: string;
+  openingStock: string;
+  inbound: string;
+  outbound: string;
+};
+
+function periodActivityValue(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim().replace(',', '.');
+  if (!text || text === '-' || text === '—') return null;
+  const num = Number(text);
+  return Number.isFinite(num) ? num : null;
+}
+
+function periodCodeKey(code: string) {
+  return String(code || '').trim().replace(/\s+/g, '').toUpperCase();
+}
+
+/**
+ * View gộp Kho NVL (Toàn bộ / đúng "Kho NVL") liệt kê tách riêng từng kho nên cùng mã
+ * hiện nhiều dòng. Ẩn dòng Tồn đầu = Nhập = Xuất = 0 khi cùng mã đã có dòng khác phát
+ * sinh — VD nhập vào Kho NVL Phụ thì dòng master cũ Kho NVL 0/0/0 không còn gây nhiễu.
+ * Chỉ ẩn khi chắc chắn toàn 0 (ô '—'/không số thì giữ lại); dòng 0 duy nhất của mã vẫn giữ.
+ */
+export function filterDuplicateZeroWarehouseRows<T extends PeriodActivityRow>(rows: T[]): T[] {
+  const activeCodes = new Set<string>();
+  for (const row of rows) {
+    const key = periodCodeKey(row.code);
+    if (!key) continue;
+    const active = [row.openingStock, row.inbound, row.outbound].some(value => {
+      const num = periodActivityValue(value);
+      return num !== null && num !== 0;
+    });
+    if (active) activeCodes.add(key);
+  }
+  if (activeCodes.size === 0) return rows;
+  return rows.filter(row => {
+    const key = periodCodeKey(row.code);
+    if (!key || !activeCodes.has(key)) return true;
+    const values = [row.openingStock, row.inbound, row.outbound].map(periodActivityValue);
+    // Thiếu số (chưa chọn kỳ) thì giữ lại, không ẩn.
+    if (values.some(value => value === null)) return true;
+    return (values[0] || 0) !== 0 || (values[1] || 0) !== 0 || (values[2] || 0) !== 0;
+  });
+}
+
 export function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

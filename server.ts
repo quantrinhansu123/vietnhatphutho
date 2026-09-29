@@ -152,14 +152,63 @@ function normalizeKhoLabelForMatch(name: unknown): string {
   return normalizeKhoLabel(name);
 }
 
-/** True = kho vật tư (không cho chuyển SP thành phẩm vào/ra). */
+const NVL_CORE_WAREHOUSE_LABELS = new Set(['kho nvl', 'kho nvl chinh', 'kho nvl phu', 'kho pc']);
+const NVL_CORE_FALLBACK: QuanLyKhoCacheRow[] = [
+  { ten_kho: 'Kho NVL', ma_kho: 'kho_nvl' },
+  { ten_kho: 'Kho NVL Chính', ma_kho: 'kho_nvl_chinh' },
+  { ten_kho: 'Kho NVL Phụ', ma_kho: 'kho_nvl_phu' },
+  { ten_kho: 'Kho PC', ma_kho: 'kho_pc' }
+];
+
+function nvlWarehouseKey(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+}
+
+/** Đúng bốn kho: Kho NVL, Kho NVL Chính, Kho NVL Phụ, Kho PC. */
+function isNvlCoreWarehouseName(name: unknown): boolean {
+  return NVL_CORE_WAREHOUSE_LABELS.has(nvlWarehouseKey(name));
+}
+
+function nvlCoreWarehouses(rows: QuanLyKhoCacheRow[]): QuanLyKhoCacheRow[] {
+  const fromDb = rows.filter(row => isNvlCoreWarehouseName(row.ten_kho));
+  const seen = new Set(fromDb.map(row => nvlWarehouseKey(row.ten_kho)));
+  const missing = NVL_CORE_FALLBACK.filter(row => !seen.has(nvlWarehouseKey(row.ten_kho)));
+  return [...fromDb, ...missing];
+}
+
+function canonicalNvlCoreWarehouse(
+  tenKho: unknown,
+  loaiKho: unknown,
+  cores: QuanLyKhoCacheRow[]
+): string | null {
+  const ten = String(tenKho ?? '').trim();
+  const loai = String(loaiKho ?? '').trim();
+  if (ten) {
+    const byName = cores.find(row => nvlWarehouseKey(row.ten_kho) === nvlWarehouseKey(ten));
+    if (byName) return byName.ten_kho;
+  }
+  if (loai) {
+    const byMa = cores.find(row => String(row.ma_kho || '').trim() && String(row.ma_kho).trim() === loai);
+    if (byMa) return byMa.ten_kho;
+  }
+  return null;
+}
+
+/** True = kho vật tư (NVL chính/phụ/PC...). */
 function isVatTuKho(name: unknown): boolean {
   const n = String(name ?? '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/g, 'd');
-  return n.includes('nvl') || n.includes('nguyen vat lieu') || n.includes('vat tu');
+  if (n.includes('nvl') || n.includes('nguyen vat lieu') || n.includes('vat tu')) return true;
+  // Kho PC tách từ nhóm NVL — khớp token pc độc lập (tránh dính chữ khác).
+  return /(^|[\s_\-])pc([\s_\-]|$)/.test(n);
 }
 
 /**
@@ -4871,10 +4920,303 @@ function parseMaterialBody(body: unknown): { error: string } | MaterialWritePayl
     phan_loai: parseMaterialText(
       source.phanLoai ?? source.phan_loai ?? source.khoNgamDinh ?? source.kho_ngam_dinh
     ) || null,
-    nhom_vat_tu_phu: auxiliaryMaterialGroup || null
+    nhom_vat_tu_phu: auxiliaryMaterialGroup || null,
+    // Kho vật lý của NVL (Kho NVL chính / phụ / PC...). Chỉ ghi khi payload có gửi kho
+    // (Excel cũ không cột Kho thì giữ nguyên kho đã gán). loai_kho resolve ở handler.
+    ...('warehouse' in source || 'ten_kho' in source || 'tenKho' in source
+      ? { ten_kho: parseMaterialText(source.warehouse ?? source.ten_kho ?? source.tenKho) || null }
+      : {})
   };
 
   return { record };
+}
+
+/** Gán loai_kho (= quan_ly_kho.ma_kho) cho record kho_nvl từ ten_kho (nếu record có kho). */
+async function attachMaterialKho(record: Record<string, string | number | null>): Promise<void> {
+  if (!('ten_kho' in record)) return;
+  const tenKho = String(record.ten_kho ?? '').trim();
+  record.loai_kho = await resolveMaKho(tenKho || 'Kho NVL', 'kho_nvl');
+}
+
+/** Khớp unique kho_nvl_ma_ten_sx_kho_key: btrim mã + tên + tên sản xuất + kho. */
+function materialImportIdentityFromRecord(record: {
+  ma_npl?: unknown;
+  ten_npl?: unknown;
+  ten_nvl_sx?: unknown;
+  ten_kho?: unknown;
+}) {
+  return [
+    String(record.ma_npl ?? '').trim(),
+    String(record.ten_npl ?? '').trim(),
+    String(record.ten_nvl_sx ?? '').trim(),
+    String(record.ten_kho ?? '').trim()
+  ].join('\0');
+}
+
+type KhoNvlIdentityHit = { id: string; phan_loai: string };
+
+async function loadKhoNvlHitsByIdentity(codes: string[]): Promise<Map<string, KhoNvlIdentityHit>> {
+  const map = new Map<string, KhoNvlIdentityHit>();
+  if (!supabase) return map;
+  const uniqueCodes = [...new Set(codes.map(code => code.trim()).filter(Boolean))];
+  for (let index = 0; index < uniqueCodes.length; index += 150) {
+    const chunk = uniqueCodes.slice(index, index + 150);
+    let { data, error } = await supabase
+      .from(SUPABASE_MATERIALS_TABLE)
+      .select('id, ma_npl, ten_npl, ten_nvl_sx, ten_kho, phan_loai')
+      .in('ma_npl', chunk);
+    if (error && isMissingColumnError(error)) {
+      ({ data, error } = await supabase
+        .from(SUPABASE_MATERIALS_TABLE)
+        .select('id, ma_npl, ten_npl, ten_nvl_sx, ten_kho')
+        .in('ma_npl', chunk));
+    }
+    if (error) throw error;
+    for (const row of data ?? []) {
+      const id = String((row as { id?: unknown }).id ?? '').trim();
+      if (!id) continue;
+      map.set(
+        materialImportIdentityFromRecord(row as { ma_npl?: unknown; ten_npl?: unknown; ten_nvl_sx?: unknown; ten_kho?: unknown }),
+        {
+          id,
+          phan_loai: String((row as { phan_loai?: unknown }).phan_loai ?? '').trim()
+        }
+      );
+    }
+  }
+  return map;
+}
+
+async function loadKhoNvlIdsByIdentity(codes: string[]): Promise<Map<string, string>> {
+  const hits = await loadKhoNvlHitsByIdentity(codes);
+  const map = new Map<string, string>();
+  for (const [key, hit] of hits) map.set(key, hit.id);
+  return map;
+}
+
+function catalogPhanLoaiLabel(value: unknown): string | null {
+  const kind = parseWarehouseMaterialClass(value);
+  if (kind === 'nvl_chinh') return 'Nguyên vật liệu chính';
+  if (kind === 'nvl_phu') return 'Nguyên vật liệu phụ';
+  return null;
+}
+
+/**
+ * NVL kho-only: đảm bảo master kho_nvl tồn tại theo unique
+ * (btrim ma_npl + ten_npl + ten_nvl_sx + ten_kho — xem supabase-kho-nvl-unique-ma-ten-sx-kho.sql).
+ * Cùng mã/tên/tên sản xuất ở kho khác vẫn là dòng mới.
+ * Đã có đúng kho → bỏ qua. Chưa có → insert với kho nhận.
+ * Không ghi nhap_kho cho NVL — tồn kho NVL tính từ phiếu + master kho_nvl.
+ */
+async function ensureKhoNvlCatalogForNvlLines(
+  lines: Array<{ code: string; name: string; productionName?: string; unit: string; materialClass?: string; phanLoai?: string }>,
+  tenKho: string
+): Promise<{ ensured: number; skipped: number; error?: string }> {
+  if (!supabase) return { ensured: 0, skipped: 0, error: 'Supabase chưa cấu hình.' };
+  const warehouse = String(tenKho || '').trim();
+  const seen = new Map<string, { code: string; name: string; productionName: string; unit: string; phanLoai: string | null }>();
+  for (const line of lines || []) {
+    const code = String(line.code || '').trim();
+    const name = String(line.name || '').trim();
+    if (!code || !name) continue;
+    const identity = materialImportIdentityFromRecord({
+      ma_npl: code,
+      ten_npl: name,
+      ten_nvl_sx: String(line.productionName || '').trim(),
+      ten_kho: warehouse
+    });
+    if (!seen.has(identity)) {
+      seen.set(identity, {
+        code,
+        name,
+        productionName: String(line.productionName || '').trim(),
+        unit: String(line.unit || '').trim() || 'kg',
+        phanLoai: catalogPhanLoaiLabel(line.materialClass || line.phanLoai)
+      });
+    }
+  }
+  if (seen.size === 0) return { ensured: 0, skipped: 0 };
+  let existing: Map<string, KhoNvlIdentityHit>;
+  try {
+    existing = await loadKhoNvlHitsByIdentity([...seen.values()].map(entry => entry.code));
+  } catch (err: any) {
+    return { ensured: 0, skipped: 0, error: err?.message || 'Không kiểm tra được danh mục kho_nvl.' };
+  }
+  const toInsert: Array<Record<string, string | number | null>> = [];
+  const toFillClass: Array<{ id: string; phan_loai: string }> = [];
+  let skipped = 0;
+  for (const [identity, entry] of seen) {
+    const hit = existing.get(identity);
+    if (hit) {
+      if (entry.phanLoai && !hit.phan_loai) toFillClass.push({ id: hit.id, phan_loai: entry.phanLoai });
+      skipped += 1;
+      continue;
+    }
+    const record: Record<string, string | number | null> = {
+      ma_npl: entry.code,
+      ten_npl: entry.name,
+      ten_nvl_sx: entry.productionName || null,
+      don_vi: entry.unit || null,
+      ten_kho: warehouse || null,
+      ...(entry.phanLoai ? { phan_loai: entry.phanLoai } : {})
+    };
+    await attachMaterialKho(record);
+    toInsert.push(record);
+  }
+  const fillBlankClass = async () => {
+    for (const row of toFillClass) {
+      const { error } = await supabase!.from(SUPABASE_MATERIALS_TABLE).update({ phan_loai: row.phan_loai }).eq('id', row.id);
+      if (error && !isMissingColumnError(error)) return error.message || 'Không ghi được phân loại NVL.';
+    }
+    return '';
+  };
+  if (toInsert.length === 0) {
+    const fillError = await fillBlankClass();
+    if (fillError) return { ensured: 0, skipped, error: fillError };
+    return { ensured: 0, skipped };
+  }
+  try {
+    let { error } = await supabase.from(SUPABASE_MATERIALS_TABLE).insert(toInsert).select('id');
+    if (error && isMissingColumnError(error)) {
+      const stripped = stripMissingMaterialKhoColumns(toInsert, error);
+      if (stripped) {
+        ({ error } = await supabase.from(SUPABASE_MATERIALS_TABLE).insert(stripped).select('id'));
+      }
+    }
+    if (error) {
+      // Đua ghi cùng bộ mã + tên + tên sản xuất + kho: đọc lại, coi như đã có.
+      if (String((error as { code?: unknown }).code || '') === '23505') {
+        try {
+          const again = await loadKhoNvlIdsByIdentity(toInsert.map(row => String(row.ma_npl ?? '')));
+          const blocked = toInsert.filter(row => !again.has(materialImportIdentityFromRecord(row)));
+          if (blocked.length === 0) {
+            console.warn('[kho_nvl] ensure trùng unique (đua ghi) — bỏ qua.');
+            return { ensured: 0, skipped: seen.size };
+          }
+        } catch {
+          /* đọc lại lỗi thì trả lỗi unique bên dưới */
+        }
+        return {
+          ensured: 0,
+          skipped,
+          error: 'Cùng mã, tên và tên sản xuất đang bị khóa một dòng cho mọi kho. Chạy supabase-kho-nvl-unique-ma-ten-sx-kho.sql rồi nhập lại.'
+        };
+      }
+      return { ensured: 0, skipped, error: error.message || 'Không bổ sung được kho_nvl.' };
+    }
+    const fillError = await fillBlankClass();
+    if (fillError) return { ensured: toInsert.length, skipped, error: fillError };
+    console.log(`[kho_nvl] ensure từ phiếu/chuyển kho: +${toInsert.length} mới, ${skipped} đã có.`);
+    return { ensured: toInsert.length, skipped };
+  } catch (err: any) {
+    return { ensured: 0, skipped, error: err?.message || String(err) };
+  }
+}
+
+const LOAI_DANH_MUC_KHO_NVL = 'kho_nvl';
+
+type NvlCatalogLine = {
+  code: string;
+  name: string;
+  productionName?: string;
+  unit: string;
+  materialClass?: string;
+  phanLoai?: string;
+};
+
+/**
+ * Đảm bảo dòng kho_nvl rồi gắn id_danh_muc của dòng đang sống lên từng dòng phiếu.
+ * Phiếu không khớp danh mục giữ id null — tồn không cộng phiếu đó vào dòng tạo lại.
+ */
+async function attachLiveKhoNvlIds<T extends Record<string, unknown>>(
+  records: T[],
+  lines: NvlCatalogLine[],
+  tenKho: string
+): Promise<{ records: T[]; ensured: number; skipped: number; error?: string }> {
+  const catalog = await ensureKhoNvlCatalogForNvlLines(lines, tenKho);
+  let hits = new Map<string, KhoNvlIdentityHit>();
+  try {
+    hits = await loadKhoNvlHitsByIdentity(lines.map(line => line.code));
+  } catch (err: any) {
+    return {
+      records,
+      ensured: catalog.ensured,
+      skipped: catalog.skipped,
+      error: catalog.error || err?.message || 'Không đọc được id kho_nvl.'
+    };
+  }
+  const warehouse = String(tenKho || '').trim();
+  const stamped = records.map(record => {
+    const identity = materialImportIdentityFromRecord({
+      ma_npl: record.ma_npl,
+      ten_npl: record.ten_npl,
+      ten_nvl_sx: record.ten_nvl_sx,
+      ten_kho: String(record.ten_kho ?? warehouse).trim()
+    });
+    const hit = hits.get(identity);
+    return {
+      ...record,
+      id_danh_muc: hit?.id ?? null,
+      loai_danh_muc: hit ? LOAI_DANH_MUC_KHO_NVL : null
+    } as T;
+  });
+  return { records: stamped, ensured: catalog.ensured, skipped: catalog.skipped, error: catalog.error };
+}
+
+/** Id kho_nvl đang sống của một mã trong đúng kho. Dùng khi cộng tồn theo id danh mục. */
+async function liveKhoNvlIdsForWarehouse(code: string, tenKho: string): Promise<Set<string>> {
+  const hits = await loadKhoNvlHitsByIdentity([code]);
+  const want = normalizeKhoLabelForMatch(tenKho);
+  const ids = new Set<string>();
+  for (const [identity, hit] of hits) {
+    const warehouse = identity.split('\0')[3] ?? '';
+    if (normalizeKhoLabelForMatch(warehouse) === want) ids.add(hit.id);
+  }
+  return ids;
+}
+
+/** Cột id_danh_muc đã có trên phiếu thì tồn chỉ cộng đúng id. Chưa chạy SQL thì giữ cách cộng cũ. */
+async function warehouseSlipsHaveCatalogStamp(): Promise<boolean> {
+  if (!supabase) return false;
+  for (const table of await resolveWarehouseReadTables(null)) {
+    const { error } = await supabase.from(table).select('id_danh_muc').limit(1);
+    if (!error) return true;
+    if (isMissingTableError(error) || isMissingColumnError(error)) continue;
+    return false;
+  }
+  return false;
+}
+
+let warnedMissingCatalogStamp = false;
+
+/** Cùng bộ cột trong một lệnh insert/upsert — PostgREST điền null cho key thiếu. */
+function groupMaterialRecordsByColumns<T extends Record<string, unknown>>(records: T[]): T[][] {
+  const groups = new Map<string, T[]>();
+  for (const record of records) {
+    const key = Object.keys(record).sort().join('|');
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(record);
+    else groups.set(key, [record]);
+  }
+  return [...groups.values()];
+}
+
+/** Bỏ ten_kho/loai_kho khi DB chưa migrate để ghi không chặn (mẫu mo_ta_tem bên nhap_kho). */
+function stripMissingMaterialKhoColumns<T extends Record<string, unknown>>(
+  rows: T[],
+  error: { message?: string }
+): T[] | null {
+  const msg = String(error?.message || '');
+  const drop: string[] = [];
+  if (msg.includes('ten_kho')) drop.push('ten_kho');
+  if (msg.includes('loai_kho')) drop.push('loai_kho');
+  if (drop.length === 0) return null;
+  console.warn(`[kho_nvl] thiếu cột kho (${msg}) — chạy supabase-kho-nvl-ten-kho.sql + supabase-kho-nvl-loai-kho.sql. Ghi không kho.`);
+  return rows.map(row => {
+    const clone: Record<string, unknown> = { ...row };
+    for (const col of drop) delete clone[col];
+    return clone as T;
+  });
 }
 
 function materialWithClassificationAliases(record: Record<string, unknown>) {
@@ -5843,11 +6185,16 @@ const WAREHOUSE_SLIP_MODULE1_COLUMNS = [
   'dia_diem',
   'loai_nhap_kho',
   'ten_nvl_sx',
-  'ca_list'
+  'ca_list',
+  'link_anh_can_thuc_te',
+  'link_anh_can_thuc_te_public_id'
 ];
 
 /** Cột phiếu TP — strip nếu DB chưa chạy supabase-phieu-xuat-nhap-kho-thanh-pham.sql. */
 const WAREHOUSE_SLIP_THANH_PHAM_COLUMNS = ['so_m2', 'so_m_dai', 'dia_chi', 'so_tron_ids'];
+
+/** Id danh mục — strip nếu DB chưa chạy supabase-phieu-nhap-xuat-id-danh-muc.sql. */
+const WAREHOUSE_SLIP_CATALOG_REF_COLUMNS = ['id_danh_muc', 'loai_danh_muc'];
 
 async function insertWarehouseSlipRecordsResilient(
   table: string,
@@ -5856,20 +6203,21 @@ async function insertWarehouseSlipRecordsResilient(
   if (!supabase) {
     return { data: null, error: { message: 'Supabase chưa được cấu hình.' } };
   }
+  const optionalColumnGroups = [
+    WAREHOUSE_SLIP_CATALOG_REF_COLUMNS,
+    WAREHOUSE_SLIP_THANH_PHAM_COLUMNS,
+    WAREHOUSE_SLIP_MODULE1_COLUMNS
+  ];
   let attempt = records;
-  for (let round = 0; round < 3; round += 1) {
+  for (let round = 0; round < optionalColumnGroups.length + 1; round += 1) {
     const { data, error } = await supabase
       .from(table)
       .insert(attempt)
       .select('*');
     if (!error) return { data: (data as any[]) || [], error: null };
-    if (isMissingColumnError(error) && round < 2) {
-      const missingThanhPhamCols = WAREHOUSE_SLIP_THANH_PHAM_COLUMNS.some(col =>
-        String(error.message || '').includes(col)
-      );
-      const stripCols = missingThanhPhamCols
-        ? WAREHOUSE_SLIP_THANH_PHAM_COLUMNS
-        : WAREHOUSE_SLIP_MODULE1_COLUMNS;
+    const message = String(error.message || '');
+    const stripCols = optionalColumnGroups.find(cols => cols.some(col => message.includes(col)));
+    if (isMissingColumnError(error) && stripCols && round < optionalColumnGroups.length) {
       console.warn(
         `Bảng ${table} thiếu cột (${error.message}). Strip ${stripCols.join(', ')} rồi thử lại.`
       );
@@ -6071,9 +6419,11 @@ async function loadOrderSpecsByProductionOrders(codes: string[]): Promise<Map<st
 }
 
 /**
- * Sau phiếu nhập kho thành phẩm: ghi sổ SP vào nhap_kho (loai_kho = thanh_pham).
- * Trả về số dòng đã ghi — caller có thể báo cảnh báo nếu lỗi (không chặn lưu phiếu).
- */
+  * Sau phiếu nhập kho: ghi sổ hàng vào nhap_kho (sổ tồn chung mọi loại hàng,
+ *  phân biệt bằng loai_kho + ten_kho). TP giữ hệ số 1 SP; NVL: ma_sp = ma_npl,
+ *  ten_sp = ten_npl, ten_san_xuat = tên NVL sản xuất.
+ *  Trả về số dòng đã ghi — caller có thể báo cảnh báo nếu lỗi (không chặn lưu phiếu).
+  */
 async function insertNhapKhoThanhPhamRows(parsed: {
   loaiPhieu: 'nhap' | 'xuat';
   loaiKho: 'nvl' | 'san_pham';
@@ -6082,13 +6432,15 @@ async function insertNhapKhoThanhPhamRows(parsed: {
   maLenhSx?: string[];
 }): Promise<{ saved: boolean; count: number; error?: string }> {
   if (!supabase) return { saved: false, count: 0, error: 'Supabase chưa cấu hình.' };
+  // NVL kho-only: không ghi nhap_kho cho NVL (master nằm ở kho_nvl, tồn tính từ phiếu).
+  if (parsed.loaiKho === 'nvl') return { saved: false, count: 0 };
   if (parsed.loaiPhieu !== 'nhap' || parsed.loaiKho !== 'san_pham') {
     return { saved: false, count: 0 };
   }
-
   const tenKho = String(parsed.tenKho || '').trim();
   // Mã loại kho tra từ quan_ly_kho (nguồn thật), slug dự phòng khi kho chưa khai báo.
-  const loaiKho = await resolveMaKho(tenKho || 'Kho thành phẩm');
+  // Hàm này chỉ còn phục vụ thành phẩm (NVL kho-only, return sớm ở trên).
+  const loaiKho = await resolveMaKho(tenKho || 'Kho thành phẩm', 'kho_thanh_pham');
   const orderSpecsByCode = await loadOrderSpecsByProductionOrders(parsed.maLenhSx || []);
   const perUnit = (explicit: number | undefined, total: number | undefined, quantity: number) => {
     const direct = Number(explicit);
@@ -6137,14 +6489,23 @@ async function insertNhapKhoThanhPhamRows(parsed: {
 
   try {
     let { data, error } = await supabase.from(SUPABASE_NHAP_KHO_TABLE).insert(rows).select('id');
-    if (error && isMissingColumnError(error) && String(error.message || '').includes('mo_ta_tem')) {
-      console.warn(`[nhap_kho] thiếu cột mo_ta_tem — chạy supabase-nhap-kho-mo-ta-tem.sql. Ghi không mô tả tem.`);
-      const stripped = rows.map(row => {
-        const clone = { ...row };
-        delete clone.mo_ta_tem;
-        return clone;
-      });
-      ({ data, error } = await supabase.from(SUPABASE_NHAP_KHO_TABLE).insert(stripped).select('id'));
+    if (error && isMissingColumnError(error)) {
+      const msg = String(error.message || '');
+      const drop = ['mo_ta_tem', 'ten_san_xuat'].filter(col => msg.includes(col));
+      if (drop.length > 0) {
+        if (msg.includes('mo_ta_tem')) {
+          console.warn(`[nhap_kho] thiếu cột mo_ta_tem — chạy supabase-nhap-kho-mo-ta-tem.sql. Ghi không mô tả tem.`);
+        }
+        if (msg.includes('ten_san_xuat')) {
+          console.warn(`[nhap_kho] thiếu cột ten_san_xuat — chạy supabase-nhap-kho-ten-san-xuat.sql. Ghi không tên SX.`);
+        }
+        const stripped = rows.map(row => {
+          const clone: Record<string, unknown> = { ...row };
+          for (const col of drop) delete clone[col];
+          return clone;
+        });
+        ({ data, error } = await supabase.from(SUPABASE_NHAP_KHO_TABLE).insert(stripped).select('id'));
+      }
     }
     if (error) {
       const message = error.message || 'Không thể ghi nhap_kho.';
@@ -6160,7 +6521,7 @@ async function insertNhapKhoThanhPhamRows(parsed: {
       return { saved: false, count: 0, error: message };
     }
     const count = Array.isArray(data) ? data.length : rows.length;
-    console.log(`[nhap_kho] đã ghi ${count} dòng SP (loai_kho=${loaiKho}).`);
+    console.log(`[nhap_kho] đã ghi ${count} dòng hàng (loai_kho=${loaiKho}).`);
     return { saved: true, count };
   } catch (err: any) {
     const message = err?.message || String(err);
@@ -6196,8 +6557,9 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
 > {
   if (!supabase) return { ok: true, rows: [] };
 
-  // Phiếu SP lưu loai_kho = mã kho — đọc cả mã cũ + mã kho nhóm thành phẩm.
-  const { san_pham: spLoaiKhosTonKy } = await loaiKhoLists();
+  // Sổ nhap_kho thống nhất mọi loại hàng — đọc cả 2 nhóm (mã cũ + mã kho động từ quản lý kho).
+  const { san_pham: spLoaiKhosTonKy, nvl: nvlLoaiKhosTonKy } = await loaiKhoLists();
+  const tatCaLoaiKhosTonKy = [...new Set([...spLoaiKhosTonKy, ...nvlLoaiKhosTonKy])];
 
   const tenKho = String(options.tenKho || '').trim() || null;
   const keyword = String(options.keyword || '').trim().toLowerCase() || null;
@@ -6209,23 +6571,28 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
   // Mã kho đích danh từ quản lý kho (strict mới dùng) — slug dự phòng khi kho chưa khai báo.
   const strictMaKho = strictKho ? await resolveMaKho(tenKho) : '';
 
-  // Danh sách SP: mọi dòng nhap_kho TP/cắt lẻ/tái chế (không lọc ngày, không bắt buộc khớp ten_kho).
+  // Danh sách hàng: mọi dòng nhap_kho (không lọc ngày, không bắt buộc khớp ten_kho).
   const nhapKhoSelectFull =
-    'id, ma_sp, ten_sp, don_vi, ten_kho, loai_kho, ma_may, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, ten_goc, do_li, do_li_dm, do_day_m, do_dai_m, mang, hang_phe, ma_amis, mo_ta_tem, created_at';
+    'id, ma_sp, ten_sp, don_vi, ten_kho, loai_kho, ma_may, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, ten_goc, do_li, do_li_dm, do_day_m, do_dai_m, mang, hang_phe, ma_amis, mo_ta_tem, ten_san_xuat, created_at';
   const nhapKhoSelectCoeff =
     'ma_sp, ten_sp, don_vi, ten_kho, loai_kho, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, created_at';
   const fetchNhapKhoCatalog = async (selectCols: string) =>
     supabase
       .from(SUPABASE_NHAP_KHO_TABLE)
       .select(selectCols)
-      .in('loai_kho', [...NHAP_KHO_LOAI_LIST])
+      .in('loai_kho', tatCaLoaiKhosTonKy)
       .order('created_at', { ascending: true })
       .limit(50000);
   let nhapKhoRows: any[] | null = null;
   let nhapKhoError: { code?: string; message?: string } | null = null;
   ({ data: nhapKhoRows, error: nhapKhoError } = await fetchNhapKhoCatalog(nhapKhoSelectFull));
-  if (nhapKhoError && isMissingColumnError(nhapKhoError) && String(nhapKhoError.message || '').includes('mo_ta_tem')) {
-    ({ data: nhapKhoRows, error: nhapKhoError } = await fetchNhapKhoCatalog(nhapKhoSelectFull.replace(', mo_ta_tem', '')));
+  // DB chưa migrate cột mới (mo_ta_tem / ten_san_xuat) — bỏ đúng cột thiếu rồi đọc lại.
+  let catalogSelectTried = nhapKhoSelectFull;
+  for (const optionalCol of ['mo_ta_tem', 'ten_san_xuat']) {
+    if (nhapKhoError && isMissingColumnError(nhapKhoError) && String(nhapKhoError.message || '').includes(optionalCol)) {
+      catalogSelectTried = catalogSelectTried.replace(`, ${optionalCol}`, '');
+      ({ data: nhapKhoRows, error: nhapKhoError } = await fetchNhapKhoCatalog(catalogSelectTried));
+    }
   }
   if (nhapKhoError && isMissingColumnError(nhapKhoError)) {
     const missingSpec = NHAP_KHO_CAT_LE_SPEC_COLUMNS.some(col =>
@@ -6244,7 +6611,7 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
     const fallback = await supabase
       .from(SUPABASE_NHAP_KHO_TABLE)
       .select('ma_sp, ten_sp, don_vi, ten_kho')
-      .in('loai_kho', [...NHAP_KHO_LOAI_LIST])
+      .in('loai_kho', tatCaLoaiKhosTonKy)
       .limit(50000);
     nhapKhoRows = fallback.data;
     nhapKhoError = fallback.error;
@@ -6286,6 +6653,7 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
       don_vi: String(row.don_vi ?? '').trim(),
       ten_kho: String(row.ten_kho ?? '').trim() || displayKho,
       loai_kho: String(row.loai_kho ?? '').trim(),
+      ten_san_xuat: String((row as Record<string, unknown>).ten_san_xuat ?? '').trim(),
       trong_luong_kg_mot_sp: Number(row.trong_luong_kg_mot_sp) || 0,
       so_m2_mot_sp: Number(row.so_m2_mot_sp) || 0,
       so_m_dai_mot_sp: Number(row.so_m_dai_mot_sp) || 0,
@@ -6304,9 +6672,9 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
   );
 
   const selectFull =
-    'id, ma_phieu, ma_sp, ten_sp, don_vi, nhom_vthh, ten_kho, loai_phieu, ngay_phieu, so_luong, trong_luong_kg, so_m2, so_m_dai';
+    'id, ma_phieu, ma_sp, ten_sp, ma_npl, ten_npl, don_vi, nhom_vthh, ten_kho, loai_phieu, ngay_phieu, so_luong, trong_luong_kg, so_m2, so_m_dai';
   const selectCompat =
-    'id, ma_phieu, ma_sp, ten_sp, don_vi, nhom_vthh, ten_kho, loai_phieu, ngay_phieu, so_luong, trong_luong_kg';
+    'id, ma_phieu, ma_sp, ten_sp, ma_npl, ten_npl, don_vi, nhom_vthh, ten_kho, loai_phieu, ngay_phieu, so_luong, trong_luong_kg';
 
   // Phiếu NX: không .eq ten_kho (phiếu thường để trống ten_kho) — khớp tồn theo mã + tên.
   // Doc gop bang tach (nhap + xuat) + bang cu fallback, dedupe theo id.
@@ -6314,7 +6682,7 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
     let query = supabase
       .from(table)
       .select(selectCols)
-      .in('loai_kho', spLoaiKhosTonKy)
+      .in('loai_kho', tatCaLoaiKhosTonKy)
       .order('ngay_phieu', { ascending: true })
       .limit(50000);
     if (denNgay) query = query.lte('ngay_phieu', denNgay);
@@ -6355,8 +6723,9 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
   }
 
   const mapped: ThanhPhamMovementRow[] = (movements || []).map((row: Record<string, unknown>) => ({
-    ma_sp: String(row.ma_sp ?? '').trim(),
-    ten_sp: String(row.ten_sp ?? '').trim(),
+    // NVL lưu mã ở ma_npl/ten_npl, TP ở ma_sp/ten_sp — gộp về ma_sp/ten_sp để tính tồn chung.
+    ma_sp: String(row.ma_sp ?? row.ma_npl ?? '').trim(),
+    ten_sp: String(row.ten_sp ?? row.ten_npl ?? '').trim(),
     don_vi: String(row.don_vi ?? '').trim(),
     nhom_vthh: String(row.nhom_vthh ?? '').trim(),
     // strictKho: chuẩn hóa kho trước để khớp alias (trống → Kho thành phẩm).
@@ -6429,6 +6798,9 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
           .toLowerCase()
           .includes(keyword) ||
         row.ten_sp.toLowerCase().includes(keyword) ||
+        String(row.ten_san_xuat || '')
+          .toLowerCase()
+          .includes(keyword) ||
         String(row.nhom_vthh || '')
           .toLowerCase()
           .includes(keyword) ||
@@ -6512,9 +6884,14 @@ function resolveStoredOrderTenGhep(
 
 const SOUTH_ORDER_TYPE_SERVER = 'Đơn miền nam';
 const CUT_ORDER_TYPE_SERVER = 'Đơn theo quy cách của khách đặt';
+const PRODUCTION_ORDER_TYPE_SERVER = 'Đơn sản xuất';
 function isCutLikeOrderTypeServer(orderType?: string | null) {
   const value = String(orderType || '').trim();
   return value === CUT_ORDER_TYPE_SERVER || value === SOUTH_ORDER_TYPE_SERVER;
+}
+function isRegionQuantityOrderTypeServer(orderType?: string | null) {
+  const value = String(orderType || '').trim();
+  return value === PRODUCTION_ORDER_TYPE_SERVER || isCutLikeOrderTypeServer(value);
 }
 function southMvByMauTemServer(mauTem?: string | null) {
   const value = String(mauTem || '').trim().toLowerCase();
@@ -6715,11 +7092,15 @@ function parseOrderProductsInput(
     const so_luong_bac = parseOrderQuantity(row.so_luong_bac ?? row.sl_bac ?? row.slsx_bac ?? row.bac ?? row.slBac);
     const so_luong_trung = parseOrderQuantity(row.so_luong_trung ?? row.sl_trung ?? row.slsx_trung ?? row.trung ?? row.slTrung);
     const so_luong_nam = parseOrderQuantity(row.so_luong_nam ?? row.sl_nam ?? row.slsx_nam ?? row.nam ?? row.slNam);
-    // Đơn sản xuất: SL tổng = Bắc + Trung + Nam (tự động khi có nhập miền).
+    // Đơn có Bắc/Trung/Nam: SL tổng chỉ bằng tổng ba miền. Không nhận SL tổng gõ tay.
+    const isRegionQuantityOrder = isRegionQuantityOrderTypeServer(String(source.orderType ?? ''));
     let so_luong = parseOrderQuantity(row.so_luong ?? row.quantity);
-    if (so_luong_bac !== null || so_luong_trung !== null || so_luong_nam !== null) {
-      const regionTotal = Math.max(0, so_luong_bac ?? 0) + Math.max(0, so_luong_trung ?? 0) + Math.max(0, so_luong_nam ?? 0);
-      if (regionTotal > 0) so_luong = regionTotal;
+    const hasRegionQuantity = so_luong_bac !== null || so_luong_trung !== null || so_luong_nam !== null;
+    const regionTotal = Math.max(0, so_luong_bac ?? 0) + Math.max(0, so_luong_trung ?? 0) + Math.max(0, so_luong_nam ?? 0);
+    if (isRegionQuantityOrder) {
+      so_luong = hasRegionQuantity && regionTotal > 0 ? regionTotal : null;
+    } else if (hasRegionQuantity && regionTotal > 0) {
+      so_luong = regionTotal;
     }
     const ma_don_hang = pickRowField(row, ['ma_don_hang', 'orderRef', 'order_code']);
     const do_li = pickRowField(row, ['do_li', 'doLi']);
@@ -6808,6 +7189,9 @@ function parseOrderProductsInput(
 
     if (!ma_sp && !ten_sp) {
       return { error: 'Mỗi dòng sản phẩm cần có mã SP hoặc tên SP.' };
+    }
+    if (isRegionQuantityOrder && (!hasRegionQuantity || regionTotal <= 0)) {
+      return { error: `Nhập số lượng Bắc, Trung hoặc Nam cho sản phẩm ${ma_sp || ten_sp}. Ít nhất một ô phải có số lượng.` };
     }
     if (so_luong === null || so_luong <= 0) {
       return { error: `Số lượng phải lớn hơn 0 cho sản phẩm ${ma_sp || ten_sp}.` };
@@ -11890,12 +12274,13 @@ export function createApp() {
     }
   });
 
-  app.get('/api/kho-nvl', async (_req, res) => {
+  app.get('/api/kho-nvl', async (req, res) => {
     if (!supabase) {
       return res.json({ materials: [], total: 0, source: 'local' });
     }
 
     try {
+      const tenKho = String(req.query.ten_kho ?? req.query.tenKho ?? '').trim();
       // PostgREST giới hạn mặc định 1000 dòng/query -> phân trang để lấy hết dữ liệu.
       const PAGE_SIZE = 1000;
       const allData: Record<string, unknown>[] = [];
@@ -11914,8 +12299,13 @@ export function createApp() {
         if (!page || page.length < PAGE_SIZE) break;
       }
 
+      const wantKho = tenKho ? nvlWarehouseKey(tenKho) : '';
+      const scoped = wantKho
+        ? allData.filter(row => nvlWarehouseKey(row.ten_kho) === wantKho)
+        : allData;
+
       const movementTotals = await buildMaterialMovementTotals();
-      const materials = applyMaterialMovementTotals(allData || [], movementTotals)
+      const materials = applyMaterialMovementTotals(scoped, movementTotals)
         .map(materialWithClassificationAliases);
 
       return res.json({
@@ -11938,12 +12328,24 @@ export function createApp() {
       if ('error' in parsed) {
         return res.status(400).json({ error: parsed.error });
       }
+      await attachMaterialKho(parsed.record);
 
-      const { data, error } = await supabase
+      let insertResult = await supabase
         .from(SUPABASE_MATERIALS_TABLE)
         .insert(parsed.record)
         .select('*')
         .single();
+      if (insertResult.error && isMissingColumnError(insertResult.error)) {
+        const stripped = stripMissingMaterialKhoColumns([parsed.record], insertResult.error);
+        if (stripped) {
+          insertResult = await supabase
+            .from(SUPABASE_MATERIALS_TABLE)
+            .insert(stripped[0])
+            .select('*')
+            .single();
+        }
+      }
+      const { data, error } = insertResult;
 
       if (error) {
         console.error('Supabase kho_nvl insert error:', error);
@@ -11967,8 +12369,13 @@ export function createApp() {
       if (createsInput.length === 0 && updatesInput.length === 0) {
         return res.status(400).json({ error: 'Không có dòng nguyên phụ liệu hợp lệ để import.' });
       }
+      if (createsInput.length + updatesInput.length > 1000) {
+        return res.status(400).json({ error: 'Mỗi batch tối đa 1000 dòng (client gửi 200 dòng/batch).' });
+      }
 
-      const parseBatchRecords = (items: unknown[], includeId: boolean) => {
+      await loadQuanLyKhoRows();
+
+      const parseBatchRecords = async (items: unknown[], includeId: boolean) => {
         const records: Array<Record<string, string | number | null>> = [];
         for (let index = 0; index < items.length; index += 1) {
           const item = items[index];
@@ -11976,6 +12383,7 @@ export function createApp() {
           if ('error' in parsed) {
             return { error: `Dòng batch ${index + 1}: ${parsed.error}` } as const;
           }
+          await attachMaterialKho(parsed.record);
 
           if (includeId) {
             const source = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
@@ -11991,44 +12399,91 @@ export function createApp() {
         return { records, error: null } as const;
       };
 
-      const parsedCreates = parseBatchRecords(createsInput, false);
+      const parsedCreates = await parseBatchRecords(createsInput, false);
       if (parsedCreates.error) return res.status(400).json({ error: parsedCreates.error });
-      const parsedUpdates = parseBatchRecords(updatesInput, true);
+      const parsedUpdates = await parseBatchRecords(updatesInput, true);
       if (parsedUpdates.error) return res.status(400).json({ error: parsedUpdates.error });
 
-      let createdMaterials: Record<string, unknown>[] = [];
-      let updatedMaterials: Record<string, unknown>[] = [];
-
-      if (parsedCreates.records.length > 0) {
-        const { data, error } = await supabase
-          .from(SUPABASE_MATERIALS_TABLE)
-          .insert(parsedCreates.records)
-          .select('*');
-        if (error) {
-          console.error('Supabase kho_nvl batch insert error:', error);
-          return res.status(500).json({ error: materialWriteErrorMessage(error) });
+      // Unique là bộ mã + tên + tên SX + kho, không phải mỗi mã một dòng.
+      // Dòng Excel trùng bộ đó phải cập nhật đúng id đã có, không ghi đè kho khác.
+      const existingByIdentity = await loadKhoNvlIdsByIdentity([
+        ...parsedCreates.records.map(record => String(record.ma_npl ?? '')),
+        ...parsedUpdates.records.map(record => String(record.ma_npl ?? ''))
+      ]);
+      const createsByIdentity = new Map<string, Record<string, string | number | null>>();
+      const updatesById = new Map<string, Record<string, string | number | null>>();
+      const queueMaterialImport = (
+        record: Record<string, string | number | null>,
+        fallbackId?: string
+      ) => {
+        const identity = materialImportIdentityFromRecord(record);
+        const existingId = existingByIdentity.get(identity);
+        if (existingId) {
+          const next = { ...record, id: existingId };
+          updatesById.set(existingId, next);
+          return;
         }
-        createdMaterials = (data || []).map(materialWithClassificationAliases);
+        if (fallbackId) {
+          updatesById.set(fallbackId, { ...record, id: fallbackId });
+          return;
+        }
+        createsByIdentity.set(identity, record);
+      };
+      for (const record of parsedCreates.records) queueMaterialImport(record);
+      for (const record of parsedUpdates.records) {
+        queueMaterialImport(record, String(record.id ?? '').trim());
+      }
+      const createsToWrite = [...createsByIdentity.values()];
+      const updatesToWrite = [...updatesById.values()];
+
+      let createdCount = 0;
+      let updatedCount = 0;
+
+      const writeMaterialGroups = async (
+        records: Array<Record<string, string | number | null>>,
+        mode: 'insert' | 'upsert'
+      ) => {
+        for (const group of groupMaterialRecordsByColumns(records)) {
+          const run = (rows: Array<Record<string, unknown>>) => {
+            const query = supabase!.from(SUPABASE_MATERIALS_TABLE);
+            return mode === 'insert'
+              ? query.insert(rows).select('id')
+              : query.upsert(rows, { onConflict: 'id' }).select('id');
+          };
+          let result = await run(group);
+          if (result.error && isMissingColumnError(result.error)) {
+            const stripped = stripMissingMaterialKhoColumns(group, result.error);
+            if (stripped) result = await run(stripped);
+          }
+          if (result.error) {
+            console.error(`Supabase kho_nvl batch ${mode} error:`, result.error);
+            return { error: materialWriteErrorMessage(result.error) } as const;
+          }
+          const written = result.data?.length ?? group.length;
+          if (mode === 'insert') createdCount += written;
+          else updatedCount += written;
+        }
+        return { error: null } as const;
+      };
+
+      if (createsToWrite.length > 0) {
+        const created = await writeMaterialGroups(createsToWrite, 'insert');
+        if (created.error) {
+          return res.status(500).json({ error: created.error, createdCount, updatedCount });
+        }
       }
 
-      if (parsedUpdates.records.length > 0) {
-        const { data, error } = await supabase
-          .from(SUPABASE_MATERIALS_TABLE)
-          .upsert(parsedUpdates.records, { onConflict: 'id' })
-          .select('*');
-        if (error) {
-          console.error('Supabase kho_nvl batch update error:', error);
-          return res.status(500).json({ error: materialWriteErrorMessage(error) });
+      if (updatesToWrite.length > 0) {
+        const updated = await writeMaterialGroups(updatesToWrite, 'upsert');
+        if (updated.error) {
+          return res.status(500).json({ error: updated.error, createdCount, updatedCount });
         }
-        updatedMaterials = (data || []).map(materialWithClassificationAliases);
       }
 
       return res.status(200).json({
         success: true,
-        created: createdMaterials,
-        updated: updatedMaterials,
-        createdCount: createdMaterials.length,
-        updatedCount: updatedMaterials.length
+        createdCount,
+        updatedCount
       });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi import hàng loạt nguyên phụ liệu.' });
@@ -12103,13 +12558,26 @@ export function createApp() {
       if ('error' in parsed) {
         return res.status(400).json({ error: parsed.error });
       }
+      await attachMaterialKho(parsed.record);
 
-      const { data, error } = await supabase
+      let patchResult = await supabase
         .from(SUPABASE_MATERIALS_TABLE)
         .update(parsed.record)
         .eq(filter.column, filter.value)
         .select('*')
         .single();
+      if (patchResult.error && isMissingColumnError(patchResult.error)) {
+        const stripped = stripMissingMaterialKhoColumns([parsed.record], patchResult.error);
+        if (stripped) {
+          patchResult = await supabase
+            .from(SUPABASE_MATERIALS_TABLE)
+            .update(stripped[0])
+            .eq(filter.column, filter.value)
+            .select('*')
+            .single();
+        }
+      }
+      const { data, error } = patchResult;
 
       if (error) {
         console.error('Supabase kho_nvl update error:', error);
@@ -12432,7 +12900,13 @@ export function createApp() {
       );
 
       const maPhieu = generateWarehouseSlipCode(parsed.loaiPhieu);
-      const records = buildWarehouseSlipInsertRecords(parsed, maPhieu);
+      let records = buildWarehouseSlipInsertRecords(parsed, maPhieu);
+      let khoNvlResult: { ensured: number; skipped: number; error?: string } | undefined;
+      if (parsed.loaiKho === 'nvl' && String(parsed.tenKho || '').trim()) {
+        const attached = await attachLiveKhoNvlIds(records, parsed.items, parsed.tenKho || '');
+        records = attached.records;
+        khoNvlResult = attached;
+      }
       const writeTable = await resolveWarehouseWriteTable(parsed.loaiPhieu);
 
       const { data, error } = await insertWarehouseSlipRecordsResilient(writeTable, records);
@@ -12448,6 +12922,7 @@ export function createApp() {
       }
 
       let nhapKhoResult: { saved: boolean; count: number; error?: string } | undefined;
+      // NVL kho-only: phiếu nhập NVL không ghi nhap_kho (chỉ TP mới ghi).
       if (parsed.loaiPhieu === 'nhap' && parsed.loaiKho === 'san_pham') {
         nhapKhoResult = await insertNhapKhoThanhPhamRows(parsed);
       }
@@ -12466,6 +12941,15 @@ export function createApp() {
                 saved: nhapKhoResult.saved,
                 count: nhapKhoResult.count,
                 ...(nhapKhoResult.error ? { warning: nhapKhoResult.error } : {})
+              }
+            }
+          : {}),
+        ...(khoNvlResult
+          ? {
+              khoNvl: {
+                ensured: khoNvlResult.ensured,
+                skipped: khoNvlResult.skipped,
+                ...(khoNvlResult.error ? { warning: khoNvlResult.error } : {})
               }
             }
           : {})
@@ -12603,7 +13087,13 @@ export function createApp() {
         parsed.tenKho || '',
         parsed.loaiKho === 'nvl' ? 'kho_nvl' : 'kho_thanh_pham'
       );
-      const records = buildWarehouseSlipInsertRecords(parsed, slipCode);
+      let records = buildWarehouseSlipInsertRecords(parsed, slipCode);
+      let khoNvlResult: { ensured: number; skipped: number; error?: string } | undefined;
+      if (parsed.loaiKho === 'nvl' && String(parsed.tenKho || '').trim()) {
+        const attached = await attachLiveKhoNvlIds(records, parsed.items, parsed.tenKho || '');
+        records = attached.records;
+        khoNvlResult = attached;
+      }
       const writeTable = await resolveWarehouseWriteTable(parsed.loaiPhieu);
 
       const { data, error } = await insertWarehouseSlipRecordsResilient(writeTable, records);
@@ -12618,6 +13108,7 @@ export function createApp() {
       }
 
       let nhapKhoResult: { saved: boolean; count: number; error?: string } | undefined;
+      // NVL kho-only: phiếu nhập NVL không ghi nhap_kho (chỉ TP mới ghi).
       if (parsed.loaiPhieu === 'nhap' && parsed.loaiKho === 'san_pham') {
         nhapKhoResult = await insertNhapKhoThanhPhamRows(parsed);
       }
@@ -12651,6 +13142,15 @@ export function createApp() {
                 saved: nhapKhoResult.saved,
                 count: nhapKhoResult.count,
                 ...(nhapKhoResult.error ? { warning: nhapKhoResult.error } : {})
+              }
+            }
+          : {}),
+        ...(khoNvlResult
+          ? {
+              khoNvl: {
+                ensured: khoNvlResult.ensured,
+                skipped: khoNvlResult.skipped,
+                ...(khoNvlResult.error ? { warning: khoNvlResult.error } : {})
               }
             }
           : {})
@@ -16085,8 +16585,8 @@ async function loadKiemKhoLiveTongHopForDot(
     }
 
     try {
-      // Module 1 chot: Ton dau ky HARD 0 — chi tinh phieu (khong cong kho_nvl.ton_dau_ky).
-      // Ton cuoi = 0 + Nhap - Xuat trong ky da chon (khong chon ky = toan thoi gian).
+      // Tồn kỳ NVL: phiếu trước `from` = tồn đầu; phiếu trong [from, to] = nhập/xuất.
+      // Danh sách = kho_nvl + nhap_kho của đúng Kho NVL / Chính / Phụ / PC.
       const tuNgay = parseWarehouseSlipDate(req.query.from ?? req.query.tu_ngay);
       const denNgay = parseWarehouseSlipDate(req.query.to ?? req.query.den_ngay);
       const tenKho = String(req.query.ten_kho ?? req.query.tenKho ?? '').trim() || null;
@@ -16096,6 +16596,26 @@ async function loadKiemKhoLiveTongHopForDot(
       // Doc gop bang tach (nhap + xuat) + bang cu fallback, dedupe theo id.
       // Loai phieu lay theo tung dong (warehouseSlipTypeOfRow) thay vi filter query.
       // loai_kho lưu mã kho — đọc nhóm nvl gồm mã cũ + mã kho vật tư.
+      if (!tuNgay || !denNgay) {
+        return res.status(400).json({ error: 'Cần chọn Từ ngày và Đến ngày.', rows: [], total: 0 });
+      }
+      if (tuNgay > denNgay) {
+        return res.status(400).json({ error: 'Từ ngày không được lớn hơn Đến ngày.', rows: [], total: 0 });
+      }
+      if (tenKho && !isNvlCoreWarehouseName(tenKho)) {
+        return res.json({ rows: [], total: 0, tu_ngay: tuNgay, den_ngay: denNgay, source: 'supabase' });
+      }
+
+      const quanLyKho = await loadQuanLyKhoRows();
+      const cores = nvlCoreWarehouses(quanLyKho);
+      // Tổng hợp NVL thực hiện ở frontend: gọi không kèm `ten_kho` để lấy
+      // toàn bộ 4 kho rồi gộp theo mã (`aggregateMaterialsForTotal`).
+      // Khi có `ten_kho` cụ thể (chi tiết từng kho, chuyển kho nguồn...)
+      // vẫn lọc đúng kho đó nên giữ `selectedCore` như cũ.
+      const selectedCore = tenKho
+        ? cores.find(row => nvlWarehouseKey(row.ten_kho) === nvlWarehouseKey(tenKho)) ?? null
+        : null;
+
       const slipTables = await resolveWarehouseReadTables(null);
       const movementLists: any[][] = [];
       let movementError: any = null;
@@ -16106,10 +16626,9 @@ async function loadKiemKhoLiveTongHopForDot(
           .from(slipTable)
           .select('*')
           .or(nvlOrTonNvl)
+          .lte('ngay_phieu', denNgay)
           .order('ngay_phieu', { ascending: true })
-          .limit(20000);
-        if (tuNgay) query = query.gte('ngay_phieu', tuNgay);
-        if (denNgay) query = query.lte('ngay_phieu', denNgay);
+          .limit(50000);
         if (maNpl) query = query.eq('ma_npl', maNpl);
 
         const { data, error } = await query;
@@ -16126,14 +16645,25 @@ async function loadKiemKhoLiveTongHopForDot(
       }
       const movements = mergeWarehouseMovementRows(...movementLists);
 
-      const { data: catalog } = await supabase
+      let catalog: unknown[] = [];
+      const catalogFull = await supabase
         .from(SUPABASE_MATERIALS_TABLE)
-        .select('ma_npl, ten_npl, ten_nvl_sx, don_vi, ten_kho, phan_loai, nhom_vat_tu_phu, tong_trong_luong')
+        .select('id, ma_npl, ten_npl, ten_nvl_sx, don_vi, ten_kho, loai_kho, phan_loai, nhom_vat_tu_phu, tong_trong_luong')
         .limit(20000);
-      const catalogByCode = new Map<string, Record<string, unknown>>();
-      for (const record of catalog || []) {
-        const code = String((record as Record<string, unknown>).ma_npl ?? '').trim();
-        if (code && !catalogByCode.has(code)) catalogByCode.set(code, record as Record<string, unknown>);
+      if (!catalogFull.error) {
+        catalog = catalogFull.data || [];
+      } else if (isMissingColumnError(catalogFull.error)) {
+        const catalogBase = await supabase
+          .from(SUPABASE_MATERIALS_TABLE)
+          .select('id, ma_npl, ten_npl, ten_nvl_sx, don_vi, ten_kho, phan_loai, nhom_vat_tu_phu, tong_trong_luong')
+          .limit(20000);
+        if (catalogBase.error) {
+          console.error('Supabase ton-kho-nvl kho_nvl error:', catalogBase.error);
+        } else {
+          catalog = catalogBase.data || [];
+        }
+      } else {
+        console.error('Supabase ton-kho-nvl kho_nvl error:', catalogFull.error);
       }
 
       type NvlBalance = {
@@ -16150,49 +16680,181 @@ async function loadKiemKhoLiveTongHopForDot(
         xuat: number;
       };
       const balances = new Map<string, NvlBalance>();
-      for (const raw of movements || []) {
-        const row = raw as Record<string, unknown>;
-        const code = String(row.ma_npl ?? '').trim();
-        if (!code) continue;
-        const rowKho = String(row.ten_kho ?? '').trim();
-        const rowMay = String(row.may ?? '').trim();
-        if (!rowKho && rowMay) continue;
-        if (tenKho && rowKho !== tenKho) continue;
-        const key = `${code}||${rowKho}`;
+      const balanceKey = (code: string, name: string, productionName: string, warehouse: string) =>
+        `${code.trim()}\0${name.trim()}\0${productionName.trim()}\0${nvlWarehouseKey(warehouse)}`;
+
+      const ensureBalance = (input: {
+        code: string;
+        name: string;
+        productionName: string;
+        warehouse: string;
+        unit?: string;
+        phanLoai?: string;
+        nhom?: string;
+        tongKg?: number | null;
+      }) => {
+        const code = input.code.trim();
+        const warehouse = input.warehouse.trim();
+        if (!code || !warehouse) return null;
+        const key = balanceKey(code, input.name, input.productionName, warehouse);
         let balance = balances.get(key);
         if (!balance) {
-          const catalogRow = catalogByCode.get(code);
           balance = {
             ma_npl: code,
-            ten_npl: String(row.ten_npl ?? catalogRow?.ten_npl ?? '').trim(),
-            ten_nvl_sx: '',
-            phan_loai: String(catalogRow?.phan_loai ?? '').trim(),
-            nhom_vthh: String(catalogRow?.nhom_vat_tu_phu ?? row.nhom_vthh ?? '').trim(),
-            don_vi: String(row.don_vi ?? catalogRow?.don_vi ?? '').trim(),
-            ten_kho: rowKho || String(catalogRow?.ten_kho ?? '').trim(),
-            tong_kg: Number(catalogRow?.tong_trong_luong ?? NaN),
+            ten_npl: input.name.trim(),
+            ten_nvl_sx: input.productionName.trim(),
+            phan_loai: String(input.phanLoai ?? '').trim(),
+            nhom_vthh: String(input.nhom ?? '').trim(),
+            don_vi: String(input.unit ?? '').trim(),
+            ten_kho: warehouse,
+            tong_kg: input.tongKg === undefined || input.tongKg === null || !Number.isFinite(input.tongKg) ? null : input.tongKg,
             ton_dau: 0,
             nhap: 0,
             xuat: 0
           };
-          if (!Number.isFinite(balance.tong_kg as number)) balance.tong_kg = null;
           balances.set(key, balance);
         }
-        const snapshotSx = String(row.ten_nvl_sx ?? '').trim();
-        if (snapshotSx) balance.ten_nvl_sx = snapshotSx;
-        if (!balance.ten_npl) balance.ten_npl = String(row.ten_npl ?? '').trim();
+        return balance;
+      };
+
+      const balancesById = new Map<string, NvlBalance>();
+      for (const record of catalog || []) {
+        const row = record as Record<string, unknown>;
+        const warehouse = canonicalNvlCoreWarehouse(row.ten_kho, row.loai_kho, cores);
+        if (!warehouse) continue;
+        if (selectedCore && nvlWarehouseKey(warehouse) !== nvlWarehouseKey(selectedCore.ten_kho)) continue;
+        const tong = Number(row.tong_trong_luong ?? NaN);
+        const balance = ensureBalance({
+          code: String(row.ma_npl ?? ''),
+          name: String(row.ten_npl ?? ''),
+          productionName: String(row.ten_nvl_sx ?? ''),
+          warehouse,
+          unit: String(row.don_vi ?? ''),
+          phanLoai: String(row.phan_loai ?? ''),
+          nhom: String(row.nhom_vat_tu_phu ?? ''),
+          tongKg: Number.isFinite(tong) ? tong : null
+        });
+        const catalogId = String(row.id ?? '').trim();
+        if (balance && catalogId) balancesById.set(catalogId, balance);
+      }
+
+      let ledgerRows: unknown[] = [];
+      const ledgerFull = await supabase
+        .from(SUPABASE_NHAP_KHO_TABLE)
+        .select('ma_sp, ten_sp, ten_san_xuat, don_vi, ten_kho, loai_kho, ma_may')
+        .limit(20000);
+      if (!ledgerFull.error) {
+        ledgerRows = ledgerFull.data || [];
+      } else if (!isMissingTableError(ledgerFull.error) && isMissingColumnError(ledgerFull.error)) {
+        const ledgerBase = await supabase
+          .from(SUPABASE_NHAP_KHO_TABLE)
+          .select('ma_sp, ten_sp, don_vi, ten_kho, loai_kho')
+          .limit(20000);
+        if (ledgerBase.error && !isMissingTableError(ledgerBase.error)) {
+          console.error('Supabase ton-kho-nvl nhap_kho error:', ledgerBase.error);
+        } else {
+          ledgerRows = ledgerBase.data || [];
+        }
+      } else if (!isMissingTableError(ledgerFull.error)) {
+        console.error('Supabase ton-kho-nvl nhap_kho error:', ledgerFull.error);
+      }
+      for (const record of ledgerRows) {
+        const row = record as Record<string, unknown>;
+        if (String(row.ma_may ?? '').trim()) continue;
+        const warehouse = canonicalNvlCoreWarehouse(row.ten_kho, row.loai_kho, cores);
+        if (!warehouse) continue;
+        if (selectedCore && nvlWarehouseKey(warehouse) !== nvlWarehouseKey(selectedCore.ten_kho)) continue;
+        const code = String(row.ma_sp ?? '').trim();
+        if (maNpl && code !== maNpl) continue;
+        ensureBalance({
+          code,
+          name: String(row.ten_sp ?? ''),
+          productionName: String(row.ten_san_xuat ?? ''),
+          warehouse,
+          unit: String(row.don_vi ?? '')
+        });
+      }
+
+      const addSlipQty = (balance: NvlBalance, row: Record<string, unknown>) => {
         const qty = Number(row.so_luong);
-        if (!Number.isFinite(qty)) continue;
-        if (String(row.loai_phieu ?? '').trim().toLowerCase() === 'xuat') {
+        if (!Number.isFinite(qty)) return;
+        const slipDate = parseWarehouseSlipDate(row.ngay_phieu) ?? '';
+        const isExport = String(row.loai_phieu ?? '').trim().toLowerCase() === 'xuat';
+        if (slipDate && slipDate < tuNgay) {
+          balance.ton_dau = roundWarehouseMoney(balance.ton_dau + (isExport ? -qty : qty));
+        } else if (isExport) {
           balance.xuat = roundWarehouseMoney(balance.xuat + qty);
         } else {
           balance.nhap = roundWarehouseMoney(balance.nhap + qty);
         }
-      }
-      // Ten NVL SX fallback danh muc khi phieu cu chua snapshot.
-      for (const balance of balances.values()) {
-        if (!balance.ten_nvl_sx) {
-          balance.ten_nvl_sx = String(catalogByCode.get(balance.ma_npl)?.ten_nvl_sx ?? '').trim();
+      };
+
+      const stampReady = await warehouseSlipsHaveCatalogStamp();
+      if (stampReady) {
+        for (const raw of movements || []) {
+          const row = raw as Record<string, unknown>;
+          const catalogId = String(row.id_danh_muc ?? '').trim();
+          const kind = String(row.loai_danh_muc ?? '').trim();
+          if (kind !== LOAI_DANH_MUC_KHO_NVL || !catalogId) continue;
+          const balance = balancesById.get(catalogId);
+          if (!balance) continue;
+          addSlipQty(balance, row);
+        }
+      } else {
+        if (!warnedMissingCatalogStamp) {
+          warnedMissingCatalogStamp = true;
+          console.warn(
+            '[ton-kho-nvl] chưa có cột id_danh_muc. Chạy supabase-phieu-nhap-xuat-id-danh-muc.sql. Tồn tạm cộng theo mã, tên, tên sản xuất và kho.'
+          );
+        }
+        const siblingsByCodeKho = new Map<string, NvlBalance[]>();
+        for (const balance of balances.values()) {
+          const bucketKey = `${balance.ma_npl.trim()}\0${nvlWarehouseKey(balance.ten_kho)}`;
+          const bucket = siblingsByCodeKho.get(bucketKey);
+          if (bucket) bucket.push(balance);
+          else siblingsByCodeKho.set(bucketKey, [balance]);
+        }
+
+        for (const raw of movements || []) {
+          const row = raw as Record<string, unknown>;
+          const code = String(row.ma_npl ?? '').trim();
+          if (!code) continue;
+          const rowMay = String(row.may ?? '').trim();
+          const rowKho = String(row.ten_kho ?? '').trim();
+          if (!rowKho && rowMay) continue;
+          const warehouse = canonicalNvlCoreWarehouse(row.ten_kho, row.loai_kho, cores);
+          if (!warehouse) continue;
+          if (selectedCore && nvlWarehouseKey(warehouse) !== nvlWarehouseKey(selectedCore.ten_kho)) continue;
+
+          const name = String(row.ten_npl ?? '').trim();
+          const productionName = String(row.ten_nvl_sx ?? '').trim();
+          let balance = name
+            ? balances.get(balanceKey(code, name, productionName, warehouse)) ?? null
+            : null;
+          if (!balance) {
+            const siblings = siblingsByCodeKho.get(`${code}\0${nvlWarehouseKey(warehouse)}`) ?? [];
+            if (siblings.length === 1) balance = siblings[0];
+            else {
+              balance = ensureBalance({
+                code,
+                name: name || code,
+                productionName,
+                warehouse,
+                unit: String(row.don_vi ?? ''),
+                nhom: String(row.nhom_vthh ?? '')
+              });
+              if (balance) {
+                const bucketKey = `${code}\0${nvlWarehouseKey(warehouse)}`;
+                const bucket = siblingsByCodeKho.get(bucketKey);
+                if (bucket) bucket.push(balance);
+                else siblingsByCodeKho.set(bucketKey, [balance]);
+              }
+            }
+          }
+          if (!balance) continue;
+          if (!balance.ten_npl && name) balance.ten_npl = name;
+          if (!balance.ten_nvl_sx && productionName) balance.ten_nvl_sx = productionName;
+          addSlipQty(balance, row);
         }
       }
 
@@ -16268,7 +16930,7 @@ async function loadKiemKhoLiveTongHopForDot(
       }
 
       const nhapKhoRawFull =
-        'id, ma_sp, ten_sp, don_vi, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, ten_goc, do_li, do_li_dm, do_day_m, do_dai_m, mang, hang_phe, ma_amis, mo_ta_tem, loai_kho, ten_kho, ma_may, created_at';
+        'id, ma_sp, ten_sp, don_vi, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, ten_goc, do_li, do_li_dm, do_day_m, do_dai_m, mang, hang_phe, ma_amis, mo_ta_tem, ten_san_xuat, loai_kho, ten_kho, ma_may, created_at';
       const nhapKhoRawBase =
         'id, ma_sp, ten_sp, don_vi, trong_luong_kg_mot_sp, so_m2_mot_sp, so_m_dai_mot_sp, loai_kho, ten_kho, created_at';
       const buildNhapKhoRawQuery = (selectCols: string) => {
@@ -16284,8 +16946,12 @@ async function loadKiemKhoLiveTongHopForDot(
         return query;
       };
       let { data, error } = await buildNhapKhoRawQuery(nhapKhoRawFull);
-      if (error && isMissingColumnError(error) && String(error.message || '').includes('mo_ta_tem')) {
-        ({ data, error } = await buildNhapKhoRawQuery(nhapKhoRawFull.replace(', mo_ta_tem', '')));
+      let rawSelectTried = nhapKhoRawFull;
+      for (const optionalCol of ['mo_ta_tem', 'ten_san_xuat']) {
+        if (error && isMissingColumnError(error) && String(error.message || '').includes(optionalCol)) {
+          rawSelectTried = rawSelectTried.replace(`, ${optionalCol}`, '');
+          ({ data, error } = await buildNhapKhoRawQuery(rawSelectTried));
+        }
       }
       if (error && isMissingColumnError(error)) {
         console.warn(`[nhap-kho] thiếu cột cắt lẻ (${error.message}) — trả records không specs.`);
@@ -16308,7 +16974,8 @@ async function loadKiemKhoLiveTongHopForDot(
         records = records.filter((row: any) => {
           const ma = String(row.ma_sp ?? '').toLowerCase();
           const ten = String(row.ten_sp ?? '').toLowerCase();
-          return ma.includes(keyword) || ten.includes(keyword);
+          const tenSx = String(row.ten_san_xuat ?? '').toLowerCase();
+          return ma.includes(keyword) || ten.includes(keyword) || tenSx.includes(keyword);
         });
       }
 
@@ -16536,6 +17203,52 @@ async function loadKiemKhoLiveTongHopForDot(
     }
   }
 
+  /** Tồn SL NVL của đúng mã tại đúng kho (phiếu nhóm nvl, khớp ten_kho). */
+  async function getNvlTonSlTheoKho(maNpl: string, tenKho: string): Promise<number | null> {
+    if (!supabase) return null;
+    const code = String(maNpl || '').trim();
+    if (!code) return null;
+    const normFilter = normalizeKhoLabelForMatch(tenKho);
+    let ton = 0;
+    const { nvl: nvlLoaiKhosTonCk } = await loaiKhoLists();
+    const stampReady = await warehouseSlipsHaveCatalogStamp();
+    const liveIds = stampReady ? await liveKhoNvlIdsForWarehouse(code, tenKho) : null;
+    try {
+      for (const table of await resolveWarehouseReadTables(null)) {
+        const { data, error } = await supabase
+          .from(table)
+          .select(
+            stampReady
+              ? 'ma_npl, ten_kho, loai_phieu, so_luong, id_danh_muc, loai_danh_muc'
+              : 'ma_npl, ten_kho, loai_phieu, so_luong'
+          )
+          .in('loai_kho', nvlLoaiKhosTonCk)
+          .eq('ma_npl', code)
+          .limit(50000);
+        if (error) {
+          if (isMissingTableError(error) || (stampReady && isMissingColumnError(error))) continue;
+          return null;
+        }
+        for (const row of (data || []) as any[]) {
+          if (stampReady) {
+            const catalogId = String(row?.id_danh_muc ?? '').trim();
+            if (String(row?.loai_danh_muc ?? '').trim() !== LOAI_DANH_MUC_KHO_NVL || !liveIds?.has(catalogId)) {
+              continue;
+            }
+          } else if (normalizeKhoLabelForMatch(row?.ten_kho) !== normFilter) {
+            continue;
+          }
+          const qty = Number(row?.so_luong) || 0;
+          if (String(row?.loai_phieu || '').trim().toLowerCase() === 'xuat') ton -= qty;
+          else ton += qty;
+        }
+      }
+      return Math.round(ton * 1000) / 1000;
+    } catch {
+      return null;
+    }
+  }
+
   /** Ghi dòng catalog nhap_kho (kèm 7 thông số ghép tên khi có). */
   async function insertNhapKhoCatalogRows(
     rows: Array<Record<string, unknown>>
@@ -16551,6 +17264,7 @@ async function loadKiemKhoLiveTongHopForDot(
         const clone: Record<string, unknown> = { ...row };
         for (const col of NHAP_KHO_CAT_LE_SPEC_COLUMNS) delete clone[col];
         delete clone.mo_ta_tem;
+        delete clone.ten_san_xuat;
         return clone;
       });
       ({ data, error } = await attempt(stripped));
@@ -16607,6 +17321,12 @@ async function loadKiemKhoLiveTongHopForDot(
       const kgCanRaw = item.kgCanThucTe ?? item.kg_can_thuc_te;
       const kgCan = kgCanRaw === null || kgCanRaw === undefined || kgCanRaw === '' ? null : Number(kgCanRaw);
       const doLiMoi = String(item.doLiCat ?? item.do_li_cat ?? '').trim() || null;
+      const piecesRaw =
+        item.soConMotMe ?? item.so_con_mot_me ?? item.soConTrenMotMe ?? item.pieces ?? item.soLuongConMotMe ?? 1;
+      const pieces = Math.floor(Number(String(piecesRaw).replace(',', '.')));
+      if (!Number.isFinite(pieces) || pieces < 1) {
+        return { error: `Dòng ${index + 1} (${mother.maSp}): số con/mẹ phải >= 1.` };
+      }
       try {
         lines.push(
           buildCatLeSanPhamLine({
@@ -16618,6 +17338,7 @@ async function loadKiemKhoLiveTongHopForDot(
             l2,
             doLiMoi,
             kgCanThucTe: kgCan,
+            pieces,
             ghiChu: String(item.ghiChu ?? item.ghi_chu ?? '').trim()
           })
         );
@@ -16643,7 +17364,12 @@ async function loadKiemKhoLiveTongHopForDot(
 
   function catLeSlipItem(line: CatLeSanPhamLine, kind: 'nguon' | 'cat_1' | 'cat_2') {
     const piece = kind === 'nguon' ? line.san_pham_nguon : kind === 'cat_1' ? line.san_pham_cat_1 : line.san_pham_cat_2;
-    const qty = Number(line.san_pham_nguon.so_luong) || 0;
+    const qtyMe = Number(line.san_pham_nguon.so_luong) || 0;
+    const savedCon = Number((line as unknown as Record<string, unknown>).so_luong_cat_1);
+    const piecesRaw = Number((line as unknown as Record<string, unknown>).so_con_mot_me);
+    const pieces = Number.isFinite(piecesRaw) && piecesRaw >= 1 ? Math.floor(piecesRaw) : 1;
+    // Xuất mẹ = SL mẹ; nhập TP = mẹ × N; nhập thừa = SL mẹ (1 khúc thừa/mẹ).
+    const qty = kind === 'cat_1' ? (Number.isFinite(savedCon) && savedCon > 0 ? savedCon : Math.round(qtyMe * pieces * 1000) / 1000) : qtyMe;
     const kg1 = Number(piece?.kg) || 0;
     const a1 = Number(piece?.m2) || 0;
     const l1 = Number(piece?.m_dai) || 0;
@@ -17074,7 +17800,9 @@ async function loadKiemKhoLiveTongHopForDot(
         mang: text(item.mang) || null,
         hang_phe: text(item.hang_phe ?? item.hangPhe) || null,
         ma_amis: text(item.ma_amis ?? item.maAmis) || null,
-        mo_ta_tem: text(item.mo_ta_tem ?? item.moTaTem) || null
+        mo_ta_tem: text(item.mo_ta_tem ?? item.moTaTem) || null,
+        ten_san_xuat: text(item.ten_san_xuat ?? item.tenSanXuat ?? item.ten_nvl_sx ?? item.productionName) || null,
+        phan_loai: text(item.phan_loai ?? item.phanLoai) || null
       });
     }
     return { lines };
@@ -17083,6 +17811,33 @@ async function loadKiemKhoLiveTongHopForDot(
   /** Chuyển kho không lưu ca: ép ca/ca_list về null trên dòng phiếu đã build. */
   function stripChuyenKhoCa<T extends Record<string, unknown>>(records: T[]): T[] {
     return records.map(row => ({ ...row, ca: null, ca_list: null }));
+  }
+
+  async function attachChuyenKhoPhanLoai(lines: Array<Record<string, unknown>>, tenKho: string) {
+    const hits = await loadKhoNvlHitsByIdentity(lines.map(line => String(line.ma_sp || '')));
+    for (const line of lines) {
+      if (catalogPhanLoaiLabel(line.phan_loai)) continue;
+      const exact = hits.get(materialImportIdentityFromRecord({
+        ma_npl: line.ma_sp,
+        ten_npl: line.ten_sp,
+        ten_nvl_sx: line.ten_san_xuat,
+        ten_kho: tenKho
+      }));
+      let label = exact?.phan_loai || '';
+      if (!catalogPhanLoaiLabel(label)) {
+        const code = String(line.ma_sp || '').trim();
+        const name = String(line.ten_sp || '').trim();
+        const sx = String(line.ten_san_xuat || '').trim();
+        for (const [key, hit] of hits) {
+          const [kCode, kName, kSx] = key.split('\0');
+          if (kCode === code && kName === name && kSx === sx && catalogPhanLoaiLabel(hit.phan_loai)) {
+            label = hit.phan_loai;
+            break;
+          }
+        }
+      }
+      if (label) line.phan_loai = label;
+    }
   }
 
   function buildChuyenKhoSlipItems(
@@ -17097,11 +17852,12 @@ async function loadKiemKhoLiveTongHopForDot(
       return {
         code: String(line.ma_sp || ''),
         name: String(line.ten_sp || ''),
+        productionName: String(line.ten_san_xuat || '').trim() || undefined,
         unit: String(line.don_vi || '').trim() || 'Tấm',
         quantity: qty,
         unitPrice: 0,
         lineAmount: 0,
-        materialClass: 'chua_phan_loai' as const,
+        materialClass: parseWarehouseMaterialClass(line.phan_loai ?? line.phanLoai),
         weightKg: Math.round(kg1 * qty * 1000) / 1000,
         areaM2: Math.round(a1 * qty * 1000) / 1000,
         lengthM: Math.round(l1 * qty * 1000) / 1000,
@@ -17154,8 +17910,11 @@ async function loadKiemKhoLiveTongHopForDot(
       if (normalizeKhoLabelForMatch(khoNguon) === normalizeKhoLabelForMatch(khoDich)) {
         return res.status(400).json({ error: 'Kho nguồn và kho đích phải khác nhau.' });
       }
-      if (isVatTuKho(khoNguon) || isVatTuKho(khoDich)) {
-        return res.status(400).json({ error: 'Màn này chỉ chuyển sản phẩm (TP/cắt lẻ/tái chế), không chuyển kho vật tư.' });
+      // Nguồn và đích phải cùng nhóm (cùng vật tư hoặc cùng thành phẩm) — không chuyển chéo nhóm.
+      const nguonVatTuCk = isVatTuKho(khoNguon);
+      const dichVatTuCk = isVatTuKho(khoDich);
+      if (nguonVatTuCk !== dichVatTuCk) {
+        return res.status(400).json({ error: 'Kho nguồn và kho đích phải cùng nhóm (cùng là kho vật tư hoặc cùng là kho thành phẩm).' });
       }
       const parsedLines = parseChuyenKhoLines(source.lines ?? source.chi_tiet);
       if ('error' in parsedLines) return res.status(400).json({ error: parsedLines.error });
@@ -17217,8 +17976,9 @@ async function loadKiemKhoLiveTongHopForDot(
       if (normalizeKhoLabelForMatch(khoNguon) === normalizeKhoLabelForMatch(khoDich)) {
         return res.status(400).json({ error: 'Kho nguồn và kho đích phải khác nhau.' });
       }
-      if (isVatTuKho(khoNguon) || isVatTuKho(khoDich)) {
-        return res.status(400).json({ error: 'Màn này chỉ chuyển sản phẩm (TP/cắt lẻ/tái chế), không chuyển kho vật tư.' });
+      // Nguồn và đích phải cùng nhóm (cùng vật tư hoặc cùng thành phẩm) — không chuyển chéo nhóm.
+      if (isVatTuKho(khoNguon) !== isVatTuKho(khoDich)) {
+        return res.status(400).json({ error: 'Kho nguồn và kho đích phải cùng nhóm (cùng là kho vật tư hoặc cùng là kho thành phẩm).' });
       }
       const parsedLines = parseChuyenKhoLines(source.lines ?? source.chi_tiet);
       if ('error' in parsedLines) return res.status(400).json({ error: parsedLines.error });
@@ -17259,9 +18019,16 @@ async function loadKiemKhoLiveTongHopForDot(
       }
       const lines = (Array.isArray(phieu.chi_tiet) ? phieu.chi_tiet : []) as Array<Record<string, unknown>>;
       if (lines.length === 0) return res.status(400).json({ error: 'Phiếu không có dòng sản phẩm.' });
+      // Nhóm chuyển: vật tư (NVL chính/phụ/PC...) hoặc thành phẩm — 2 kho phải cùng nhóm.
+      const loaiKhoCk = isVatTuKho(phieu.kho_nguon) ? 'nvl' : 'san_pham';
+      if (isVatTuKho(phieu.kho_dich) !== (loaiKhoCk === 'nvl')) {
+        return res.status(400).json({ error: 'Kho nguồn và kho đích phải cùng nhóm (cùng là kho vật tư hoặc cùng là kho thành phẩm).' });
+      }
       // Đối soát tồn từng dòng tại ĐÚNG kho nguồn.
       for (const line of lines) {
-        const ton = await getSanPhamTonSlTheoKho(String(line.ma_sp || ''), String(phieu.kho_nguon || ''));
+        const ton = loaiKhoCk === 'nvl'
+          ? await getNvlTonSlTheoKho(String(line.ma_sp || ''), String(phieu.kho_nguon || ''))
+          : await getSanPhamTonSlTheoKho(String(line.ma_sp || ''), String(phieu.kho_nguon || ''));
         const need = Number(line.so_luong) || 0;
         if (ton !== null && ton < need - 1e-9) {
           return res.status(400).json({
@@ -17269,6 +18036,7 @@ async function loadKiemKhoLiveTongHopForDot(
           });
         }
       }
+      if (loaiKhoCk === 'nvl') await attachChuyenKhoPhanLoai(lines, String(phieu.kho_nguon || ''));
       const nguoiLap = String((req.body as any)?.nguoiLap ?? phieu.nguoi_lap ?? '').trim() || null;
       const ngayPhieu = String(phieu.ngay || '').slice(0, 10);
       const maXuat = generateWarehouseSlipCode('xuat');
@@ -17276,10 +18044,17 @@ async function loadKiemKhoLiveTongHopForDot(
       const lyDo = `Chuyển kho ${String(phieu.ma_phieu || '')}`.trim();
       const maKhoNguonCk = await resolveMaKho(phieu.kho_nguon);
       const maKhoDichCk = await resolveMaKho(phieu.kho_dich);
-      const xuatRecords = buildWarehouseSlipInsertRecords(
+      const chuyenCatalogLines = lines.map(line => ({
+        code: String(line.ma_sp || ''),
+        name: String(line.ten_sp || ''),
+        productionName: String(line.ten_san_xuat || ''),
+        unit: String(line.don_vi || ''),
+        phanLoai: String(line.phan_loai || '')
+      }));
+      let xuatRecords = buildWarehouseSlipInsertRecords(
         {
           loaiPhieu: 'xuat',
-          loaiKho: 'san_pham',
+          loaiKho: loaiKhoCk,
           maKho: maKhoNguonCk,
           ngayPhieu,
           lyDo,
@@ -17298,10 +18073,10 @@ async function loadKiemKhoLiveTongHopForDot(
         },
         maXuat
       );
-      const nhapRecords = buildWarehouseSlipInsertRecords(
+      let nhapRecords = buildWarehouseSlipInsertRecords(
         {
           loaiPhieu: 'nhap',
-          loaiKho: 'san_pham',
+          loaiKho: loaiKhoCk,
           maKho: maKhoDichCk,
           ngayPhieu,
           lyDo,
@@ -17320,6 +18095,19 @@ async function loadKiemKhoLiveTongHopForDot(
         },
         maNhap
       );
+      const khoDich = String(phieu.kho_dich || '');
+      let khoNvlResultCk: { ensured: number; skipped: number; error?: string } | null = null;
+      if (loaiKhoCk === 'nvl') {
+        const xuatAttached = await attachLiveKhoNvlIds(
+          xuatRecords,
+          chuyenCatalogLines,
+          String(phieu.kho_nguon || '')
+        );
+        const nhapAttached = await attachLiveKhoNvlIds(nhapRecords, chuyenCatalogLines, khoDich);
+        xuatRecords = xuatAttached.records;
+        nhapRecords = nhapAttached.records;
+        khoNvlResultCk = xuatAttached.error ? xuatAttached : nhapAttached;
+      }
       const tableXuat = await resolveWarehouseWriteTable('xuat');
       const tableNhap = await resolveWarehouseWriteTable('nhap');
       const r1 = await insertWarehouseSlipRecordsResilient(tableXuat, stripChuyenKhoCa(xuatRecords));
@@ -17329,30 +18117,33 @@ async function loadKiemKhoLiveTongHopForDot(
         await deleteWarehouseSlipEverywhere(maXuat);
         return res.status(500).json({ error: `Không ghi được phiếu nhập đích. ${r2.error.message}` });
       }
-      // Catalog đích: cùng mã/tên/hệ số + specs để cắt tiếp được.
-      const khoDich = String(phieu.kho_dich || '');
-      const khoDichMa = await resolveMaKho(khoDich);
-      const catResult = await insertNhapKhoCatalogRows(
-        lines.map(line => ({
-          ma_sp: String(line.ma_sp || ''),
-          ten_sp: String(line.ten_sp || ''),
-          don_vi: String(line.don_vi || '').trim() || 'Tấm',
-          trong_luong_kg_mot_sp: Number(line.kg_mot_sp) || null,
-          so_m2_mot_sp: Number(line.m2_mot_sp) || null,
-          so_m_dai_mot_sp: Number(line.m_dai_mot_sp) || null,
-          loai_kho: khoDichMa,
-          ten_kho: khoDich,
-          ten_goc: (line.ten_goc as string) || null,
-          do_li: (line.do_li as string) || null,
-          do_li_dm: (line.do_li_dm as string) || null,
-          do_day_m: (line.do_day_m as string) || null,
-          do_dai_m: (line.do_dai_m as string) || null,
-          mang: (line.mang as string) || null,
-          hang_phe: (line.hang_phe as string) || null,
-          ma_amis: (line.ma_amis as string) || null,
-          mo_ta_tem: (line.mo_ta_tem as string) || null
-        }))
-      );
+      // TP → ghi catalog nhap_kho (cùng mã/tên/hệ số + specs để cắt tiếp được).
+      let catResult: { saved: boolean; count: number; error?: string } = { saved: true, count: 0 };
+      if (loaiKhoCk !== 'nvl') {
+        const khoDichMa = await resolveMaKho(khoDich);
+        catResult = await insertNhapKhoCatalogRows(
+          lines.map(line => ({
+            ma_sp: String(line.ma_sp || ''),
+            ten_sp: String(line.ten_sp || ''),
+            don_vi: String(line.don_vi || '').trim() || 'Tấm',
+            trong_luong_kg_mot_sp: Number(line.kg_mot_sp) || null,
+            so_m2_mot_sp: Number(line.m2_mot_sp) || null,
+            so_m_dai_mot_sp: Number(line.m_dai_mot_sp) || null,
+            loai_kho: khoDichMa,
+            ten_kho: khoDich,
+            ten_san_xuat: (line.ten_san_xuat as string) || null,
+            ten_goc: (line.ten_goc as string) || null,
+            do_li: (line.do_li as string) || null,
+            do_li_dm: (line.do_li_dm as string) || null,
+            do_day_m: (line.do_day_m as string) || null,
+            do_dai_m: (line.do_dai_m as string) || null,
+            mang: (line.mang as string) || null,
+            hang_phe: (line.hang_phe as string) || null,
+            ma_amis: (line.ma_amis as string) || null,
+            mo_ta_tem: (line.mo_ta_tem as string) || null
+          }))
+        );
+      }
       const { data: updated, error: updateError } = await supabase
         .from(SUPABASE_CHUYEN_KHO_TABLE)
         .update({ trang_thai: 'hoan_thanh', ma_phieu_xuat: maXuat, ma_phieu_nhap: maNhap })
@@ -17370,7 +18161,13 @@ async function loadKiemKhoLiveTongHopForDot(
         record: (updated || [])[0] || null,
         ma_phieu_xuat: maXuat,
         ma_phieu_nhap: maNhap,
-        ...(catResult.saved ? {} : { warning: catResult.error || 'Không ghi được catalog nhap_kho.' })
+        ...(loaiKhoCk === 'nvl'
+          ? khoNvlResultCk?.error
+            ? { warning: khoNvlResultCk.error }
+            : {}
+          : catResult.saved
+            ? {}
+            : { warning: catResult.error || 'Không ghi được catalog nhap_kho.' })
       });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi hoàn thành phiếu chuyển kho.' });
@@ -17407,8 +18204,11 @@ async function loadKiemKhoLiveTongHopForDot(
       }
       const lines = (Array.isArray(phieu.chi_tiet) ? phieu.chi_tiet : []) as Array<Record<string, unknown>>;
       // Hàng phải còn ở kho đích mới đảo được.
+      const loaiKhoCkHuy = isVatTuKho(phieu.kho_nguon) ? 'nvl' : 'san_pham';
       for (const line of lines) {
-        const ton = await getSanPhamTonSlTheoKho(String(line.ma_sp || ''), String(phieu.kho_dich || ''));
+        const ton = loaiKhoCkHuy === 'nvl'
+          ? await getNvlTonSlTheoKho(String(line.ma_sp || ''), String(phieu.kho_dich || ''))
+          : await getSanPhamTonSlTheoKho(String(line.ma_sp || ''), String(phieu.kho_dich || ''));
         const need = Number(line.so_luong) || 0;
         if (ton !== null && ton < need - 1e-9) {
           return res.status(400).json({
@@ -17416,6 +18216,7 @@ async function loadKiemKhoLiveTongHopForDot(
           });
         }
       }
+      if (loaiKhoCkHuy === 'nvl') await attachChuyenKhoPhanLoai(lines, String(phieu.kho_dich || ''));
       const nguoiLap = String((req.body as any)?.nguoiLap ?? phieu.nguoi_lap ?? '').trim() || null;
       const ngayPhieu = new Date().toISOString().slice(0, 10);
       const maXuatHuy = generateWarehouseSlipCode('xuat');
@@ -17424,10 +18225,17 @@ async function loadKiemKhoLiveTongHopForDot(
       // Đảo chiều: xuất kho đích, nhập kho nguồn.
       const maKhoDichHuy = await resolveMaKho(phieu.kho_dich);
       const maKhoNguonHuy = await resolveMaKho(phieu.kho_nguon);
-      const xuatHuyRecords = buildWarehouseSlipInsertRecords(
+      const huyCatalogLines = lines.map(line => ({
+        code: String(line.ma_sp || ''),
+        name: String(line.ten_sp || ''),
+        productionName: String(line.ten_san_xuat || ''),
+        unit: String(line.don_vi || ''),
+        phanLoai: String(line.phan_loai || '')
+      }));
+      let xuatHuyRecords = buildWarehouseSlipInsertRecords(
         {
           loaiPhieu: 'xuat',
-          loaiKho: 'san_pham',
+          loaiKho: loaiKhoCkHuy,
           maKho: maKhoDichHuy,
           ngayPhieu,
           lyDo,
@@ -17446,10 +18254,10 @@ async function loadKiemKhoLiveTongHopForDot(
         },
         maXuatHuy
       );
-      const nhapHuyRecords = buildWarehouseSlipInsertRecords(
+      let nhapHuyRecords = buildWarehouseSlipInsertRecords(
         {
           loaiPhieu: 'nhap',
-          loaiKho: 'san_pham',
+          loaiKho: loaiKhoCkHuy,
           maKho: maKhoNguonHuy,
           ngayPhieu,
           lyDo,
@@ -17468,6 +18276,14 @@ async function loadKiemKhoLiveTongHopForDot(
         },
         maNhapHuy
       );
+      const khoNguon = String(phieu.kho_nguon || '');
+      const khoDichHuy = String(phieu.kho_dich || '');
+      if (loaiKhoCkHuy === 'nvl') {
+        const xuatAttached = await attachLiveKhoNvlIds(xuatHuyRecords, huyCatalogLines, khoDichHuy);
+        const nhapAttached = await attachLiveKhoNvlIds(nhapHuyRecords, huyCatalogLines, khoNguon);
+        xuatHuyRecords = xuatAttached.records;
+        nhapHuyRecords = nhapAttached.records;
+      }
       const tableXuat = await resolveWarehouseWriteTable('xuat');
       const tableNhap = await resolveWarehouseWriteTable('nhap');
       const r1 = await insertWarehouseSlipRecordsResilient(tableXuat, stripChuyenKhoCa(xuatHuyRecords));
@@ -17477,30 +18293,31 @@ async function loadKiemKhoLiveTongHopForDot(
         await deleteWarehouseSlipEverywhere(maXuatHuy);
         return res.status(500).json({ error: `Không ghi được phiếu nhập hủy. ${r2.error.message}` });
       }
-      // Catalog trả về kho nguồn.
-      const khoNguon = String(phieu.kho_nguon || '');
-      const khoNguonMa = await resolveMaKho(khoNguon);
-      await insertNhapKhoCatalogRows(
-        lines.map(line => ({
-          ma_sp: String(line.ma_sp || ''),
-          ten_sp: String(line.ten_sp || ''),
-          don_vi: String(line.don_vi || '').trim() || 'Tấm',
-          trong_luong_kg_mot_sp: Number(line.kg_mot_sp) || null,
-          so_m2_mot_sp: Number(line.m2_mot_sp) || null,
-          so_m_dai_mot_sp: Number(line.m_dai_mot_sp) || null,
-          loai_kho: khoNguonMa,
-          ten_kho: khoNguon,
-          ten_goc: (line.ten_goc as string) || null,
-          do_li: (line.do_li as string) || null,
-          do_li_dm: (line.do_li_dm as string) || null,
-          do_day_m: (line.do_day_m as string) || null,
-          do_dai_m: (line.do_dai_m as string) || null,
-          mang: (line.mang as string) || null,
-          hang_phe: (line.hang_phe as string) || null,
-          ma_amis: (line.ma_amis as string) || null,
-          mo_ta_tem: (line.mo_ta_tem as string) || null
-        }))
-      );
+      if (loaiKhoCkHuy !== 'nvl') {
+        const khoNguonMa = await resolveMaKho(khoNguon);
+        await insertNhapKhoCatalogRows(
+          lines.map(line => ({
+            ma_sp: String(line.ma_sp || ''),
+            ten_sp: String(line.ten_sp || ''),
+            don_vi: String(line.don_vi || '').trim() || 'Tấm',
+            trong_luong_kg_mot_sp: Number(line.kg_mot_sp) || null,
+            so_m2_mot_sp: Number(line.m2_mot_sp) || null,
+            so_m_dai_mot_sp: Number(line.m_dai_mot_sp) || null,
+            loai_kho: khoNguonMa,
+            ten_kho: khoNguon,
+            ten_san_xuat: (line.ten_san_xuat as string) || null,
+            ten_goc: (line.ten_goc as string) || null,
+            do_li: (line.do_li as string) || null,
+            do_li_dm: (line.do_li_dm as string) || null,
+            do_day_m: (line.do_day_m as string) || null,
+            do_dai_m: (line.do_dai_m as string) || null,
+            mang: (line.mang as string) || null,
+            hang_phe: (line.hang_phe as string) || null,
+            ma_amis: (line.ma_amis as string) || null,
+            mo_ta_tem: (line.mo_ta_tem as string) || null
+          }))
+        );
+      }
       const { data, error } = await supabase
         .from(SUPABASE_CHUYEN_KHO_TABLE)
         .update({
@@ -17552,6 +18369,10 @@ async function loadKiemKhoLiveTongHopForDot(
     readTables: resolveWarehouseReadTables,
     insertHistory: insertWarehouseSlipHistory,
     insertNhapKho: insertNhapKhoCatalogRows,
+    ensureKhoNvlCatalog: ensureKhoNvlCatalogForNvlLines,
+    attachLiveKhoNvlIds,
+    liveKhoNvlIds: liveKhoNvlIdsForWarehouse,
+    slipsHaveCatalogStamp: warehouseSlipsHaveCatalogStamp,
     isMissingTable: isMissingTableError,
     isMissingColumn: isMissingColumnError,
     newSlipCode: generateWarehouseSlipCode,

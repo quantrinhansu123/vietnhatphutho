@@ -199,6 +199,8 @@ export type OrderProductFormLine = {
   productCode: string;
   productName: string;
   productionName: string;
+  /** Tên ghép đã lưu trên dòng đơn — SL lệnh SX khớp theo id + tên ghép. */
+  tenGhep?: string;
   unit: string;
   quantity: string;
   /** SL theo miền — dùng cho "Đơn sản xuất", "Đơn theo quy cách của khách đặt" và "Đơn miền nam". SL tổng = Bắc + Trung + Nam. */
@@ -532,6 +534,24 @@ function readStoredOrderConversion(
   return result && Number.isFinite(result.value) ? result.value : null;
 }
 
+/** Số miền đã nhập. Ô trống không tính. `0` vẫn là giá trị đã gõ. */
+function readOptionalRegionQty(raw: unknown): number | null {
+  const text = String(raw ?? '').trim();
+  if (!text) return null;
+  const parsed = parsePercentInput(text);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
+}
+
+/**
+ * SL tổng = Bắc + Trung + Nam chỉ khi có ít nhất một miền > 0.
+ * Ba ô trống hoặc toàn 0 (dữ liệu cũ lưu nhầm) không được ghi đè SL tổng.
+ */
+function positiveRegionTotal(bac: unknown, trung: unknown, nam: unknown): number | null {
+  const parts = [readOptionalRegionQty(bac), readOptionalRegionQty(trung), readOptionalRegionQty(nam)];
+  if (!parts.some(value => value !== null && value > 0)) return null;
+  return parts.reduce((sum, value) => sum + (value ?? 0), 0);
+}
+
 export function orderProductLinesToPayload(
   lines: OrderProductFormLine[],
   productOptions: OrderProductOption[],
@@ -558,20 +578,14 @@ export function orderProductLinesToPayload(
         : selectedProduct
           ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
           : line.unit.trim() || resolved.unit;
-      const bacVal = parsePercentInput(String(line.slBac ?? ''));
-      const trungVal = parsePercentInput(String(line.slTrung ?? ''));
-      const namVal = parsePercentInput(String(line.slNam ?? ''));
+      const bacVal = readOptionalRegionQty(line.slBac);
+      const trungVal = readOptionalRegionQty(line.slTrung);
+      const namVal = readOptionalRegionQty(line.slNam);
       const isRegionOrder = isProductionOrder || isCutLikeOrder;
-      const hasRegionInput = isRegionOrder &&
-        ((Number.isFinite(bacVal) && String(line.slBac ?? '').trim() !== '') ||
-          (Number.isFinite(trungVal) && String(line.slTrung ?? '').trim() !== '') ||
-          (Number.isFinite(namVal) && String(line.slNam ?? '').trim() !== ''));
-      const regionTotal = (Number.isFinite(bacVal) ? Math.max(0, bacVal) : 0) +
-        (Number.isFinite(trungVal) ? Math.max(0, trungVal) : 0) +
-        (Number.isFinite(namVal) ? Math.max(0, namVal) : 0);
+      const regionTotal = isRegionOrder ? positiveRegionTotal(line.slBac, line.slTrung, line.slNam) : null;
       const typedQuantity = parsePercentInput(line.quantity);
-      // Đơn sản xuất + Đơn theo quy cách + Đơn miền nam: SL tổng = Bắc + Trung + Nam (tự động khi có nhập miền).
-      const quantity = isRegionOrder && hasRegionInput ? regionTotal : typedQuantity;
+      // Đơn có Bắc/Trung/Nam: SL tổng chỉ lấy từ ba ô miền, không nhận số gõ tay.
+      const quantity = isRegionOrder ? (regionTotal ?? Number.NaN) : typedQuantity;
       const daiM = parsePercentInput(line.daiM);
       const note = line.note.trim();
       const temValue = String(line.tem || '').trim();
@@ -595,9 +609,9 @@ export function orderProductLinesToPayload(
       const shouldRecalculateConversion = line.shouldRecalculateConversion !== false;
       const regionFields = isRegionOrder
         ? {
-            ...(Number.isFinite(bacVal) ? { so_luong_bac: Math.max(0, bacVal) } : {}),
-            ...(Number.isFinite(trungVal) ? { so_luong_trung: Math.max(0, trungVal) } : {}),
-            ...(Number.isFinite(namVal) ? { so_luong_nam: Math.max(0, namVal) } : {})
+            so_luong_bac: bacVal === null ? undefined : bacVal,
+            so_luong_trung: trungVal === null ? undefined : trungVal,
+            so_luong_nam: namVal === null ? undefined : namVal
           }
         : {};
 
@@ -798,6 +812,7 @@ export function orderToForm(order: OrderRow): OrderFormState {
 
   const productLines = getOrderProductLines(order).map(line => {
     const fallbackTem = line.tem || line.mauTem || line.danTem2Dau ? null : parseSouthTemFromTenGhep(line.tenGhep);
+    const keepRegionQty = positiveRegionTotal(line.soLuongBac, line.soLuongTrung, line.soLuongNam) !== null;
     return {
     key: `order-product-${line.productCode}-${Math.random().toString(36).slice(2, 7)}`,
     sourceProduct: line.sourceProduct ? { ...line.sourceProduct } : undefined,
@@ -806,11 +821,12 @@ export function orderToForm(order: OrderRow): OrderFormState {
     productCode: orderCellToInput(line.productCode),
     productName: orderCellToInput(line.productName),
     productionName: orderCellToInput(line.productionName || ''),
+    tenGhep: line.tenGhep || '',
     unit: orderCellToInput(line.unit),
     quantity: orderCellToInput(line.quantity),
-    slBac: line.soLuongBac || '',
-    slTrung: line.soLuongTrung || '',
-    slNam: line.soLuongNam || '',
+    slBac: keepRegionQty ? (line.soLuongBac || '') : '',
+    slTrung: keepRegionQty ? (line.soLuongTrung || '') : '',
+    slNam: keepRegionQty ? (line.soLuongNam || '') : '',
     daiM: line.daiM || '',
     doLi: line.doLi || '',
     doLiDm: extractDoLiDmNumber(line.doLiDm || ''),
@@ -1280,7 +1296,16 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     const isCutOrder = orderForm.orderType === CUT_ORDER_TYPE;
     const isSouthOrder = orderForm.orderType === SOUTH_ORDER_TYPE;
     const isCutLikeOrder = isCutOrder || isSouthOrder;
+    const isRegionOrder = isCutLikeOrder || orderForm.orderType === PRODUCTION_ORDER_TYPE;
     const activeProductLines = orderForm.productLines.filter(line => line.productCode.trim() || line.productName.trim());
+    if (isRegionOrder) {
+      for (const line of activeProductLines) {
+        if (positiveRegionTotal(line.slBac, line.slTrung, line.slNam) === null) {
+          setFormError(`Nhập số lượng Bắc, Trung hoặc Nam cho sản phẩm ${line.productCode || line.productName}. Ít nhất một ô phải có số lượng.`);
+          return;
+        }
+      }
+    }
     for (const line of activeProductLines) {
       if (!line.manualTongKg) continue;
       const enteredKg = parsePercentInput(String(line.tongKg ?? ''));
@@ -1866,16 +1891,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       const matchedLineProduct = resolveOrderLineProduct(productOptions, line);
                       const lineSanPhamId = String(matchedLineProduct?.id || line.productId || '').trim();
                       const matchedConversion = lineSanPhamId ? productConversions.find(item => item.sanPhamId === lineSanPhamId) : undefined;
-                      // Đơn theo quy cách / Đơn miền nam: SL tổng = Bắc + Trung + Nam (tự động khi có nhập miền).
-                      const cutBacNum = parsePercentInput(String(line.slBac ?? ''));
-                      const cutTrungNum = parsePercentInput(String(line.slTrung ?? ''));
-                      const cutNamNum = parsePercentInput(String(line.slNam ?? ''));
-                      const cutHasRegionQty =
-                        String(line.slBac ?? '').trim() !== '' || String(line.slTrung ?? '').trim() !== '' || String(line.slNam ?? '').trim() !== '';
-                      const cutRegionTotal = (Number.isFinite(cutBacNum) ? Math.max(0, cutBacNum) : 0) +
-                        (Number.isFinite(cutTrungNum) ? Math.max(0, cutTrungNum) : 0) +
-                        (Number.isFinite(cutNamNum) ? Math.max(0, cutNamNum) : 0);
-                      const cutEffectiveQty = cutHasRegionQty ? String(cutRegionTotal) : line.quantity;
+                      // Có miền > 0 thì SL tổng = Bắc + Trung + Nam. Không nhập miền thì hiện SL tổng đã lưu/gõ.
+                      const cutRegionTotal = positiveRegionTotal(line.slBac, line.slTrung, line.slNam);
+                      const cutEffectiveQty = cutRegionTotal !== null ? String(cutRegionTotal) : '0';
                       const cutWeight = line.shouldRecalculateConversion
                         ? calculateCutOrderWeight(line.daiM, cutEffectiveQty, matchedConversion, 'Tấm', line.productCode, matchedLineProduct?.name || line.productName)
                         : null;
@@ -1985,12 +2003,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <div className="col-span-1 min-w-0">
                           <input
                             type="text"
-                            value={cutHasRegionQty ? formatNumber(cutRegionTotal, 3) : line.quantity}
-                            readOnly={cutHasRegionQty}
-                            onChange={e => updateConversionProductLine(line.key, { quantity: e.target.value })}
-                            title={cutHasRegionQty ? 'SL tổng = Bắc + Trung + Nam (tự động)' : 'Nhập Bắc/Trung/Nam để tự tính tổng'}
-                            className={`${orderFieldClass} ${cutHasRegionQty ? 'bg-zinc-50 text-right font-black' : 'bg-white'}`}
-                            placeholder="0"
+                            value={cutRegionTotal !== null ? formatNumber(cutRegionTotal, 3) : ''}
+                            readOnly
+                            title="SL tổng = Bắc + Trung + Nam. Nhập ít nhất một ô Bắc, Trung hoặc Nam."
+                            className={`${orderFieldClass} bg-zinc-50 text-right font-black`}
+                            placeholder="Tự tính"
                           />
                         </div>
                         <div className="col-span-1 min-w-0">
@@ -2064,9 +2081,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           />
                         </div>
                         {renderAllocatedQtyCell(getAllocatedQtyFromMap(allocatedQtyMap, orderForm.orderCode, {
-                          productId: matchedLineProduct?.id || line.productId,
+                          productId: line.productId || matchedLineProduct?.id,
                           productCode: line.productCode,
-                          productionName: line.productionName
+                          productionName: line.productionName,
+                          tenGhep: line.tenGhep
                         }))}
                         </>
                       );
@@ -2083,16 +2101,13 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   const effectiveUnit = matchedLineProduct && line.shouldRecalculateConversion
                     ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
                     : line.unit;
-                  // Đơn sản xuất: SL tổng = Bắc + Trung + Nam; quy đổi tính theo SL tổng.
-                  const bacNum = parsePercentInput(String(line.slBac ?? ''));
-                  const trungNum = parsePercentInput(String(line.slTrung ?? ''));
-                  const namNum = parsePercentInput(String(line.slNam ?? ''));
-                  const hasRegionQty = isFormProductionOrder &&
-                    (String(line.slBac ?? '').trim() !== '' || String(line.slTrung ?? '').trim() !== '' || String(line.slNam ?? '').trim() !== '');
-                  const regionQtyTotal = (Number.isFinite(bacNum) ? Math.max(0, bacNum) : 0) +
-                    (Number.isFinite(trungNum) ? Math.max(0, trungNum) : 0) +
-                    (Number.isFinite(namNum) ? Math.max(0, namNum) : 0);
-                  const effectiveQtyText = isFormProductionOrder && hasRegionQty ? String(regionQtyTotal) : line.quantity;
+                  // Có miền > 0 thì SL tổng = Bắc + Trung + Nam. Không nhập miền thì giữ SL tổng và quy đổi theo số đó.
+                  const regionQtyTotal = isFormProductionOrder
+                    ? positiveRegionTotal(line.slBac, line.slTrung, line.slNam)
+                    : null;
+                  const effectiveQtyText = isFormProductionOrder
+                    ? (regionQtyTotal !== null ? String(regionQtyTotal) : '0')
+                    : line.quantity;
                   const calculatedConversion = line.shouldRecalculateConversion && matchedConversion
                     ? calculateOrderConversion(
                         line.manualTongKg ? String(line.tongKg ?? '') : effectiveQtyText,
@@ -2168,9 +2183,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         />
                       </div>
                       {renderAllocatedQtyCell(getAllocatedQtyFromMap(allocatedQtyMap, orderForm.orderCode, {
-                        productId: matchedLineProduct?.id || line.productId,
+                        productId: line.productId || matchedLineProduct?.id,
                         productCode: line.productCode,
-                        productionName: line.productionName
+                        productionName: line.productionName,
+                        tenGhep: line.tenGhep
                       }))}
                       <div className="col-span-1 min-w-0">
                         {matchedLineProduct ? <select value={effectiveUnit} onChange={e => updateConversionProductLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateConversionProductLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
@@ -2213,12 +2229,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           <div className="col-span-1 min-w-0">
                             <input
                               type="text"
-                              value={hasRegionQty ? formatNumber(regionQtyTotal, 3) : line.quantity}
-                              readOnly={hasRegionQty}
-                              onChange={e => updateConversionProductLine(line.key, { quantity: e.target.value })}
-                              title={hasRegionQty ? 'SL tổng = Bắc + Trung + Nam (tự động)' : 'Nhập Bắc/Trung/Nam để tự tính tổng'}
-                              className={`${orderFieldClass} ${hasRegionQty ? 'bg-zinc-50 text-right font-black' : 'bg-white'}`}
-                              placeholder="0"
+                              value={regionQtyTotal !== null ? formatNumber(regionQtyTotal, 3) : ''}
+                              readOnly
+                              title="SL tổng = Bắc + Trung + Nam. Nhập ít nhất một ô Bắc, Trung hoặc Nam."
+                              className={`${orderFieldClass} bg-zinc-50 text-right font-black`}
+                              placeholder="Tự tính"
                             />
                           </div>
                         </>
@@ -2356,13 +2371,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         SL lệnh SX: {formatNumber(getAllocatedQtyFromMap(allocatedQtyMap, viewingOrder.orderCode, {
                           productId: line.productId,
                           productCode: line.productCode,
-                          productionName: line.productionName
+                          productionName: line.productionName,
+                          tenGhep: line.tenGhep
                         }), 3)}
                       </p>
                       <p className="mt-0.5 text-zinc-600">
                         SL: {line.quantity || '-'}
                         {line.unit && line.unit !== '-' ? ` ${line.unit}` : ''}
-                        {(line.soLuongBac || line.soLuongTrung || line.soLuongNam) ? (
+                        {positiveRegionTotal(line.soLuongBac, line.soLuongTrung, line.soLuongNam) !== null ? (
                           <span className="ml-2 text-xs font-bold text-sky-700">
                             (Bắc {line.soLuongBac || 0} · Trung {line.soLuongTrung || 0} · Nam {line.soLuongNam || 0})
                           </span>
@@ -2564,12 +2580,13 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                                 {formatNumber(getAllocatedQtyFromMap(allocatedQtyMap, order.orderCode, {
                                   productId: line.productId,
                                   productCode: line.productCode,
-                                  productionName: line.productionName
+                                  productionName: line.productionName,
+                                  tenGhep: line.tenGhep
                                 }), 3)}
                               </span>
                             </div>
                             {specText ? <div className="mt-0.5 text-[11px] font-semibold text-zinc-400">{specText}</div> : null}
-                            {(line.soLuongBac || line.soLuongTrung || line.soLuongNam) ? (
+                            {positiveRegionTotal(line.soLuongBac, line.soLuongTrung, line.soLuongNam) !== null ? (
                               <div className="mt-0.5 text-[11px] font-bold text-sky-700">
                                 Bắc {line.soLuongBac || 0} · Trung {line.soLuongTrung || 0} · Nam {line.soLuongNam || 0}
                               </div>

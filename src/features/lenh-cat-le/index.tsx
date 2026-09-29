@@ -18,6 +18,7 @@ import {
   motherFromNhapKhoRow,
   parseMeterInput,
   parseMeterLabel,
+  suggestCatLePlan,
   type CatLeMother,
   type CatLePrintSlip,
   type CatLeSanPhamLine
@@ -69,6 +70,10 @@ interface CutLine {
   /** M cắt dài đích (m), từ do_dai_m. Trống = giữ mẹ. */
   mDaiText: string;
   qtyText: string;
+  /** Số tấm con trên mỗi tấm mẹ (N). Vd 1 tấm 20m = 2 tấm 10m. */
+  soConText: string;
+  /** SL con cần (đích) — nhập rồi bấm Tính để tự ra SL mẹ = ceil(con/N). */
+  conCanText: string;
   kgCanText: string;
   ghiChu: string;
 }
@@ -140,6 +145,10 @@ function cutLineFromSaved(item: CatLeSanPhamLine, stock: MotherStockRow[]): CutL
   const l = parseMeterLabel(cat1.do_dai_m) || (cat1.m_dai > 0 ? cat1.m_dai : null);
   const doLiChanged = Boolean(cat1.do_li) && cat1.do_li !== nguon.do_li;
   const base = newCutLine();
+  const piecesSaved = Math.max(
+    1,
+    Math.floor(Number((item as { so_con_mot_me?: unknown }).so_con_mot_me) || 1)
+  );
   return {
     ...base,
     motherKey: match?.key || '',
@@ -147,6 +156,10 @@ function cutLineFromSaved(item: CatLeSanPhamLine, stock: MotherStockRow[]): CutL
     khoRongText: w ? String(w) : '',
     mDaiText: l ? String(l) : '',
     qtyText: String(nguon.so_luong || 1),
+    soConText: String(piecesSaved),
+    conCanText: String(
+      Math.round((Number(nguon.so_luong) || 0) * piecesSaved * 1000) / 1000 || ''
+    ),
     kgCanText: '',
     ghiChu: item.ghi_chu || ''
   };
@@ -162,6 +175,8 @@ const newCutLine = (): CutLine => {
     khoRongText: '',
     mDaiText: '',
     qtyText: '1',
+    soConText: '1',
+    conCanText: '',
     kgCanText: '',
     ghiChu: ''
   };
@@ -363,6 +378,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
     w2: number | null;
     l2: number | null;
     qty: number;
+    pieces: number;
     result: ReturnType<typeof computeCatLe> | null;
     error: string;
   }
@@ -370,7 +386,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
   const previews: LinePreview[] = useMemo(() => {
     const used = new Map<string, number>();
     return lines.map(line => {
-        const empty: LinePreview = { motherRow: null, mother: null, w2: null, l2: null, qty: 0, result: null, error: '' };
+        const empty: LinePreview = { motherRow: null, mother: null, w2: null, l2: null, qty: 0, pieces: 1, result: null, error: '' };
         const motherRow = stock.find(row => row.key === line.motherKey) || null;
         if (!motherRow) return { ...empty, error: line.motherKey ? 'Cuộn mẹ đã hết tồn.' : '' };
         const mother = buildMother(motherRow);
@@ -380,9 +396,12 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         const w2 = parseMeterInput(line.khoRongText) ?? w1;
         const l2 = parseMeterInput(line.mDaiText) ?? l1;
         const qty = Number(String(line.qtyText || '').replace(',', '.'));
-        const base = { ...empty, motherRow, mother, w2, l2, qty };
+        const piecesRaw = String(line.soConText || '').trim().replace(',', '.');
+        const pieces = piecesRaw === '' ? 1 : Math.floor(Number(piecesRaw));
+        const base = { ...empty, motherRow, mother, w2, l2, qty, pieces: Number.isFinite(pieces) ? pieces : 0 };
         if (!w2 || !l2) return { ...base, error: 'Nhập hạ khổ hoặc m cắt dài.' };
         if (!(qty > 0)) return { ...base, error: 'Nhập số lượng cắt.' };
+        if (!Number.isFinite(pieces) || pieces < 1) return { ...base, error: 'Số con/mẹ phải >= 1.' };
         const taken = used.get(line.motherKey) || 0;
         if (qty + taken > motherRow.ton_sl + 1e-9) {
           return { ...base, error: `Tồn mẹ chỉ còn ${motherRow.ton_sl}${taken > 0 ? ` (đã chọn ${taken} ở dòng khác)` : ''}.` };
@@ -395,7 +414,8 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
               l2,
               qty,
               doLiMoi: null,
-              kgCanThucTe: null
+              kgCanThucTe: null,
+              pieces
             },
             { nhomVthh: motherRow.nhom_vthh }
           );
@@ -409,11 +429,14 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
 
   const totals = useMemo(() => {
     let qty = 0;
+    let qtyCon = 0;
     previews.forEach((preview, index) => {
       if (!preview.result) return;
-      qty += Number(String(lines[index]?.qtyText || '').replace(',', '.')) || 0;
+      const qtyMe = Number(String(lines[index]?.qtyText || '').replace(',', '.')) || 0;
+      qty += qtyMe;
+      qtyCon += qtyMe * preview.result.pieces;
     });
-    return { qty };
+    return { qty, qtyCon };
   }, [previews, lines]);
 
   const canSave =
@@ -491,6 +514,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         l2: preview.l2 as number,
         doLiMoi: null,
         kgCanThucTe: null,
+        pieces: preview.pieces,
         ghiChu: line.ghiChu.trim()
       });
     });
@@ -544,6 +568,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
           nhomVthh: row.nhom_vthh,
           mDaiCat: preview.l2,
           khoRongM: preview.w2,
+          soConMotMe: preview.pieces,
           kgCanThucTe: null,
           ghiChu: line.ghiChu.trim()
         };
@@ -750,6 +775,13 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                   .filter(Boolean)
                   .join(' · ');
                 const soLuong = products.reduce((sum, item) => sum + (Number(item.san_pham_nguon.so_luong) || 0), 0);
+                const soLuongCon = products.reduce(
+                  (sum, item) =>
+                    sum +
+                    (Number(item.so_luong_cat_1) ||
+                      (Number(item.san_pham_nguon.so_luong) || 0) * (Number(item.so_con_mot_me) || 1)),
+                  0
+                );
                 return (
                 <tr key={row.id} className="border-t">
                   <td className="px-3 py-2 font-black">{row.ma_lenh}</td>
@@ -765,7 +797,10 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                       <span className="ml-1 font-black text-red-600">(nhập tái chế)</span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right font-bold">{soLuong}</td>
+                  <td className="px-3 py-2 text-right font-bold">
+                    {soLuong}
+                    {soLuongCon !== soLuong && <span className="block text-emerald-700">→ {soLuongCon} con</span>}
+                  </td>
                   <td className="px-3 py-2 font-semibold">{row.nguoi_thuc_hien || '—'}</td>
                   <td className="px-3 py-2 font-bold">{trangThaiLabel(row.trang_thai)}</td>
                   <td className="px-3 py-2 font-mono text-[11px]">
@@ -934,7 +969,9 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                         <th className="px-2 py-2 text-center">Tồn</th>
                         <th className="px-2 py-2 text-center">Hạ Khổ</th>
                         <th className="px-2 py-2 text-center">M cắt dài</th>
-                        <th className="px-2 py-2 text-center">SL *</th>
+                        <th className="px-2 py-2 text-center">SL mẹ *</th>
+                        <th className="px-2 py-2 text-center">Con/mẹ</th>
+                        <th className="px-2 py-2 text-center">Con cần → Tính</th>
                         <th className="px-2 py-2 text-center">Ghi chú</th>
                         <th className="px-2 py-2" />
                       </tr>
@@ -1018,8 +1055,85 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                                   value={line.qtyText}
                                   onChange={e => updateLine(line.key, { qtyText: e.target.value })}
                                   inputMode="decimal"
+                                  title="Số tấm mẹ đem cắt (xuất kho cắt lẻ)"
                                   className={`${cellInputClass} text-right`}
                                 />
+                              </td>
+                              <td className="px-2 py-2">
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    value={line.soConText}
+                                    onChange={e => updateLine(line.key, { soConText: e.target.value })}
+                                    inputMode="numeric"
+                                    title={
+                                      preview?.result
+                                        ? `Tối đa ${preview.result.maxPieces} con/mẹ — nhập TP = SL mẹ × N`
+                                        : 'Số tấm con trên mỗi tấm mẹ (vd 20m = 2 tấm 10m nhập 2)'
+                                    }
+                                    placeholder={preview?.result ? `≤${preview.result.maxPieces}` : '1'}
+                                    className={`${cellInputClass} text-right`}
+                                  />
+                                  {preview?.result && preview.result.maxPieces > 1 && (
+                                    <button
+                                      type="button"
+                                      title={`Lấy tối đa ${preview.result.maxPieces} con/mẹ`}
+                                      onClick={() => updateLine(line.key, { soConText: String(preview.result?.maxPieces || 1) })}
+                                      className="shrink-0 rounded border border-emerald-300 bg-emerald-50 px-1.5 py-1 text-[10px] font-black text-emerald-800"
+                                    >
+                                      Max
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-2 py-2">
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    value={line.conCanText}
+                                    onChange={e => updateLine(line.key, { conCanText: e.target.value })}
+                                    inputMode="decimal"
+                                    title="Nhập SL con cần rồi bấm Tính để tự ra SL mẹ = ceil(con/N)"
+                                    placeholder="vd 3"
+                                    className={`${cellInputClass} text-right`}
+                                  />
+                                  <button
+                                    type="button"
+                                    title="Tự tính SL mẹ = ceil(con cần / con-mẹ)"
+                                    onClick={() => {
+                                      try {
+                                        if (!preview?.mother || !preview.w2 || !preview.l2) {
+                                          setModalError('Chọn sản phẩm nguồn và khổ/m dài trước khi Tính.');
+                                          return;
+                                        }
+                                        const conCan = Number(String(line.conCanText || '').replace(',', '.'));
+                                        if (!(conCan > 0)) {
+                                          setModalError('Nhập Con cần > 0 rồi bấm Tính.');
+                                          return;
+                                        }
+                                        const piecesRaw = String(line.soConText || '').trim();
+                                        const pieces = piecesRaw === '' ? undefined : Math.floor(Number(piecesRaw.replace(',', '.')));
+                                        const plan = suggestCatLePlan(preview.mother, {
+                                          w2: preview.w2,
+                                          l2: preview.l2,
+                                          desiredConQty: conCan,
+                                          pieces: piecesRaw === '' ? undefined : pieces
+                                        });
+                                        setConfirmedLines(null);
+                                        setModalError('');
+                                        updateLine(line.key, {
+                                          qtyText: String(plan.mothers),
+                                          soConText: String(plan.pieces),
+                                          conCanText: String(Math.ceil(conCan))
+                                        });
+                                        showAppToast(plan.hint, 'success');
+                                      } catch (err: any) {
+                                        setModalError(err?.message || 'Không tính được SL mẹ.');
+                                      }
+                                    }}
+                                    className="shrink-0 rounded border border-sky-300 bg-sky-50 px-1.5 py-1 text-[10px] font-black text-sky-800"
+                                  >
+                                    Tính
+                                  </button>
+                                </div>
                               </td>
                               <td className="min-w-[140px] px-2 py-2">
                                 <input
@@ -1043,15 +1157,28 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                             {preview?.error ? (
                               <tr className="border-t bg-red-50/70">
                                 <td />
-                                <td colSpan={9} className="px-2 py-1.5 text-[11px] font-bold text-red-600">
+                                <td colSpan={11} className="px-2 py-1.5 text-[11px] font-bold text-red-600">
                                   {preview.error}
+                                </td>
+                              </tr>
+                            ) : null}
+                            {preview?.result && !preview.error ? (
+                              <tr className="border-t bg-sky-50/70">
+                                <td />
+                                <td colSpan={11} className="px-2 py-1.5 text-[11px] font-bold text-sky-800">
+                                  {preview.qty} mẹ → {preview.qty * preview.result.pieces} con
+                                  {preview.result.pieces > 1 && ` (${preview.result.pieces} con/mẹ)`}
+                                  {preview.result.tenSpThua
+                                    ? ` + ${preview.qty} thừa ${preview.result.doDayMThua || ''} ${preview.result.doDaiMThua || ''}`
+                                    : ' — vừa khít, không thừa'}
+                                  {` — tối đa ${preview.result.maxPieces} con/mẹ`}
                                 </td>
                               </tr>
                             ) : null}
                             {confirmed?.san_pham_cat_1 ? (
                               <tr className="border-t bg-emerald-50/80">
                                 <td />
-                                <td colSpan={9} className="px-2 py-1.5 text-[12px] font-semibold text-zinc-800">
+                                <td colSpan={11} className="px-2 py-1.5 text-[12px] font-semibold text-zinc-800">
                                   <span className="font-black text-emerald-800">Cắt</span>
                                   {' · '}
                                   {KHO_THANH_PHAM}
@@ -1060,7 +1187,13 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                                   {' · '}
                                   {confirmed.san_pham_cat_1.ten_sp}
                                   {' · SL '}
-                                  {fmtQty(confirmed.san_pham_nguon.so_luong)}
+                                  {fmtQty(
+                                    Number(confirmed.so_luong_cat_1) ||
+                                      (Number(confirmed.san_pham_nguon.so_luong) || 0) *
+                                        (Number(confirmed.so_con_mot_me) || 1)
+                                  )}
+                                  {Number(confirmed.so_con_mot_me) > 1 &&
+                                    ` (${fmtQty(confirmed.san_pham_nguon.so_luong)} mẹ × ${confirmed.so_con_mot_me})`}
                                   {' · '}
                                   {fmtQuyDoi(confirmed.san_pham_cat_1)}
                                 </td>
@@ -1069,7 +1202,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                             {confirmed?.san_pham_cat_2 ? (
                               <tr className="border-t bg-amber-50/80">
                                 <td />
-                                <td colSpan={9} className="px-2 py-1.5 text-[12px] font-semibold text-zinc-800">
+                                <td colSpan={11} className="px-2 py-1.5 text-[12px] font-semibold text-zinc-800">
                                   <span className="font-black text-amber-800">Còn lại</span>
                                   {' · '}
                                   {KHO_CAT_LE}
@@ -1090,15 +1223,16 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                     </tbody>
                     <tfoot>
                       <tr className="border-t bg-zinc-900 text-white">
-                        <td colSpan={7} className="px-2 py-2 text-right font-black">TỔNG</td>
+                        <td colSpan={7} className="px-2 py-2 text-right font-black">TỔNG MẸ → CON</td>
                         <td className="px-2 py-2 text-right font-black">{fmtQty(totals.qty)}</td>
-                        <td colSpan={2} />
+                        <td className="px-2 py-2 text-right font-black">{fmtQty(totals.qtyCon)}</td>
+                        <td colSpan={3} />
                       </tr>
                     </tfoot>
                   </table>
                 </div>
                 <p className="text-[11px] font-semibold text-zinc-500">
-                  Chọn sản phẩm thì Hạ Khổ và M cắt dài tự điền từ độ khổ (do_day_m) và mét dài ban đầu (do_dai_m). Có thể hạ một chiều hoặc hạ cả khổ lẫn m dài. Độ li mẹ giữ nguyên, đổi riêng được. Bỏ trống một ô = giữ số của mẹ. Khi đủ thông tin, bấm Xác nhận ở đầu danh sách để xem sản phẩm cắt và phần còn lại nằm ở kho nào.
+                  Chọn sản phẩm thì Hạ Khổ và M cắt dài tự điền từ độ khổ (do_day_m) và mét dài ban đầu (do_dai_m). Cột Con/mẹ: vd 1 tấm 20m cắt 2 tấm 10m nhập 2 — nhập TP = SL mẹ × N, vừa khít thì không sinh thừa. Cột Con cần: nhập SL con cần rồi bấm Tính để tự ra SL mẹ = ceil(con/N) (nút Max lấy N tối đa). Có thể hạ một chiều hoặc hạ cả khổ lẫn m dài (cả 2 chiều chỉ 1 con/mẹ). Bỏ trống một ô = giữ số của mẹ. Khi đủ thông tin, bấm Xác nhận ở đầu danh sách để xem sản phẩm cắt và phần còn lại nằm ở kho nào.
                 </p>
               </section>
 
