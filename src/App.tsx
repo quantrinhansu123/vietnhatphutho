@@ -155,6 +155,7 @@ export default function App() {
   const handleLogout = () => {
     try {
       localStorage.removeItem(STORAGE_AUTH_KEY);
+      localStorage.removeItem('vietnhat.soTronToken');
     } catch {
       /* ignore storage errors */
     }

@@ -9,6 +9,7 @@ import { pickText, fileToDataUrl, uploadImage, formatCell, formatTimeCell } from
 import { orderFieldClass } from '../_shared/orderHelpers';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { normalizeHrBranches, type HrBranch, type HrMember } from '../_shared/hr';
+import { CHUC_VU_PHAN_XUONG_SAN_XUAT, isPhongBanSanXuat, PHONG_BAN_SAN_XUAT } from '../nhan-su/phongBanSanXuat';
 import type { StaffViewPermissions } from '../nhan-su/menuViews';
 import { summarizeStaffViewPermissions } from '../nhan-su/menuViews';
 import { buildPermissionKey, parsePermissionSettings } from './permissionKeys';
@@ -734,11 +735,15 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
         if (name && name !== 'Chưa phân phòng ban') names.add(name);
       })
     );
+    if (![...names].some(name => isPhongBanSanXuat(name))) names.add(PHONG_BAN_SAN_XUAT);
     return [...names].sort((a, b) => a.localeCompare(b, 'vi'));
   }, [branches]);
 
   // Vị trí = distinct cong_viec (role) từ nhan_su, theo phòng ban đang chọn
   const positionOptions = useMemo(() => {
+    if (isPhongBanSanXuat(permissionForm.department)) {
+      return [...CHUC_VU_PHAN_XUONG_SAN_XUAT];
+    }
     const names = new Set<string>();
     branches.forEach(branch =>
       branch.departments.forEach(department => {

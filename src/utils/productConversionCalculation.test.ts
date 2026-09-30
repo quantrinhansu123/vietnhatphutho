@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { calculateProductConversionFormulas } from './productConversionCalculation.ts';
+import { calculateProductConversionFormulas, roundImportedConversionWeight } from './productConversionCalculation.ts';
 
 const baseInput = {
   sheetWidthM: null,
@@ -70,4 +70,13 @@ test('trả về rỗng khi không đủ dữ liệu nguồn', () => {
     kgPerSheet: null,
     kgPerRoll: null
   });
+});
+
+test('import chốt kg/Tấm + kg/Cuộn tối đa 2 chữ số', () => {
+  assert.equal(roundImportedConversionWeight(4.925), 4.93);
+  assert.equal(roundImportedConversionWeight(6.3), 6.3);
+  assert.equal(roundImportedConversionWeight(0.125), 0.13);
+  assert.equal(roundImportedConversionWeight(null), null);
+  assert.equal(roundImportedConversionWeight(undefined), undefined);
+  assert.equal(roundImportedConversionWeight('4.925'), '4.925');
 });
