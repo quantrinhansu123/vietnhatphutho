@@ -11,7 +11,7 @@
 | GET | `/api/so-tron` | `?ngay&ma_may&ca&limit` (tối đa 300), sort `ngay desc, created_at desc` |
 | POST | `/api/so-tron` | unique `(ma_may, ngay, ca)` — trùng trả 409 |
 | PUT | `/api/so-tron/:id` | cập nhật toàn bộ phiếu |
-| DELETE | `/api/so-tron/:id` | xóa phiếu — chỉ ADMIN, thiếu token thì 401 |
+| DELETE | `/api/so-tron/:id` | xóa phiếu — trưởng ca và quản trị, thiếu token thì 401 |
 | POST | `/api/auth/so-tron-token` | JWT vai trò sổ trộn |
 | POST/PUT | `/api/so-tron/vat-tu` | ghi vật tư, scope cố định `vat_tu` |
 | POST/PUT | `/api/so-tron/thanh-pham` | ghi thành phẩm, scope cố định `thanh_pham` |
@@ -38,7 +38,7 @@ Vai trò lấy từ chức vụ / vị trí gán của `nhan_su`. Phòng ban **P
 | | Vật tư (NVL, cối, bàn giao) | Thành phẩm + hàng lỗi |
 |---|---|---|
 | Tổ trộn, NV phân xưởng | Tạo và sửa phiếu mình tạo, khi chưa chốt | Ẩn trên sổ trộn, không xem và không sửa |
-| Trưởng ca | Chỉ xem | Tạo và sửa trong ca của mình, được chốt ca |
+| Trưởng ca | Chỉ xem, được xóa cả phiếu | Tạo và sửa trong ca của mình, được chốt ca |
 | Quản trị | Đủ quyền, kể cả xóa và mở khóa (bắt buộc lý do) | Đủ quyền |
 
 Kiêm nhiệm được cộng quyền. Xem phiếu ca khác vẫn được. Sửa thành phẩm khác ca thì 403. Sau khi chốt, cả vật tư và thành phẩm khóa đến khi quản trị mở khóa. Phiếu cũ chưa có người tạo: lần sửa vật tư đầu tiên ghi `vat_tu_owner_id`. `GET /api/so-tron` không đòi token vì báo cáo ngày/tuần vẫn đọc sổ. Nhật ký nằm ở `so_tron_audit_log`.

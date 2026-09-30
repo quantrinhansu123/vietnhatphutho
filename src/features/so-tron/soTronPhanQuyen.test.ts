@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   applySoTronScopes,
   assertSoTron,
+  canDeleteSoTron,
   canSeeSoTronThanhPham,
   resolveSoTronRoles,
   type SoTronActor
@@ -64,9 +65,12 @@ test('sửa phiếu của người khác, khác ca, hoặc sau khi chốt đều
   if (!locked.ok) assert.match(locked.error, /chốt/);
 });
 
-test('xóa và mở khóa chỉ ADMIN, chốt ca là trưởng ca, kiêm nhiệm được cả hai trang', () => {
+test('xóa là trưởng ca và quản trị, mở khóa chỉ ADMIN, kiêm nhiệm được cả hai trang', () => {
   assert.equal(assertSoTron(mixer, 'delete', 'vat_tu').ok, false);
+  assert.equal(assertSoTron(lead, 'delete', 'vat_tu').ok, true);
   assert.equal(assertSoTron(admin, 'delete', 'vat_tu').ok, true);
+  assert.equal(canDeleteSoTron(lead.roles), true);
+  assert.equal(canDeleteSoTron(mixer.roles), false);
   assert.equal(assertSoTron(lead, 'lock', 'thanh_pham', { ca: '12C1', khoa_ca: false, vat_tu_owner_id: '' }).ok, true);
   assert.equal(assertSoTron(mixer, 'lock', 'vat_tu').ok, false);
   assert.equal(assertSoTron(lead, 'unlock', 'thanh_pham').ok, false);

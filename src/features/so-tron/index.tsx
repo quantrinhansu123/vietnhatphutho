@@ -16,7 +16,7 @@ import { normalizeProducts } from '../san-pham';
 import { parseProductionNameParts } from '../../utils/productProductionName';
 import { computeSoTronSummary, normalizeMang, SO_TRON_CHI_TIEU_MAU } from './summary';
 import { PhieuGiaoCaModal } from './PhieuGiaoCaModal';
-import { assertSoTron, canSeeSoTronThanhPham, type SoTronSlipGate } from './soTronPhanQuyen';
+import { assertSoTron, canDeleteSoTron, canSeeSoTronThanhPham, type SoTronSlipGate } from './soTronPhanQuyen';
 import { readSoTronActor, soTronAuthHeaders, soTronScopesFor } from './soTronSession';
 import { SoTronDatePicker, formatNgayVN } from './SoTronDatePicker';
 import { printPhieuGiaoCaSlip } from './printPhieuGiaoCa';
@@ -948,7 +948,7 @@ export function SoTronPanel({
       canVatTu: vat.ok && !locked,
       canThanhPham: tp.ok && !locked,
       canSave: (vat.ok || tp.ok) && !locked,
-      canDelete: Boolean(soTronActor?.roles.includes('ADMIN')),
+      canDelete: canDeleteSoTron(soTronActor?.roles),
       canLock: Boolean(editingId && !gate.khoa_ca && lock.ok),
       canUnlock: Boolean(locked && soTronActor?.roles.includes('ADMIN')),
       canSeeThanhPham: canSeeSoTronThanhPham(soTronActor?.roles ?? []),
@@ -4973,7 +4973,7 @@ export function SoTronListView({
   const [filterDate, setFilterDate] = useState('');
   const [filterMachine, setFilterMachine] = useState('');
   const [filterCa, setFilterCa] = useState('');
-  const canDeleteSoTron = useMemo(() => Boolean(readSoTronActor()?.roles.includes('ADMIN')), []);
+  const allowDelete = useMemo(() => canDeleteSoTron(readSoTronActor()?.roles), []);
 
   const load = async () => {
     setIsLoading(true);
@@ -5179,7 +5179,7 @@ export function SoTronListView({
                     <td className="max-w-[220px] truncate px-3 py-2 text-slate-600">{report.nhan_su}</td>
                     <td className="px-3 py-2">
                       <SoTronRowActions
-                        allowDelete={canDeleteSoTron}
+                        allowDelete={allowDelete}
                         onEdit={() => onEdit(report)}
                         onDelete={() => void handleDelete(report.id)}
                         onPrintGiaoCa={() => setSelectedPhieuGiaoCa(report)}

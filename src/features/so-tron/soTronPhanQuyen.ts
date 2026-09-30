@@ -109,6 +109,10 @@ function isShiftLead(actor: SoTronActor) {
   return hasRole(actor, 'TRUONG_CA') || hasRole(actor, 'ADMIN');
 }
 
+export function canDeleteSoTron(roles: readonly string[] | undefined): boolean {
+  return Boolean(roles?.includes('ADMIN') || roles?.includes('TRUONG_CA'));
+}
+
 function sameCa(actorCa: string, slipCa: string) {
   const left = actorCa.trim().toLowerCase();
   const right = slipCa.trim().toLowerCase();
@@ -124,7 +128,7 @@ function deny(status: 401 | 403, error: string): SoTronDecision {
  * Deny by default.
  * Vật tư: Tổ trộn và NV phân xưởng tạo/sửa phiếu mình tạo, khi chưa chốt.
  * Thành phẩm: Trưởng ca tạo/sửa trong ca của mình, khi chưa chốt.
- * Xóa: chỉ ADMIN. Chốt ca: Trưởng ca. Mở khóa: ADMIN và phải có lý do (kiểm tra ở API).
+ * Xóa: trưởng ca và ADMIN. Chốt ca: Trưởng ca. Mở khóa: ADMIN và phải có lý do (kiểm tra ở API).
  */
 export function assertSoTron(
   actor: SoTronActor | null,
@@ -142,9 +146,9 @@ export function assertSoTron(
   }
 
   if (action === 'delete') {
-    return hasRole(actor, 'ADMIN')
+    return canDeleteSoTron(actor.roles)
       ? { ok: true }
-      : deny(403, 'Chỉ quản trị được xóa sổ trộn.');
+      : deny(403, 'Chỉ trưởng ca và quản trị được xóa sổ trộn.');
   }
 
   if (action === 'unlock') {
