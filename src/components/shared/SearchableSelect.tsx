@@ -104,6 +104,16 @@ export function SearchableSelect({
       : getLabel(selectedItem)
     : value;
 
+  /** Cùng nhãn (vd cùng mã NVL) thì không lấy dòng đầu. Giữ dòng đang chọn nếu nhãn khớp. */
+  function matchExactLabel(normalized: string) {
+    const matches = options.filter(item => getLabel(item).toLowerCase() === normalized);
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1 && selectedItem && getLabel(selectedItem).toLowerCase() === normalized) {
+      return selectedItem;
+    }
+    return null;
+  }
+
   const [query, setQuery] = useState(selectedLabel);
   const [open, setOpen] = useState(false);
 
@@ -187,7 +197,7 @@ export function SearchableSelect({
         return;
       }
 
-      const exactLabel = options.find(item => getLabel(item).toLowerCase() === normalized);
+      const exactLabel = matchExactLabel(normalized);
       if (exactLabel) {
         commitValue(getValue(exactLabel), exactLabel);
         return;
@@ -307,7 +317,7 @@ export function SearchableSelect({
           commitValue(getValue(exactValue), exactValue);
           return;
         }
-        const exactLabel = options.find(item => getLabel(item).toLowerCase() === trimmed.toLowerCase());
+        const exactLabel = matchExactLabel(trimmed.toLowerCase());
         if (exactLabel) {
           commitValue(getValue(exactLabel), exactLabel);
           return;
@@ -360,7 +370,7 @@ export function SearchableSelect({
       commitValue(getValue(exactValue), exactValue);
       return;
     }
-    const exactLabel = options.find(item => getLabel(item).toLowerCase() === trimmed.toLowerCase());
+    const exactLabel = matchExactLabel(trimmed.toLowerCase());
     if (exactLabel) {
       commitValue(getValue(exactLabel), exactLabel);
       return;
