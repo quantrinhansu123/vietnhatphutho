@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ClipboardList, ExternalLink, Loader2, Minus, Plus, Printer, RefreshCw, Save, Trash2, X } from 'lucide-react';
+import { ClipboardList, ExternalLink, Loader2, Lock, Minus, Plus, Printer, RefreshCw, Save, Trash2, Unlock, X } from 'lucide-react';
 import { BackButton } from '../../components/layout/NavButtons';
 import { pathFromTab } from '../../routes';
 import SearchableMultiSelect from '../../components/SearchableMultiSelect';
@@ -16,6 +16,8 @@ import { normalizeProducts } from '../san-pham';
 import { parseProductionNameParts } from '../../utils/productProductionName';
 import { computeSoTronSummary, normalizeMang, SO_TRON_CHI_TIEU_MAU } from './summary';
 import { PhieuGiaoCaModal } from './PhieuGiaoCaModal';
+import { assertSoTron, canDeleteSoTron, canSeeSoTronThanhPham, type SoTronSlipGate } from './soTronPhanQuyen';
+import { readSoTronActor, soTronAuthHeaders, soTronScopesFor } from './soTronSession';
 import { SoTronDatePicker, formatNgayVN } from './SoTronDatePicker';
 import { printPhieuGiaoCaSlip } from './printPhieuGiaoCa';
 import { normalizeProductionOrders, type ProductionOrderRow } from '../ke-hoach-san-xuat';
@@ -188,6 +190,9 @@ export type SoTronSavedReport = {
   chi_tieu_phan_tram: number;
   created_at?: string;
   updated_at?: string;
+  created_by_id?: string;
+  vat_tu_owner_id?: string;
+  khoa_ca?: boolean;
 };
 
 function uid() {
@@ -791,11 +796,13 @@ function normalizeSoTronReports(data: unknown): SoTronSavedReport[] {
 function SoTronRowActions({
   onEdit,
   onDelete,
-  onPrintGiaoCa
+  onPrintGiaoCa,
+  allowDelete = false
 }: {
   onEdit: () => void;
   onDelete: () => void;
   onPrintGiaoCa: () => void;
+  allowDelete?: boolean;
 }) {
   const btnClass =
     'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2 py-1 text-xs font-bold transition';
@@ -816,13 +823,15 @@ function SoTronRowActions({
       >
         Sửa
       </button>
-      <button
-        type="button"
-        onClick={onDelete}
-        className={`${btnClass} border-rose-200 text-rose-600 hover:bg-rose-50`}
-      >
-        Xóa
-      </button>
+      {allowDelete && (
+        <button
+          type="button"
+          onClick={onDelete}
+          className={`${btnClass} border-rose-200 text-rose-600 hover:bg-rose-50`}
+        >
+          Xóa
+        </button>
+      )}
     </div>
   );
 }
@@ -924,6 +933,39 @@ export function SoTronPanel({
   const [banGiaoRows, setBanGiaoRows] = useState<BanGiaoRow[]>([]);
   const [ghiChu, setGhiChu] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [slipGate, setSlipGate] = useState<SoTronSlipGate | null>(null);
+  const soTronActor = useMemo(() => readSoTronActor(), []);
+  const soTronAccess = useMemo(() => {
+    const gate: SoTronSlipGate = editingId
+      ? slipGate ?? { ca: selectedCa, khoa_ca: false, vat_tu_owner_id: '' }
+      : { ca: selectedCa, khoa_ca: false, vat_tu_owner_id: '' };
+    const action = editingId ? 'update' : 'create';
+    const vat = assertSoTron(soTronActor, action, 'vat_tu', gate);
+    const tp = assertSoTron(soTronActor, action, 'thanh_pham', gate);
+    const lock = assertSoTron(soTronActor, 'lock', 'thanh_pham', gate);
+    const locked = Boolean(editingId && gate.khoa_ca);
+    return {
+      canVatTu: vat.ok && !locked,
+      canThanhPham: tp.ok && !locked,
+      canSave: (vat.ok || tp.ok) && !locked,
+      canDelete: canDeleteSoTron(soTronActor?.roles),
+      canLock: Boolean(editingId && !gate.khoa_ca && lock.ok),
+      canUnlock: Boolean(locked && soTronActor?.roles.includes('ADMIN')),
+      canSeeThanhPham: canSeeSoTronThanhPham(soTronActor?.roles ?? []),
+      locked,
+      note: !soTronActor
+        ? 'Đăng nhập lại để áp dụng phân quyền sổ trộn.'
+        : soTronActor.roles.length === 0
+          ? 'Tài khoản chưa gán Trưởng ca, Tổ trộn hoặc Nhân viên phân xưởng. Chỉ được xem.'
+          : locked
+            ? 'Ca đã chốt. Muốn sửa phải nhờ quản trị mở khóa và nhập lý do.'
+            : !vat.ok && tp.ok
+              ? 'Bạn được ghi thành phẩm. Vật tư chỉ xem.'
+              : vat.ok && !tp.ok
+                ? 'Bạn được ghi vật tư.'
+                : ''
+    };
+  }, [soTronActor, slipGate, selectedCa, editingId]);
   const [previewPhieuGiaoCaReport, setPreviewPhieuGiaoCaReport] = useState<SoTronSavedReport | null>(null);
   const [prevTonMap, setPrevTonMap] = useState<Map<string, number>>(new Map());
   const [hasPrevReport, setHasPrevReport] = useState<boolean | null>(null);
@@ -2421,6 +2463,7 @@ export function SoTronPanel({
 
   const resetForm = () => {
     setEditingId(null);
+    setSlipGate(null);
     setMachineRef('');
     setSelectedCa('');
     setSelectedLenh([]);
@@ -2451,6 +2494,11 @@ export function SoTronPanel({
 
   const loadReportToForm = (report: SoTronSavedReport) => {
     setEditingId(report.id);
+    setSlipGate({
+      ca: report.ca,
+      khoa_ca: Boolean(report.khoa_ca),
+      vat_tu_owner_id: String(report.vat_tu_owner_id || '')
+    });
     setNgay(report.ngay);
     const found =
       findMachineByRef(machines, report.ma_may) ?? findMachineByRef(machines, report.ten_may);
@@ -2683,10 +2731,16 @@ export function SoTronPanel({
           : dup
             ? `/api/so-tron/${encodeURIComponent(dup.id)}`
             : '/api/so-tron';
+        const writing = editingId || dup ? 'update' : 'create';
+        const scopes = soTronScopesFor(soTronActor, writing, {
+          ca: idn.ca,
+          khoa_ca: slipGate?.khoa_ca || false,
+          vat_tu_owner_id: slipGate?.vat_tu_owner_id || ''
+        });
         const res = await fetch(url, {
           method: editingId || dup ? 'PUT' : 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...basePayload, ma_may: idn.ma_may, ten_may: idn.ten_may, ca: idn.ca })
+          headers: { 'Content-Type': 'application/json', ...soTronAuthHeaders() },
+          body: JSON.stringify({ ...basePayload, ma_may: idn.ma_may, ten_may: idn.ten_may, ca: idn.ca, scope: scopes })
         });
         const data = await res.json().catch(() => ({}));
         return { idn, ok: res.ok, updated: Boolean(editingId || dup), error: str(data.error), id: str(data?.report?.id || dup?.id) };
@@ -2883,7 +2937,10 @@ export function SoTronPanel({
   const handleDeleteSavedReport = async (id: string) => {
     if (!window.confirm('Xóa sổ trộn này?')) return;
     try {
-      const res = await fetch(`/api/so-tron/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const res = await fetch(`/api/so-tron/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: soTronAuthHeaders()
+      });
       if (res.ok) {
         setSavedReports(prev => prev.filter(r => r.id !== id));
         if (editingId === id) resetForm();
@@ -2892,6 +2949,38 @@ export function SoTronPanel({
       }
     } catch {
       alert('Không thể xóa sổ trộn.');
+    }
+  };
+
+  const handleLockCa = async (unlock: boolean) => {
+    if (!editingId) return;
+    const lyDo = unlock ? window.prompt('Lý do mở khóa') || '' : '';
+    if (unlock && !lyDo.trim()) {
+      setMessage({ text: 'Mở khóa phải nhập lý do.', type: 'error' });
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const res = await fetch(`/api/so-tron/${encodeURIComponent(editingId)}/${unlock ? 'unlock' : 'lock'}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...soTronAuthHeaders() },
+        body: JSON.stringify({ ly_do: lyDo.trim() })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMessage({ text: str(data.error) || 'Không thực hiện được.', type: 'error' });
+        return;
+      }
+      setSlipGate(prev => ({
+        ca: prev?.ca || selectedCa,
+        khoa_ca: !unlock,
+        vat_tu_owner_id: prev?.vat_tu_owner_id || ''
+      }));
+      setMessage({ text: unlock ? 'Đã mở khóa ca.' : 'Đã chốt ca.', type: 'success' });
+    } catch {
+      setMessage({ text: 'Không thực hiện được.', type: 'error' });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -2904,7 +2993,33 @@ export function SoTronPanel({
   }
 
   return (
-    <div className="space-y-3">
+    <div
+      className="space-y-3"
+      data-lock-vat-tu={soTronAccess.canVatTu ? '0' : '1'}
+      data-lock-thanh-pham={soTronAccess.canThanhPham ? '0' : '1'}
+    >
+      <style>{`
+        [data-lock-vat-tu="1"] [data-so-tron-scope="vat-tu"] { pointer-events: none; }
+        [data-lock-vat-tu="1"] [data-so-tron-scope="vat-tu"] :is(input, textarea, select) {
+          background: #f1f5f9 !important;
+          border-color: #cbd5e1 !important;
+          color: #334155 !important;
+        }
+        [data-lock-vat-tu="1"] [data-so-tron-scope="vat-tu"] button,
+        [data-lock-vat-tu="1"] [data-so-tron-scope="vat-tu"] .so-tron-edit-only { display: none !important; }
+        [data-lock-thanh-pham="1"] [data-so-tron-scope="thanh-pham"] { pointer-events: none; }
+        [data-lock-thanh-pham="1"] [data-so-tron-scope="thanh-pham"] :is(input, textarea, select) {
+          background: #f1f5f9 !important;
+          border-color: #cbd5e1 !important;
+          color: #334155 !important;
+        }
+        [data-lock-thanh-pham="1"] [data-so-tron-scope="thanh-pham"] button { display: none !important; }
+      `}</style>
+      {soTronAccess.note ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] font-semibold text-amber-800">
+          {soTronAccess.note}
+        </p>
+      ) : null}
       {/* 2 Tabs ở đầu: 1. Danh sách, 2. Thêm sổ trộn */}
       <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 pt-2 rounded-xl shadow-2xs">
         <div className="flex items-center gap-1">
@@ -3070,6 +3185,7 @@ export function SoTronPanel({
                               loadReportToForm(report);
                               setActiveTab('form');
                             }}
+                            allowDelete={soTronAccess.canDelete}
                             onDelete={() => void handleDeleteSavedReport(report.id)}
                             onPrintGiaoCa={() => setPreviewPhieuGiaoCaReport(report)}
                           />
@@ -3959,7 +4075,7 @@ export function SoTronPanel({
                     Máy-Ca sẽ lưu: <span className="font-bold text-slate-800" title={selectedCa.trim() ? `Chỉ tạo phiếu cho ca ${selectedCa.trim()} (Lọc theo ca ở mục 1)` : 'Chưa lọc ca — sẽ tạo cho tất cả combo máy-ca của lệnh'}>{saveCombos.map(c => formatMayCa(c.machine, c.ca)).join(' · ') || '...'}</span>
                     {' '}· Lệnh: <span className="font-bold text-slate-800">{selectedLenh.join(', ')}</span>
                   </span>
-                  <div className="flex flex-wrap items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5" data-so-tron-scope="vat-tu" inert={!soTronAccess.canVatTu}>
                     <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Tồn đầu ca</span>
                     <div className="w-[148px]">
                       <SoTronDatePicker
@@ -4033,7 +4149,7 @@ export function SoTronPanel({
                     </div>
                   );
                 })()}
-                <div className="border-b border-slate-300 bg-slate-50 px-3 py-2">
+                <div className="border-b border-slate-300 bg-slate-50 px-3 py-2" data-so-tron-scope="vat-tu" inert={!soTronAccess.canVatTu}>
                   <div className="flex flex-col gap-1.5">
                     {coiRowLans.map((rowLan, rowPos) => {
                       const field = fieldOf(rowLan);
@@ -4151,7 +4267,7 @@ export function SoTronPanel({
                   </p>
                 ) : null}
 
-                <div className="flex flex-col gap-5 px-2 py-3">
+                <div className="flex flex-col gap-5 px-2 py-3" data-so-tron-scope="vat-tu" inert={!soTronAccess.canVatTu}>
                 {nvlPaperSections.map(section => (
                 <div key={section.key} className="overflow-hidden rounded-md border border-slate-800 bg-white">
                   {section.showTitle ? (
@@ -4280,7 +4396,7 @@ export function SoTronPanel({
                   </table>
                 </div>
                 {section.key !== 'nvl-khac' ? (
-                  <div className="border-t border-slate-300 px-3 py-2">
+                  <div className="so-tron-edit-only border-t border-slate-300 px-3 py-2">
                     <SearchableMultiSelect<MaterialRow>
                       values={[]}
                       onChange={sel => addExtraNvls(sel, section.key)}
@@ -4309,8 +4425,9 @@ export function SoTronPanel({
                   </span>
                 </div>
 
-                {/* Sản phẩm | Hàng lỗi hỏng. Bàn giao ca sau nằm trên bảng nguyên liệu. */}
-                <div className="mx-2 mt-5 flex flex-col divide-y-2 divide-slate-800 overflow-hidden rounded-md border border-slate-800 lg:flex-row lg:divide-x-2 lg:divide-y-0">
+                {/* Sản phẩm | Hàng lỗi. Tổ trộn không thấy khối này. */}
+                {soTronAccess.canSeeThanhPham ? (
+                <div data-so-tron-scope="thanh-pham" className="mx-2 mt-5 flex flex-col divide-y-2 divide-slate-800 overflow-hidden rounded-md border border-slate-800 lg:flex-row lg:divide-x-2 lg:divide-y-0" inert={!soTronAccess.canThanhPham}>
                   {/* Sản phẩm */}
                   <div className="min-w-[880px] flex-1 flex flex-col justify-between">
                     <div>
@@ -4603,7 +4720,8 @@ export function SoTronPanel({
                     </div>
                   </div>
                 </div>
-                <div className="mx-2 mb-3 mt-5 overflow-hidden rounded-md border border-slate-800">
+                ) : null}
+                <div data-so-tron-scope="vat-tu" className="mx-2 mb-3 mt-5 overflow-hidden rounded-md border border-slate-800" inert={!soTronAccess.canVatTu}>
                   <p className="border-b border-slate-800 bg-slate-100 py-1 text-center text-[12px] font-bold uppercase tracking-wide">
                     Nhựa bàn giao ca sau
                   </p>
@@ -4708,11 +4826,13 @@ export function SoTronPanel({
                 value={ghiChu}
                 onChange={e => setGhiChu(e.target.value)}
                 rows={2}
-                className={`${inputClass} resize-y`}
+                disabled={!soTronAccess.canSave}
+                className={`${inputClass} resize-y disabled:bg-slate-50`}
                 placeholder="Ghi chú thêm của ca..."
               />
             </div>
             <div className="flex flex-wrap gap-2">
+              {soTronAccess.canSave && (
               <button
                 type="button"
                 onClick={() => void handleSave()}
@@ -4722,6 +4842,27 @@ export function SoTronPanel({
                 {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 {editingId ? 'Cập nhật sổ trộn' : 'Lưu sổ trộn'}
               </button>
+              )}
+              {soTronAccess.canLock && (
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => void handleLockCa(false)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-800 px-4 py-3 text-sm font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  <Lock className="h-4 w-4" /> Chốt ca
+                </button>
+              )}
+              {soTronAccess.canUnlock && (
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => void handleLockCa(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                >
+                  <Unlock className="h-4 w-4" /> Mở khóa
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -4832,6 +4973,7 @@ export function SoTronListView({
   const [filterDate, setFilterDate] = useState('');
   const [filterMachine, setFilterMachine] = useState('');
   const [filterCa, setFilterCa] = useState('');
+  const allowDelete = useMemo(() => canDeleteSoTron(readSoTronActor()?.roles), []);
 
   const load = async () => {
     setIsLoading(true);
@@ -4911,7 +5053,10 @@ export function SoTronListView({
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Xóa sổ trộn này?')) return;
-    const res = await fetch(`/api/so-tron/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const res = await fetch(`/api/so-tron/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: soTronAuthHeaders()
+    });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       setMessage(str(data.error) || 'Không thể xóa sổ trộn.');
@@ -5034,6 +5179,7 @@ export function SoTronListView({
                     <td className="max-w-[220px] truncate px-3 py-2 text-slate-600">{report.nhan_su}</td>
                     <td className="px-3 py-2">
                       <SoTronRowActions
+                        allowDelete={allowDelete}
                         onEdit={() => onEdit(report)}
                         onDelete={() => void handleDelete(report.id)}
                         onPrintGiaoCa={() => setSelectedPhieuGiaoCa(report)}

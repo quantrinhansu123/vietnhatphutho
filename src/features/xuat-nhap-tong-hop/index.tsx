@@ -881,7 +881,7 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <button type="button" onClick={onBack} className="text-xs font-extrabold text-[#ef1b2d]">← Kho</button>
-        <h1 className="text-sm font-black uppercase tracking-wide text-zinc-950">Phiếu nhập xuất tổng hợp</h1>
+        <h1 className="text-sm font-black uppercase tracking-wide text-zinc-950">Xuất nhập kho NVL</h1>
         <button type="button" onClick={onOpenList} className="text-xs font-extrabold text-[#ef1b2d]">Danh sách</button>
       </div>
 

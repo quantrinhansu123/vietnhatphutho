@@ -7,6 +7,10 @@
  */
 
 import { vietNhatLogoUrl } from '../../components/layout/constants';
+import { parseSlipNumber } from './parseSlipNumber';
+import { formatTongSuCo, gioSuCo, kgSuCo, parseSuCo, tongSuCo } from './suCoGiaoCa';
+
+export { parseSlipNumber };
 
 export interface PhieuGiaoCaHeader {
   tieuDeMay: string;
@@ -77,28 +81,6 @@ function esc(value: unknown): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
-}
-
-/** Phần nghìn `,`, thập phân `.`. Số cũ `178,4` hoặc `1.234,6` vẫn đọc đúng. */
-export function parseSlipNumber(value: unknown): number {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
-  let text = String(value ?? '').trim().replace(/\s/g, '');
-  if (!text) return 0;
-  const negative = text.startsWith('-');
-  if (negative) text = text.slice(1);
-  const lastComma = text.lastIndexOf(',');
-  const lastDot = text.lastIndexOf('.');
-  if (lastComma >= 0 && lastDot >= 0) {
-    if (lastDot > lastComma) text = text.replace(/,/g, '');
-    else text = text.replace(/\./g, '').replace(',', '.');
-  } else if (lastComma >= 0) {
-    text = /^\d{1,3}(,\d{3})+$/.test(text) ? text.replace(/,/g, '') : text.replace(/,/g, '.');
-  } else if ((text.match(/\./g) || []).length > 1) {
-    text = text.replace(/\./g, '');
-  }
-  const parsed = Number(text);
-  if (!Number.isFinite(parsed)) return 0;
-  return negative ? -parsed : parsed;
 }
 
 function num(value: unknown): number {
@@ -233,11 +215,20 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
 
   // Hàng lỗi
   const tongHangLoi = input.hangLoi.reduce((sum, r) => sum + num(r.so_luong), 0);
-  const suCoText = String(input.suCoLuuY || '')
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .join('\n')
-    .trim();
+  const parsedSuCo = parseSuCo(input.suCoLuuY || '');
+  const tongSuCoIn = tongSuCo(parsedSuCo.rows);
+  const suCoRowsHtml = parsedSuCo.rows
+    .map(row => {
+      return `
+      <tr class="grid-row">
+        <td class="l">${esc(row.ten) || '&nbsp;'}</td>
+        <td class="c">${esc(String(row.lan).trim()) || '&nbsp;'}</td>
+        <td class="c">${esc(gioSuCo(row.ten, row.lan)) || '&nbsp;'}</td>
+        <td class="c">${esc(kgSuCo(row.ten, row.lan)) || '&nbsp;'}</td>
+      </tr>`;
+    })
+    .join('');
+  const suCoNote = parsedSuCo.note.trim();
   const hangLoiRowsHtml = input.hangLoi
     .map(row => {
       return `
@@ -503,14 +494,24 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
 
     .notes-box {
       border: 0.5pt solid #000;
-      min-height: 24mm;
-      padding: 4px;
-      font-size: 16px;
+      min-height: 12mm;
+      margin-top: 2mm;
+      padding: 3px;
+      font-size: 9pt;
       white-space: pre-wrap;
-      line-height: 1.3;
+      line-height: 1.25;
       background: #fafafa;
       overflow-wrap: anywhere;
       text-align: left;
+    }
+    .su-co-table {
+      font-size: 8pt;
+      line-height: 1.2;
+    }
+    .su-co-table th,
+    .su-co-table td {
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     /* Chữ ký luôn một khối ở cuối trang 2. Nếu thành phẩm tràn, cả khối sang trang sau. */
@@ -700,9 +701,31 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
           </table>
         </div>
 
-        <div style="margin-top: 8px; flex: 1; display: flex; flex-direction: column; text-align: left;">
+        <div style="margin-top: 8px; text-align: left;">
           <div class="sec-title" style="text-align: left;">IV. SỰ CỐ SẢN XUẤT / LƯU Ý KHÁC</div>
-          <div class="notes-box">${suCoText ? esc(suCoText) : '<span style="color:#888;">(Không có sự cố ghi nhận)</span>'}</div>
+          <table class="data-table su-co-table">
+            <colgroup>
+              <col style="width:42%" />
+              <col style="width:16%" />
+              <col style="width:18%" />
+              <col style="width:24%" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Sự cố</th>
+                <th>Số lần</th>
+                <th>Số giờ</th>
+                <th>Giảm trừ kg</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${suCoRowsHtml || '<tr class="grid-row"><td colspan="4" class="c" style="color:#888;">(Không có sự cố ghi nhận)</td></tr>'}
+              <tr class="grid-row total-row" style="background-color: #f7f7f7;">
+                <td colspan="4" class="l b">Tổng: ${esc(formatTongSuCo(tongSuCoIn.gio))} giờ | ${esc(formatTongSuCo(tongSuCoIn.kg))} kg</td>
+              </tr>
+            </tbody>
+          </table>
+          ${suCoNote ? `<div class="notes-box">${esc(suCoNote)}</div>` : ''}
         </div>
       </div>
 

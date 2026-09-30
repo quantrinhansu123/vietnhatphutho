@@ -11,6 +11,12 @@ import {
   uploadImage
 } from '../_shared/recordHelpers';
 import type { HrBranch, HrMember } from '../_shared/hr';
+import {
+  CHUC_VU_PHAN_XUONG_SAN_XUAT,
+  isChucVuPhanXuong,
+  isPhongBanSanXuat,
+  PHONG_BAN_SAN_XUAT
+} from './phongBanSanXuat';
 import { normalizeHrBranches } from '../_shared/hr';
 import { STANDARD_SHIFTS } from '../../types';
 import {
@@ -566,6 +572,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
   const departmentOptions = useMemo(() => {
     const names = new Set<string>();
     branches.forEach(branch => branch.departments.forEach(department => names.add(department.name)));
+    if (![...names].some(name => isPhongBanSanXuat(name))) names.add(PHONG_BAN_SAN_XUAT);
     if (names.size === 0) names.add('Sản xuất');
     return [...names].sort((a, b) => a.localeCompare(b, 'vi'));
   }, [branches]);
@@ -1414,6 +1421,10 @@ export function AddStaffModal({
       setFormError('Vui lòng chọn phòng ban.');
       return;
     }
+    if (isPhongBanSanXuat(form.department) && !isChucVuPhanXuong(form.role)) {
+      setFormError('Phân xưởng sản xuất chọn chức vụ Nhân Viên, Trưởng Phòng hoặc Trộn.');
+      return;
+    }
     if (isEditing && !form.code.trim()) {
       setFormError('Nhân sự này chưa có mã (ma_nhan_su) nên không thể cập nhật.');
       return;
@@ -1526,7 +1537,15 @@ export function AddStaffModal({
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Phòng ban *</span>
             <select
               value={form.department}
-              onChange={event => setForm(prev => ({ ...prev, department: event.target.value }))}
+              onChange={event => {
+                const department = event.target.value;
+                setForm(prev => ({
+                  ...prev,
+                  department,
+                  role:
+                    isPhongBanSanXuat(department) && !isChucVuPhanXuong(prev.role) ? '' : prev.role
+                }));
+              }}
               className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
             >
               {departmentOptions.map(department => (
@@ -1538,11 +1557,26 @@ export function AddStaffModal({
           </label>
           <label className="space-y-1.5">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Chức vụ</span>
-            <input
-              value={form.role}
-              onChange={event => setForm(prev => ({ ...prev, role: event.target.value }))}
-              className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-            />
+            {isPhongBanSanXuat(form.department) ? (
+              <select
+                value={isChucVuPhanXuong(form.role) ? form.role : ''}
+                onChange={event => setForm(prev => ({ ...prev, role: event.target.value }))}
+                className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+              >
+                <option value="">Chọn chức vụ</option>
+                {CHUC_VU_PHAN_XUONG_SAN_XUAT.map(role => (
+                  <option key={role} value={role}>
+                    {role}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                value={form.role}
+                onChange={event => setForm(prev => ({ ...prev, role: event.target.value }))}
+                className="h-10 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+              />
+            )}
           </label>
           <label className="space-y-1.5">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ca làm</span>

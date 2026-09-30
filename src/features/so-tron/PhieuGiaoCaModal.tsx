@@ -12,6 +12,18 @@ import {
   parseSlipNumber,
   printPhieuGiaoCaSlip
 } from './printPhieuGiaoCa';
+import {
+  SU_CO_MAU,
+  type SuCoRow,
+  gioSuCo,
+  kgSuCo,
+  tongSuCo,
+  formatTongSuCo,
+  suCoOptionLabel,
+  composeSuCo,
+  parseSuCo
+} from './suCoGiaoCa';
+import { readSoTronActor, soTronAuthHeaders, soTronScopesFor } from './soTronSession';
 import type { SoTronSavedReport } from './index';
 import {
   auxiliaryNormWeightIndex,
@@ -43,50 +55,13 @@ function round2(val: number): number {
   return Math.round((val + Number.EPSILON) * 100) / 100;
 }
 
-function fmt(val: number): string {
-  if (!Number.isFinite(val) || val === 0) return '';
-  return formatSlipNumber(val);
-}
-
 function round1(val: number): number {
   return Math.round((val + Number.EPSILON) * 10) / 10;
 }
 
-const SU_CO_MAU = [
-  { ten: 'Đổi màu', gio: 0.5 },
-  { ten: 'Đổi khổ', gio: 1 }
-] as const;
-
-type SuCoRow = { key: string; ten: string; lan: string };
-
-function gioSuCo(ten: string, lan: string): string {
-  const hit = SU_CO_MAU.find(item => item.ten === ten);
-  const times = num(lan);
-  if (!hit || !(times > 0)) return '';
-  const hours = round1(hit.gio * times);
-  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
-}
-
-function composeSuCo(rows: SuCoRow[], note: string): string {
-  const lines = rows
-    .filter(row => row.ten && num(row.lan) > 0)
-    .map(row => `${row.ten} — ${String(row.lan).trim()} lần — ${gioSuCo(row.ten, row.lan)} giờ`);
-  return [...lines, note.trim()].filter(Boolean).join('\n');
-}
-
-function parseSuCo(text: string): { rows: SuCoRow[]; note: string } {
-  const rows: SuCoRow[] = [];
-  const notes: string[] = [];
-  for (const line of String(text || '').split(/\r?\n/)) {
-    const match = line.match(/^(.+?)\s+—\s+(\d+(?:[.,]\d+)?)\s+lần\s+—\s+.+$/);
-    const ten = match?.[1]?.trim() || '';
-    if (match && SU_CO_MAU.some(item => item.ten === ten)) {
-      rows.push({ key: uid(), ten, lan: match[2] });
-    } else if (line.trim()) {
-      notes.push(line);
-    }
-  }
-  return { rows, note: notes.join('\n') };
+function fmt(val: number): string {
+  if (!Number.isFinite(val) || val === 0) return '';
+  return formatSlipNumber(val);
 }
 
 export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
@@ -528,10 +503,19 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
         ghi_chu: composeSuCo(suCoRows, suCoLuuY)
       };
 
+      const actor = readSoTronActor();
+      const scopes = soTronScopesFor(actor, 'update', {
+        ca: report.ca,
+        khoa_ca: Boolean(report.khoa_ca),
+        vat_tu_owner_id: String(report.vat_tu_owner_id || '')
+      });
+      if (scopes.length === 0) {
+        throw new Error(actor ? 'Bạn không được sửa phiếu giao ca này.' : 'Đăng nhập lại để lưu phiếu giao ca.');
+      }
       const res = await fetch(`/api/so-tron/${encodeURIComponent(report.id)}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        headers: { 'Content-Type': 'application/json', ...soTronAuthHeaders() },
+        body: JSON.stringify({ ...payload, scope: scopes })
       });
 
       const resData = await res.json().catch(() => ({}));
@@ -1167,7 +1151,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                     <h4 className="text-xs font-bold uppercase tracking-wide">IV. SỰ CỐ SẢN XUẤT / LƯU Ý KHÁC</h4>
                     <button
                       type="button"
-                      onClick={() => setSuCoRows(rows => [...rows, { key: uid(), ten: 'Đổi màu', lan: '1' }])}
+                      onClick={() => setSuCoRows(rows => [...rows, { key: uid(), ten: '', lan: '' }])}
                       className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50"
                     >
                       <Plus className="h-3 w-3" /> Thêm sự cố
@@ -1179,13 +1163,14 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                         <th className="border border-slate-800 px-1 py-1 text-left">Sự cố</th>
                         <th className="border border-slate-800 px-1 py-1 w-[72px]">Số lần</th>
                         <th className="border border-slate-800 px-1 py-1 w-[72px]">Số giờ</th>
+                        <th className="border border-slate-800 px-1 py-1 w-[88px]">Giảm trừ kg</th>
                         <th className="border border-slate-800 w-[28px]" />
                       </tr>
                     </thead>
                     <tbody>
                       {suCoRows.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="border border-slate-800 px-2 py-2 text-center text-slate-400 italic">
+                          <td colSpan={5} className="border border-slate-800 px-2 py-2 text-center text-slate-400 italic">
                             Chưa có sự cố. Bấm Thêm sự cố.
                           </td>
                         </tr>
@@ -1198,9 +1183,10 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                               onChange={e => setSuCoRows(rows => rows.map((item, i) => (i === index ? { ...item, ten: e.target.value } : item)))}
                               className="w-full bg-transparent px-1 py-1 text-[16px] font-semibold text-black outline-none"
                             >
+                              <option value="">Chọn sự cố</option>
                               {SU_CO_MAU.map(item => (
                                 <option key={item.ten} value={item.ten}>
-                                  {item.ten} — {item.gio}h
+                                  {suCoOptionLabel(item)}
                                 </option>
                               ))}
                             </select>
@@ -1213,8 +1199,11 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                               className="w-full overflow-hidden whitespace-nowrap bg-transparent px-1 py-1 text-center text-[13px] font-bold text-black outline-none"
                             />
                           </td>
-                          <td className="overflow-hidden whitespace-nowrap border border-slate-800 px-1 text-center text-[13px] font-bold tabular-nums text-black">
+                          <td className="overflow-hidden whitespace-nowrap border border-slate-800 bg-slate-50 px-1 text-center text-[13px] font-bold tabular-nums text-black">
                             {gioSuCo(row.ten, row.lan)}
+                          </td>
+                          <td className="overflow-hidden whitespace-nowrap border border-slate-800 bg-slate-50 px-1 text-center text-[13px] font-bold tabular-nums text-black">
+                            {kgSuCo(row.ten, row.lan)}
                           </td>
                           <td className="border border-slate-800 text-center">
                             <button
@@ -1227,6 +1216,13 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                           </td>
                         </tr>
                       ))}
+                      {suCoRows.length > 0 && (
+                        <tr className="bg-slate-100 font-bold">
+                          <td colSpan={5} className="border border-slate-800 px-2 py-1 text-[13px]">
+                            Tổng: {formatTongSuCo(tongSuCo(suCoRows).gio)} giờ | {formatTongSuCo(tongSuCo(suCoRows).kg)} kg
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                   <textarea

@@ -78,7 +78,7 @@ import {
   loadProductionOrderProductCatalog
 } from '../ke-hoach-san-xuat';
 import { normalizeMaterialsInventory } from '../kho-nvl';
-import { isNvlCoreWarehouse } from '../kho-hang';
+import { isNvlCoreWarehouse, normalizeWarehouseName } from '../kho-hang';
 import {
   composeReasonWithProductionOrderCodes,
   extractLinkedProductionOrderCodes,
@@ -2450,15 +2450,22 @@ export function WarehouseSlipPanel({
 
   const warehouseSelectOptions = useMemo(() => {
     // Chỉ gợi ý những kho người dùng có quyền lập phiếu (Vật tư / Thành phẩm đúng người phụ trách).
-    const names = warehouseOptions.filter(
-      name => {
-        const access = pickWarehouseSlipAccess(warehouseAccess, inferWarehouseKindFromName(name));
-        return editSlipCode ? access.canEdit : access.canCreate;
-      }
-    );
+    // Phiếu này không lập cho Kho NVL, Kho NVL chính, Kho NVL phụ, Kho PC.
+    // Phiếu cũ đang sửa vẫn giữ đúng tên kho NVL đã ghi, không đưa các kho NVL còn lại vào danh sách.
+    const editingNvlKey =
+      editSlipCode && isNvlCoreWarehouse(warehouseName) ? normalizeWarehouseName(warehouseName) : '';
+    const names = warehouseOptions.filter(name => {
+      if (isNvlCoreWarehouse(name) && normalizeWarehouseName(name) !== editingNvlKey) return false;
+      const access = pickWarehouseSlipAccess(warehouseAccess, inferWarehouseKindFromName(name));
+      return editSlipCode ? access.canEdit : access.canCreate;
+    });
+    if (editingNvlKey && !names.some(name => normalizeWarehouseName(name) === editingNvlKey)) {
+      names.push(warehouseName.trim());
+    }
     return names;
   }, [
     warehouseOptions,
+    warehouseName,
     editSlipCode,
     warehouseAccess.vatTu.canCreate,
     warehouseAccess.vatTu.canEdit,
@@ -4382,6 +4389,15 @@ export function WarehouseSlipPanel({
       : [];
     if (!warehouseName.trim()) {
       setFormError(showSaveFailure('Vui lòng chọn tên kho từ danh sách Quản lý kho.'));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!editSlipCode && isNvlCoreWarehouse(warehouseName)) {
+      setFormError(
+        showSaveFailure(
+          'Phiếu này không lập cho Kho NVL, Kho NVL chính, Kho NVL phụ hoặc Kho PC. Vui lòng chọn kho khác.'
+        )
+      );
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }

@@ -6,10 +6,19 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { ProductionReport } from './src/types';
-import { normalizeStaffViewPermissions } from './src/features/nhan-su/menuViews';
+import { normalizeStaffViewPermissions, PRIMARY_ADMIN_USERNAME } from './src/features/nhan-su/menuViews';
+import {
+  applySoTronScopes,
+  assertSoTron,
+  normalizeScopes,
+  resolveSoTronRoles,
+  type SoTronActor,
+  type SoTronResource
+} from './src/features/so-tron/soTronPhanQuyen';
+import { signSoTronToken, verifySoTronToken } from './src/features/so-tron/soTronToken';
 import { aggregateSlipOwnsCode, registerXuatNhapTongHopRoutes } from './src/features/xuat-nhap-tong-hop/registerRoutes';
 import { normalizeAssignablePositions } from './src/features/cai-dat-thoi-gian/staffAssignments';
-import { calculateProductConversionFormulas } from './src/utils/productConversionCalculation';
+import { calculateProductConversionFormulas, roundImportedConversionWeight } from './src/utils/productConversionCalculation';
 import {
   aggregateNhapKhoProducts,
   computeThanhPhamPeriodBalances,
@@ -9480,7 +9489,12 @@ export function createApp() {
         const parsed = parseProductConversionBody(body);
         const rowNumber = Number(body.rowNumber) || index + 1;
         if ('error' in parsed) errors.push({ rowNumber, error: parsed.error });
-        else valid.push({ rowNumber, record: parsed.record });
+        else {
+          // Import chốt kg/Tấm + kg/Cuộn tối đa 2 chữ số (khớp số công thức tự suy ra).
+          parsed.record.trong_luong_kg_tam = roundImportedConversionWeight(parsed.record.trong_luong_kg_tam) as number | null;
+          parsed.record.trong_luong_kg_cuon = roundImportedConversionWeight(parsed.record.trong_luong_kg_cuon) as number | null;
+          valid.push({ rowNumber, record: parsed.record });
+        }
       });
       if (valid.length === 0) return res.json({ success: true, processed: items.length, created: 0, updated: 0, failed: errors.length, errors });
       // Gom trùng san_pham_id trong cùng lô: giữ dòng cuối cùng (khớp unique san_pham_id).
@@ -19562,6 +19576,140 @@ async function loadKiemKhoLiveTongHopForDot(
     return message ? `Không thể lưu sổ trộn. ${message}` : 'Không thể lưu sổ trộn.';
   }
 
+  function soTronJwtSecret() {
+    return process.env.SO_TRON_JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'vietnhat-so-tron';
+  }
+
+  function readSoTronActorReq(req: { headers: { authorization?: string | string[] } }): SoTronActor | null {
+    const raw = req.headers.authorization;
+    const header = Array.isArray(raw) ? raw[0] : String(raw || '');
+    const token = /^bearer\s+/i.test(header) ? header.replace(/^bearer\s+/i, '').trim() : '';
+    return verifySoTronToken(token, soTronJwtSecret());
+  }
+
+  function slipGateOf(row: Record<string, unknown> | null | undefined) {
+    return {
+      ca: String(row?.ca || ''),
+      khoa_ca: Boolean(row?.khoa_ca),
+      vat_tu_owner_id: String(row?.vat_tu_owner_id || '')
+    };
+  }
+
+  async function writeSoTronAudit(entry: Record<string, unknown>) {
+    if (!supabase) return;
+    const { error } = await supabase.from('so_tron_audit_log').insert(entry);
+    if (error) console.warn('so_tron audit:', error.message);
+  }
+
+  function dropUnknownSoTronColumn(record: Record<string, unknown>, message: string) {
+    const column = message.match(/'([^']+)'/)?.[1];
+    if (!column || !(column in record)) return null;
+    const next = { ...record };
+    delete next[column];
+    return next;
+  }
+
+  async function persistSoTron(id: string | null, record: Record<string, unknown>) {
+    let payload = { ...record };
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const query = id
+        ? supabase!.from(SUPABASE_SO_TRON_TABLE).update(payload).eq('id', id).select('*').single()
+        : supabase!.from(SUPABASE_SO_TRON_TABLE).insert(payload).select('*').single();
+      const { data, error } = await query;
+      if (!error) return { data, error: null as null };
+      const message = String((error as { message?: string }).message || '');
+      const stripped = /Could not find|does not exist|column/i.test(message)
+        ? dropUnknownSoTronColumn(payload, message)
+        : null;
+      if (!stripped) return { data: null, error };
+      payload = stripped;
+    }
+    return { data: null, error: { message: 'Không lưu được sổ trộn.', code: '' } };
+  }
+
+  function guardSoTronScopes(
+    req: { headers: { authorization?: string | string[] }; body?: unknown },
+    action: 'create' | 'update',
+    existing: Record<string, unknown> | null,
+    ca: string,
+    forced?: SoTronResource[]
+  ) {
+    const actor = readSoTronActorReq(req);
+    const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+    const scopes = forced?.length ? forced : normalizeScopes(body.scope);
+    if (scopes.length === 0) {
+      return { error: { status: 400 as const, message: 'Thiếu phạm vi ghi: vat_tu hoặc thanh_pham.' } };
+    }
+    const gate = {
+      ca: ca || slipGateOf(existing).ca,
+      khoa_ca: Boolean(existing?.khoa_ca),
+      vat_tu_owner_id: String(existing?.vat_tu_owner_id || '')
+    };
+    for (const scope of scopes) {
+      const decision = assertSoTron(actor, action, scope, gate);
+      if (!decision.ok) return { error: { status: decision.status, message: decision.error } };
+    }
+    return { actor: actor as SoTronActor, scopes };
+  }
+
+  app.post('/api/auth/so-tron-token', async (req, res) => {
+    const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+    const username = String(body.username || '').trim().toLowerCase();
+    const password = String(body.password || '');
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Vui lòng nhập tên đăng nhập và mật khẩu.' });
+    }
+
+    if (
+      username === PRIMARY_ADMIN_USERNAME.toLowerCase() &&
+      password === String(process.env.ADMIN_PASSWORD || '123456')
+    ) {
+      const actor: SoTronActor = {
+        id: 'admin',
+        username,
+        name: 'Quản trị viên',
+        roles: ['ADMIN'],
+        ca: ''
+      };
+      return res.json({ token: signSoTronToken(actor, soTronJwtSecret()), actor });
+    }
+
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const { data, error } = await supabase.from('nhan_su').select('*').ilike('ten_dang_nhap', username).limit(20);
+    if (error) return res.status(500).json({ error: 'Không kiểm tra được tài khoản.' });
+    const row = (Array.isArray(data) ? data : []).find(item => {
+      if (item?.deleted_at) return false;
+      return String(item?.mat_khau ?? item?.password ?? '').trim() === password.trim();
+    }) as Record<string, unknown> | undefined;
+    if (!row) return res.status(401).json({ error: 'Tên đăng nhập hoặc mật khẩu không đúng.' });
+
+    const assigned = Array.isArray(row.vi_tri_gan) ? row.vi_tri_gan : [];
+    const extra = assigned.flatMap(item => {
+      const pos = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+      return [pos.position, pos.department, pos.permissionKey].map(value => String(value || ''));
+    });
+    const actor: SoTronActor = {
+      id: String(row.id || row.ma_nhan_su || username),
+      username,
+      name: String(row.nhan_su || row.ho_ten || username),
+      roles: resolveSoTronRoles({
+        role: String(row.chuc_vu || row.cong_viec || row.vi_tri || ''),
+        username,
+        extra: [String(row.phong_ban || ''), String(row.cong_viec || ''), ...extra]
+      }),
+      ca: (() => {
+        const raw = String(row.ca_lam || row.ca || '').trim();
+        const folded = raw
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/đ/gi, 'd')
+          .toLowerCase();
+        return folded === 'theo phan cong' ? '' : raw;
+      })()
+    };
+    return res.json({ token: signSoTronToken(actor, soTronJwtSecret()), actor });
+  });
+
   app.get('/api/so-tron', async (req, res) => {
     if (!supabase) {
       return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
@@ -19604,98 +19752,184 @@ async function loadKiemKhoLiveTongHopForDot(
     }
   });
 
-  app.post('/api/so-tron', async (req, res) => {
-    if (!supabase) {
-      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+  async function createSoTronReport(req: { headers: { authorization?: string | string[] }; body?: unknown }, res: express.Response, forced?: SoTronResource[]) {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const parsed = parseSoTronBody(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    const guard = guardSoTronScopes(req, 'create', null, parsed.record.ca, forced);
+    if ('error' in guard && guard.error) return res.status(guard.error.status).json({ error: guard.error.message });
+    const record = applySoTronScopes(null, parsed.record as Record<string, unknown>, guard.scopes);
+    record.created_by_id = guard.actor.id;
+    record.created_by_username = guard.actor.username;
+    if (guard.scopes.includes('vat_tu')) record.vat_tu_owner_id = guard.actor.id;
+    const saved = await persistSoTron(null, record);
+    if (saved.error) {
+      console.error('Supabase so tron insert error:', saved.error);
+      const status = (saved.error as { code?: string }).code === '23505' ? 409 : 500;
+      return res.status(status).json({ error: soTronWriteError(saved.error) });
     }
+    await writeSoTronAudit({
+      user_id: guard.actor.id,
+      username: guard.actor.username,
+      action: 'create',
+      resource: guard.scopes.join(','),
+      resource_id: String((saved.data as { id?: string } | null)?.id || ''),
+      old_value: null,
+      new_value: saved.data
+    });
+    return res.status(201).json({ success: true, report: saved.data });
+  }
 
+  async function updateSoTronReport(req: { headers: { authorization?: string | string[] }; body?: unknown; params: { id?: string } }, res: express.Response, forced?: SoTronResource[]) {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'Thiếu ID sổ trộn.' });
+    const parsed = parseSoTronBody(req.body);
+    if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+    const existingRes = await supabase.from(SUPABASE_SO_TRON_TABLE).select('*').eq('id', id).maybeSingle();
+    if (existingRes.error) return res.status(500).json({ error: soTronWriteError(existingRes.error) });
+    if (!existingRes.data) return res.status(404).json({ error: 'Không tìm thấy sổ trộn.' });
+    const existing = existingRes.data as Record<string, unknown>;
+    const guard = guardSoTronScopes(req, 'update', existing, parsed.record.ca, forced);
+    if ('error' in guard && guard.error) return res.status(guard.error.status).json({ error: guard.error.message });
+    const record = applySoTronScopes(existing, parsed.record as Record<string, unknown>, guard.scopes);
+    if (guard.scopes.includes('vat_tu') && !String(existing.vat_tu_owner_id || '').trim()) {
+      record.vat_tu_owner_id = guard.actor.id;
+    }
+    const saved = await persistSoTron(id, record);
+    if (saved.error) {
+      console.error('Supabase so tron update error:', saved.error);
+      const status = (saved.error as { code?: string }).code === '23505' ? 409 : 500;
+      return res.status(status).json({ error: soTronWriteError(saved.error) });
+    }
+    if (!saved.data) return res.status(404).json({ error: 'Không tìm thấy sổ trộn.' });
+    await writeSoTronAudit({
+      user_id: guard.actor.id,
+      username: guard.actor.username,
+      action: 'update',
+      resource: guard.scopes.join(','),
+      resource_id: id,
+      old_value: existing,
+      new_value: saved.data
+    });
+    return res.json({ success: true, report: saved.data });
+  }
+
+  app.post('/api/so-tron', async (req, res) => {
     try {
-      const parsed = parseSoTronBody(req.body);
-      if ('error' in parsed) {
-        return res.status(400).json({ error: parsed.error });
-      }
-
-      const { data, error } = await supabase
-        .from(SUPABASE_SO_TRON_TABLE)
-        .insert(parsed.record)
-        .select('*')
-        .single();
-
-      if (error) {
-        // DB chưa chạy migration tong_nhap_nvl → thử lại không kèm cột mới
-        if (/tong_nhap_nvl/i.test(String((error as { message?: string })?.message ?? ''))) {
-          const { tong_nhap_nvl: _drop, ...fallbackRecord } = parsed.record as Record<string, unknown>;
-          const retry = await supabase
-            .from(SUPABASE_SO_TRON_TABLE)
-            .insert(fallbackRecord)
-            .select('*')
-            .single();
-          if (retry.error) {
-            console.error('Supabase so tron insert error:', retry.error);
-            const status = retry.error?.code === '23505' ? 409 : 500;
-            return res.status(status).json({ error: soTronWriteError(retry.error) });
-          }
-          return res.status(201).json({ success: true, report: retry.data });
-        }
-        console.error('Supabase so tron insert error:', error);
-        const status = error?.code === '23505' ? 409 : 500;
-        return res.status(status).json({ error: soTronWriteError(error) });
-      }
-
-      return res.status(201).json({ success: true, report: data });
+      return await createSoTronReport(req, res);
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi lưu sổ trộn.' });
     }
   });
 
-  app.put('/api/so-tron/:id', async (req, res) => {
-    if (!supabase) {
-      return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
-    }
-
+  app.post('/api/so-tron/vat-tu', async (req, res) => {
     try {
-      const id = String(req.params.id || '').trim();
-      if (!id) return res.status(400).json({ error: 'Thiếu ID sổ trộn.' });
+      return await createSoTronReport(req, res, ['vat_tu']);
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu vật tư.' });
+    }
+  });
 
-      const parsed = parseSoTronBody(req.body);
-      if ('error' in parsed) {
-        return res.status(400).json({ error: parsed.error });
-      }
+  app.post('/api/so-tron/thanh-pham', async (req, res) => {
+    try {
+      return await createSoTronReport(req, res, ['thanh_pham']);
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu thành phẩm.' });
+    }
+  });
 
-      const { data, error } = await supabase
-        .from(SUPABASE_SO_TRON_TABLE)
-        .update(parsed.record)
-        .eq('id', id)
-        .select('*')
-        .single();
+  app.put('/api/so-tron/vat-tu/:id', async (req, res) => {
+    try {
+      return await updateSoTronReport(req, res, ['vat_tu']);
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật vật tư.' });
+    }
+  });
 
-      if (error) {
-        // DB chưa chạy migration tong_nhap_nvl → thử lại không kèm cột mới
-        if (/tong_nhap_nvl/i.test(String((error as { message?: string })?.message ?? ''))) {
-          const { tong_nhap_nvl: _dropUpdate, ...fallbackRecord } = parsed.record as Record<string, unknown>;
-          const retry = await supabase
-            .from(SUPABASE_SO_TRON_TABLE)
-            .update(fallbackRecord)
-            .eq('id', id)
-            .select('*')
-            .single();
-          if (retry.error) {
-            console.error('Supabase so tron update error:', retry.error);
-            const status = retry.error?.code === '23505' ? 409 : 500;
-            return res.status(status).json({ error: soTronWriteError(retry.error) });
-          }
-          if (!retry.data) return res.status(404).json({ error: 'Không tìm thấy sổ trộn.' });
-          return res.json({ success: true, report: retry.data });
-        }
-        console.error('Supabase so tron update error:', error);
-        const status = error?.code === '23505' ? 409 : 500;
-        return res.status(status).json({ error: soTronWriteError(error) });
-      }
+  app.put('/api/so-tron/thanh-pham/:id', async (req, res) => {
+    try {
+      return await updateSoTronReport(req, res, ['thanh_pham']);
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật thành phẩm.' });
+    }
+  });
 
-      if (!data) return res.status(404).json({ error: 'Không tìm thấy sổ trộn.' });
-      return res.json({ success: true, report: data });
+  app.put('/api/so-tron/:id', async (req, res) => {
+    try {
+      return await updateSoTronReport(req, res);
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi cập nhật sổ trộn.' });
+    }
+  });
+
+  app.post('/api/so-tron/:id/lock', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    try {
+      const id = String(req.params.id || '').trim();
+      const existingRes = await supabase.from(SUPABASE_SO_TRON_TABLE).select('*').eq('id', id).maybeSingle();
+      if (existingRes.error) return res.status(500).json({ error: soTronWriteError(existingRes.error) });
+      if (!existingRes.data) return res.status(404).json({ error: 'Không tìm thấy sổ trộn.' });
+      const existing = existingRes.data as Record<string, unknown>;
+      const actor = readSoTronActorReq(req);
+      const decision = assertSoTron(actor, 'lock', 'thanh_pham', slipGateOf(existing));
+      if (!decision.ok) return res.status(decision.status).json({ error: decision.error });
+      const lyDo = String((req.body as { ly_do?: string } | undefined)?.ly_do || '').trim();
+      const saved = await persistSoTron(id, {
+        khoa_ca: true,
+        khoa_luc: new Date().toISOString(),
+        khoa_boi: actor!.username,
+        khoa_ly_do: lyDo
+      });
+      if (saved.error) return res.status(500).json({ error: soTronWriteError(saved.error) });
+      if (!saved.data || !(saved.data as { khoa_ca?: boolean }).khoa_ca) {
+        return res.status(500).json({ error: 'Chưa chốt được ca.' });
+      }
+      await writeSoTronAudit({
+        user_id: actor!.id,
+        username: actor!.username,
+        action: 'lock',
+        resource: 'so_tron',
+        resource_id: id,
+        old_value: { khoa_ca: existing.khoa_ca },
+        new_value: { khoa_ca: true, khoa_ly_do: lyDo }
+      });
+      return res.json({ success: true, report: saved.data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi chốt ca.' });
+    }
+  });
+
+  app.post('/api/so-tron/:id/unlock', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    try {
+      const id = String(req.params.id || '').trim();
+      const lyDo = String((req.body as { ly_do?: string } | undefined)?.ly_do || '').trim();
+      if (!lyDo) return res.status(400).json({ error: 'Mở khóa phải nhập lý do.' });
+      const existingRes = await supabase.from(SUPABASE_SO_TRON_TABLE).select('*').eq('id', id).maybeSingle();
+      if (existingRes.error) return res.status(500).json({ error: soTronWriteError(existingRes.error) });
+      if (!existingRes.data) return res.status(404).json({ error: 'Không tìm thấy sổ trộn.' });
+      const existing = existingRes.data as Record<string, unknown>;
+      const actor = readSoTronActorReq(req);
+      const decision = assertSoTron(actor, 'unlock', 'vat_tu', slipGateOf(existing));
+      if (!decision.ok) return res.status(decision.status).json({ error: decision.error });
+      const saved = await persistSoTron(id, {
+        khoa_ca: false,
+        khoa_ly_do: lyDo
+      });
+      if (saved.error) return res.status(500).json({ error: soTronWriteError(saved.error) });
+      await writeSoTronAudit({
+        user_id: actor!.id,
+        username: actor!.username,
+        action: 'unlock',
+        resource: 'so_tron',
+        resource_id: id,
+        old_value: { khoa_ca: existing.khoa_ca },
+        new_value: { khoa_ca: false, ly_do: lyDo }
+      });
+      return res.json({ success: true, report: saved.data });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi mở khóa ca.' });
     }
   });
 
@@ -19707,7 +19941,11 @@ async function loadKiemKhoLiveTongHopForDot(
     try {
       const id = String(req.params.id || '').trim();
       if (!id) return res.status(400).json({ error: 'Thiếu ID sổ trộn.' });
+      const actor = readSoTronActorReq(req);
+      const decision = assertSoTron(actor, 'delete', 'vat_tu');
+      if (!decision.ok) return res.status(decision.status).json({ error: decision.error });
 
+      const existingRes = await supabase.from(SUPABASE_SO_TRON_TABLE).select('*').eq('id', id).maybeSingle();
       const { data, error } = await supabase
         .from(SUPABASE_SO_TRON_TABLE)
         .delete()
@@ -19721,6 +19959,15 @@ async function loadKiemKhoLiveTongHopForDot(
       }
 
       if (!data) return res.status(404).json({ error: 'Không tìm thấy sổ trộn.' });
+      await writeSoTronAudit({
+        user_id: actor!.id,
+        username: actor!.username,
+        action: 'delete',
+        resource: 'so_tron',
+        resource_id: id,
+        old_value: existingRes.data || null,
+        new_value: null
+      });
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi xóa sổ trộn.' });

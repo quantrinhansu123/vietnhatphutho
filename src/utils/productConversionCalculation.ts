@@ -23,6 +23,17 @@ export const roundProductConversion = (value: number) =>
   Math.round((value + Number.EPSILON) * 100) / 100;
 
 /**
+ * Import Bảng quy đổi: chỉ hai cột Trọng lượng (kg/Tấm) và (kg/Cuộn) chốt tối đa
+ * 2 chữ số thập phân (khớp số do công thức tự suy ra). Các cột số khác giữ nguyên
+ * độ chính xác như file. Giá trị không phải số hữu hạn (null/undefined) giữ nguyên.
+ */
+export function roundImportedConversionWeight(value: unknown): unknown {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? roundProductConversion(value)
+    : value;
+}
+
+/**
  * Trả về các giá trị có thể suy ra từ dữ liệu nguồn.
  * `null` nghĩa là chưa đủ dữ liệu cho công thức tương ứng.
  */

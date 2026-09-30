@@ -1,8 +1,8 @@
 # so_tron
 
 | Bảng | `so_tron` |
-| Tab | `so-tron` → `/so-tron` (card **Sổ trộn** trong `/bao-cao-truong-ca-tron`) + `so-tron-list` → `/danh-sach-so-tron` (cùng menu **Báo cáo Trưởng ca + Trộn**, vào từ `/nha-may/cong-nhan`) |
-| SQL | `supabase-so-tron.sql` + `supabase-so-tron-tong-hop.sql` (5 cột tổng hợp) + `supabase-so-tron-tong-nhap.sql` (`tong_nhap_nvl`) |
+| Tab | `so-tron` → `/so-tron` (card **Sổ trộn** trong `/bao-cao-truong-ca-tron`) + `so-tron-list` → `/danh-sach-so-tron` (card riêng **Danh sách phiếu giao ca** trên menu Sản xuất) |
+| SQL | `supabase-so-tron.sql` + `supabase-so-tron-tong-hop.sql` + `supabase-so-tron-tong-nhap.sql` |
 
 ## API (`server.ts`)
 
@@ -11,7 +11,12 @@
 | GET | `/api/so-tron` | `?ngay&ma_may&ca&limit` (tối đa 300), sort `ngay desc, created_at desc` |
 | POST | `/api/so-tron` | unique `(ma_may, ngay, ca)` — trùng trả 409 |
 | PUT | `/api/so-tron/:id` | cập nhật toàn bộ phiếu |
-| DELETE | `/api/so-tron/:id` | xóa phiếu |
+| DELETE | `/api/so-tron/:id` | xóa phiếu — trưởng ca và quản trị, thiếu token thì 401 |
+| POST | `/api/auth/so-tron-token` | JWT vai trò sổ trộn |
+| POST/PUT | `/api/so-tron/vat-tu` | ghi vật tư, scope cố định `vat_tu` |
+| POST/PUT | `/api/so-tron/thanh-pham` | ghi thành phẩm, scope cố định `thanh_pham` |
+| POST | `/api/so-tron/:id/lock` | trưởng ca chốt ca |
+| POST | `/api/so-tron/:id/unlock` | quản trị mở khóa, body `{ ly_do }` |
 
 ## Frontend
 
@@ -26,6 +31,18 @@
 | `src/routes.ts` | `so-tron` → `/so-tron`, `so-tron-list` → `/danh-sach-so-tron` |
 | `src/app/menus.tsx` | Card Sổ trộn trong `BAO_CAO_TRUONG_CA_TRON_MENU_ITEMS` |
 
+## Phân quyền ca
+
+Vai trò lấy từ chức vụ / vị trí gán của `nhan_su`. Phòng ban **Phân xưởng sản xuất** chọn chức vụ **Nhân Viên** (vật tư), **Trộn** (vật tư), **Trưởng Phòng** (thành phẩm và chốt ca). JWT ký khi đăng nhập, gửi `Authorization: Bearer` lúc ghi.
+
+| | Vật tư (NVL, cối, bàn giao) | Thành phẩm + hàng lỗi |
+|---|---|---|
+| Tổ trộn, NV phân xưởng | Tạo và sửa phiếu mình tạo, khi chưa chốt | Ẩn trên sổ trộn, không xem và không sửa |
+| Trưởng ca | Chỉ xem, được xóa cả phiếu | Tạo và sửa trong ca của mình, được chốt ca |
+| Quản trị | Đủ quyền, kể cả xóa và mở khóa (bắt buộc lý do) | Đủ quyền |
+
+Kiêm nhiệm được cộng quyền. Xem phiếu ca khác vẫn được. Sửa thành phẩm khác ca thì 403. Sau khi chốt, cả vật tư và thành phẩm khóa đến khi quản trị mở khóa. Phiếu cũ chưa có người tạo: lần sửa vật tư đầu tiên ghi `vat_tu_owner_id`. `GET /api/so-tron` không đòi token vì báo cáo ngày/tuần vẫn đọc sổ. Nhật ký nằm ở `so_tron_audit_log`.
+
 ## Nghiệp vụ
 
 - **Header:** Chi nhánh cố định Phú Thọ. Chọn Ngày + Máy (1) + Ca (1, trống = tất cả, nguồn từ `cai_dat_thoi_gian`, `SearchableSelect` đơn). Ô Ca ở Thêm mới chỉ hiện ca **chưa có sổ trộn** của ngày + máy đang chọn (`caCreateOptions` lọc `shiftOptions` bằng `usedCaKeysForDateMachine`, trừ phiếu đang sửa; ca đã tạo mà vẫn chọn thì cảnh báo lưu sẽ cập nhật phiếu cũ).
@@ -35,7 +52,7 @@
 - **Nhân sự:** CHỈ fill theo ngày + máy + ca đã chọn ở mục 1 (không theo lệnh SX). Tra mã → **tên** bằng 2 lớp: `GET /api/nhan-su/by-code?codes=…` truy vấn trực tiếp bảng `nhan_su` theo mã (tối đa 200 mã) + map từ `/api/nhan-su?format=groups&scope=all`, resolve live lúc hiển thị (ô tay không bị ghi đè). Hiển thị gom theo từng combo Máy-Ca (chỉ tên). Cạnh tiêu đề có link nhỏ mở **Sắp xếp lịch làm việc** trong tab mới + nút **Đồng bộ** (tải lại cả danh mục NV + phân công).
 - **Lưu:** 1 phiếu cho mỗi combo Máy-Ca sẽ lưu (cùng bộ số liệu 4 bảng); trùng máy + ngày + ca thì cập nhật phiếu cũ. Khi đã chọn Ca ở mục 1 (Lọc theo ca) thì CHỈ tạo cho ca đó (`saveCombos` lọc `orderCombos` bằng `shiftMatchesSingle`, lệch ca thì báo lỗi không lưu); chưa chọn ca mới tạo cho tất cả combo. Tồn đầu ca lấy theo combo đầu tiên khi chọn nhiều.
 - **Bảng 1 NVL thực tế:** fill toàn bộ NVL của mọi lệnh đã chọn, đối chiếu kho NVL (`kho-nvl` → id + tên SX). Tên sản xuất và tên NVL ở trên, cỡ 16px màu đen. Mã NVL một dòng 14px, lệnh SX một dòng 14px. Không đưa NVL phụ vào bảng. Gộp theo **id kho** (fallback mã): trùng thì 1 dòng, cộng dồn nguồn lệnh (cột Lệnh SX) và tổng sử dụng. Mỗi dòng lưu `material_id/ten_nvl_sx/lenh_sx[]`. Tồn kỳ trước tra tương thích cả phiếu cũ (theo mã). Tờ phiếu giấy (thêm và sửa): một sản phẩm thì một bảng NVL; nhiều sản phẩm thì mỗi sản phẩm một khối, chỉ NVL và các lần **SỬ DỤNG** của sản phẩm đó, **Định mức vật tư** tính riêng sản phẩm đó. Cột **Định mức vật tư** giá trị = Tổng trọng lượng kg của NVL đó trên phiếu trộn định mức (`tong_khoi_luong`, fallback `% Tổng SL × tổng trọng lượng SP`), định dạng một chữ số thập phân, ví dụ `1,234.5`.
-- **Cối thực tế trên tờ phiếu:** dòng Máy-Ca có chọn ngày + ca + nút **Đồng bộ** để lấy tồn cuối phiếu đúng ngày/ca/máy vào cột **Tồn đầu ca** của bảng nguyên liệu. Ô sản phẩm mỗi lần rộng 390px. Lần bắt đầu từ L1, bấm **Thêm** tăng dần, không sửa số lần. Trên các lần hiện tên hiển thị cho nhân viên và tổng trọng lượng sản phẩm. Chọn tỷ lệ thì hiện **Cối mẫu** theo định lượng cối của sản phẩm đó, rồi **Số lần trộn** tự tính = tổng trọng lượng sản phẩm / cối mẫu × 5 (làm tròn lên). Thứ tự mỗi dòng: **Lần**, **Sản phẩm** (sản phẩm đã chọn vẫn nằm trong ô, không ẩn khi dòng khác cũng chọn), **Cối mẫu**, **Số lần trộn**, **Cối thực tế** (người dùng nhập), **Xác nhận**, **Thêm**. Dòng từ L2 có thêm **Bỏ**. **Thêm** tạo lần kế tiếp cùng sản phẩm và tỷ lệ lần trước; cối thực tế để trống để nhập rồi xác nhận. **Bỏ** xóa số NVL của lần đó nếu không còn dòng nào dùng lần ấy. Gõ kg cối chưa tính. **Xác nhận** tính đúng lần của dòng đó. Kg NVL trên màn sổ trộn ghi dạng `1,234.6` (phần nghìn `,`, thập phân `.`, một chữ số; ô số không tràn sang cột bên): kg mẫu (`%` → định lượng cối × giá trị / 100; `kg` → giá trị) × (cối thực tế / định lượng cối). Chỉ ghi NVL của đúng sản phẩm; NVL sản phẩm khác và cột lần khác giữ nguyên. Thiếu định lượng cối thì không chia, không ghi đè. Đổi lần thì hiện lại sản phẩm và kg đã nhập. Lưu trong `coi_tron_mau` phần tử `{ loai: 'lan_coi', items: [{ lan, ma_sp, ten_sp, trong_luong_coi, so_lan_tron }] }` (không hiện ở danh sách cối mẫu). Kg từng NVL vẫn nằm ở `bang_nvl.lan`. NVL chung (có ở nhiều sản phẩm trong phiếu trộn) xếp trên, NVL riêng xếp dưới. Ô Lệnh SX tách mỗi tỷ lệ thành một lựa chọn riêng (ví dụ `… · tỷ lệ 4` và `… · tỷ lệ 5`). Chọn tỷ lệ nào thì cối mẫu và NVL chỉ lấy phiếu trộn định mức của tỷ lệ đó. Mở sổ để sửa vẫn hiện các lệnh SX đã chọn và các tỷ lệ mẫu của lệnh đó, giống màn thêm mới. Tồn cuối ca làm tròn 1 số thập phân. Phiếu giao ca: cột tên in `ten_nvl_sx`, thiếu thì `ten_nvl`; mục Sự cố có dòng chọn loại + số lần (giờ tự tính: Đổi màu 0,5 giờ/lần, Đổi khổ 1 giờ/lần) và ô ghi chú.
+- **Cối thực tế trên tờ phiếu:** dòng Máy-Ca có chọn ngày + ca + nút **Đồng bộ** để lấy tồn cuối phiếu đúng ngày/ca/máy vào cột **Tồn đầu ca** của bảng nguyên liệu. Ô sản phẩm mỗi lần rộng 390px. Lần bắt đầu từ L1, bấm **Thêm** tăng dần, không sửa số lần. Trên các lần hiện tên hiển thị cho nhân viên và tổng trọng lượng sản phẩm. Chọn tỷ lệ thì hiện **Cối mẫu** theo định lượng cối của sản phẩm đó, rồi **Số lần trộn** tự tính = tổng trọng lượng sản phẩm / cối mẫu × 5 (làm tròn lên). Thứ tự mỗi dòng: **Lần**, **Sản phẩm** (sản phẩm đã chọn vẫn nằm trong ô, không ẩn khi dòng khác cũng chọn), **Cối mẫu**, **Số lần trộn**, **Cối thực tế** (người dùng nhập), **Xác nhận**, **Thêm**. Dòng từ L2 có thêm **Bỏ**. **Thêm** tạo lần kế tiếp cùng sản phẩm và tỷ lệ lần trước; cối thực tế để trống để nhập rồi xác nhận. **Bỏ** xóa số NVL của lần đó nếu không còn dòng nào dùng lần ấy. Gõ kg cối chưa tính. **Xác nhận** tính đúng lần của dòng đó. Kg NVL trên màn sổ trộn ghi dạng `1,234.6` (phần nghìn `,`, thập phân `.`, một chữ số; ô số không tràn sang cột bên): kg mẫu (`%` → định lượng cối × giá trị / 100; `kg` → giá trị) × (cối thực tế / định lượng cối). Chỉ ghi NVL của đúng sản phẩm; NVL sản phẩm khác và cột lần khác giữ nguyên. Thiếu định lượng cối thì không chia, không ghi đè. Đổi lần thì hiện lại sản phẩm và kg đã nhập. Lưu trong `coi_tron_mau` phần tử `{ loai: 'lan_coi', items: [{ lan, ma_sp, ten_sp, trong_luong_coi, so_lan_tron }] }` (không hiện ở danh sách cối mẫu). Kg từng NVL vẫn nằm ở `bang_nvl.lan`. NVL chung (có ở nhiều sản phẩm trong phiếu trộn) xếp trên, NVL riêng xếp dưới. Ô Lệnh SX tách mỗi tỷ lệ thành một lựa chọn riêng (ví dụ `… · tỷ lệ 4` và `… · tỷ lệ 5`). Chọn tỷ lệ nào thì cối mẫu và NVL chỉ lấy phiếu trộn định mức của tỷ lệ đó. Mở sổ để sửa vẫn hiện các lệnh SX đã chọn và các tỷ lệ mẫu của lệnh đó, giống màn thêm mới. Tồn cuối ca làm tròn 1 số thập phân. Phiếu giao ca: cột tên in `ten_nvl_sx`, thiếu thì `ten_nvl`; mục Sự cố chọn trong 9 mục chuẩn, nhập số lần, số giờ = lần × giờ/lần và giảm trừ kg = lần × kg/lần (làm tròn 1 số lẻ), lưu `ghi_chu` dạng `{tên} — {lần} lần — {giờ} giờ — {kg} kg` (bỏ vế bằng 0), phiếu cũ chỉ có giờ vẫn đọc được.
 - **Bảng 2 Sản phẩm:** người dùng thêm dòng, gợi ý SP từ lệnh đã chọn. Cột Lệnh SX để biết SP thuộc lệnh nào. Trường: lệnh SX, tên hàng, số lượng, định mức, trọng lượng, ghi chú + **snapshot quy đổi 1 SP** (`san_pham_id, kg_1_sp, m2_1_sp, m_dai_1_sp, nguon_quy_doi` trong `bang_san_pham` — tự fill từ `lenh_sx.san_pham[]`: `kg_1_sp` lấy trực tiếp, `m2/m_dai` là tổng cả dòng nên chia cho SL đặt; sửa tay 1 chỉ số → `nguon_quy_doi='tay'`; mỗi lần đổi SL hoặc KG/1 SP thì tính lại `SL × KG/1 SP` (gõ thêm chữ số vẫn cập nhật, xóa hết SL thì xóa Trọng lượng)). Server `parseSoTronBody` pass-through `bang_san_pham` nguyên mảng nên không cần sửa backend; `PhieuGiaoCaModal` giữ nguyên các key này khi lưu phiếu giao ca.
 - **Bảng 3 Hàng lỗi hỏng:** tên lỗi + số lượng (kg).
 - **Bảng nguyên liệu:** trên tờ thêm/sửa, mỗi dòng NVL có **Định mức vật tư** và **SỬ DỤNG**. **Nhựa bàn giao ca sau** hiện cuối tờ (sau sản phẩm và hàng lỗi): Loại nhựa, **Tồn đầu ca**, **Lấy kho** (`lay_trong_kho`), **Tổng SD**, **Tồn cuối**. Một nhựa một dòng cho cả ca, không tách theo sản phẩm. Tồn đầu ca fill khi bấm **Đồng bộ** ở dòng Máy-Ca (đúng ngày + ca + máy, không tự lùi). `tồn_cuối = Lấy kho + Tồn đầu ca − Tổng SD`, làm tròn 1 số. Tên sản xuất và tên NVL ở trên, cỡ 16px màu đen. Mã NVL một dòng 14px, lệnh SX một dòng 14px. Không đưa NVL phụ vào bảng.

@@ -7,6 +7,7 @@ import {
 } from '../features/nhan-su/menuViews';
 import { parsePermissionSettings, resolveLoginPermissions } from '../features/cai-dat-thoi-gian/permissionKeys';
 import { grantResolvedAccess, type AuthUser } from '../app/authUser';
+import { saveSoTronToken } from '../features/so-tron/soTronSession';
 
 export type { AuthUser } from '../app/authUser';
 export { grantResolvedAccess } from '../app/authUser';
@@ -20,6 +21,16 @@ const FALLBACK_ADMIN = {
 
 function normalizeUsername(value: string) {
   return value.trim().toLowerCase();
+}
+
+async function issueSoTronToken(username: string, password: string) {
+  const res = await fetch('/api/auth/so-tron-token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok && data.token) saveSoTronToken(String(data.token));
 }
 
 export default function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => void }) {
@@ -44,6 +55,7 @@ export default function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => vo
 
     try {
       if (user === FALLBACK_ADMIN.username && pass === FALLBACK_ADMIN.password) {
+        await issueSoTronToken(user, pass);
         onLogin(grantResolvedAccess({
           id: 'admin',
           name: FALLBACK_ADMIN.name,
@@ -108,6 +120,7 @@ export default function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => vo
         memberViewPermissions: matched.member.viewPermissions || []
       });
 
+      await issueSoTronToken(user, pass);
       onLogin(grantResolvedAccess({
         id: matched.member.id,
         name: matched.member.name,

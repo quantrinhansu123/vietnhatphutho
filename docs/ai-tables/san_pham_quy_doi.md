@@ -6,7 +6,7 @@
 | **Tab** | Không còn route riêng; nhập trong `/san-pham` |
 | **SQL** | `supabase-san-pham-quy-doi.sql`, `supabase-san-pham-quy-doi-trong-luong-cuon.sql`, `supabase-san-pham-quy-doi-bo-don-vi-tinh.sql` |
 
-**API:** CRUD `/api/bang-quy-doi-san-pham`; import lô `POST /api/bang-quy-doi-san-pham/import`; export CSV `GET /api/export-bang-quy-doi-san-pham` trong `server.ts`  
+**API:** CRUD `/api/bang-quy-doi-san-pham`; import lô `POST /api/bang-quy-doi-san-pham/import` (chốt `trong_luong_kg_tam` + `trong_luong_kg_cuon` tối đa 2 chữ số qua `roundImportedConversionWeight`, các cột số khác giữ nguyên); export CSV `GET /api/export-bang-quy-doi-san-pham` trong `server.ts`  
 **UI:** `src/features/san-pham/index.tsx`  
 **Công thức dùng chung:** `src/utils/productConversionCalculation.ts`
 **CSV:** `src/utils/productConversionCsv.ts`  
