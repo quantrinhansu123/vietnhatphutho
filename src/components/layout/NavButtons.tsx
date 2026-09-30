@@ -124,7 +124,7 @@ export const BACK_TAB_MAP: Record<string, string> = {
   'mixing-report-list': 'factory-qc',
   'machine-nvl-report': 'report-forms',
   'so-tron': 'bao-cao-truong-ca-tron',
-  'so-tron-list': 'bao-cao-truong-ca-tron',
+  'so-tron-list': 'factory-cong-nhan',
   'so-giao-ca-mmtb': 'bao-cao-truong-ca-tron',
   'so-giao-ca-mmtb-list': 'bao-cao-truong-ca-tron',
   'so-che-do-may': 'bao-cao-truong-ca-tron',

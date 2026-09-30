@@ -655,13 +655,6 @@ export const BAO_CAO_TRUONG_CA_TRON_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'so-che-do-may'
   },
   {
-    title: 'Danh sách phiếu giao ca',
-    desc: 'Xem, sửa và xóa các sổ trộn đã lưu theo ngày, máy và ca.',
-    icon: History,
-    icon3d: spiralNotepad3d,
-    tab: 'so-tron-list'
-  },
-  {
     title: 'Danh sách sổ giao ca MMTB',
     desc: 'Xem, sửa và in sổ giao ca máy móc thiết bị theo ngày, máy và ca.',
     icon: History,
@@ -684,6 +677,13 @@ export const FACTORY_CONG_NHAN_MENU_ITEMS: MenuCardConfig[] = [
     icon: ClipboardList,
     icon3d: books3d,
     tab: 'bao-cao-truong-ca-tron'
+  },
+  {
+    title: 'Danh sách phiếu giao ca',
+    desc: 'Xem, sửa và xóa các phiếu giao ca đã lưu theo ngày, máy và ca.',
+    icon: History,
+    icon3d: spiralNotepad3d,
+    tab: 'so-tron-list'
   },
   {
     title: 'Công việc được giao',
@@ -731,8 +731,8 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'suppliers'
   },
   {
-    title: 'Phiếu xuất nhập kho',
-    desc: 'Lập phiếu nhập hoặc xuất NVL theo từng mã NPL.',
+    title: 'Nhập Xuất Thành Phẩm',
+    desc: 'Lập phiếu nhập hoặc xuất thành phẩm. Không chọn Kho NVL, Kho NVL chính, Kho NVL phụ, Kho PC.',
     icon: ArrowDownToLine,
     icon3d: warehouseSlip3d,
     tab: 'warehouse-slip'
@@ -772,15 +772,15 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'chuyen-kho'
   },
   {
-    title: 'Phiếu nhập xuất tổng hợp',
+    title: 'Xuất nhập kho NVL',
     desc: 'Hai tab nhập và xuất. Kho chọn trên từng dòng: nhập là kho nhận, xuất là kho lấy hàng.',
     icon: ArrowDownToLine,
     icon3d: warehouseSlip3d,
     tab: 'phieu-nhap-xuat-tong-hop'
   },
   {
-    title: 'Danh sách nhập xuất tổng hợp',
-    desc: 'Phiếu nhập và xuất tổng hợp đã ghi sổ. In, sửa hoặc hủy từ đây.',
+    title: 'Danh sách xuất nhập kho NVL',
+    desc: 'Phiếu xuất nhập kho NVL đã ghi sổ. In, sửa hoặc hủy từ đây.',
     icon: History,
     icon3d: warehouseHistory3d,
     tab: 'phieu-nhap-xuat-tong-hop-list'
@@ -1083,15 +1083,15 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Danh mục kho', tab: 'quan-ly-kho' },
       { label: 'Kho hàng', tab: 'inventory-catalog' },
       { label: 'Nhà cung cấp', tab: 'suppliers' },
-      { label: 'Phiếu xuất nhập kho', tab: 'warehouse-slip' },
+      { label: 'Nhập Xuất Thành Phẩm', tab: 'warehouse-slip' },
       { label: 'Kiểm kho', tab: 'kiem-kho' },
       { label: 'Cân kiểm kho', tab: 'can-kiem-kho' },
       { label: 'Xử lý chênh lệch', tab: 'kiem-kho-chenh-lech' },
       { label: 'Lịch sử xuất nhập', tab: 'warehouse-history' },
       { label: 'Lệnh cắt lẻ', tab: 'lenh-cat-le' },
       { label: 'Chuyển kho', tab: 'chuyen-kho' },
-      { label: 'Phiếu nhập xuất tổng hợp', tab: 'phieu-nhap-xuat-tong-hop' },
-      { label: 'Danh sách nhập xuất tổng hợp', tab: 'phieu-nhap-xuat-tong-hop-list' },
+      { label: 'Xuất nhập kho NVL', tab: 'phieu-nhap-xuat-tong-hop' },
+      { label: 'Danh sách xuất nhập kho NVL', tab: 'phieu-nhap-xuat-tong-hop-list' },
       { label: 'Tồn kho', tab: 'ton-kho' },
       { label: 'Chuẩn bị xuất hàng', tab: 'factory-kho', disabled: true }
     ]
@@ -1138,7 +1138,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'mixing-report-list': { group: 'QC', sub: 'BOM và tỷ lệ phối trộn' },
   'machine-nvl-report': { group: 'Sản xuất', sub: 'Báo cáo máy-NVL' },
   'so-tron': { group: 'Báo cáo Trưởng ca + Trộn', sub: 'Sổ trộn' },
-  'so-tron-list': { group: 'Báo cáo Trưởng ca + Trộn', sub: 'Danh sách sổ trộn' },
+  'so-tron-list': { group: 'Sản xuất', sub: 'Danh sách phiếu giao ca' },
   'so-giao-ca-mmtb': { group: 'Báo cáo Trưởng ca + Trộn', sub: 'Sổ giao ca MMTB' },
   'so-giao-ca-mmtb-list': { group: 'Báo cáo Trưởng ca + Trộn', sub: 'Danh sách sổ giao ca MMTB' },
   'so-che-do-may': { group: 'Báo cáo Trưởng ca + Trộn', sub: 'Sổ chế độ máy' },
@@ -1162,12 +1162,12 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'products': { group: 'Kho', sub: 'Kho thành phẩm' },
   'inventory-catalog': { group: 'Kho', sub: 'Kho hàng' },
   'machines': { group: 'Trang chủ', sub: 'Quản lý máy' },
-  'warehouse-slip': { group: 'Kho', sub: 'Phiếu xuất nhập kho' },
+  'warehouse-slip': { group: 'Kho', sub: 'Nhập Xuất Thành Phẩm' },
   'warehouse-history': { group: 'Kho', sub: 'Lịch sử xuất nhập' },
   'lenh-cat-le': { group: 'Kho', sub: 'Lệnh cắt lẻ' },
   'chuyen-kho': { group: 'Kho', sub: 'Chuyển kho' },
-  'phieu-nhap-xuat-tong-hop': { group: 'Kho', sub: 'Phiếu nhập xuất tổng hợp' },
-  'phieu-nhap-xuat-tong-hop-list': { group: 'Kho', sub: 'Danh sách nhập xuất tổng hợp' },
+  'phieu-nhap-xuat-tong-hop': { group: 'Kho', sub: 'Xuất nhập kho NVL' },
+  'phieu-nhap-xuat-tong-hop-list': { group: 'Kho', sub: 'Danh sách xuất nhập kho NVL' },
   'warehouse-history-detail': { group: 'Kho', sub: 'Chi tiết phiếu' },
   'damaged-goods-warehouse': { group: 'Kho', sub: 'Kho hàng hỏng' },
   'ton-kho': { group: 'Kho', sub: 'Tồn kho' },

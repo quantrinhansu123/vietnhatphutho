@@ -81,6 +81,7 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
     children: [
       { tab: 'production-orders', label: 'Công việc được giao' },
       { tab: 'bao-cao-truong-ca-tron', label: 'Báo cáo Trưởng ca + Trộn' },
+      { tab: 'so-tron-list', label: 'Danh sách phiếu giao ca' },
       { tab: 'report-forms', label: 'Nhập báo cáo ca' },
       { tab: 'report-lists', label: 'Lịch sử công việc' }
     ]
@@ -94,15 +95,15 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
       { tab: 'materials', label: 'Kho nguyên vật liệu' },
       { tab: 'products', label: 'Kho thành phẩm' },
       { tab: 'warehouse-slip-vat-tu', label: 'Phiếu xuất nhập kho - Vật tư' },
-      { tab: 'warehouse-slip-thanh-pham', label: 'Phiếu xuất nhập kho - Thành phẩm' },
+      { tab: 'warehouse-slip-thanh-pham', label: 'Nhập Xuất Thành Phẩm' },
       { tab: 'kiem-kho', label: 'Kiểm kho' },
       { tab: 'can-kiem-kho', label: 'Cân kiểm kho' },
       { tab: 'kiem-kho-chenh-lech', label: 'Xử lý chênh lệch' },
       { tab: 'warehouse-history', label: 'Lịch sử xuất nhập' },
       { tab: 'lenh-cat-le', label: 'Lệnh cắt lẻ' },
       { tab: 'chuyen-kho', label: 'Chuyển kho' },
-      { tab: 'phieu-nhap-xuat-tong-hop', label: 'Phiếu nhập xuất tổng hợp' },
-      { tab: 'phieu-nhap-xuat-tong-hop-list', label: 'Danh sách nhập xuất tổng hợp' },
+      { tab: 'phieu-nhap-xuat-tong-hop', label: 'Xuất nhập kho NVL' },
+      { tab: 'phieu-nhap-xuat-tong-hop-list', label: 'Danh sách xuất nhập kho NVL' },
       { tab: 'ton-kho', label: 'Tồn kho' }
     ]
   },
@@ -124,7 +125,7 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
       { tab: 'products', label: 'Sản phẩm' },
       { tab: 'machines', label: 'Máy móc' },
       { tab: 'warehouse-slip-vat-tu', label: 'Phiếu xuất nhập kho - Vật tư' },
-      { tab: 'warehouse-slip-thanh-pham', label: 'Phiếu xuất nhập kho - Thành phẩm' }
+      { tab: 'warehouse-slip-thanh-pham', label: 'Nhập Xuất Thành Phẩm' }
     ]
   }
 ];
@@ -139,6 +140,11 @@ export function defaultStaffViewPermissions(): StaffViewPermissions {
 
 export function clearStaffViewPermissions(): StaffViewPermissions {
   return [];
+}
+
+function currentStaffChildLabel(menu: string, tab: string, fallback: string): string {
+  const group = STAFF_MENU_VIEW_TREE.find(item => item.menu === menu);
+  return group?.children.find(child => child.tab === tab)?.label || fallback;
 }
 
 export function normalizeStaffViewPermissions(raw: unknown): StaffViewPermissions {
@@ -173,7 +179,7 @@ export function normalizeStaffViewPermissions(raw: unknown): StaffViewPermission
           const tab = String(childRecord.tab ?? childRecord.menu ?? '').trim();
           const childLabel = String(childRecord.label ?? childRecord.title ?? tab).trim();
           if (!tab) return null;
-          return { tab, label: childLabel };
+          return { tab, label: currentStaffChildLabel(menu, tab, childLabel) };
         })
         .filter((child): child is StaffViewChild => Boolean(child));
 
@@ -241,7 +247,7 @@ export function mergeStaffViewPermissions(
         if (!tab || seen.has(tab)) continue;
         existing.children.push({
           tab,
-          label: String(child.label || tab)
+          label: currentStaffChildLabel(menu, tab, String(child.label || tab))
         });
         seen.add(tab);
       }

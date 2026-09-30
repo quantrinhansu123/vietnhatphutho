@@ -1,7 +1,7 @@
 # so_tron
 
 | Bảng | `so_tron` |
-| Tab | `so-tron` → `/so-tron` (card **Sổ trộn** trong `/bao-cao-truong-ca-tron`) + `so-tron-list` → `/danh-sach-so-tron` (cùng menu **Báo cáo Trưởng ca + Trộn**, vào từ `/nha-may/cong-nhan`) |
+| Tab | `so-tron` → `/so-tron` (card **Sổ trộn** trong `/bao-cao-truong-ca-tron`) + `so-tron-list` → `/danh-sach-so-tron` (card riêng **Danh sách phiếu giao ca** trên menu Sản xuất) |
 | SQL | `supabase-so-tron.sql` + `supabase-so-tron-tong-hop.sql` + `supabase-so-tron-tong-nhap.sql` |
 
 ## API (`server.ts`)
