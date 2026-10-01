@@ -5274,6 +5274,8 @@ type WarehouseSlipLineInput = {
   tonDauCaMay?: number;
   unitPrice: number;
   lineAmount: number;
+  /** Chi phí kèm theo [{ten, don_gia, thanh_tien}]. Không cộng vào lineAmount. */
+  chi_phi_kem_theo?: Array<{ ten: string; don_gia: number; thanh_tien: number }>;
   materialClass: WarehouseMaterialClass;
   machine?: string;
   weightKg?: number;
@@ -5936,6 +5938,7 @@ function buildWarehouseSlipInsertRecords(
       so_luong_chung_tu: item.documentQuantity ?? null,
       don_gia: item.unitPrice,
       thanh_tien: item.lineAmount,
+      chi_phi_kem_theo: Array.isArray(item.chi_phi_kem_theo) ? item.chi_phi_kem_theo : [],
       ly_do: parsed.lyDo || '',
       ghi_chu: parsed.ghiChu || '',
       nguoi_lap: parsed.nguoiLap || nhanSu,
@@ -6202,6 +6205,9 @@ const WAREHOUSE_SLIP_MODULE1_COLUMNS = [
 /** Cột phiếu TP — strip nếu DB chưa chạy supabase-phieu-xuat-nhap-kho-thanh-pham.sql. */
 const WAREHOUSE_SLIP_THANH_PHAM_COLUMNS = ['so_m2', 'so_m_dai', 'dia_chi', 'so_tron_ids'];
 
+/** Chi phí kèm theo — strip nếu DB chưa chạy supabase-phieu-chi-phi-kem-theo.sql. */
+const WAREHOUSE_SLIP_CHI_PHI_COLUMNS = ['chi_phi_kem_theo'];
+
 /** Id danh mục — strip nếu DB chưa chạy supabase-phieu-nhap-xuat-id-danh-muc.sql. */
 const WAREHOUSE_SLIP_CATALOG_REF_COLUMNS = ['id_danh_muc', 'loai_danh_muc'];
 
@@ -6213,6 +6219,7 @@ async function insertWarehouseSlipRecordsResilient(
     return { data: null, error: { message: 'Supabase chưa được cấu hình.' } };
   }
   const optionalColumnGroups = [
+    WAREHOUSE_SLIP_CHI_PHI_COLUMNS,
     WAREHOUSE_SLIP_CATALOG_REF_COLUMNS,
     WAREHOUSE_SLIP_THANH_PHAM_COLUMNS,
     WAREHOUSE_SLIP_MODULE1_COLUMNS

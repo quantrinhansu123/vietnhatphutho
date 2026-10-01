@@ -8,6 +8,7 @@ import {
   type TongHopHeader,
   type TongHopMode
 } from './model';
+import { roundKem, sumKemStored } from './chiPhiKemTheo';
 
 type Filter = 'all' | TongHopMode;
 
@@ -24,7 +25,11 @@ function slipsFromRecord(row: TongHopHeader): WarehouseSlipPrintData[] {
     const key = String(line.kho_dong_ten || line.nguon_dong_ten || line.nguon_dong_id || row.kho_dich || 'Phiếu');
     groups.set(key, [...(groups.get(key) || []), line]);
   }
-  return [...groups.entries()].map(([name, groupLines], index) => ({
+  return [...groups.entries()].map(([name, groupLines], index) => {
+    const totalAmount = groupLines.reduce((sum, line) => sum + (Number(line.thanh_tien) || 0), 0);
+    const totalKem = roundKem(groupLines.reduce((sum, line) => sum + sumKemStored(line.chi_phi_kem_theo), 0));
+    const totalKg = roundKem(groupLines.reduce((sum, line) => sum + (Number(String(line.quy_doi_kg ?? '')) || 0), 0));
+    return {
     slipCode: `${row.ma_phieu_chung}-${index + 1}`,
     slipType: row.loai,
     warehouseKind: isNvlWarehouseName(name) || row.dich_loai === 'may' ? 'nvl' : 'san_pham',
@@ -34,7 +39,10 @@ function slipsFromRecord(row: TongHopHeader): WarehouseSlipPrintData[] {
     createdBy: row.nguoi_lap || '',
     deliverer: row.nguoi_giao || '',
     warehouseLocation: row.dia_diem || '',
-    totalAmount: groupLines.reduce((sum, line) => sum + (Number(line.thanh_tien) || 0), 0),
+    totalAmount,
+    totalKem,
+    totalCong: roundKem(totalAmount + totalKem),
+    totalKg,
     shift: row.ca || '',
     machine: row.dich_loai === 'may' ? row.dich_id || '' : '',
     warehouseName: name,
@@ -47,9 +55,18 @@ function slipsFromRecord(row: TongHopHeader): WarehouseSlipPrintData[] {
       quantity: Number(line.so_luong) || 0,
       unitPrice: Number(line.don_gia) || 0,
       lineAmount: Number(line.thanh_tien) || 0,
-      weightKg: Number(String(line.quy_doi_kg ?? '')) || null
+      weightKg: Number(String(line.quy_doi_kg ?? '')) || null,
+      chiPhiKemTheo: (Array.isArray(line.chi_phi_kem_theo) ? line.chi_phi_kem_theo : []).map(item => {
+        const rowItem = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+        return {
+          ten: String(rowItem.ten || ''),
+          donGia: Number(rowItem.don_gia) || 0,
+          thanhTien: Number(rowItem.thanh_tien) || 0
+        };
+      })
     }))
-  }));
+    };
+  });
 }
 
 export function TongHopListPanel({

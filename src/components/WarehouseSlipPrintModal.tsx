@@ -22,6 +22,58 @@ function enableWarehousePortraitPrintPage() {
 function disableWarehousePortraitPrintPage() {
   document.getElementById(WAREHOUSE_SLIP_PORTRAIT_STYLE_ID)?.remove();
 }
+
+function hasTongHopCostFooter(data: WarehouseSlipPrintData) {
+  return data.totalKem != null || data.totalCong != null || data.totalKg != null;
+}
+
+function TongHopCostPrintBlock({ data }: { data: WarehouseSlipPrintData }) {
+  if (!hasTongHopCostFooter(data)) return null;
+  const rows = data.lines.flatMap(line =>
+    (line.chiPhiKemTheo || [])
+      .filter(item => item.ten || item.thanhTien)
+      .map(item => ({ ...item, code: line.code, name: line.name }))
+  );
+  const totalKem = data.totalKem ?? 0;
+  const totalCong = data.totalCong ?? data.totalAmount + totalKem;
+  return (
+    <div className="warehouse-slip-print-kem">
+      {rows.length > 0 ? (
+        <table className="warehouse-slip-print-table">
+          <thead>
+            <tr>
+              <th colSpan={5}>Chi phí kèm theo</th>
+            </tr>
+            <tr>
+              <th>Mã</th>
+              <th>Tên hàng</th>
+              <th>Tên chi phí</th>
+              <th>Đơn giá</th>
+              <th>Thành tiền</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={`${row.code}-${row.ten}-${index}`}>
+                <td>{row.code || ''}</td>
+                <td>{row.name || ''}</td>
+                <td>{row.ten || ''}</td>
+                <td className="warehouse-slip-print-right">{row.donGia > 0 ? formatMoney(row.donGia, 0) : ''}</td>
+                <td className="warehouse-slip-print-right">{row.thanhTien > 0 ? formatMoney(row.thanhTien, 0) : ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+      <div className="warehouse-nhap-kho-print-footer">
+        <p><span>Tổng KL:</span> {formatNumber(data.totalKg || 0, 3)}</p>
+        <p><span>Tổng hàng:</span> {formatMoney(data.totalAmount || 0, 0)}</p>
+        <p><span>Tổng kèm:</span> {formatMoney(totalKem, 0)}</p>
+        <p><span>Tổng cộng:</span> {formatMoney(totalCong, 0)}</p>
+      </div>
+    </div>
+  );
+}
 export type WarehouseSlipPrintLine = {
   code: string;
   name: string;
@@ -36,6 +88,7 @@ export type WarehouseSlipPrintLine = {
   suggestedQuantity?: number | null;
   lineNote?: string;
   sourceInboundSlipCode?: string;
+  chiPhiKemTheo?: Array<{ ten: string; donGia: number; thanhTien: number }>;
 };
 
 export type WarehouseSlipPrintData = {
@@ -47,6 +100,10 @@ export type WarehouseSlipPrintData = {
   note: string;
   createdBy: string;
   totalAmount: number;
+  /** Tổng chi phí kèm theo. Có giá trị (kể cả 0) thì in thêm bảng phụ và 4 tổng. */
+  totalKem?: number;
+  totalCong?: number;
+  totalKg?: number;
   productionOrderRef?: string;
   machine?: string;
   shift?: string;
@@ -139,6 +196,9 @@ export function mergeWarehousePrintLines(lines: WarehouseSlipPrintLine[]): Wareh
       existing.unitPrice = existing.unitPrice || line.unitPrice;
       existing.lineAmount += Number.isFinite(line.lineAmount) ? line.lineAmount : 0;
       existing.weightKg = addNullablePrintQty(existing.weightKg, line.weightKg);
+      if (line.chiPhiKemTheo?.length) {
+        existing.chiPhiKemTheo = [...(existing.chiPhiKemTheo || []), ...line.chiPhiKemTheo];
+      }
       existing.quotaQuantity = addNullablePrintQty(existing.quotaQuantity, line.quotaQuantity);
       existing.suggestedQuantity = addNullablePrintQty(existing.suggestedQuantity, line.suggestedQuantity);
       if (!existing.name && line.name) existing.name = line.name;
@@ -491,6 +551,8 @@ function NhapKhoPrintBody({ data }: { data: WarehouseSlipPrintData }) {
         </p>
       </div>
 
+      <TongHopCostPrintBlock data={data} />
+
       <div className="warehouse-nhap-kho-print-signatures">
         <div>
           <p>Người lập biểu</p>
@@ -604,6 +666,8 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
       <p className="warehouse-slip-print-footnote">
         <strong>Ghi chú:</strong> Tổng nhựa và tổng vật tư khác được cộng riêng theo cột «Quy về kg»; không cộng chung số lượng khác ĐVT.
       </p>
+
+      <TongHopCostPrintBlock data={data} />
 
       <div className="warehouse-slip-print-signatures warehouse-slip-print-signatures--nvl-export">
         <div>
@@ -727,6 +791,8 @@ export function WarehouseSlipPrintSheet({ data }: { data: WarehouseSlipPrintData
                 </tr>
               </tfoot>
             </table>
+
+            <TongHopCostPrintBlock data={printData} />
 
             <div className="warehouse-slip-print-signatures">
               <div>

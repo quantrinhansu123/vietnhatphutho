@@ -5,6 +5,8 @@
  */
 import type { Express } from 'express';
 
+type ChiPhiKemTheo = { ten: string; don_gia: number; thanh_tien: number };
+
 type SlipLine = {
   code: string;
   name: string;
@@ -12,6 +14,7 @@ type SlipLine = {
   quantity: number;
   unitPrice: number;
   lineAmount: number;
+  chi_phi_kem_theo?: ChiPhiKemTheo[];
   materialClass: 'nvl_chinh' | 'nvl_phu' | 'chua_phan_loai';
   documentQuantity?: number;
   weightKg?: number;
@@ -32,6 +35,8 @@ type DetailLine = {
   so_luong: number;
   don_gia: number;
   thanh_tien: number;
+  /** Chi phí kèm theo, độc lập với don_gia/thanh_tien của dòng. */
+  chi_phi_kem_theo: ChiPhiKemTheo[];
   quy_doi_kg: number | null;
   /** Tên NVL sản xuất (snapshot từng dòng, tra kho_nvl theo mã khi thiếu). */
   ten_nvl_sx: string;
@@ -176,6 +181,41 @@ function round3(n: number) {
   return Math.round(n * 1000) / 1000;
 }
 
+/** Thành tiền kèm theo do user nhập, không suy từ đơn giá. Thiếu mảng = []. */
+function parseChiPhiKemTheo(
+  raw: unknown,
+  lineNo: number,
+  ma: string
+): { error: string } | { items: ChiPhiKemTheo[] } {
+  if (raw == null || raw === '') return { items: [] };
+  const list = Array.isArray(raw) ? raw : null;
+  if (!list) return { error: `Dòng ${lineNo} (${ma}): chi phí kèm theo không hợp lệ.` };
+  if (list.length > 50) return { error: `Dòng ${lineNo} (${ma}): tối đa 50 khoản chi phí kèm theo.` };
+  const items: ChiPhiKemTheo[] = [];
+  for (let index = 0; index < list.length; index += 1) {
+    const row = (list[index] && typeof list[index] === 'object' ? list[index] : {}) as Record<string, unknown>;
+    const ten = text(row.ten ?? row.name).slice(0, 120);
+    const donRaw = row.don_gia ?? row.donGia ?? row.unitPrice;
+    const tienRaw = row.thanh_tien ?? row.thanhTien ?? row.lineAmount;
+    const blank =
+      !ten &&
+      String(donRaw ?? '').trim() === '' &&
+      String(tienRaw ?? '').trim() === '';
+    if (blank) continue;
+    if (!ten) return { error: `Dòng ${lineNo} (${ma}), khoản ${index + 1}: thiếu tên chi phí.` };
+    const donGia = Number(String(donRaw ?? 0).replace(',', '.'));
+    const thanhTien = Number(String(tienRaw ?? 0).replace(',', '.'));
+    if (!Number.isFinite(donGia) || donGia < 0) {
+      return { error: `Dòng ${lineNo} (${ma}), khoản ${index + 1}: đơn giá phải lớn hơn hoặc bằng 0.` };
+    }
+    if (!Number.isFinite(thanhTien) || thanhTien < 0) {
+      return { error: `Dòng ${lineNo} (${ma}), khoản ${index + 1}: thành tiền phải lớn hơn hoặc bằng 0.` };
+    }
+    items.push({ ten, don_gia: round3(donGia), thanh_tien: round3(thanhTien) });
+  }
+  return { items };
+}
+
 function slipItems(lines: DetailLine[], machine?: string): SlipLine[] {
   return lines.map(line => ({
     code: line.ma_hang,
@@ -184,6 +224,7 @@ function slipItems(lines: DetailLine[], machine?: string): SlipLine[] {
     quantity: line.so_luong,
     unitPrice: line.don_gia,
     lineAmount: line.thanh_tien,
+    chi_phi_kem_theo: line.chi_phi_kem_theo || [],
     materialClass: materialClassOf(line.phan_loai_nvl),
     ...(Number.isFinite(Number(line.so_luong_ct)) && Number(line.so_luong_ct) > 0
       ? { documentQuantity: Number(line.so_luong_ct) }
@@ -303,6 +344,8 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       const ngayDong = text(item.ngay_dong ?? item.ngayDong).slice(0, 10);
       const caDong = text(item.ca_dong ?? item.caDong);
       const tonDauRaw = Number(String(item.ton_dau_ca ?? item.tonDauCa ?? '').replace(',', '.'));
+      const kem = parseChiPhiKemTheo(item.chi_phi_kem_theo ?? item.chiPhiKemTheo, index + 1, ma);
+      if ('error' in kem) return kem;
       lines.push({
         ma_hang: ma,
         ten_hang: text(item.ten_hang ?? item.tenHang ?? item.name),
@@ -311,6 +354,7 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
         so_luong: round3(qty),
         don_gia: donGia,
         thanh_tien: round3(qty * donGia),
+        chi_phi_kem_theo: kem.items,
         quy_doi_kg: quyDoi,
         // Nguồn riêng từng dòng (phiếu xuất kiểu mới). Kiểu cũ không gửi 2 key này.
         ...(srcLoai === 'kho' || srcLoai === 'may' ? { src_loai: srcLoai } : {}),

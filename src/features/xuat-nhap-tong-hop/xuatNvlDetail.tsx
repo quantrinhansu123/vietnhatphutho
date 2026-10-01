@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ImagePlus, Loader2, Plus, RefreshCw, ScanBarcode, Trash2 } from 'lucide-react';
+import { ChevronDown, ImagePlus, Loader2, Plus, RefreshCw, ScanBarcode, Trash2 } from 'lucide-react';
 import ProductQrScanner from '../../components/ProductQrScanner';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import WeighingImagePreviewModal, { WeighingImageThumbnail, type WeighingPreviewImage } from '../../components/WeighingImagePreviewModal';
@@ -8,11 +8,20 @@ import { insertWarehouseLineByClass, resolveWarehouseLineProductionName } from '
 import type { MaterialOption } from '../san-pham/types';
 import { fileToOptimizedImageDataUrl, uploadImage } from '../_shared/recordHelpers';
 import { CAMERA_IMAGE_INPUT_PROPS } from '../../utils/cameraCapture';
+import {
+  chiPhiTenOptions,
+  emptyChiPhiKemTheo,
+  roundKem,
+  sumKemDraft,
+  type ChiPhiKemTheoDraft
+} from './chiPhiKemTheo';
 import { isTapeOrStampMaterial, normalizeNhomVatTuPhuKey, resolveAuxiliaryWeightPerUnit } from '../../utils/mixingNormAuxiliary';
 import { normalizeWarehouseMaterialClass } from '../../utils/warehouseNormMerge';
 import { isWarehouseKgUnit } from '../../utils/warehouseWeight';
 
 export type XuatNvlClass = 'nvl_chinh' | 'nvl_phu' | 'chua_phan_loai';
+
+export type { ChiPhiKemTheoDraft as ChiPhiKemTheo };
 
 export type XuatNvlLine = {
   key: string;
@@ -34,6 +43,7 @@ export type XuatNvlLine = {
   slCt: string;
   soLuong: string;
   donGia: string;
+  chiPhiKemTheo: ChiPhiKemTheoDraft[];
   normPerKg?: number;
   imageUrl: string;
   imagePublicId: string;
@@ -60,6 +70,19 @@ function destLabel(item: KhoOption, kind: 'kho' | 'may') {
   return name ? `${name} (${code})` : item.label;
 }
 
+function materialRowId(item: MaterialOption) {
+  const id = String(item.id || '').trim();
+  if (id) return id;
+  return [item.code, item.name, item.productionName || ''].join('\u0001');
+}
+
+function materialMenuLabel(item: MaterialOption) {
+  const sxName = String(item.productionName || '').trim();
+  return sxName && sxName.toLocaleLowerCase('vi') !== item.name.toLocaleLowerCase('vi')
+    ? `${item.code} · ${item.name} · ${sxName}`
+    : `${item.code} · ${item.name}`;
+}
+
 function classLabel(value: string) {
   const kind = normalizeWarehouseMaterialClass(value);
   if (kind === 'nvl_chinh') return 'Nguyên vật liệu chính';
@@ -69,6 +92,92 @@ function classLabel(value: string) {
 
 function newKey() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+export function ChiPhiKemTheoPanel({
+  items,
+  lineAmount,
+  onChange
+}: {
+  items: ChiPhiKemTheoDraft[];
+  lineAmount: number;
+  onChange: (next: ChiPhiKemTheoDraft[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const kem = sumKemDraft(items);
+  const tongDong = roundKem(lineAmount + kem);
+  return (
+    <div className="mb-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen(current => !current)}
+        className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-extrabold text-zinc-700"
+      >
+        <ChevronDown className={`h-3.5 w-3.5 transition ${open ? 'rotate-180' : ''}`} />
+        Chi phí ({items.length})
+        <span className="font-semibold text-zinc-500">Tổng kèm {kem}</span>
+        <span className="font-semibold text-zinc-900">Tổng dòng {tongDong}</span>
+      </button>
+      {open ? (
+        <div className="mt-2 space-y-1">
+          {items.map(item => (
+            <div key={item.id} className="grid grid-cols-[minmax(8rem,1fr)_7rem_7rem_1.75rem] items-center gap-1">
+              <SearchableSelect
+                value={item.ten}
+                onChange={value => {
+                  const ten = value.trim().slice(0, 120);
+                  onChange(items.map(row => (row.id === item.id ? { ...row, ten } : row)));
+                }}
+                options={chiPhiTenOptions(item.ten)}
+                getValue={option => String((option as { id: string }).id)}
+                getLabel={option => String((option as { label: string }).label)}
+                placeholder="Chọn hoặc nhập tên chi phí"
+                searchPlaceholder="Chọn Chi phí mua hàng hoặc gõ tên khác"
+                inputClassName={field}
+                comboboxMode
+                comboboxSearchable
+                allowCustomValue
+                allowEmpty
+                openUpward
+                desktopAutoFlip
+                matchDropdownWidth
+              />
+              <input
+                value={item.donGia}
+                inputMode="decimal"
+                placeholder="Đơn giá"
+                onChange={event => onChange(items.map(row => (row.id === item.id ? { ...row, donGia: event.target.value } : row)))}
+                className={`${field} text-right`}
+              />
+              <input
+                value={item.thanhTien}
+                inputMode="decimal"
+                placeholder="Thành tiền"
+                onChange={event => onChange(items.map(row => (row.id === item.id ? { ...row, thanhTien: event.target.value } : row)))}
+                className={`${field} text-right`}
+              />
+              <button
+                type="button"
+                onClick={() => onChange(items.filter(row => row.id !== item.id))}
+                className="text-rose-600"
+                aria-label="Xóa chi phí"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            disabled={items.length >= 50}
+            onClick={() => onChange([...items, emptyChiPhiKemTheo()])}
+            className="inline-flex items-center gap-1 text-[11px] font-extrabold text-[#ef1b2d] disabled:opacity-40"
+          >
+            <Plus className="h-3.5 w-3.5" /> Thêm chi phí
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function emptyXuatNvlFields(patch?: Partial<XuatNvlLine>): XuatNvlLine {
@@ -91,6 +200,7 @@ export function emptyXuatNvlFields(patch?: Partial<XuatNvlLine>): XuatNvlLine {
     slCt: '',
     soLuong: '',
     donGia: '',
+    chiPhiKemTheo: [],
     normPerKg: undefined,
     imageUrl: '',
     imagePublicId: '',
@@ -140,7 +250,7 @@ export function XuatNvlDetail({
     const unit = String(item.unit || '').trim();
     const per = Number(String(item.totalWeight || '').replace(',', '.'));
     patchAt(index, {
-      materialId: String(item.id || '').trim(),
+      materialId: materialRowId(item),
       maHang: item.code,
       tenHang: item.name,
       tenSanXuat: String(item.productionName || '').trim(),
@@ -152,13 +262,16 @@ export function XuatNvlDetail({
     });
   }
 
-  function productionOptions(code: string, current: string) {
+  function findMaterial(id: string) {
+    return materials.find(item => materialRowId(item) === id);
+  }
+
+  function productionOptions(code: string, currentId: string, currentName: string) {
     const key = code.trim().toLocaleLowerCase('vi');
-    const rows = materials
-      .filter(item => item.code.trim().toLocaleLowerCase('vi') === key && String(item.productionName || '').trim())
-      .map(item => ({ code: item.code, productionName: String(item.productionName || '').trim() }));
-    if (current && !rows.some(row => row.productionName === current)) {
-      rows.unshift({ code, productionName: current });
+    const rows = materials.filter(item => item.code.trim().toLocaleLowerCase('vi') === key);
+    if (currentId && rows.some(item => materialRowId(item) === currentId)) return rows;
+    if (currentName && !rows.some(item => String(item.productionName || '').trim() === currentName)) {
+      return [...rows, { id: currentId, code, name: '', productionName: currentName, unit: '' } as MaterialOption];
     }
     return rows;
   }
@@ -180,13 +293,17 @@ export function XuatNvlDetail({
     const code = raw.trim();
     if (!code) return;
     const prefix = code.includes('_') ? code.slice(0, code.indexOf('_')).trim() : code;
-    const found =
-      materials.find(item => item.code.toLocaleLowerCase('vi') === code.toLocaleLowerCase('vi')) ||
-      materials.find(item => item.code.toLocaleLowerCase('vi') === prefix.toLocaleLowerCase('vi'));
-    if (!found) {
-      setUploadError(`Không thấy mã ${code} trong kho NVL.`);
+    const matches = materials.filter(item => {
+      const token = item.code.toLocaleLowerCase('vi');
+      return token === code.toLocaleLowerCase('vi') || token === prefix.toLocaleLowerCase('vi');
+    });
+    if (matches.length !== 1) {
+      setUploadError(matches.length
+        ? `Mã ${prefix} có ${matches.length} dòng trong kho này. Hãy chọn đúng dòng trong danh sách.`
+        : `Không thấy mã ${code} trong kho này.`);
       return;
     }
+    const found = matches[0];
     const hit = lines.findIndex(line => line.maHang.trim().toLocaleLowerCase('vi') === found.code.trim().toLocaleLowerCase('vi'));
     if (hit >= 0) {
       const current = Number(String(lines[hit].soLuong).replace(',', '.')) || 0;
@@ -350,30 +467,17 @@ export function XuatNvlDetail({
                   openUpward
                 />
                 <SearchableSelect
-                  value={line.maHang}
+                  value={line.materialId || line.maHang}
                   onChange={value => {
-                    const found = materials.find(item => item.code === value);
+                    const found = findMaterial(value);
                     if (found) applyMaterial(index, found);
-                    else patchAt(index, { maHang: value });
-                  }}
-                  onSelectOption={item => {
-                    if (item) applyMaterial(index, item as MaterialOption);
                   }}
                   options={materials}
-                  getValue={item => (item as MaterialOption).code}
-                  getLabel={item => {
-                    const row = item as MaterialOption;
-                    const sxName = String(row.productionName || '').trim();
-                    return sxName && sxName.toLocaleLowerCase('vi') !== row.name.toLocaleLowerCase('vi')
-                      ? `${row.code} · ${row.name} · ${sxName}`
-                      : `${row.code} · ${row.name}`;
-                  }}
-                  getSearchText={item => {
-                    const row = item as MaterialOption;
-                    return `${row.code} ${row.name} ${row.productionName || ''}`;
-                  }}
+                  getValue={item => materialRowId(item as MaterialOption)}
+                  getLabel={item => (item as MaterialOption).code}
+                  getOptionLabel={item => materialMenuLabel(item as MaterialOption)}
+                  getSearchText={item => materialMenuLabel(item as MaterialOption)}
                   placeholder="Mã NPL"
-                  displaySelectedAsValue
                   inputClassName={field}
                   comboboxMode
                   comboboxSearchable
@@ -382,36 +486,14 @@ export function XuatNvlDetail({
                 <div className="truncate text-[11px] font-semibold text-zinc-700" title={line.tenHang}>{line.tenHang || '—'}</div>
                 <div>
                   <SearchableSelect
-                    value={sx}
-                    onChange={value => patchAt(index, { tenSanXuat: value })}
-                    onSelectOption={item => {
-                      const picked = String((item as { productionName?: string } | null)?.productionName || '').trim();
-                      if (!picked) return;
-                      const match = materials.find(option =>
-                        option.code.trim().toLocaleLowerCase('vi') === line.maHang.trim().toLocaleLowerCase('vi') &&
-                        String(option.productionName || '').trim() === picked
-                      );
-                      if (!match) {
-                        patchAt(index, { tenSanXuat: picked });
-                        return;
-                      }
-                      const unit = String(match.unit || '').trim() || line.donVi;
-                      const aux = String(match.nhomVatTuPhu || '').trim();
-                      const per = isWarehouseKgUnit(unit)
-                        ? 1
-                        : resolveAuxiliaryWeightPerUnit(normalizeNhomVatTuPhuKey(aux || picked), line.nhomVthh, unit);
-                      patchAt(index, {
-                        materialId: String(match.id || '').trim(),
-                        tenHang: match.name || line.tenHang,
-                        donVi: unit,
-                        tenSanXuat: picked,
-                        auxiliaryGroup: aux,
-                        ...(per && per > 0 ? { normPerKg: per } : {})
-                      });
+                    value={line.materialId}
+                    onChange={value => {
+                      const found = findMaterial(value);
+                      if (found) applyMaterial(index, found);
                     }}
-                    options={productionOptions(line.maHang, sx)}
-                    getValue={item => String((item as { productionName: string }).productionName)}
-                    getLabel={item => String((item as { productionName: string }).productionName)}
+                    options={productionOptions(line.maHang, line.materialId, sx)}
+                    getValue={item => materialRowId(item as MaterialOption)}
+                    getLabel={item => String((item as MaterialOption).productionName || (item as MaterialOption).name || '')}
                     placeholder={line.maHang ? 'Không có dữ liệu' : 'Chọn mã NPL trước'}
                     disabled={!line.maHang.trim()}
                     inputClassName={field}
@@ -480,6 +562,11 @@ export function XuatNvlDetail({
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>
+              <ChiPhiKemTheoPanel
+                items={line.chiPhiKemTheo || []}
+                lineAmount={amount}
+                onChange={next => patchAt(index, { chiPhiKemTheo: next })}
+              />
               {!line.isScanned ? (
                 <div className="mb-2 rounded-lg border border-red-100 bg-red-50/40 p-2">
                   <div className="flex items-center justify-between gap-2">
