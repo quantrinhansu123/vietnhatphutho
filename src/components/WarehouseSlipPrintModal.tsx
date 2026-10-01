@@ -66,10 +66,9 @@ function TongHopCostPrintBlock({ data }: { data: WarehouseSlipPrintData }) {
         </table>
       ) : null}
       <div className="warehouse-nhap-kho-print-footer">
-        <p><span>Tổng KL:</span> {formatNumber(data.totalKg || 0, 3)}</p>
-        <p><span>Tổng hàng:</span> {formatMoney(data.totalAmount || 0, 0)}</p>
-        <p><span>Tổng kèm:</span> {formatMoney(totalKem, 0)}</p>
-        <p><span>Tổng cộng:</span> {formatMoney(totalCong, 0)}</p>
+        <p><span>Tổng trọng lượng:</span> {formatNumber(data.totalKg || 0, 3)}</p>
+        <p><span>Tổng chi phí đi kèm:</span> {formatMoney(totalKem, 0)}</p>
+        <p><span>Tổng thành tiền:</span> {formatMoney(totalCong, 0)}</p>
       </div>
     </div>
   );

@@ -9,7 +9,6 @@ import type { MaterialOption } from '../san-pham/types';
 import { fileToOptimizedImageDataUrl, uploadImage } from '../_shared/recordHelpers';
 import { CAMERA_IMAGE_INPUT_PROPS } from '../../utils/cameraCapture';
 import {
-  chiPhiTenOptions,
   emptyChiPhiKemTheo,
   roundKem,
   sumKemDraft,
@@ -115,32 +114,21 @@ export function ChiPhiKemTheoPanel({
       >
         <ChevronDown className={`h-3.5 w-3.5 transition ${open ? 'rotate-180' : ''}`} />
         Chi phí ({items.length})
-        <span className="font-semibold text-zinc-500">Tổng kèm {kem}</span>
-        <span className="font-semibold text-zinc-900">Tổng dòng {tongDong}</span>
+        <span className="font-semibold text-zinc-500">Tổng chi phí đi kèm {kem}</span>
+        <span className="font-semibold text-zinc-900">Tổng thành tiền {tongDong}</span>
       </button>
       {open ? (
         <div className="mt-2 space-y-1">
           {items.map(item => (
             <div key={item.id} className="grid grid-cols-[minmax(8rem,1fr)_7rem_7rem_1.75rem] items-center gap-1">
-              <SearchableSelect
+              <input
                 value={item.ten}
-                onChange={value => {
-                  const ten = value.trim().slice(0, 120);
+                placeholder="Nhập tên chi phí"
+                onChange={event => {
+                  const ten = event.target.value.slice(0, 120);
                   onChange(items.map(row => (row.id === item.id ? { ...row, ten } : row)));
                 }}
-                options={chiPhiTenOptions(item.ten)}
-                getValue={option => String((option as { id: string }).id)}
-                getLabel={option => String((option as { label: string }).label)}
-                placeholder="Chọn hoặc nhập tên chi phí"
-                searchPlaceholder="Chọn Chi phí mua hàng hoặc gõ tên khác"
-                inputClassName={field}
-                comboboxMode
-                comboboxSearchable
-                allowCustomValue
-                allowEmpty
-                openUpward
-                desktopAutoFlip
-                matchDropdownWidth
+                className={field}
               />
               <input
                 value={item.donGia}

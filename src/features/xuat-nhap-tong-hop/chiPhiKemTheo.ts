@@ -36,7 +36,7 @@ function moneyOf(value: unknown) {
 export function emptyChiPhiKemTheo(): ChiPhiKemTheoDraft {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    ten: '',
+    ten: CHI_PHI_TEN_OPTIONS[0],
     donGia: '',
     thanhTien: ''
   };
