@@ -1413,11 +1413,10 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
           const tongKem = roundKem(filled.reduce((sum, line) => sum + sumKemDraft(line.chiPhiKemTheo), 0));
           const tongCong = roundKem(tongHang + tongKem);
           return (
-            <div className="grid grid-cols-2 gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-bold text-zinc-800 sm:grid-cols-4">
-              <span>Tổng KL <strong className="font-mono">{tongKl}</strong></span>
-              <span>Tổng hàng <strong className="font-mono">{tongHang}</strong></span>
-              <span>Tổng kèm <strong className="font-mono">{tongKem}</strong></span>
-              <span>Tổng cộng <strong className="font-mono">{tongCong}</strong></span>
+            <div className="grid grid-cols-2 gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-bold text-zinc-800 sm:grid-cols-3">
+              <span>Tổng trọng lượng <strong className="font-mono">{tongKl}</strong></span>
+              <span>Tổng chi phí đi kèm <strong className="font-mono">{tongKem}</strong></span>
+              <span>Tổng thành tiền <strong className="font-mono">{tongCong}</strong></span>
             </div>
           );
         })()}
