@@ -66,6 +66,11 @@ function mapKhoNvlRows(rows: Array<Record<string, unknown>>): KhoNvlOption[] {
     .filter(row => row.code);
 }
 
+/** Chuẩn hóa để so trùng NVL trong phiên: trim + gộp khoảng trắng + không phân biệt hoa thường. */
+function normNvlIdentityText(value: string) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi');
+}
+
 /** Đúng một kho: tên kho khớp, hoặc ten_kho trống và loai_kho = mã kho. Không lấy cả bảng kho_nvl. */
 function materialInWarehouse(item: { tenKho?: string; loaiKho?: string }, ten: string, maKho: string) {
   const rowTen = normalizeWarehouseName(item.tenKho || '');
@@ -1351,21 +1356,62 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
                     </td>
                     <td className="whitespace-nowrap px-2 py-2 align-middle">{line.tenHang || '—'}</td>
                     <td className="px-2 py-2 align-middle">
-                      <div className="w-56">
+                      <div
+                        className="w-56"
+                        title={!line.materialId.trim() && line.tenSanXuat.trim() ? 'Tên SX mới — lưu phiếu sẽ tạo dòng NVL mới (mã + tên + tên SX + kho)' : undefined}
+                      >
                         <SearchableSelect
-                          value={line.materialId}
+                          value={line.materialId || line.tenSanXuat}
                           onChange={value => {
-                            const match = khoMaterials.find(option => String(option.id || '').trim() === value);
-                            if (match) applyNhapMaterial(match);
+                            const v = String(value || '').trim();
+                            const match = khoMaterials.find(option => String(option.id || '').trim() === v)
+                              ?? sxOptions.find(option => normNvlIdentityText(option.productionName || '') === normNvlIdentityText(v));
+                            if (match) {
+                              applyNhapMaterial(match);
+                              return;
+                            }
+                            if (!v) {
+                              // Xóa trắng khi đang gắn id có sẵn thì giữ nguyên (tránh rớt thành SX rỗng ngoài ý muốn).
+                              if (line.materialId.trim()) return;
+                              patchLine(index, { tenSanXuat: '' });
+                              return;
+                            }
+                            // Trùng dòng khác trong cùng phiên (cùng mã + tên + kho, khác hoa thường/khoảng trắng)
+                            // thì dùng đúng chữ dòng kia để không sinh 2 dòng kho_nvl khi lưu.
+                            const sibling = lines.find((other, otherIndex) => otherIndex !== index
+                              && other.khoId === line.khoId
+                              && normNvlIdentityText(other.maHang) === normNvlIdentityText(line.maHang)
+                              && normNvlIdentityText(other.tenHang) === normNvlIdentityText(line.tenHang)
+                              && normNvlIdentityText(other.tenSanXuat) === normNvlIdentityText(v)
+                              && String(other.tenSanXuat || '').trim() !== '');
+                            if (sibling) {
+                              const siblingMatch = khoMaterials.find(option => String(option.id || '').trim() === String(sibling.materialId || '').trim());
+                              if (siblingMatch) {
+                                applyNhapMaterial(siblingMatch);
+                                return;
+                              }
+                              patchLine(index, {
+                                materialId: '',
+                                tenHang: sibling.tenHang,
+                                donVi: sibling.donVi || line.donVi,
+                                warehouseClass: sibling.warehouseClass,
+                                tenSanXuat: String(sibling.tenSanXuat || '').trim()
+                              });
+                              return;
+                            }
+                            // Tên SX mới cho mã hiện tại — giữ mã/tên/ĐVT/phân loại, lưu phiếu tự tạo dòng kho_nvl.
+                            patchLine(index, { materialId: '', tenSanXuat: v });
                           }}
                           options={sxOptions}
                           getValue={item => String((item as MaterialOption).id || '').trim()}
                           getLabel={item => String((item as MaterialOption).productionName || (item as MaterialOption).name || '')}
-                          placeholder={line.maHang ? 'Không có dữ liệu' : 'Chọn mã trước'}
+                          placeholder={line.maHang ? (line.materialId ? 'Không có dữ liệu' : 'Gõ tên SX mới hoặc chọn') : 'Chọn mã trước'}
                           disabled={!line.maHang.trim()}
-                          inputClassName={fieldClass}
-                          comboboxMode
-                          comboboxSearchable
+                          inputClassName={`${fieldClass} ${!line.materialId.trim() && line.tenSanXuat.trim() ? 'border-amber-400 bg-amber-50' : ''}`}
+                          allowEmpty
+                          allowCustomValue
+                          showAllWhenQueryMatchesSelection
+                          revertOnBlurMismatch
                           openUpward
                         />
                       </div>

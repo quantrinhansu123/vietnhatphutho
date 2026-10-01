@@ -44,7 +44,8 @@ export function SearchableSelect({
   searchPlaceholder,
   selectedOptionClassName,
   skipUnchangedBlurCommit: _skipUnchangedBlurCommit,
-  showAllWhenQueryMatchesSelection = false
+  showAllWhenQueryMatchesSelection = false,
+  revertOnBlurMismatch = false
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -85,6 +86,12 @@ export function SearchableSelect({
    * (vd tên sản xuất cùng mã AMIS). Chỉ lọc sau khi người dùng sửa chữ tìm.
    */
   showAllWhenQueryMatchesSelection?: boolean;
+  /**
+   * Blur mà chữ gõ không khớp option nào: đang gắn option thì hoàn lại lựa chọn cũ
+   * (tránh gõ tìm rồi click ra ngoài làm nhảy thành tên mới ngoài ý muốn).
+   * Enter / bấm Thêm / click option vẫn chốt bình thường.
+   */
+  revertOnBlurMismatch?: boolean;
 }) {
   const fieldClass = inputClassName || orderFieldClass;
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -171,59 +178,58 @@ export function SearchableSelect({
     setOpen(false);
   };
 
-  const suppressBlurRef = useRef(false);
-
   const handleBlur = () => {
-    window.setTimeout(() => {
-      if (suppressBlurRef.current) {
-        suppressBlurRef.current = false;
+    // Commit đồng bộ ngay khi blur: nút Lưu bấm ngay sau khi xóa ô vẫn đọc đúng state mới.
+    // Không dùng setTimeout — click chọn option đã chặn blur bằng preventDefault nên không xung đột.
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) {
+      if (allowEmpty) {
+        commitValue('', null);
+      } else {
+        setQuery(selectedLabel);
+        setOpen(false);
+      }
+      return;
+    }
+
+    const exactValue = options.find(item => getValue(item).toLowerCase() === normalized);
+    if (exactValue) {
+      commitValue(getValue(exactValue), exactValue);
+      return;
+    }
+
+    const exactLabel = matchExactLabel(normalized);
+    if (exactLabel) {
+      commitValue(getValue(exactLabel), exactLabel);
+      return;
+    }
+
+    if (resolveSelectedItem) {
+      const resolved = resolveSelectedItem(options, normalized);
+      if (resolved) {
+        commitValue(getValue(resolved), resolved);
         return;
       }
+    }
 
-      const normalized = query.trim().toLowerCase();
-      if (!normalized) {
-        if (allowEmpty) {
-          commitValue('', null);
-        } else {
-          setQuery(selectedLabel);
-          setOpen(false);
-        }
-        return;
-      }
-
-      const exactValue = options.find(item => getValue(item).toLowerCase() === normalized);
-      if (exactValue) {
-        commitValue(getValue(exactValue), exactValue);
-        return;
-      }
-
-      const exactLabel = matchExactLabel(normalized);
-      if (exactLabel) {
-        commitValue(getValue(exactLabel), exactLabel);
-        return;
-      }
-
-      if (resolveSelectedItem) {
-        const resolved = resolveSelectedItem(options, normalized);
-        if (resolved) {
-          commitValue(getValue(resolved), resolved);
-          return;
-        }
-      }
-
-      if (allowCustomValue) {
-        commitValue(query, null);
-        return;
-      }
-
-      if (filteredOptions.length === 1) {
-        commitValue(getValue(filteredOptions[0]), filteredOptions[0]);
-        return;
-      }
-
+    if (revertOnBlurMismatch && selectedItem) {
       setQuery(selectedLabel);
       setOpen(false);
-    }, 150);
+      return;
+    }
+
+    if (allowCustomValue) {
+      commitValue(query, null);
+      return;
+    }
+
+    if (filteredOptions.length === 1) {
+      commitValue(getValue(filteredOptions[0]), filteredOptions[0]);
+      return;
+    }
+
+    setQuery(selectedLabel);
+    setOpen(false);
   };
 
   const isDisabled = Boolean(disabled || isLoading);
@@ -348,10 +354,6 @@ export function SearchableSelect({
   const dropdownPanelClass =
     'fixed z-[200] max-h-52 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg';
 
-  const keepFocusForSelection = () => {
-    suppressBlurRef.current = true;
-  };
-
   const queryTrimmed = query.trim();
   const hasExactQueryMatch = useMemo(() => {
     if (!queryTrimmed) return false;
@@ -472,7 +474,7 @@ export function SearchableSelect({
 
     if (filteredOptions.length > 0 || (allowCustomValue && queryTrimmed && !hasExactQueryMatch)) {
       return createPortal(
-        <div ref={menuRef} className={dropdownPanelClass} style={menuStyle} onMouseDown={keepFocusForSelection}>
+        <div ref={menuRef} className={dropdownPanelClass} style={menuStyle} onMouseDown={event => event.preventDefault()}>
           {allowEmpty && !query.trim() && (
             <button
               type="button"
@@ -510,7 +512,7 @@ export function SearchableSelect({
 
     if (query.trim()) {
       return createPortal(
-        <div ref={menuRef} className={dropdownPanelClass} style={menuStyle} onMouseDown={keepFocusForSelection}>
+        <div ref={menuRef} className={dropdownPanelClass} style={menuStyle} onMouseDown={event => event.preventDefault()}>
           <div className="px-3 py-2 text-xs font-semibold text-zinc-500">Không tìm thấy kết quả</div>
         </div>,
         document.body
@@ -552,6 +554,11 @@ export function SearchableSelect({
           onChange={event => {
             setQuery(event.target.value);
             setOpen(true);
+          }}
+          onKeyDown={event => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            commitTypedOrMatchedValue();
           }}
           onFocus={() => {
             if (!isDisabled) setOpen(true);

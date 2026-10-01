@@ -26,18 +26,33 @@ export const SOUTH_TEM_OPTIONS = [
   '3li',
   '5li'
 ] as const;
-/** Màu tem: MVCC 100% Hồng; thêm Vàng (12 SP MVKH Dán Tem 1.5li) để đủ dropdown. */
-export const SOUTH_TEM_COLOR_OPTIONS = ['Hồng', 'Vàng'] as const;
+/** Màu tem đơn miền nam: Hồng (MVCC), Vàng (MVKH), Trắng (MVPY), Xanh (MVGL). */
+export const SOUTH_TEM_COLOR_OPTIONS = ['Hồng', 'Vàng', 'Trắng', 'Xanh'] as const;
 export const SOUTH_TEM_COLOR_DEFAULT = 'Hồng';
-/** Mã đuôi theo màu tem (khớp Excel sp_mien_nam.xlsx): Hồng→MVCC, Vàng→MVKH. */
+/** Mã đuôi theo màu tem: Hồng→MVCC, Vàng→MVKH, Trắng→MVPY, Xanh→MVGL; màu lạ quy về MVCC. */
 export function southMvByMauTem(mauTem?: string | null) {
-  return String(mauTem || '').trim().toLowerCase() === 'vàng' || String(mauTem || '').trim().toLowerCase() === 'vang'
-    ? 'MVKH'
-    : 'MVCC';
+  const value = String(mauTem || '')
+    .trim()
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+  if (value === 'vang') return 'MVKH';
+  if (value === 'trang') return 'MVPY';
+  if (value === 'xanh') return 'MVGL';
+  return 'MVCC';
+}
+/** Nhãn hiển thị trong dropdown màu tem, vd "Tem Trắng (MVPY)" — giá trị lưu vẫn là tên màu gốc. */
+export function southTemColorLabel(mauTem?: string | null) {
+  const mau = String(mauTem || '').trim();
+  if (!mau) return '';
+  return `Tem ${mau} (${southMvByMauTem(mau)})`;
 }
 /**
  * Hậu tố Full Excel cho Đơn miền nam (màng đã có trong tên gốc nên KHÔNG nối thêm):
  * " (Dán Tem 5li) Màu Hồng MVCC" + optional " Dán Tem 2 Đầu".
+ * Tem / Màu / 2 Đầu độc lập: có phần nào ghép phần đó (màu hoặc tick lẻ không kèm tem
+ * vẫn lên tên); màu để trống thì không tự mặc định.
  */
 export function buildSouthTemSuffix(tem?: string | null, mauTem?: string | null, danTem2Dau?: boolean | null) {
   const temText = String(tem || '').trim();
@@ -46,7 +61,6 @@ export function buildSouthTemSuffix(tem?: string | null, mauTem?: string | null,
   const parts: string[] = [];
   if (temText) parts.push(`(Dán Tem ${temText})`);
   if (mauText) parts.push(`Màu ${mauText} ${southMvByMauTem(mauText)}`);
-  else if (temText) parts.push(`Màu ${SOUTH_TEM_COLOR_DEFAULT} ${southMvByMauTem(SOUTH_TEM_COLOR_DEFAULT)}`);
   let suffix = parts.length > 0 ? ` ${parts.join(' ')}` : '';
   if (danTem2Dau) suffix = `${suffix} Dán Tem 2 Đầu`.trimStart();
   return suffix ? ` ${suffix.trim()}`.replace(/\s+/g, ' ') : '';
@@ -62,6 +76,7 @@ export function stripSouthTemSuffix(tenGhep?: string | null) {
   for (let i = 0; i < 10; i += 1) {
     const next = text
       .replace(/\s*\(Dán Tem\s*[^)]*\)(\s*Màu\s*\S+(\s*M\w+)?)?(\s*Dán Tem 2 Đầu)?/gu, '')
+      .replace(/\s*Màu\s+\S+\s+M\w+(\s*Dán Tem 2 Đầu)?\s*$/u, '')
       .replace(/\s*-\s*\(Tem\s*[^)]*\)/gu, '')
       .replace(/\s*\(Tem\s*[^)]*\)/gu, '')
       .replace(/\s*Dán Tem 2 Đầu/gu, '')
@@ -93,6 +108,8 @@ export function parseSouthTemFromTenGhep(tenGhep?: string | null): { tem: string
   if (full) return { tem: String(full[1] || '').trim(), mauTem: String(full[2] || '').trim(), danTem2Dau };
   const legacy = text.match(/\(Tem\s*([^)\-]*?)(?:\s*-\s*([^)]*?))?\)\s*$/u);
   if (legacy) return { tem: String(legacy[1] || '').trim(), mauTem: String(legacy[2] || '').trim(), danTem2Dau };
+  const colorOnly = text.match(/Màu\s+(\S+)\s+(MV\w+)\s*(Dán Tem 2 Đầu)?\s*$/u);
+  if (colorOnly) return { tem: '', mauTem: String(colorOnly[1] || '').trim(), danTem2Dau };
   return { tem: '', mauTem: '', danTem2Dau };
 }
 function matchOrderProductCode(product: OrderProductOption, normalizedCode: string): boolean {

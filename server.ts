@@ -6910,8 +6910,16 @@ function isRegionQuantityOrderTypeServer(orderType?: string | null) {
   return value === PRODUCTION_ORDER_TYPE_SERVER || isCutLikeOrderTypeServer(value);
 }
 function southMvByMauTemServer(mauTem?: string | null) {
-  const value = String(mauTem || '').trim().toLowerCase();
-  return value === 'vàng' || value === 'vang' ? 'MVKH' : 'MVCC';
+  const value = String(mauTem || '')
+    .trim()
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+  if (value === 'vang') return 'MVKH';
+  if (value === 'trang') return 'MVPY';
+  if (value === 'xanh') return 'MVGL';
+  return 'MVCC';
 }
 function buildSouthTemSuffixServer(tem?: string | null, mauTem?: string | null, danTem2Dau?: boolean | number | null) {
   const temText = String(tem || '').trim();
@@ -6921,7 +6929,6 @@ function buildSouthTemSuffixServer(tem?: string | null, mauTem?: string | null, 
   const parts: string[] = [];
   if (temText) parts.push(`(Dán Tem ${temText})`);
   if (mauText) parts.push(`Màu ${mauText} ${southMvByMauTemServer(mauText)}`);
-  else if (temText) parts.push(`Màu Hồng ${southMvByMauTemServer('Hồng')}`);
   let suffix = parts.length > 0 ? ` ${parts.join(' ')}` : '';
   if (haiDau) suffix = `${suffix} Dán Tem 2 Đầu`.trimStart();
   return suffix ? ` ${suffix.trim()}`.replace(/\s+/g, ' ') : '';
@@ -6934,6 +6941,7 @@ function stripSouthTemSuffixServer(tenGhep?: string | null) {
   for (let i = 0; i < 10; i += 1) {
     const next = text
       .replace(/\s*\(Dán Tem\s*[^)]*\)(\s*Màu\s*\S+(\s*M\w+)?)?(\s*Dán Tem 2 Đầu)?/gu, '')
+      .replace(/\s*Màu\s+\S+\s+M\w+(\s*Dán Tem 2 Đầu)?\s*$/u, '')
       .replace(/\s*-\s*\(Tem\s*[^)]*\)/gu, '')
       .replace(/\s*\(Tem\s*[^)]*\)/gu, '')
       .replace(/\s*Dán Tem 2 Đầu/gu, '')
@@ -6985,6 +6993,7 @@ type OrderProductRecord = {
   ghi_chu?: string | null;
   kg_1_sp?: number | null;
   tong_kg?: number | null;
+  dinh_muc_kg?: number | null;
   trong_luong?: number | null;
   trong_luong_kg?: number | null;
   nguon_quy_doi?: string | null;
@@ -7127,7 +7136,7 @@ function parseOrderProductsInput(
     const tem = pickRowField(row, ['tem', 'tem_dan', 'dan_tem']);
     const mau_tem_raw = pickRowField(row, ['mau_tem', 'mauTem', 'mau']);
     const isSouthOrderInput = String(source.orderType ?? '').trim() === SOUTH_ORDER_TYPE_SERVER;
-    const mau_tem = mau_tem_raw || (tem && isSouthOrderInput ? 'Hồng' : '');
+    const mau_tem = mau_tem_raw || '';
     const dan_tem_2_dau_raw = row.dan_tem_2_dau ?? row.danTem2Dau ?? row.dan_tem_hai_dau;
     const dan_tem_2_dau = dan_tem_2_dau_raw === true || dan_tem_2_dau_raw === 1 || String(dan_tem_2_dau_raw || '').trim() === '1' || /Dán Tem 2 Đầu/u.test(String(ten_ghep_raw || ''))
       ? 1
@@ -7164,6 +7173,7 @@ function parseOrderProductsInput(
       : '';
     const kg_1_sp = parseOrderQuantity(row.kg_1_sp ?? row.kg1Sp);
     const tong_kg = parseOrderQuantity(row.tong_kg ?? row.tongKg ?? row.trong_luong ?? row.trong_luong_kg);
+    const dinh_muc_kg = parseOrderQuantity(row.dinh_muc_kg ?? row.dinhMucKg);
     const nguon_quy_doi = pickRowField(row, ['nguon_quy_doi', 'conversionSource']);
     const tl_cuon = parseOrderQuantity(row.tl_cuon ?? row.tlCuon ?? row.kg_cuon ?? row.trong_luong_kg_cuon);
     const tl_tam = parseOrderQuantity(row.tl_tam ?? row.tlTam ?? row.trong_luong_kg_tam);
@@ -7187,6 +7197,7 @@ function parseOrderProductsInput(
       ...(m2 !== null && m2 > 0 ? { m2 } : {}),
       ...(m_dai !== null && m_dai > 0 ? { m_dai } : {}),
       ...(tong_kg !== null && tong_kg > 0 ? { tong_kg } : {}),
+      ...(dinh_muc_kg !== null && dinh_muc_kg > 0 ? { dinh_muc_kg } : {}),
       ...(tl_cuon !== null && tl_cuon > 0 ? { tl_cuon } : {}),
       ...(tl_tam !== null && tl_tam > 0 ? { tl_tam } : {}),
       ...(kg_1_sp !== null && kg_1_sp > 0 && kg_1_sp !== tl_tam && kg_1_sp !== tl_cuon ? { kg_1_sp } : {}),
@@ -7303,6 +7314,7 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
         }
         const kg_1_sp = parseOrderQuantity(record.kg_1_sp ?? record.kg1Sp);
         const tong_kg = parseOrderQuantity(record.tong_kg ?? record.tongKg ?? record.trong_luong ?? record.trong_luong_kg);
+        const dinh_muc_kg = parseOrderQuantity(record.dinh_muc_kg ?? record.dinhMucKg);
         const tl_cuon = parseOrderQuantity(record.tl_cuon ?? record.tlCuon ?? record.kg_cuon ?? record.trong_luong_kg_cuon);
         const tl_tam = parseOrderQuantity(record.tl_tam ?? record.tlTam ?? record.trong_luong_kg_tam);
         const m2 = parseOrderQuantity(record.m2 ?? record.dien_tich_m2);
@@ -7351,6 +7363,7 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
           ...(m2 !== null ? { m2 } : {}),
           ...(m_dai !== null ? { m_dai } : {}),
           ...(tong_kg !== null ? { tong_kg } : {}),
+          ...(dinh_muc_kg !== null && dinh_muc_kg > 0 ? { dinh_muc_kg } : {}),
           ...(tl_cuon !== null ? { tl_cuon } : {}),
           ...(tl_tam !== null ? { tl_tam } : {}),
           ...(so_luong_bac !== null ? { so_luong_bac: Math.max(0, so_luong_bac) } : {}),
@@ -7829,6 +7842,7 @@ function buildProductionOrderRecordFromOrder(
         ...(selectedProduct?.m2 ? { m2: selectedProduct.m2 } : {}),
         ...(selectedProduct?.m_dai ? { m_dai: selectedProduct.m_dai } : {}),
         ...(selectedProduct?.tong_kg ? { tong_kg: selectedProduct.tong_kg } : {}),
+        ...(selectedProduct?.dinh_muc_kg ? { dinh_muc_kg: selectedProduct.dinh_muc_kg } : {}),
         ...(selectedProduct?.tl_cuon ? { tl_cuon: selectedProduct.tl_cuon } : {}),
         ...(selectedProduct?.tl_tam ? { tl_tam: selectedProduct.tl_tam } : {}),
         ...(selectedProduct?.so_luong_bac != null ? { so_luong_bac: selectedProduct.so_luong_bac } : {}),
@@ -7904,6 +7918,7 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
     const m2 = parseOrderQuantity(row.m2 ?? row.dien_tich_m2);
     const m_dai = parseOrderQuantity(row.m_dai ?? row.mDai ?? row.met_dai ?? row.chieu_dai_m);
     const tong_kg = parseOrderQuantity(row.tong_kg ?? row.tongKg ?? row.trong_luong ?? row.trong_luong_kg);
+    const dinh_muc_kg = parseOrderQuantity(row.dinh_muc_kg ?? row.dinhMucKg);
     const kg_1_sp = parseOrderQuantity(row.kg_1_sp ?? row.kg1Sp);
     const tl_cuon = parseOrderQuantity(row.tl_cuon ?? row.tlCuon ?? row.kg_cuon ?? row.trong_luong_kg_cuon);
     const tl_tam = parseOrderQuantity(row.tl_tam ?? row.tlTam ?? row.trong_luong_kg_tam);
@@ -7950,6 +7965,7 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
       ...(m2 !== null && m2 > 0 ? { m2 } : {}),
       ...(m_dai !== null && m_dai > 0 ? { m_dai } : {}),
       ...(tong_kg !== null && tong_kg > 0 ? { tong_kg } : {}),
+      ...(dinh_muc_kg !== null && dinh_muc_kg > 0 ? { dinh_muc_kg } : {}),
       ...(tl_cuon !== null && tl_cuon > 0 ? { tl_cuon } : {}),
       ...(tl_tam !== null && tl_tam > 0 ? { tl_tam } : {}),
       ...(so_luong_bac !== null ? { so_luong_bac: Math.max(0, so_luong_bac) } : {}),
