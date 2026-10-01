@@ -20,6 +20,7 @@ import {
   SOUTH_TEM_OPTIONS,
   SOUTH_TEM_COLOR_OPTIONS,
   SOUTH_TEM_COLOR_DEFAULT,
+  southTemColorLabel,
   appendSouthTemToTenGhep,
   buildSouthTemSuffix,
   parseSouthTemFromTenGhep,
@@ -81,7 +82,7 @@ interface OrderRowExt extends OrderRow {
 const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1340px]';
 const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1580px]';
 const ORDER_CUT_TABLE_MIN_WIDTH = 'min-w-[1560px]';
-const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2140px]';
+const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2240px]';
 export const PRODUCTION_ORDER_TYPE = 'Đơn sản xuất';
 const orderProductGridClass =
   'grid-cols-[7rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(12rem,1.35fr)_minmax(7rem,0.9fr)_5rem_5.5rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
@@ -90,7 +91,7 @@ const orderProductionProductGridClass =
 const orderCutProductGridClass =
   'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_6rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const orderSouthProductGridClass =
-  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_8.5rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
 const CUSTOMER_ENTERED_KG_SOURCE = 'khach_hang_nhap_kg';
 /** Ô Tìm Mã AMIS: hiện tối đa 400 kết quả đã lọc. Các Select khác vẫn mặc định 50. */
@@ -219,6 +220,8 @@ export type OrderProductFormLine = {
   danTem2Dau?: boolean;
   kg1Sp?: string;
   tongKg?: string;
+  /** Chỉ dùng cho "Đơn miền nam": định mức KG/tấm nhập tay — có giá trị thì Tổng KG = Định mức × SL. */
+  dinhMucKg?: string;
   /** Tổng KG do khách hàng/người lập đơn nhập trực tiếp, được ưu tiên hơn định mức quy đổi. */
   manualTongKg?: boolean;
   conversionSource?: string;
@@ -552,6 +555,20 @@ function positiveRegionTotal(bac: unknown, trung: unknown, nam: unknown): number
   return parts.reduce((sum, value) => sum + (value ?? 0), 0);
 }
 
+/** Đơn miền nam: chuẩn hóa Định mức KG/tấm (làm tròn 2 số lẻ). Không hợp lệ / <= 0 = null. */
+export function parseSouthDinhMucKg(value: unknown): number | null {
+  const parsed = parsePercentInput(String(value ?? ''));
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) / 100 : null;
+}
+
+/** Đơn miền nam: Tổng KG = Định mức KG × SL tổng (làm tròn 2 số lẻ). Thiếu ĐM/SL = null. */
+export function southDinhMucKgTotal(dinhMucKg: unknown, quantity: unknown): number | null {
+  const dm = parseSouthDinhMucKg(dinhMucKg);
+  const qty = Number(quantity);
+  if (dm === null || !Number.isFinite(qty) || qty <= 0) return null;
+  return Math.round(dm * qty * 100) / 100;
+}
+
 export function orderProductLinesToPayload(
   lines: OrderProductFormLine[],
   productOptions: OrderProductOption[],
@@ -589,7 +606,9 @@ export function orderProductLinesToPayload(
       const daiM = parsePercentInput(line.daiM);
       const note = line.note.trim();
       const temValue = String(line.tem || '').trim();
-      const mauTemValue = String(line.mauTem || '').trim() || (temValue && isSouthOrder ? SOUTH_TEM_COLOR_DEFAULT : '');
+      // Tem / Màu tem / 2 Đầu độc lập: lưu đúng như màn hình, không tự điền, không tự xóa hộ.
+      // Riêng hậu tố tên chỉ ghép khi có tem (buildSouthTemSuffix).
+      const mauTemValue = String(line.mauTem || '').trim();
       const danTem2DauValue = Boolean(line.danTem2Dau);
       // Form chỉ nhập số; khi lưu/ghép tên luôn hiểu là (đm n li).
       const doLiDmValue = isSouthOrder ? normalizeDoLiDm(line.doLiDm, 'li') : '';
@@ -699,6 +718,12 @@ export function orderProductLinesToPayload(
       const manualTotalKg = Number.isFinite(parsedManualKg) && parsedManualKg > 0
         ? roundConversionValue(parsedManualKg)
         : null;
+      // Đơn miền nam: Định mức KG (kg/tấm) ưu tiên cao nhất — Tổng KG = Định mức × SL tổng.
+      const dinhMucKgPerUnit = isSouthOrder ? parseSouthDinhMucKg(line.dinhMucKg) : null;
+      const dinhMucTotalKg = dinhMucKgPerUnit !== null && Number.isFinite(quantity) && quantity > 0
+        ? roundConversionValue(dinhMucKgPerUnit * quantity)
+        : null;
+      const effectiveManualTotalKg = dinhMucTotalKg ?? manualTotalKg;
       const cutWeight = isCutLikeOrder
         ? calculateCutOrderWeight(line.daiM, String(quantity), conversion, unit, productCode, productName)
         : null;
@@ -718,8 +743,8 @@ export function orderProductLinesToPayload(
           }
         }
 
-        const manualKgPerUnit = manualTotalKg !== null && Number.isFinite(quantity) && quantity > 0
-          ? roundConversionValue(manualTotalKg / quantity)
+        const manualKgPerUnit = effectiveManualTotalKg !== null && Number.isFinite(quantity) && quantity > 0
+          ? roundConversionValue(effectiveManualTotalKg / quantity)
           : null;
         if (manualKgPerUnit !== null && isCuonProduct(unit)) {
           cutTlCuon = manualKgPerUnit;
@@ -733,6 +758,10 @@ export function orderProductLinesToPayload(
         } else if (conversion?.trongLuongKgTam) {
           cutTlTam = roundConversionValue(conversion.trongLuongKgTam);
         }
+        // Đơn miền nam (ĐVT Tấm cố định): Định mức KG chính là TL/tấm, ghi đúng giá trị đã nhập.
+        if (isSouthOrder && dinhMucKgPerUnit !== null && isTamProduct(unit)) {
+          cutTlTam = dinhMucKgPerUnit;
+        }
       }
 
       const quyCachMDai = Number.isFinite(daiM) && daiM > 0
@@ -742,7 +771,7 @@ export function orderProductLinesToPayload(
           : undefined;
 
       const cutResults: Array<{ don_vi: string; gia_tri: number }> = [];
-      const finalCutTotalKg = manualTotalKg ?? (cutWeight?.tongKg ? roundConversionValue(cutWeight.tongKg) : null);
+      const finalCutTotalKg = effectiveManualTotalKg ?? (cutWeight?.tongKg ? roundConversionValue(cutWeight.tongKg) : null);
       if (finalCutTotalKg !== null && finalCutTotalKg > 0) {
         cutResults.push({ don_vi: 'kg', gia_tri: finalCutTotalKg });
       }
@@ -782,11 +811,12 @@ export function orderProductLinesToPayload(
           : {}),
         ...(finalCutTotalKg !== null
           ? {
-              ...(manualTotalKg === null && cutWeight?.kg1Sp && cutWeight.kg1Sp > 0 && cutWeight.kg1Sp !== cutTlTam && cutWeight.kg1Sp !== cutTlCuon
+              ...(effectiveManualTotalKg === null && cutWeight?.kg1Sp && cutWeight.kg1Sp > 0 && cutWeight.kg1Sp !== cutTlTam && cutWeight.kg1Sp !== cutTlCuon
                 ? { kg_1_sp: roundConversionValue(cutWeight.kg1Sp) }
                 : {}),
               tong_kg: finalCutTotalKg,
-              nguon_quy_doi: manualTotalKg !== null ? CUSTOMER_ENTERED_KG_SOURCE : cutWeight?.source,
+              ...(isSouthOrder && dinhMucKgPerUnit !== null ? { dinh_muc_kg: dinhMucKgPerUnit } : {}),
+              nguon_quy_doi: effectiveManualTotalKg !== null ? CUSTOMER_ENTERED_KG_SOURCE : cutWeight?.source,
               ket_qua_quy_doi: cutResults
             }
           : cutResults.length > 0
@@ -835,6 +865,7 @@ export function orderToForm(order: OrderRow): OrderFormState {
     danTem2Dau: Boolean(line.danTem2Dau ?? fallbackTem?.danTem2Dau ?? false),
     kg1Sp: line.kg1Sp || '',
     tongKg: line.tongKg || '',
+    dinhMucKg: line.dinhMucKg || '',
     manualTongKg: line.conversionSource === CUSTOMER_ENTERED_KG_SOURCE,
     conversionSource: line.conversionSource || '',
     note: line.note || '',
@@ -1275,6 +1306,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       unit: 'Tấm',
       doLiDm: extractDoLiDmNumber(match?.doLiDm || ''),
       tongKg: '',
+      dinhMucKg: '',
       manualTongKg: false
     });
   };
@@ -1312,6 +1344,15 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       if (!Number.isFinite(enteredKg) || enteredKg <= 0) {
         setFormError(`KG khách hàng nhập phải lớn hơn 0 cho sản phẩm ${line.productCode || line.productName}.`);
         return;
+      }
+    }
+    if (isSouthOrder) {
+      for (const line of activeProductLines) {
+        if (String(line.dinhMucKg ?? '').trim() === '') continue;
+        if (parseSouthDinhMucKg(line.dinhMucKg) === null) {
+          setFormError(`Định mức KG phải lớn hơn 0 cho sản phẩm ${line.productCode || line.productName}.`);
+          return;
+        }
       }
     }
     const products = orderProductLinesToPayload(activeProductLines, productOptions, orderForm.orderType, productConversions);
@@ -1824,6 +1865,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'unit', label: 'ĐVT' },
                         { key: 'daiM', label: 'Dài (m)', required: true },
                         { key: 'doLi', label: 'Độ li ĐM' },
+                        { key: 'dinhMucKg', label: 'Định mức KG' },
                         { key: 'bac', label: 'Bắc' },
                         { key: 'trung', label: 'Trung' },
                         { key: 'nam', label: 'Nam' },
@@ -1898,9 +1940,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         ? calculateCutOrderWeight(line.daiM, cutEffectiveQty, matchedConversion, 'Tấm', line.productCode, matchedLineProduct?.name || line.productName)
                         : null;
                       const displayedCutWeight = line.shouldRecalculateConversion
-                        ? (line.manualTongKg
+                        ? (southDinhMucKgTotal(line.dinhMucKg, cutEffectiveQty)
+                            ?? (line.manualTongKg
                             ? parsePercentInput(String(line.tongKg ?? ''))
-                            : cutWeight?.tongKg ?? null)
+                            : cutWeight?.tongKg ?? null))
                         : readStoredOrderConversion(line, 'kg');
                       return renderProductLineShell(
                         line,
@@ -1970,6 +2013,18 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <div className="col-span-1 min-w-0">
                           <input
                             type="number"
+                            step="0.01"
+                            min="0"
+                            value={line.dinhMucKg ?? ''}
+                            onChange={e => updateConversionProductLine(line.key, { dinhMucKg: e.target.value })}
+                            title="Định mức KG/tấm — có giá trị thì Tổng KG = Định mức × SL tổng"
+                            className={`${orderFieldClass} bg-white text-right`}
+                            placeholder="ĐM KG"
+                          />
+                        </div>
+                        <div className="col-span-1 min-w-0">
+                          <input
+                            type="number"
                             min="0"
                             value={line.slBac ?? ''}
                             onChange={e => updateConversionProductLine(line.key, { slBac: e.target.value })}
@@ -2024,7 +2079,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               manualTongKg: e.target.value.trim() !== '',
                               shouldRecalculateConversion: true
                             })}
-                            title={line.manualTongKg
+                            title={southDinhMucKgTotal(line.dinhMucKg, cutEffectiveQty) !== null
+                              ? 'Tổng KG = Định mức KG × SL tổng (xóa Định mức để nhập tay)'
+                              : line.manualTongKg
                               ? 'Tổng KG do khách hàng nhập; TL/tấm = Tổng KG / SL'
                               : 'Có thể nhập Tổng KG của khách hàng để tính lại TL/tấm'}
                             className={`${orderFieldClass} bg-white text-right`}
@@ -2054,6 +2111,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                                 placeholder={`Màu (${SOUTH_TEM_COLOR_DEFAULT})`}
                                 getLabel={item => String(item)}
                                 getValue={item => String(item)}
+                                getOptionLabel={item => southTemColorLabel(String(item)) || String(item)}
+                                getSearchText={item => `${item} ${southTemColorLabel(String(item))}`}
                                 allowEmpty
                                 allowCustomValue
                                 inputClassName={orderFieldClass}

@@ -13,6 +13,8 @@ export interface OrderProductLine {
   conversionResults?: Array<{ unit: string; value: number }>;
   kg1Sp?: string;
   tongKg?: string;
+  /** Chỉ dùng cho "Đơn miền nam": định mức KG/tấm nhập tay — có giá trị thì Tổng KG = Định mức × SL. */
+  dinhMucKg?: string;
   conversionSource?: string;
   /** Thứ tự dòng trong JSON `san_pham` của đơn hàng. */
   stt?: number;

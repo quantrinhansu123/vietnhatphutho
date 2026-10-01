@@ -601,11 +601,11 @@ export function normalizeCatLeSanPhamList(raw: unknown): CatLeSanPhamLine[] {
   return raw.map(normalizeCatLeSanPhamLine).filter((line): line is CatLeSanPhamLine => Boolean(line));
 }
 
-/** Hậu tố tem đơn miền nam cuối tên nguồn, vd "(Dán Tem 2.5li) Màu Hồng MVCC Dán Tem 2 Đầu". */
+/** Hậu tố tem đơn miền nam cuối tên nguồn, vd "(Dán Tem 2.5li) Màu Hồng MVCC Dán Tem 2 Đầu" (màu/tick lẻ không kèm tem vẫn nhận). */
 export function extractTemSuffix(tenSp: unknown): string {
   const text = String(tenSp ?? '');
   const m = text.match(
-    /\s*(\(Dán Tem\s*[^)]*\)(?:\s*Màu\s*\S+(?:\s*M\w+)?)?(?:\s*Dán Tem 2 Đầu)?)\s*$/iu
+    /\s*(\(Dán Tem\s*[^)]*\)(?:\s*Màu\s*\S+(?:\s*M\w+)?)?(?:\s*Dán Tem 2 Đầu)?|Màu\s*\S+\s+M\w+(?:\s*Dán Tem 2 Đầu)?|Dán Tem 2 Đầu)\s*$/iu
   );
   return m ? m[1].trim() : '';
 }

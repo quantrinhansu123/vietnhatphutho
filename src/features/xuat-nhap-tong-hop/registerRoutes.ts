@@ -97,6 +97,19 @@ function materialClassOf(value: unknown): 'nvl_chinh' | 'nvl_phu' | 'chua_phan_l
   return 'chua_phan_loai';
 }
 
+/** Map mã/loại NVL (kể cả nhãn tiếng Việt) về phan_loai kho_nvl. Không phân loại được = null. */
+function nvlCatalogPhanLoaiLabel(value: unknown): string | null {
+  const normalized = text(value)
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[\s-]+/g, '_');
+  if (normalized === 'nvl_phu' || normalized.includes('nguyen_vat_lieu_phu')) return 'Nguyên vật liệu phụ';
+  if (normalized === 'nvl_chinh' || normalized.includes('nguyen_vat_lieu_chinh')) return 'Nguyên vật liệu chính';
+  return null;
+}
+
 type Party = { loai: 'kho' | 'may' | 'ncc'; id: string; ten: string; maKho: string | null; vatTu: boolean };
 
 type ParsedHeader = {
@@ -154,7 +167,7 @@ export type TongHopRouteDeps = {
   insertNhapKho: (rows: Array<Record<string, unknown>>) => Promise<{ saved: boolean; error?: string }>;
   /** Đã có bộ mã + tên + tên sản xuất + kho thì bỏ qua; thiếu thì thêm dòng kho_nvl. */
   ensureKhoNvlCatalog: (
-    lines: Array<{ code: string; name: string; productionName?: string; unit: string }>,
+    lines: Array<{ code: string; name: string; productionName?: string; unit: string; materialClass?: string; phanLoai?: string }>,
     tenKho: string
   ) => Promise<{ ensured: number; skipped: number; error?: string }>;
   attachLiveKhoNvlIds: <T extends Record<string, unknown>>(
@@ -659,6 +672,52 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
     }
   }
 
+  /**
+   * Xuất khỏi kho: KHÔNG tạo/sửa master kho_nvl — chỉ gắn id_danh_muc của dòng
+   * đang sống. Tên / tên sản xuất không khớp kho nguồn thì lỗi, không tự sinh mã mới.
+   */
+  async function stampOutboundKhoNvlIds<T extends Record<string, unknown>>(
+    records: T[],
+    lines: Array<{ code: string; name: string; productionName?: string }>,
+    tenKho: string
+  ): Promise<T[]> {
+    if (!deps.supabase) throw new Error('Supabase chưa được cấu hình.');
+    const warehouse = text(tenKho);
+    const codes = [...new Set(lines.map(line => text(line.code)).filter(Boolean))];
+    const hits = new Map<string, string>();
+    for (let index = 0; index < codes.length; index += 150) {
+      const chunk = codes.slice(index, index + 150);
+      const { data, error } = await deps.supabase
+        .from(deps.tables.materials)
+        .select('id, ma_npl, ten_npl, ten_nvl_sx, ten_kho')
+        .in('ma_npl', chunk);
+      if (error) throw new Error(error.message || 'Không đọc được danh mục kho_nvl.');
+      for (const row of ((data || []) as Array<Record<string, unknown>>)) {
+        const id = text(row.id);
+        if (!id) continue;
+        hits.set(
+          [text(row.ma_npl), text(row.ten_npl), text(row.ten_nvl_sx), text(row.ten_kho)].join(''),
+          id
+        );
+      }
+    }
+    return records.map(record => {
+      const identity = [
+        text(record.ma_npl),
+        text(record.ten_npl),
+        text(record.ten_nvl_sx),
+        text(record.ten_kho ?? warehouse)
+      ].join('');
+      const hit = hits.get(identity);
+      if (!hit) {
+        throw new Error(
+          `Dòng ${text(record.ma_npl)}: tên / tên sản xuất không khớp danh mục ${warehouse} — phiếu xuất không được tạo mã NVL mới.`
+        );
+      }
+      return { ...record, id_danh_muc: hit, loai_danh_muc: 'kho_nvl' } as T;
+    });
+  }
+
   async function legPlan(header: ParsedHeader) {
     type Leg = {
       loai: 'nhap' | 'xuat';
@@ -869,19 +928,33 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
         };
       });
       if (leg.loaiKho === 'nvl' && leg.tenKho) {
-        const attached = await deps.attachLiveKhoNvlIds(
-          records,
-          leg.lines.map(line => ({
-            code: line.ma_hang,
-            name: line.ten_hang,
-            productionName: line.ten_nvl_sx,
-            unit: line.don_vi,
-            materialClass: line.phan_loai_nvl
-          })),
-          leg.tenKho
-        );
-        if (attached.error) throw new Error(attached.error);
-        records = attached.records;
+        if (leg.loai === 'nhap') {
+          // Nhập vào kho: thiếu bộ mã + tên + tên SX + kho thì thêm dòng kho_nvl.
+          const attached = await deps.attachLiveKhoNvlIds(
+            records,
+            leg.lines.map(line => ({
+              code: line.ma_hang,
+              name: line.ten_hang,
+              productionName: line.ten_nvl_sx,
+              unit: line.don_vi,
+              materialClass: line.phan_loai_nvl
+            })),
+            leg.tenKho
+          );
+          if (attached.error) throw new Error(attached.error);
+          records = attached.records;
+        } else {
+          // Xuất khỏi kho: không tạo/sửa master — sai tên thì lỗi.
+          records = await stampOutboundKhoNvlIds(
+            records,
+            leg.lines.map(line => ({
+              code: line.ma_hang,
+              name: line.ten_hang,
+              productionName: line.ten_nvl_sx
+            })),
+            leg.tenKho
+          );
+        }
       }
       const table = await deps.writeTable(leg.loai);
       const saved = await deps.insertSlipRecords(table, records);
@@ -1406,24 +1479,60 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
     const unit = text(source.unit ?? source.don_vi) || (catalog === 'nvl' ? 'kg' : 'Cái');
     if (!code || !name) return res.status(400).json({ error: 'Nhập mã và tên.' });
     if (catalog === 'nvl') {
-      // Giữ kho nhận trên master mới — thiếu kho sẽ thành dòng trống kho, view gộp
-      // canonical thành "Kho NVL" 0/0/0 gây nhiễu (thiếu cột trên DB cũ thì ghi không kho).
+      // Master kho_nvl khóa unique mã + tên + tên SX + kho: thiếu kho sẽ thành dòng
+      // trống kho hiện canonical "Kho NVL" 0/0/0 gây nhiễu; thiếu tên SX/phân loại sẽ
+      // lệch với dòng ensure từ phiếu (cùng mã khác tên SX là các dòng khác nhau).
       const tenKhoNvl = text(source.ten_kho ?? source.tenKho ?? source.warehouse);
+      const tenNvlSx = text(
+        source.ten_nvl_sx ?? source.tenNvlSx ?? source.ten_san_xuat ?? source.tenSanXuat ?? source.productionName
+      );
+      const phanLoai = nvlCatalogPhanLoaiLabel(
+        source.phan_loai ?? source.phanLoai ?? source.materialClass ?? source.warehouseClass ?? source.phan_loai_nvl
+      );
+      if (!tenKhoNvl) return res.status(400).json({ error: 'Chọn kho NVL (Kho NVL Chính / Phụ / PC) để thêm mã.' });
+      const kho = await loadParty('kho', tenKhoNvl);
+      if ('error' in kho) return res.status(400).json({ error: kho.error });
+      if (!kho.vatTu) return res.status(400).json({ error: `Kho "${kho.ten}" không phải kho NVL.` });
       const baseRecord: Record<string, unknown> = { ma_npl: code, ten_npl: name, don_vi: unit };
-      const fullRecord: Record<string, unknown> = tenKhoNvl
-        ? { ...baseRecord, ten_kho: tenKhoNvl, loai_kho: await deps.resolveMaKho(tenKhoNvl, 'kho_nvl') }
-        : baseRecord;
-      let nvlResult = await deps.supabase
-        .from(deps.tables.materials)
-        .insert(fullRecord)
-        .select('ma_npl, ten_npl, don_vi')
-        .limit(1);
-      if (nvlResult.error && tenKhoNvl && deps.isMissingColumn(nvlResult.error)) {
-        nvlResult = await deps.supabase
-          .from(deps.tables.materials)
-          .insert(baseRecord)
-          .select('ma_npl, ten_npl, don_vi')
-          .limit(1);
+      const fullRecord: Record<string, unknown> = {
+        ...baseRecord,
+        ten_nvl_sx: tenNvlSx || null,
+        ten_kho: kho.ten,
+        loai_kho: kho.maKho || (await deps.resolveMaKho(kho.ten, 'kho_nvl')),
+        ...(phanLoai ? { phan_loai: phanLoai } : {})
+      };
+      const selectAll = async (record: Record<string, unknown>) =>
+        deps.supabase!.from(deps.tables.materials).insert(record).select().limit(1);
+      let nvlResult = await selectAll(fullRecord);
+      if (nvlResult.error && deps.isMissingColumn(nvlResult.error)) {
+        // DB cũ thiếu cột: thử bỏ phan_loai trước, rồi bỏ tên SX/kho.
+        const withoutPhanLoai: Record<string, unknown> = { ...fullRecord };
+        delete withoutPhanLoai.phan_loai;
+        nvlResult = await selectAll(withoutPhanLoai);
+        if (nvlResult.error && deps.isMissingColumn(nvlResult.error)) {
+          nvlResult = await selectAll(baseRecord);
+        }
+      }
+      if (nvlResult.error) {
+        // Trùng unique mã + tên + tên SX + kho: trả dòng đang sống thay vì 500.
+        if (String((nvlResult.error as { code?: unknown }).code || '') === '23505') {
+          const existing = await deps.supabase!
+            .from(deps.tables.materials)
+            .select()
+            .eq('ma_npl', code)
+            .limit(500);
+          if (!existing.error) {
+            const hit = ((existing.data || []) as Array<Record<string, unknown>>).find(
+              item =>
+                text(item.ten_npl) === name &&
+                text(item.ten_nvl_sx) === tenNvlSx &&
+                deps.normalizeKho(text(item.ten_kho)) === deps.normalizeKho(kho.ten)
+            );
+            if (hit) return res.status(200).json({ success: true, duplicate: true, item: hit });
+          }
+          return res.status(409).json({ error: 'Mã, tên và tên sản xuất đã tồn tại trong kho này.' });
+        }
+        return res.status(500).json({ error: nvlResult.error.message || 'Không thêm được NVL.' });
       }
       const { data, error } = nvlResult;
       if (error) return res.status(500).json({ error: error.message || 'Không thêm được NVL.' });

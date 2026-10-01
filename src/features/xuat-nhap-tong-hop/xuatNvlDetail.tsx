@@ -490,7 +490,7 @@ export function XuatNvlDetail({
                     openUpward
                   />
                 </div>
-                <input value={line.donVi} onChange={event => patchAt(index, { donVi: event.target.value })} className={field} placeholder="-" />
+                <div className="truncate px-1.5 text-[11px] font-semibold text-zinc-700" title={line.donVi}>{line.donVi || '—'}</div>
                 <div>
                   {tape ? (
                     <select

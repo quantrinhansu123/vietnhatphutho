@@ -102,6 +102,7 @@ export function parseOrderProductsFromRecord(
         const daiM = pickText(row, ['dai_m', 'daiM'], '');
         const kg1Sp = pickText(row, ['kg_1_sp', 'kg1Sp', 'tl_tam', 'tlTam'], '');
         const tongKg = pickText(row, ['tong_kg', 'tongKg', 'trong_luong', 'trong_luong_kg'], '');
+        const dinhMucKg = pickText(row, ['dinh_muc_kg', 'dinhMucKg'], '');
         const conversionSource = pickText(row, ['nguon_quy_doi', 'conversionSource', 'conversion_source'], '');
         const rawQuyCachMDai = pickText(row, ['quy_cach_m_dai', 'quyCachMDai'], '');
         const rawQuyCach = pickText(row, ['quy_cach', 'quyCach'], '');
@@ -143,6 +144,7 @@ export function parseOrderProductsFromRecord(
           daiM: daiM || undefined,
           kg1Sp: kg1Sp || undefined,
           tongKg: tongKg || undefined,
+          dinhMucKg: dinhMucKg || undefined,
           conversionSource: conversionSource || undefined,
           note: note || undefined,
           quyCach: quyCach || undefined,
