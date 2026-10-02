@@ -12,7 +12,7 @@ interface ChiPhiBaoDuongPrintSheetProps {
 }
 
 function money(n: number): string {
-  return (Number(n) || 0).toLocaleString('vi-VN');
+  return (Number(n) || 0).toLocaleString('en-US');
 }
 
 function NoteLines({ text }: { text: string }) {

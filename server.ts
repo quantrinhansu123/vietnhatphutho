@@ -17,7 +17,10 @@ import {
 } from './src/features/so-tron/soTronPhanQuyen';
 import { signSoTronToken, verifySoTronToken } from './src/features/so-tron/soTronToken';
 import { aggregateSlipOwnsCode, registerXuatNhapTongHopRoutes } from './src/features/xuat-nhap-tong-hop/registerRoutes';
+import { registerViberNotifyRoutes } from './src/features/viber-notify/registerRoutes';
+import { notifyNewOrder } from './src/features/viber-notify/orderNotify';
 import { normalizeAssignablePositions } from './src/features/cai-dat-thoi-gian/staffAssignments';
+import { isExternalStaffCode, resolveScheduleStaffName } from './src/utils/externalStaff';
 import { calculateProductConversionFormulas, roundImportedConversionWeight } from './src/utils/productConversionCalculation';
 import {
   aggregateNhapKhoProducts,
@@ -138,6 +141,8 @@ const SUPABASE_WAREHOUSE_LENH_SX_LINKS_TABLE =
 const SUPABASE_WAREHOUSE_HISTORY_TABLE =
   process.env.SUPABASE_WAREHOUSE_HISTORY_TABLE || 'phieu_xuat_nhap_kho_lich_su';
 const SUPABASE_NHAP_KHO_TABLE = process.env.SUPABASE_NHAP_KHO_TABLE || 'nhap_kho';
+/** Viber notify 1-chieu (OTP/don hang): lich su gui + webhook Vonage (supabase-viber-messages.sql). */
+const SUPABASE_VIBER_MESSAGES_TABLE = process.env.SUPABASE_VIBER_MESSAGES_TABLE || 'viber_messages';
 const NHAP_KHO_LOAI_THANH_PHAM = 'thanh_pham';
 /** Lệnh cắt lẻ: cuộn mẹ kho cắt lẻ -> SP con kho TP + thừa nhập lại kho cắt lẻ. */
 const SUPABASE_LENH_CAT_LE_TABLE = process.env.SUPABASE_LENH_CAT_LE_TABLE || 'lenh_cat_le';
@@ -9922,6 +9927,12 @@ export function createApp() {
         return res.status(500).json({ error: orderWriteErrorMessage(insertResult.error || {}) });
       }
 
+      // Auto bao don moi ve SDT noi bo co dinh (fire-and-forget, khong chan tao don).
+      void notifyNewOrder(insertResult.data as Record<string, unknown>, {
+        supabase,
+        table: SUPABASE_VIBER_MESSAGES_TABLE
+      });
+
       return res.status(201).json({
         success: true,
         order: insertResult.data,
@@ -10594,9 +10605,9 @@ export function createApp() {
         const ketThuc = pickRowField(item, ['thoi_gian_ket_thuc', 'thoiGianKetThuc', 'end'], '');
         // Không validate thời gian (cho phép trống, cho phép trùng) — yêu cầu màn xếp lịch #3.
         if (batDau && !PHAN_CONG_TIME_RE.test(batDau))
-          return res.status(400).json({ error: `Giờ bắt đầu không hợp lệ (${maNhanSu}).` });
+          return res.status(400).json({ error: `Giờ bắt đầu không hợp lệ (${resolveScheduleStaffName(maNhanSu)}).` });
         if (ketThuc && !PHAN_CONG_TIME_RE.test(ketThuc))
-          return res.status(400).json({ error: `Giờ kết thúc không hợp lệ (${maNhanSu}).` });
+          return res.status(400).json({ error: `Giờ kết thúc không hợp lệ (${resolveScheduleStaffName(maNhanSu)}).` });
         rows.push({
           id_lenh_sx: lenh ? lenh.id : null,
           ma_lenh_sx: lenh ? lenh.ma_lenh_sx || null : null,
@@ -10618,7 +10629,7 @@ export function createApp() {
         const staffCode = String(row.ma_nhan_su || '').trim();
         if (staffSeen.has(staffCode)) {
           return res.status(409).json({
-            error: `Nhân sự ${staffCode} bị chọn trùng trong cùng lịch.`
+            error: `Nhân sự ${resolveScheduleStaffName(staffCode)} bị chọn trùng trong cùng lịch.`
           });
         }
         staffSeen.add(staffCode);
@@ -10635,7 +10646,7 @@ export function createApp() {
         const conflict = (conflictingRows || []).find(row => staffSeen.has(String(row.ma_nhan_su || '').trim()));
         if (conflict) {
           return res.status(409).json({
-            error: `Nhân sự ${String(conflict.ma_nhan_su || '').trim()} đã được xếp ở máy ${String(conflict.ma_may || '').trim()} trong cùng ca.`
+            error: `Nhân sự ${resolveScheduleStaffName(conflict.ma_nhan_su)} đã được xếp ở máy ${String(conflict.ma_may || '').trim()} trong cùng ca.`
           });
         }
       }
@@ -14364,6 +14375,11 @@ export function createApp() {
       // Luôn trả non-empty khi có mã (kể cả khi chưa có chức vụ / tên rút gọn rỗng).
       const resolveStaffDisplayName = (maNhanSu: unknown): { code: string; full: string; short: string } => {
         const code = String(maNhanSu ?? '').trim();
+        if (isExternalStaffCode(code)) {
+          const full = resolveScheduleStaffName(code);
+          const short = (full ? formatShortStaffName(full) : '') || full;
+          return { code, full, short };
+        }
         const full = (code ? nhanSuMap.get(code) : '') || code;
         const short = (full ? formatShortStaffName(full) : '') || code;
         return { code, full, short };
@@ -18415,6 +18431,8 @@ async function loadKiemKhoLiveTongHopForDot(
     newSlipCode: generateWarehouseSlipCode,
     normalizeKho: normalizeKhoLabel
   });
+
+  registerViberNotifyRoutes(app, { supabase, table: SUPABASE_VIBER_MESSAGES_TABLE });
 
   app.get('/api/ton-kho/chi-tiet', async (req, res) => {
     if (!supabase) {

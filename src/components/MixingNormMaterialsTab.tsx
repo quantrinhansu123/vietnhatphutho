@@ -21,6 +21,7 @@ import {
   type MixingNormRatioPrintDoc
 } from './MixingNormRatioPrintSheet';
 import { getProductionShiftOptions, normalizeShiftSettings } from '../utils/shiftSettings';
+import { parseLocalizedNumber } from '../utils';
 import { convertProductQuantity, type ProductConversionFactors } from '../utils/productUnitConversion';
 import {
   type WorkshopType,
@@ -515,7 +516,7 @@ function normalizeCatalogProducts(data: unknown): ProductOption[] {
 
 function parseNumberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || String(value).trim() === '') return null;
-  const n = Number(String(value).replace(',', '.'));
+  const n = parseLocalizedNumber(value);
   return Number.isFinite(n) ? n : null;
 }
 
@@ -535,7 +536,12 @@ export function calcNvlKhoiLuong(
 
 function formatKhoiLuongDisplay(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return '—';
-  return `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(value)} kg`;
+  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(value)} kg`;
+}
+
+function formatGiaTriDisplay(value: number | null | undefined, unit: string): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(value)} ${unit || 'kg'}`;
 }
 
 function normalizeProductLookupKey(value: string) {
@@ -946,7 +952,7 @@ function normalizeMachineOptions(data: unknown): Array<{ code: string; name: str
 }
 
 function formatUnitTotal(value: number): string {
-  return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(value);
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(value);
 }
 
 function normalizeRows(data: unknown): MixingNormRow[] {
@@ -1162,7 +1168,7 @@ function summarizeProductsNvl(products: MixingNormProduct[]) {
         : materials.map(line => {
             const name = mixingMaterialDisplayName(line);
             return `${name}: ${line.khoi_luong == null
-              ? `${line.gia_tri ?? '—'} ${line.don_vi || 'kg'}`
+              ? formatGiaTriDisplay(line.gia_tri, line.don_vi)
               : formatKhoiLuongDisplay(line.khoi_luong)}`;
           }).join(' · ');
       return `${label}: ${details}`;
@@ -1839,7 +1845,7 @@ export default function MixingNormMaterialsTab() {
 
   /** Mét cắt chuẩn hóa để gộp dòng (null khi không có). */
   const normalizeGroupLength = (value: unknown): number | null => {
-    const num = Number(String(value ?? '').replace(',', '.'));
+    const num = parseLocalizedNumber(value ?? '');
     return Number.isFinite(num) && num > 0 ? num : null;
   };
 
@@ -2646,7 +2652,7 @@ export default function MixingNormMaterialsTab() {
         .filter(line => line.maNvl.trim() || line.tenNvl.trim())
         .map((line, index) => {
           const gia_tri =
-            line.giaTri.trim() === '' ? null : Number(line.giaTri.replace(',', '.'));
+            line.giaTri.trim() === '' ? null : parseLocalizedNumber(line.giaTri);
           if (gia_tri !== null && !Number.isFinite(gia_tri)) {
             throw new Error(`Giá trị NVL #${index + 1} của SP ${productLabel} không hợp lệ.`);
           }
@@ -2682,7 +2688,7 @@ export default function MixingNormMaterialsTab() {
         const tong =
           product.tongTrongLuong.trim() === ''
             ? null
-            : Number(product.tongTrongLuong.replace(',', '.'));
+            : parseLocalizedNumber(product.tongTrongLuong);
         if (tong !== null && !Number.isFinite(tong)) {
           throw new Error(`Tổng trọng lượng SP #${pIndex + 1} phải là số.`);
         }
@@ -2740,7 +2746,7 @@ export default function MixingNormMaterialsTab() {
           .filter(line => line.maNvl.trim() || line.tenNvl.trim())
           .map((line, index) => {
             const gia_tri =
-              line.giaTri.trim() === '' ? null : Number(line.giaTri.replace(',', '.'));
+              line.giaTri.trim() === '' ? null : parseLocalizedNumber(line.giaTri);
             if (gia_tri !== null && !Number.isFinite(gia_tri)) {
               throw new Error(`Giá trị NVL phụ #${index + 1} của SP ${codes.join(', ')} không hợp lệ.`);
             }
@@ -3002,7 +3008,7 @@ export default function MixingNormMaterialsTab() {
                           {product.tong_trong_luong !== null &&
                           product.tong_trong_luong !== undefined ? (
                             <span className="ml-1 font-black text-[#ef1b2d]">
-                              ({product.tong_trong_luong} kg)
+                              ({formatKhoiLuongDisplay(product.tong_trong_luong)})
                             </span>
                           ) : null}
                         </div>
@@ -3034,7 +3040,7 @@ export default function MixingNormMaterialsTab() {
                                   ? formatKhoiLuongDisplay(line.khoi_luong)
                                   : line.gia_tri === null || line.gia_tri === undefined
                                     ? '—'
-                                    : `${line.gia_tri} ${line.don_vi || 'kg'}`}
+                                    : formatGiaTriDisplay(line.gia_tri, line.don_vi)}
                               </span>
                             </div>
                           );
@@ -3377,11 +3383,11 @@ export default function MixingNormMaterialsTab() {
                               <p className="pt-0.5 font-bold text-zinc-800">
                                 Tổng sản phẩm:{' '}
                                 <strong className="text-[#ef1b2d]">
-                                  {new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(unitTotals.cuon)} Cuộn
+                                  {new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(unitTotals.cuon)} Cuộn
                                 </strong>
                                 {', '}
                                 <strong className="text-[#ef1b2d]">
-                                  {new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(unitTotals.tam)} Tấm
+                                  {new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(unitTotals.tam)} Tấm
                                 </strong>
                               </p>
                             </div>
@@ -3698,7 +3704,7 @@ export default function MixingNormMaterialsTab() {
                                   const lineWorkshop = isTapeOrStamp && line.nhomVthh ? resolveWorkshopType(line.nhomVthh) : workshopType;
                                   const calcWeight = calcAuxiliaryWeight(lineWorkshop, nhomVatTuPhu, donVi, lineVal);
                                   const filteredOptions = filterSecondaryMaterialOptions(secondaryMaterialOptions, allowedGroups, line);
-                                  const calcWeightDisplay = calcWeight !== null ? `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 4 }).format(calcWeight)} kg` : '—';
+                                  const calcWeightDisplay = calcWeight !== null ? `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(calcWeight)} kg` : '—';
                                   return (
                                     <div
                                       key={line.key}

@@ -5,6 +5,7 @@ import { MachineCardRow, type MachineGroup, type SchedPerson } from './MachineCa
 import { DispatchFormInline, MAY_VIEC_KHAC, type SelectedDispatchItem } from './DispatchFormInline';
 import { EditDispatchModal, type DispatchRecord } from './EditDispatchModal';
 import { DateInputVi } from '../../components/shared/DateInputVi';
+import { resolveScheduleStaffName } from '../../utils/externalStaff';
 
 type SchedRow = {
   id: string;
@@ -259,7 +260,10 @@ export function DieuDongNhanSuPanel({ canEdit = true, canDelete = true }: DieuDo
     return map;
   }, [machines]);
 
-  const resolveName = useCallback((code: string) => staffMap.get(code) || code || '-', [staffMap]);
+  const resolveName = useCallback(
+    (code: string) => resolveScheduleStaffName(code, staffMap) || '-',
+    [staffMap]
+  );
 
   const machineGroups: MachineGroup[] = useMemo(() => {
     const map = new Map<string, MachineGroup>();

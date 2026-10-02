@@ -4,6 +4,7 @@ import {
   type ProductConversionHint,
   type SoTronProductLineInput
 } from './thanhPham';
+import { parseLocalizedNumber } from '../../utils';
 
 export type SoTronOptionForTp = {
   id: string;
@@ -99,7 +100,7 @@ export function tpLineMetricsFromQuantity(
   m2PerUnit: number,
   mDaiPerUnit: number
 ) {
-  const quantity = Number(String(quantityText || '').replace(',', '.'));
+  const quantity = parseLocalizedNumber(quantityText || '');
   const qty = Number.isFinite(quantity) && quantity > 0 ? quantity : 0;
   const metrics = recalcThanhPhamLineMetrics({
     quantity: qty,

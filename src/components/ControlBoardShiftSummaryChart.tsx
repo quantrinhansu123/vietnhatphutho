@@ -44,7 +44,7 @@ const CURSOR_WASH = 'rgba(11,11,11,0.04)';
 const legendStyle: React.CSSProperties = { fontSize: '11px', paddingTop: '8px' };
 
 function formatAxisNumber(value: number) {
-  return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(value);
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
 }
 
 function formatShortDate(ngay: string) {

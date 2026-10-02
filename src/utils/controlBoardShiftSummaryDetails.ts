@@ -26,7 +26,7 @@ import {
   type ControlBoardShiftSummaryRow,
   type ShiftSummaryWarehouseMovement
 } from './controlBoardShiftSummary';
-import { formatNumber } from '../utils';
+import { formatNumber, parseLocalizedNumber } from '../utils';
 import { sumMachineNvlDauCaLineTotal, type MachineNvlSavedReport } from './machineNvlReports';
 import { normalizeProductCodeKey } from '../features/san-pham/types';
 
@@ -245,28 +245,23 @@ function parseFlexibleNumber(value: string | number | null | undefined) {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   const trimmed = String(value).trim();
   if (!trimmed || trimmed === '-') return null;
-  const normalized = trimmed.replace(/\./g, '').replace(',', '.');
-  const num = Number(normalized);
+  const num = parseLocalizedNumber(trimmed);
   return Number.isFinite(num) ? num : null;
 }
 
-// Dùng cho "Tổng kg" dạng định mức nhỏ (vd 0.238 kg/m2) và cũng hỗ trợ kiểu VN (1.250,5)
+// Dùng cho "Tổng kg" dạng định mức nhỏ (vd 0.238 kg/m2), chuẩn mới `1,250.5`, vẫn đọc kiểu cũ (1.250,5)
 function parseKgFactor(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   const trimmed = String(value).trim();
   if (!trimmed || trimmed === '-') return null;
-
-  const normalized = trimmed.includes(',')
-    ? trimmed.replace(/\./g, '').replace(',', '.')
-    : trimmed.replace(',', '.');
-  const num = Number(normalized);
+  const num = parseLocalizedNumber(trimmed);
   return Number.isFinite(num) ? num : null;
 }
 
 function parseOrderQuantity(value: string) {
-  const normalized = value.replace(/[^\d.,-]/g, '').replace(',', '.');
-  const parsed = Number(normalized);
+  const cleaned = value.replace(/[^\d.,-]/g, '');
+  const parsed = parseLocalizedNumber(cleaned);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
@@ -331,7 +326,7 @@ function formatDetailNumber(value: number | null | undefined, fractionDigits = 2
 // Không làm tròn: luôn hiện tối thiểu 4 số thập phân, giữ thêm nếu hệ số gốc có nhiều số hơn.
 function formatDetailNumberExact(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '-';
-  return new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 4, maximumFractionDigits: 20 }).format(value);
+  return new Intl.NumberFormat('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 20 }).format(value);
 }
 
 export function getShiftSummaryDetail(input: {

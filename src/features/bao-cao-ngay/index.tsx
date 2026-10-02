@@ -6,6 +6,7 @@ import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { normalizeProducts } from '../san-pham';
 import type { ProductRow } from '../san-pham/types';
 import { normalizeMaterialsInventory, type MaterialRow } from '../kho-nvl';
+import { isExternalStaffCode, resolveScheduleStaffName } from '../../utils/externalStaff';
 
 // =========================================================================
 // BÁO CÁO NGÀY — tổng hợp từ sổ trộn, 1 ngày = 1 báo cáo, soft delete.
@@ -131,7 +132,7 @@ function fmtInput(value: number) {
 
 function fmtVN(value: number) {
   if (!Number.isFinite(value)) return '0';
-  return round2(value).toLocaleString('vi-VN');
+  return round2(value).toLocaleString('en-US');
 }
 
 function normalizeCaKey(ca: string) {
@@ -646,7 +647,7 @@ function loadStaffDirectory(): Promise<Map<string, string>> {
 async function resolveStaffNames(dir: Map<string, string>, codes: string[]): Promise<Map<string, string>> {
   const merged = new Map(dir);
   const missing = [...new Set(codes.map(c => str(c)).filter(Boolean))].filter(
-    code => !merged.has(code) && !merged.has(code.toLowerCase())
+    code => !isExternalStaffCode(code) && !merged.has(code) && !merged.has(code.toLowerCase())
   );
   if (missing.length === 0) return merged;
   try {
@@ -671,6 +672,7 @@ function staffNameOf(item: PhanCongRecord, dir: Map<string, string>) {
   if (direct) return direct;
   const ma = pickStaffText(item, ['ma_nhan_su', 'ma_nv', 'code']);
   if (!ma) return '';
+  if (isExternalStaffCode(ma)) return resolveScheduleStaffName(ma);
   return dir.get(ma) ?? dir.get(ma.toLowerCase()) ?? ma;
 }
 

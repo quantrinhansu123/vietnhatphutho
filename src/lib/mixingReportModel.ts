@@ -1,4 +1,4 @@
-import { formatNumber } from '../utils';
+import { formatNumber, parseLocalizedNumber } from '../utils';
 import type { MixingPhoiTron, MixingReport, MixingReportLine, MixingRoundItem, MixingRoundPhoto } from '../components/MixingReportForm';
 
 export const MIXING_MAX_ROUNDS = 20;
@@ -17,8 +17,7 @@ export function roundNormWeight(value: number) {
 
 function parseOptionalNumber(value: string) {
   if (!value || !String(value).trim()) return null;
-  const normalized = String(value).replace(/\./g, '').replace(',', '.');
-  const num = Number(normalized);
+  const num = parseLocalizedNumber(value);
   return Number.isFinite(num) ? Math.round(num * 100) / 100 : null;
 }
 
@@ -873,28 +872,13 @@ export function sanitizeDecimalTyping(value: string): string {
   return result;
 }
 
-/** Nhập khối lượng (kg): 12.5, 12,5, 1.250,5 */
+/** Nhập khối lượng (kg): 12.5, 1,250.5 (vẫn đọc 12,5 và 1.250,5 cũ) */
 export function parseDecimalWeightInput(value: string): number | null {
   if (!value || !String(value).trim()) return null;
   const trimmed = String(value).trim().replace(/\s/g, '');
   if (!trimmed || trimmed === '.' || trimmed === ',') return null;
 
-  let normalized: string;
-  if (trimmed.includes(',')) {
-    normalized = trimmed.replace(/\./g, '').replace(',', '.');
-  } else if (trimmed.includes('.')) {
-    const parts = trimmed.split('.');
-    const lastPart = parts[parts.length - 1] ?? '';
-    if (parts.length === 2 && lastPart.length <= 2) {
-      normalized = trimmed;
-    } else {
-      normalized = trimmed.replace(/\./g, '');
-    }
-  } else {
-    normalized = trimmed;
-  }
-
-  const num = Number(normalized);
+  const num = parseLocalizedNumber(trimmed);
   return Number.isFinite(num) ? roundNormWeight(num) : null;
 }
 

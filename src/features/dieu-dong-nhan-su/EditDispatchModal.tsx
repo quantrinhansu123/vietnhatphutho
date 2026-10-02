@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { TimePicker24h } from '../../components/shared/TimePicker24h';
+import { resolveScheduleStaffName } from '../../utils/externalStaff';
 import { MAY_VIEC_KHAC } from './DispatchFormInline';
 
 export type DispatchRecord = {
@@ -68,7 +69,7 @@ export function EditDispatchModal({
 
   if (!isOpen || !record) return null;
 
-  const personName = staffMap.get(record.ma_nhan_su) || record.ma_nhan_su || '-';
+  const personName = resolveScheduleStaffName(record.ma_nhan_su, staffMap) || '-';
   const needNote = shiftsDiffer(record.ca || '', caDieuDong);
 
   const handleSubmit = async () => {

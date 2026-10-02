@@ -2,6 +2,7 @@ import React from 'react';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import type { WeighingRecord } from '../utils/weighingRecords';
 import { getWeighingDataRows } from '../utils/weighingRecords';
+import { parseLocalizedNumber } from '../utils';
 export type WeighingSlipPrintLayout = {
   hideProductFields?: boolean;
   splitPlasticFilmWeights?: boolean;
@@ -34,11 +35,11 @@ function formatPrintTime(value: string) {
 }
 
 function trimTrailingDecimalZeros(formatted: string) {
-  const match = formatted.match(/^(.+),(\d+)$/);
+  const match = formatted.match(/^(.+)\.(\d+)$/);
   if (!match) return formatted;
   const [, intPart, decPart] = match;
   const trimmedDec = decPart.replace(/0+$/, '');
-  return trimmedDec ? `${intPart},${trimmedDec}` : intPart;
+  return trimmedDec ? `${intPart}.${trimmedDec}` : intPart;
 }
 
 function formatPrintWeight(value: string) {
@@ -47,7 +48,7 @@ function formatPrintWeight(value: string) {
     const trimmed = value.trim();
     return trimmed && trimmed !== '—' ? trimmed : '—';
   }
-  const formatted = new Intl.NumberFormat('vi-VN', {
+  const formatted = new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 3
   }).format(num);
@@ -57,14 +58,13 @@ function formatPrintWeight(value: string) {
 function parsePrintWeight(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed || trimmed === '—') return null;
-  const normalized = trimmed.replace(/\./g, '').replace(',', '.');
-  const num = Number(normalized);
+  const num = parseLocalizedNumber(trimmed);
   return Number.isFinite(num) ? num : null;
 }
 
 function formatPrintWeightNumber(value: number | null) {
   if (value === null || !Number.isFinite(value)) return '—';
-  const formatted = new Intl.NumberFormat('vi-VN', {
+  const formatted = new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 3
   }).format(value);

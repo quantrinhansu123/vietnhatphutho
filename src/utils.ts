@@ -78,36 +78,67 @@ export function computeReportMetrics(report: Omit<ProductionReport, 'id' | 'crea
   };
 }
 
+/** Chuẩn hiển thị số: phần nghìn `,`, thập phân `.` (VD: 1,234.5). */
 export function formatNumber(val: number, fractionDigits: number = 1): string {
-  return new Intl.NumberFormat('vi-VN', {
+  return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 0,
     maximumFractionDigits: fractionDigits
   }).format(val);
 }
 
-/** Tiền VND: luôn dùng dấu chấm phân cách hàng nghìn (VD: 1.250.000) */
+/** Tiền VND: phần nghìn `,` (VD: 1,250,000). Lẻ dùng `.` (VD: 1,250.5). */
 export function formatMoney(val: number, fractionDigits: number = 0): string {
   if (!Number.isFinite(val)) return '0';
   const rounded = Math.round(val * 10 ** fractionDigits) / 10 ** fractionDigits;
   const [intPart, decPart = ''] = Math.abs(rounded).toFixed(fractionDigits).split('.');
-  const withDots = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   const sign = rounded < 0 ? '-' : '';
   if (fractionDigits > 0) {
     const trimmedDec = decPart.replace(/0+$/, '');
-    return trimmedDec ? `${sign}${withDots},${trimmedDec}` : `${sign}${withDots}`;
+    return trimmedDec ? `${sign}${withCommas}.${trimmedDec}` : `${sign}${withCommas}`;
   }
-  return `${sign}${withDots}`;
+  return `${sign}${withCommas}`;
 }
 
-/** Đọc số tiền nhập tay: 25.000 -> 25000, 1.250,5 -> 1250.5 */
-export function parseMoneyInput(value: string): number {
-  const trimmed = value.trim().replace(/\s/g, '');
-  if (!trimmed) return NaN;
-  const normalized = trimmed.replace(/\./g, '').replace(',', '.');
+/**
+ * Đọc số nhập tay theo chuẩn mới, vẫn chịu được số cũ.
+ * Mới: 25,000 -> 25000, 1,250.5 -> 1250.5.
+ * Cũ: 1.250.000 -> 1250000, 1.250,5 -> 1250.5 (cùng quy ước sổ trộn).
+ */
+export function parseLocalizedNumber(value: unknown): number {
+  const text = String(value ?? '').trim().replace(/\s/g, '');
+  if (!text) return NaN;
+  const lastDot = text.lastIndexOf('.');
+  const lastComma = text.lastIndexOf(',');
+  let normalized = text;
+  if (lastDot >= 0 && lastComma >= 0) {
+    if (lastComma > lastDot) {
+      // Kiểu cũ: 1.250.000,5 — dấu phẩy cuối là thập phân.
+      const parts = text.replace(/\./g, '').split(',');
+      const dec = parts.pop() as string;
+      normalized = `${parts.join('')}.${dec}`;
+    } else {
+      // Kiểu mới: 1,250,000.5 — dấu chấm cuối là thập phân.
+      const parts = text.replace(/,/g, '').split('.');
+      const dec = parts.pop() as string;
+      normalized = parts.length ? `${parts.join('')}.${dec}` : `0.${dec}`;
+    }
+  } else if (lastComma >= 0) {
+    // Chỉ có dấu phẩy: nhóm 3 số là hàng nghìn, còn lại là thập phân.
+    normalized = /^-?\d{1,3}(,\d{3})+$/.test(text) ? text.replace(/,/g, '') : text.replace(/,/g, '.');
+  } else if ((text.match(/\./g) || []).length > 1) {
+    // Nhiều dấu chấm: kiểu cũ 1.250.000 — bỏ hết (cùng quy ước sổ trộn).
+    normalized = text.replace(/\./g, '');
+  }
   return Number(normalized);
 }
 
-/** Format ô nhập giá: chỉ giữ số, hiển thị dấu chấm phân cách (24000 -> 24.000) */
+/** Đọc số tiền nhập tay: 25,000 -> 25000, 1,250.5 -> 1250.5 (vẫn đọc được 1.250.000 và 1.250,5 cũ). */
+export function parseMoneyInput(value: string): number {
+  return parseLocalizedNumber(value);
+}
+
+/** Format ô nhập giá: chỉ giữ số, hiển thị dấu phẩy phân cách (24000 -> 24,000) */
 export function sanitizeMoneyInput(value: string): string {
   const digits = value.replace(/[^\d]/g, '');
   if (!digits) return '';
@@ -119,11 +150,6 @@ export function formatPercent(val: number): string {
 }
 
 export function parsePercentInput(value: string): number {
-  const cleaned = value.trim().replace(/\s/g, '');
-  // Định dạng vi-VN "3.000,00": dấu chấm là phân tách hàng nghìn, dấu phẩy là thập phân.
-  const normalized =
-    cleaned.includes('.') && cleaned.includes(',')
-      ? cleaned.replace(/\./g, '').replace(',', '.')
-      : cleaned.replace(',', '.');
-  return Number(normalized);
+  // Chuẩn mới "3,000.00", vẫn đọc được kiểu cũ "3.000,00".
+  return parseLocalizedNumber(value);
 }

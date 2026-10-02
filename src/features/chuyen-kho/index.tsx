@@ -7,6 +7,7 @@ import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { formatDateVN, VnCalendarPicker } from '../so-che-do-may';
 import { readApiErrorMessage, showAppToast } from '../../lib/appToast';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from '../../components/layout/constants';
+import { formatNumber, parseLocalizedNumber } from '../../utils';
 
 export interface ChuyenKhoLine {
   ma_sp: string;
@@ -71,13 +72,13 @@ function todayISO(): string {
 }
 
 function toNum(value: unknown): number {
-  const n = Number(String(value ?? '').replace(',', '.'));
+  const n = parseLocalizedNumber(value);
   return Number.isFinite(n) ? n : 0;
 }
 
 function fmtQty(value: number | null | undefined): string {
   if (!Number.isFinite(Number(value))) return '—';
-  return String(Math.round(Number(value) * 1000) / 1000);
+  return formatNumber(Math.round(Number(value) * 1000) / 1000, 3);
 }
 
 function isVatTuKhoName(name: string): boolean {
@@ -591,9 +592,9 @@ export function ChuyenKhoPanel({ onBack }: { onBack: () => void }) {
           }) ||
           null;
         if (!row) return { row, qty: 0, kg: 0, m2: 0, mDai: 0, error: '' };
-        const qty = Number(String(line.qtyText || '').replace(',', '.'));
+        const qty = parseLocalizedNumber(line.qtyText || '');
         if (!(qty > 0)) return { row, qty: 0, kg: 0, m2: 0, mDai: 0, error: 'Nhập số lượng chuyển.' };
-        if (qty > row.ton_sl + 1e-9) return { row, qty, kg: 0, m2: 0, mDai: 0, error: `Tồn nguồn chỉ còn ${row.ton_sl}.` };
+        if (qty > row.ton_sl + 1e-9) return { row, qty, kg: 0, m2: 0, mDai: 0, error: `Tồn nguồn chỉ còn ${formatNumber(row.ton_sl, 3)}.` };
         return {
           row,
           qty,

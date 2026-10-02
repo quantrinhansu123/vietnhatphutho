@@ -63,7 +63,7 @@ function normalizeTonKhoRows(data: unknown): TonKhoRow[] {
 }
 
 function formatQty(value: number) {
-  return value.toLocaleString('vi-VN', { maximumFractionDigits: 2 });
+  return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
 function getBaseInventoryCode(value: string) {

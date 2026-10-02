@@ -21,6 +21,7 @@ import {
   type ShiftSetting
 } from './shiftSettings';
 import { normalizeProductCodeKey } from '../features/san-pham/types';
+import { parseLocalizedNumber } from '../utils';
 
 export type ShiftSummaryWarehouseMovement = {
   id: string;
@@ -285,27 +286,23 @@ function parseFlexibleNumber(value: string | number | null | undefined) {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   const trimmed = String(value).trim();
   if (!trimmed || trimmed === '-') return null;
-  const normalized = trimmed.replace(/\./g, '').replace(',', '.');
-  const num = Number(normalized);
+  const num = parseLocalizedNumber(trimmed);
   return Number.isFinite(num) ? num : null;
 }
 
-// Dùng cho "Tổng kg" định mức nhỏ (vd 0.238 kg/m2) và cũng hỗ trợ kiểu VN (1.250,5)
+// Dùng cho "Tổng kg" dạng định mức nhỏ (vd 0.238 kg/m2), chuẩn mới `1,250.5`, vẫn đọc kiểu cũ (1.250,5)
 function parseKgFactor(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   const trimmed = String(value).trim();
   if (!trimmed || trimmed === '-') return null;
-  const normalized = trimmed.includes(',')
-    ? trimmed.replace(/\./g, '').replace(',', '.')
-    : trimmed.replace(',', '.');
-  const num = Number(normalized);
+  const num = parseLocalizedNumber(trimmed);
   return Number.isFinite(num) ? num : null;
 }
 
 function parseOrderQuantity(value: string) {
-  const normalized = value.replace(/[^\d.,-]/g, '').replace(',', '.');
-  const parsed = Number(normalized);
+  const cleaned = value.replace(/[^\d.,-]/g, '');
+  const parsed = parseLocalizedNumber(cleaned);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
@@ -1034,7 +1031,7 @@ export function buildControlBoardShiftSummary(input: {
 
 export function formatShiftSummaryNumber(value: number, fractionDigits = 2) {
   if (!Number.isFinite(value)) return '-';
-  return new Intl.NumberFormat('vi-VN', {
+  return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 0,
     maximumFractionDigits: fractionDigits
   }).format(value);

@@ -14,6 +14,7 @@ import { normalizeMaterialsInventory, type MaterialRow } from '../kho-nvl';
 import { normalizeWarehouseName } from '../kho-hang';
 import { normalizeProducts } from '../san-pham';
 import { parseProductionNameParts } from '../../utils/productProductionName';
+import { isExternalStaffCode, resolveScheduleStaffName } from '../../utils/externalStaff';
 import { computeSoTronSummary, normalizeMang, SO_TRON_CHI_TIEU_MAU } from './summary';
 import { PhieuGiaoCaModal } from './PhieuGiaoCaModal';
 import { assertSoTron, canDeleteSoTron, canSeeSoTronThanhPham, type SoTronSlipGate } from './soTronPhanQuyen';
@@ -577,7 +578,9 @@ function normalizePhanCong(data: unknown, staffMap: Map<string, string>): PhanCo
       const record = item as Record<string, unknown>;
       const ma = pickRecordText(record, ['ma_nhan_su', 'ma_nv', 'code']);
       const tenTrucTiep = pickRecordText(record, ['ten_nhan_su', 'ho_ten', 'ten', 'name']);
-      const ten = tenTrucTiep || (ma ? staffMap.get(ma) || '' : '') || ma;
+      const ten = isExternalStaffCode(ma)
+        ? resolveScheduleStaffName(ma)
+        : tenTrucTiep || (ma ? staffMap.get(ma) || '' : '') || ma;
       const vaiTro = pickRecordText(record, ['vai_tro', 'role', 'chuc_vu']);
       if (!ma && !ten) return null;
       return { ma_nhan_su: ma || ten, ten, vai_tro: vaiTro };
@@ -1493,6 +1496,7 @@ export function SoTronPanel({
   const lookupStaffName = (map: Map<string, string>, ma: string, fallback: string) => {
     const code = str(ma);
     if (!code) return str(fallback);
+    if (isExternalStaffCode(code)) return resolveScheduleStaffName(code) || str(fallback);
     return map.get(code) || map.get(code.toLowerCase()) || str(fallback) || code;
   };
   const staffDisplayName = (p: PhanCongItem) => lookupStaffName(staffMap, p.ma_nhan_su, p.ten);
@@ -1558,7 +1562,7 @@ export function SoTronPanel({
           const nameMap = new Map(staffMap);
           const codes = [...new Set(list.map(p => p.ma_nhan_su).filter(Boolean))];
           const missing = codes.filter(
-            code => !nameMap.has(code) && !nameMap.has(code.toLowerCase())
+            code => !isExternalStaffCode(code) && !nameMap.has(code) && !nameMap.has(code.toLowerCase())
           );
           if (missing.length > 0) {
             try {

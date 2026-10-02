@@ -22,6 +22,7 @@ import { normalizeWarehouseName } from '../kho-hang';
 import { formatTongHopDate, isNhapCoreWarehouse, isNvlWarehouseName, LOAI_NHAP_OPTIONS, LOAI_XUAT_OPTIONS, pickNhapCoreWarehouses, takePendingTongHopEdit, xuatDenKind, type TongHopHeader, type TongHopMode } from './model';
 import { emptyXuatNvlFields, ChiPhiKemTheoPanel, XuatNvlDetail, type XuatNvlLine } from './xuatNvlDetail';
 import { kemDraftError, kemDraftFromStored, kemStoredFromDraft, roundKem, sumKemDraft } from './chiPhiKemTheo';
+import { formatMoney, formatNumber, parseLocalizedNumber } from '../../utils';
 
 type Mode = TongHopMode;
 type Option = { id: string; label: string; kind: 'kho' | 'may' | 'ncc'; vatTu?: boolean; maKho?: string };
@@ -459,7 +460,7 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
       }
       for (let i = 0; i < filled.length; i += 1) {
         const line = filled[i];
-        const qty = Number(String(line.soLuong).replace(',', '.'));
+        const qty = parseLocalizedNumber(line.soLuong);
         if (!Number.isFinite(qty) || qty <= 0) {
           setError(`Dòng ${line.maHang}: nhập SL thực lớn hơn 0.`);
           return;
@@ -469,10 +470,10 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
     }
     if (mode === 'xuat' || mode === 'nhap') {
       for (const line of lines) {
-        const qty = Number(String(line.soLuong).replace(',', '.'));
+        const qty = parseLocalizedNumber(line.soLuong);
         if (mode === 'nhap' && (nguonLoai === 'ncc' || !nguonId)) continue;
         if (line.ton !== null && qty > line.ton + 1e-9) {
-          setError(`${line.maHang || 'Dòng'}: số lượng ${qty} vượt tồn ${line.ton}.`);
+          setError(`${line.maHang || 'Dòng'}: số lượng ${formatNumber(qty, 3)} vượt tồn ${line.ton === null ? '—' : formatNumber(line.ton, 3)}.`);
           return;
         }
       }
@@ -602,7 +603,7 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
   }
 
   function lineWeight(line: Line) {
-    const qty = Number(String(line.soLuong).replace(',', '.'));
+    const qty = parseLocalizedNumber(line.soLuong);
     if (isWarehouseKgUnit(line.donVi) && Number.isFinite(qty) && qty > 0) {
       return Math.round(qty * 1000) / 1000;
     }
@@ -620,8 +621,8 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
   }
 
   function lineAmount(line: Line) {
-    const qty = Number(String(line.soLuong).replace(',', '.'));
-    const price = Number(String(line.donGia).replace(',', '.'));
+    const qty = parseLocalizedNumber(line.soLuong);
+    const price = parseLocalizedNumber(line.donGia);
     if (!Number.isFinite(qty) || !Number.isFinite(price)) return null;
     return Math.round(qty * price * 1000) / 1000;
   }
@@ -631,8 +632,8 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
       code: line.maHang,
       name: line.tenHang,
       unit: line.donVi,
-      quantity: Number(String(line.soLuong).replace(',', '.')) || 0,
-      unitPrice: Number(String(line.donGia).replace(',', '.')) || 0,
+      quantity: parseLocalizedNumber(line.soLuong) || 0,
+      unitPrice: parseLocalizedNumber(line.donGia) || 0,
       lineAmount: lineAmount(line) || 0,
       weightKg: lineWeight(line),
       chiPhiKemTheo: kemStoredFromDraft(line.chiPhiKemTheo).map(item => ({
@@ -657,7 +658,7 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
 
   function previewDraft() {
     setError('');
-    const usable = lines.filter(line => line.maHang.trim() && Number(String(line.soLuong).replace(',', '.')) > 0);
+    const usable = lines.filter(line => line.maHang.trim() && parseLocalizedNumber(line.soLuong) > 0);
     if (!usable.length) {
       setError('Nhập ít nhất một dòng có mã và số lượng để xem trước.');
       return;
@@ -1416,11 +1417,19 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
                         />
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2 align-middle tabular-nums">{line.ton === null ? '—' : line.ton}</td>
-                    <td className="px-2 py-2 align-middle"><input value={line.soLuong} onChange={event => patchLine(index, { soLuong: event.target.value })} className={`${fieldClass} w-24`} /></td>
+                    <td className="whitespace-nowrap px-2 py-2 align-middle tabular-nums">{line.ton === null ? '—' : formatNumber(line.ton, 3)}</td>
+                    <td className="px-2 py-2 align-middle"><input value={line.soLuong} onChange={event => patchLine(index, { soLuong: event.target.value })} onBlur={event => {
+                      if (!event.target.value.trim()) return;
+                      const parsed = parseLocalizedNumber(event.target.value);
+                      if (Number.isFinite(parsed)) patchLine(index, { soLuong: formatNumber(parsed, 3) });
+                    }} className={`${fieldClass} w-24`} /></td>
                     <td className="whitespace-nowrap px-2 py-2 align-middle font-mono font-bold text-emerald-800">{formatWarehouseWeightKg(lineWeight(line))}</td>
-                    <td className="px-2 py-2 align-middle"><input value={line.donGia} onChange={event => patchLine(index, { donGia: event.target.value })} className={`${fieldClass} w-28`} /></td>
-                    <td className="whitespace-nowrap px-2 py-2 align-middle text-right font-mono font-bold tabular-nums">{lineAmount(line) === null ? '—' : lineAmount(line)}</td>
+                    <td className="px-2 py-2 align-middle"><input value={line.donGia} onChange={event => patchLine(index, { donGia: event.target.value })} onBlur={event => {
+                      if (!event.target.value.trim()) return;
+                      const parsed = parseLocalizedNumber(event.target.value);
+                      if (Number.isFinite(parsed)) patchLine(index, { donGia: formatMoney(parsed, 0) });
+                    }} className={`${fieldClass} w-28`} /></td>
+                    <td className="whitespace-nowrap px-2 py-2 align-middle text-right font-mono font-bold tabular-nums">{lineAmount(line) === null ? '—' : formatMoney(lineAmount(line) as number, 0)}</td>
                     <td className="px-2 py-2 align-middle">
                       <button type="button" onClick={() => setLines(current => current.filter((_, i) => i !== index))} className="text-rose-600"><Trash2 className="h-4 w-4" /></button>
                     </td>
@@ -1460,9 +1469,9 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
           const tongCong = roundKem(tongHang + tongKem);
           return (
             <div className="grid grid-cols-2 gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-bold text-zinc-800 sm:grid-cols-3">
-              <span>Tổng trọng lượng <strong className="font-mono">{tongKl}</strong></span>
-              <span>Tổng chi phí đi kèm <strong className="font-mono">{tongKem}</strong></span>
-              <span>Tổng thành tiền <strong className="font-mono">{tongCong}</strong></span>
+              <span>Tổng trọng lượng <strong className="font-mono">{formatNumber(tongKl, 3)}</strong></span>
+              <span>Tổng chi phí đi kèm <strong className="font-mono">{formatMoney(tongKem, 0)}</strong></span>
+              <span>Tổng thành tiền <strong className="font-mono">{formatMoney(tongCong, 0)}</strong></span>
             </div>
           );
         })()}

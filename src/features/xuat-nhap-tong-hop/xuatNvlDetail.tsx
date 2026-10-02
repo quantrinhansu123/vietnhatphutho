@@ -17,6 +17,7 @@ import {
 import { isTapeOrStampMaterial, normalizeNhomVatTuPhuKey, resolveAuxiliaryWeightPerUnit } from '../../utils/mixingNormAuxiliary';
 import { normalizeWarehouseMaterialClass } from '../../utils/warehouseNormMerge';
 import { isWarehouseKgUnit } from '../../utils/warehouseWeight';
+import { formatMoney, formatNumber, parseLocalizedNumber } from '../../utils';
 
 export type XuatNvlClass = 'nvl_chinh' | 'nvl_phu' | 'chua_phan_loai';
 
@@ -114,8 +115,8 @@ export function ChiPhiKemTheoPanel({
       >
         <ChevronDown className={`h-3.5 w-3.5 transition ${open ? 'rotate-180' : ''}`} />
         Chi phí ({items.length})
-        <span className="font-semibold text-zinc-500">Tổng chi phí đi kèm {kem}</span>
-        <span className="font-semibold text-zinc-900">Tổng thành tiền {tongDong}</span>
+        <span className="font-semibold text-zinc-500">Tổng chi phí đi kèm {formatMoney(kem, 0)}</span>
+        <span className="font-semibold text-zinc-900">Tổng thành tiền {formatMoney(tongDong, 0)}</span>
       </button>
       {open ? (
         <div className="mt-2 space-y-1">
@@ -135,6 +136,11 @@ export function ChiPhiKemTheoPanel({
                 inputMode="decimal"
                 placeholder="Đơn giá"
                 onChange={event => onChange(items.map(row => (row.id === item.id ? { ...row, donGia: event.target.value } : row)))}
+                onBlur={event => {
+                  if (!event.target.value.trim()) return;
+                  const parsed = parseLocalizedNumber(event.target.value);
+                  if (Number.isFinite(parsed)) onChange(items.map(row => (row.id === item.id ? { ...row, donGia: formatMoney(parsed, 0) } : row)));
+                }}
                 className={`${field} text-right`}
               />
               <input
@@ -142,6 +148,11 @@ export function ChiPhiKemTheoPanel({
                 inputMode="decimal"
                 placeholder="Thành tiền"
                 onChange={event => onChange(items.map(row => (row.id === item.id ? { ...row, thanhTien: event.target.value } : row)))}
+                onBlur={event => {
+                  if (!event.target.value.trim()) return;
+                  const parsed = parseLocalizedNumber(event.target.value);
+                  if (Number.isFinite(parsed)) onChange(items.map(row => (row.id === item.id ? { ...row, thanhTien: formatMoney(parsed, 0) } : row)));
+                }}
                 className={`${field} text-right`}
               />
               <button
@@ -236,7 +247,7 @@ export function XuatNvlDetail({
 
   function applyMaterial(index: number, item: MaterialOption) {
     const unit = String(item.unit || '').trim();
-    const per = Number(String(item.totalWeight || '').replace(',', '.'));
+    const per = parseLocalizedNumber(item.totalWeight || '');
     patchAt(index, {
       materialId: materialRowId(item),
       maHang: item.code,
@@ -294,12 +305,12 @@ export function XuatNvlDetail({
     const found = matches[0];
     const hit = lines.findIndex(line => line.maHang.trim().toLocaleLowerCase('vi') === found.code.trim().toLocaleLowerCase('vi'));
     if (hit >= 0) {
-      const current = Number(String(lines[hit].soLuong).replace(',', '.')) || 0;
+      const current = parseLocalizedNumber(lines[hit].soLuong) || 0;
       patchAt(hit, { soLuong: String(Math.round((current + 1) * 1000) / 1000), isScanned: true });
       return;
     }
     const unit = String(found.unit || '').trim();
-    const per = Number(String(found.totalWeight || '').replace(',', '.'));
+    const per = parseLocalizedNumber(found.totalWeight || '');
     onChange([
       ...lines.filter(line => line.maHang.trim()),
       blankLine({
@@ -409,9 +420,10 @@ export function XuatNvlDetail({
           const groupKey = normalizeNhomVatTuPhuKey(line.auxiliaryGroup || line.tenSanXuat || line.tenHang || line.maHang);
           const tape = isTapeOrStampMaterial(groupKey);
           const showGroup = index === 0 || normalizeWarehouseMaterialClass(line.warehouseClass) !== normalizeWarehouseMaterialClass(lines[index - 1]?.warehouseClass);
-          const qty = Number(String(line.soLuong).replace(',', '.'));
-          const price = Number(String(line.donGia).replace(',', '.'));
+          const qty = parseLocalizedNumber(line.soLuong);
+          const price = parseLocalizedNumber(line.donGia);
           const amount = Number.isFinite(qty) && Number.isFinite(price) ? Math.round(qty * price * 1000) / 1000 : 0;
+          const amountText = formatMoney(amount, 0);
           const kg = !Number.isFinite(qty) || qty <= 0
             ? 0
             : isWarehouseKgUnit(line.donVi)
@@ -529,7 +541,7 @@ export function XuatNvlDetail({
                 <input
                   value={line.tonDau === null ? '' : String(line.tonDau)}
                   onChange={event => {
-                    const parsed = Number(String(event.target.value).replace(',', '.'));
+                    const parsed = parseLocalizedNumber(event.target.value);
                     patchAt(index, {
                       tonDau: event.target.value.trim() && Number.isFinite(parsed) ? parsed : null,
                       tonDauDirty: true
@@ -541,11 +553,23 @@ export function XuatNvlDetail({
                   aria-label="Tồn đầu ca"
                   className={`${field} text-right tabular-nums ${line.tonDauDirty ? '' : 'border-sky-200 bg-sky-50/50'}`}
                 />
-                <input value={line.slCt} onChange={event => patchAt(index, { slCt: event.target.value })} className={field} />
-                <input value={line.soLuong} onChange={event => patchAt(index, { soLuong: event.target.value })} className={`${field} border-emerald-200 bg-emerald-50/50`} />
-                <div className={`${field} flex items-center bg-emerald-50/60 font-mono font-bold text-emerald-800`}>{kg || 0}</div>
-                <input value={line.donGia} onChange={event => patchAt(index, { donGia: event.target.value })} className={field} />
-                <div className="text-right font-mono text-[11px] font-bold tabular-nums">{amount || 0}</div>
+                <input value={line.slCt} onChange={event => patchAt(index, { slCt: event.target.value })} onBlur={event => {
+                  if (!event.target.value.trim()) return;
+                  const parsed = parseLocalizedNumber(event.target.value);
+                  if (Number.isFinite(parsed)) patchAt(index, { slCt: formatNumber(parsed, 3) });
+                }} className={field} />
+                <input value={line.soLuong} onChange={event => patchAt(index, { soLuong: event.target.value })} onBlur={event => {
+                  if (!event.target.value.trim()) return;
+                  const parsed = parseLocalizedNumber(event.target.value);
+                  if (Number.isFinite(parsed)) patchAt(index, { soLuong: formatNumber(parsed, 3) });
+                }} className={`${field} border-emerald-200 bg-emerald-50/50`} />
+                <div className={`${field} flex items-center bg-emerald-50/60 font-mono font-bold text-emerald-800`}>{formatNumber(kg || 0, 3)}</div>
+                <input value={line.donGia} onChange={event => patchAt(index, { donGia: event.target.value })} onBlur={event => {
+                  if (!event.target.value.trim()) return;
+                  const parsed = parseLocalizedNumber(event.target.value);
+                  if (Number.isFinite(parsed)) patchAt(index, { donGia: formatMoney(parsed, 0) });
+                }} className={field} />
+                <div className="text-right font-mono text-[11px] font-bold tabular-nums">{amountText}</div>
                 <button type="button" onClick={() => onChange(lines.filter((_, i) => i !== index).length ? lines.filter((_, i) => i !== index) : [blankLine()])} className="text-rose-600">
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>

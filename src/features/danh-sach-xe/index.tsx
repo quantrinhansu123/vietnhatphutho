@@ -262,11 +262,11 @@ function vehicleStatusColor(status: string): StatusBadgeColor {
 }
 
 function formatNumber(value: number, maximumFractionDigits = 2) {
-  return new Intl.NumberFormat('vi-VN', { maximumFractionDigits }).format(value || 0);
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits }).format(value || 0);
 }
 
 function formatMoney(value: number) {
-  return `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(value || 0)} đ`;
+  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value || 0)} đ`;
 }
 
 async function readJsonResponse(response: Response) {

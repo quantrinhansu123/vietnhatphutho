@@ -615,11 +615,11 @@ function formatDateTime(value: string) {
 }
 
 function formatMoney(value: number) {
-  return `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(value || 0)} đ`;
+  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value || 0)} đ`;
 }
 
 function formatNumber(value: number) {
-  return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(value || 0);
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value || 0);
 }
 
 async function readJson(response: Response) {
@@ -994,7 +994,7 @@ function MoneyInput({
     <input
       type="text"
       inputMode="numeric"
-      value={value ? new Intl.NumberFormat('vi-VN').format(value) : ''}
+      value={value ? new Intl.NumberFormat('en-US').format(value) : ''}
       onChange={event => {
         const digits = event.target.value.replace(/\D/g, '');
         onChange(digits ? Number(digits) : 0);
@@ -1611,7 +1611,7 @@ export function VehicleExpensesView({
                   <td className="px-3 py-2.5 font-semibold">{row.ten_chi_phi}</td>
                   <td className="px-3 py-2.5 font-mono font-black text-brand-700">{row.bien_so_xe}</td>
                   <td className="px-3 py-2.5">{row.nhan_vien_phu_trach || '—'}</td>
-                  <td className="px-3 py-2.5 text-right font-bold">{new Intl.NumberFormat('vi-VN').format(row.so_luong)}</td>
+                  <td className="px-3 py-2.5 text-right font-bold">{new Intl.NumberFormat('en-US').format(row.so_luong)}</td>
                   <td className="px-3 py-2.5 text-right font-bold">{formatMoney(row.so_tien)}</td>
                   <td className="px-3 py-2.5 text-right font-black text-rose-700">{formatMoney(row.so_luong * row.so_tien)}</td>
                   <td className="px-3 py-2.5 text-center">
@@ -1650,7 +1650,7 @@ export function VehicleExpensesView({
                 </RowActionsMenu>
               </div>
               <p className="mt-2 text-sm font-black text-rose-700">
-                {new Intl.NumberFormat('vi-VN').format(row.so_luong)} × {formatMoney(row.so_tien)}
+                {new Intl.NumberFormat('en-US').format(row.so_luong)} × {formatMoney(row.so_tien)}
                 {' = '}{formatMoney(row.so_luong * row.so_tien)}
               </p>
               <p className="mt-1 text-xs text-slate-500">{row.loai_chi_phi} · {row.nhan_vien_phu_trach || 'Chưa phân công'}</p>
@@ -2034,7 +2034,7 @@ export function VehicleLogsView({
                   <td className="px-3 py-2.5 font-bold">{row.ca || '—'}</td>
                   <td className="px-3 py-2.5 font-mono font-black text-brand-700">{row.bien_so_xe}</td>
                   <td className="px-3 py-2.5">{row.nhan_vien_phu_trach || '—'}</td>
-                  <td className="px-3 py-2.5 text-right font-bold">{new Intl.NumberFormat('vi-VN').format(row.tong_mat_hang)}</td>
+                  <td className="px-3 py-2.5 text-right font-bold">{new Intl.NumberFormat('en-US').format(row.tong_mat_hang)}</td>
                   <td className="px-3 py-2.5 text-right font-black text-emerald-700">{formatMoney(row.tong_doanh_thu)}</td>
                   <td className="px-3 py-2.5 text-right font-black text-rose-700">{formatMoney(row.tong_chi_phi)}</td>
                   <td className="px-3 py-2.5">
@@ -2052,7 +2052,7 @@ export function VehicleLogsView({
               <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-black">
                 <tr>
                   <td colSpan={5} className="px-3 py-3 text-right uppercase">Tổng</td>
-                  <td className="px-3 py-3 text-right">{new Intl.NumberFormat('vi-VN').format(totals.items)}</td>
+                  <td className="px-3 py-3 text-right">{new Intl.NumberFormat('en-US').format(totals.items)}</td>
                   <td className="px-3 py-3 text-right text-emerald-700">{formatMoney(totals.revenue)}</td>
                   <td className="px-3 py-3 text-right text-rose-700">{formatMoney(totals.expense)}</td>
                   <td />
