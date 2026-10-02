@@ -105,6 +105,20 @@ export function TongHopViewModal({
   const totalAmount = detail.reduce((sum, line) => sum + (parseLocalizedNumber(line.thanh_tien ?? '') || 0), 0);
   const totalKem = roundKem(detail.reduce((sum, line) => sum + sumKemStored(line.chi_phi_kem_theo), 0));
   const totalKg = roundKem(detail.reduce((sum, line) => sum + (parseLocalizedNumber(line.quy_doi_kg ?? '') || 0), 0));
+  /** Chi phí kèm phân bổ trên 1 kg = tổng chi phí kèm / tổng trọng lượng. */
+  const kemPerKg = totalKg > 0 ? totalKem / totalKg : 0;
+  /** Giá nhập kho của dòng = giá mua + chi phí kèm/1kg. */
+  const importPriceOf = (line: Record<string, unknown>) => {
+    const price = parseLocalizedNumber(line.don_gia ?? '');
+    return Number.isFinite(price) ? price + kemPerKg : null;
+  };
+  const importAmountOf = (line: Record<string, unknown>) => {
+    const qty = parseLocalizedNumber(line.so_luong ?? '');
+    const unit = importPriceOf(line);
+    if (!Number.isFinite(qty) || unit === null) return null;
+    return Math.round(qty * unit * 1000) / 1000;
+  };
+  const totalNhapKho = roundKem(detail.reduce((sum, line) => sum + (importAmountOf(line) || 0), 0));
 
   return createPortal(
     <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/40" onClick={onClose}>
@@ -253,6 +267,8 @@ export function TongHopViewModal({
                 <span className="flex items-center gap-1"><DollarSign className="h-3.5 w-3.5" /> Hàng: {formatMoney(totalAmount)}</span>
                 <span className="flex items-center gap-1"><DollarSign className="h-3.5 w-3.5" /> Kèm: {formatMoney(totalKem)}</span>
                 <span className="flex items-center gap-1 text-zinc-900"><DollarSign className="h-3.5 w-3.5" /> Cộng: {formatMoney(roundKem(totalAmount + totalKem))}</span>
+                <span className="flex items-center gap-1"><DollarSign className="h-3.5 w-3.5" /> Chi phí đi kèm/1 kg: {formatMoney(kemPerKg)}</span>
+                <span className="flex items-center gap-1 text-sky-800"><DollarSign className="h-3.5 w-3.5" /> Nhập kho: {formatMoney(totalNhapKho)}</span>
               </div>
             </div>
             <div className="rounded-lg border border-zinc-200 overflow-hidden">
@@ -271,13 +287,18 @@ export function TongHopViewModal({
                     <th className="px-3 py-2 text-right">SL CT</th>
                     <th className="px-3 py-2 text-right">SL Thực</th>
                     <th className="px-3 py-2 text-right">Quy đổi KG</th>
-                    <th className="px-3 py-2 text-right">Đơn giá</th>
+                    <th className="px-3 py-2 text-right">Giá mua</th>
                     <th className="px-3 py-2 text-right">Thành tiền</th>
+                    <th className="px-3 py-2 text-right">Giá nhập kho</th>
+                    <th className="px-3 py-2 text-right">Tổng giá nhập kho</th>
                     <th className="px-3 py-2 text-center">Ảnh cân</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {detail.filter(l => l.ma_hang).map((line, idx) => (
+                  {detail.filter(l => l.ma_hang).map((line, idx) => {
+                    const importPrice = importPriceOf(line);
+                    const importAmount = importAmountOf(line);
+                    return (
                     <tr key={idx} className="border-b border-zinc-100 hover:bg-zinc-50/50">
                       <td className="px-3 py-2 text-zinc-500">{idx + 1}</td>
                       <td className="px-3 py-2 font-mono font-semibold text-zinc-950">{String(line.ma_hang || '')}</td>
@@ -297,6 +318,8 @@ export function TongHopViewModal({
                       <td className="px-3 py-2 text-right tabular-nums font-mono">{formatNumber(String(line.quy_doi_kg || ''))}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-mono">{formatMoney(String(line.don_gia || ''))}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-mono text-zinc-900">{formatMoney(String(line.thanh_tien || ''))}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-mono text-sky-800" title={`Giá mua + Chi phí đi kèm/1kg (${formatMoney(kemPerKg)})`}>{importPrice === null ? '—' : formatMoney(importPrice)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-mono text-sky-800">{importAmount === null ? '—' : formatMoney(importAmount)}</td>
                       <td className="px-3 py-2 text-center">
                         {line.link_anh_can_thuc_te ? (
                           <button
@@ -312,7 +335,8 @@ export function TongHopViewModal({
                         )}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

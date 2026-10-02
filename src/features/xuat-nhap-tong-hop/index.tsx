@@ -662,6 +662,27 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     return Math.round(qty * price * 1000) / 1000;
   }
 
+  /** Nhập: chi phí kèm phân bổ trên 1 kg = tổng chi phí kèm / tổng trọng lượng. */
+  const filledCostLines = lines.filter(line => line.maHang.trim());
+  const tongKemAll = roundKem(filledCostLines.reduce((sum, line) => sum + sumKemDraft(line.chiPhiKemTheo), 0));
+  const tongKgAll = roundKem(filledCostLines.reduce((sum, line) => sum + (lineWeight(line) || 0), 0));
+  const kemPerKgAll = tongKgAll > 0 ? tongKemAll / tongKgAll : 0;
+
+  /** Nhập: giá nhập kho của dòng = giá mua + chi phí kèm/1kg. */
+  function lineImportPrice(line: Line) {
+    const price = parseLocalizedNumber(line.donGia);
+    if (!Number.isFinite(price)) return null;
+    return price + kemPerKgAll;
+  }
+
+  /** Nhập: thành tiền nhập kho của dòng = SL × giá nhập kho. */
+  function lineImportAmount(line: Line) {
+    const qty = parseLocalizedNumber(line.soLuong);
+    const unit = lineImportPrice(line);
+    if (!Number.isFinite(qty) || unit === null) return null;
+    return Math.round(qty * unit * 1000) / 1000;
+  }
+
   function toPrintLines(group: Line[]): WarehouseSlipPrintData['lines'] {
     return group.map(line => ({
       code: line.maHang,
@@ -1310,8 +1331,10 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                 <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">Tồn</th>
                 <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">SL</th>
                 <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">Quy đổi kg</th>
-                <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">Giá</th>
+                <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">Giá mua</th>
                 <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">Thành tiền</th>
+                <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">Giá nhập kho</th>
+                <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">Tổng giá nhập kho</th>
                 <th />
               </tr>
             </thead>
@@ -1478,6 +1501,8 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                       if (Number.isFinite(parsed)) patchLine(index, { donGia: formatMoney(parsed, 0) });
                     }} className={`${fieldClass} w-28`} /></td>
                     <td className="whitespace-nowrap px-2 py-2 align-middle text-right font-mono font-bold tabular-nums">{lineAmount(line) === null ? '—' : formatMoney(lineAmount(line) as number, 0)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 align-middle text-right font-mono font-bold tabular-nums text-sky-800" title={`Giá mua + Chi phí đi kèm/1kg (${formatMoney(kemPerKgAll, 0)})`}>{lineImportPrice(line) === null ? '—' : formatMoney(lineImportPrice(line) as number, 0)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 align-middle text-right font-mono font-bold tabular-nums text-sky-800">{lineImportAmount(line) === null ? '—' : formatMoney(lineImportAmount(line) as number, 0)}</td>
                     <td className="px-2 py-2 align-middle">
                       <button type="button" onClick={() => setLines(current => current.filter((_, i) => i !== index))} className="text-rose-600"><Trash2 className="h-4 w-4" /></button>
                     </td>
@@ -1512,15 +1537,18 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         ) : null}
         {(() => {
           const filled = lines.filter(line => line.maHang.trim());
-          const tongKl = roundKem(filled.reduce((sum, line) => sum + (lineWeight(line) || 0), 0));
+          const tongKl = tongKgAll;
           const tongHang = roundKem(filled.reduce((sum, line) => sum + (lineAmount(line) || 0), 0));
-          const tongKem = roundKem(filled.reduce((sum, line) => sum + sumKemDraft(line.chiPhiKemTheo), 0));
+          const tongKem = tongKemAll;
           const tongCong = roundKem(tongHang + tongKem);
+          const tongNhapKho = roundKem(filled.reduce((sum, line) => sum + (lineImportAmount(line) || 0), 0));
           return (
             <div className="grid grid-cols-2 gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-bold text-zinc-800 sm:grid-cols-3">
               <span>Tổng trọng lượng <strong className="font-mono">{formatNumber(tongKl, 3)}</strong></span>
               <span>Tổng chi phí đi kèm <strong className="font-mono">{formatMoney(tongKem, 0)}</strong></span>
+              <span>Chi phí đi kèm/1 kg <strong className="font-mono">{formatMoney(kemPerKgAll, 0)}</strong></span>
               <span>Tổng thành tiền <strong className="font-mono">{formatMoney(tongCong, 0)}</strong></span>
+              <span>Tổng giá nhập kho <strong className="font-mono">{formatMoney(tongNhapKho, 0)}</strong></span>
             </div>
           );
         })()}
