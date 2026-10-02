@@ -43,7 +43,7 @@ export const EXTRA_MACHINE_OPTIONS: MachineOption[] = [
 
 export function fmtMoney(n: number): string {
   const v = Number(n) || 0;
-  return v.toLocaleString('vi-VN');
+  return v.toLocaleString('en-US');
 }
 
 export function newCostItem(): CostItem {

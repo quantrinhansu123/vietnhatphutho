@@ -1,4 +1,5 @@
 import { FACTORY_PLACEHOLDER } from '../components/layout/constants';
+import { parseLocalizedNumber } from '../utils';
 
 function isRealMachineName(name?: string) {
   const value = String(name ?? '').trim();
@@ -270,8 +271,7 @@ export function countWeighingRounds(rows: WeighingRecord[]) {
 export function parseWeighingWeight(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed || trimmed === '—' || trimmed === '-') return null;
-  const normalized = trimmed.replace(/\./g, '').replace(',', '.');
-  const num = Number(normalized);
+  const num = parseLocalizedNumber(trimmed);
   return Number.isFinite(num) ? num : null;
 }
 
@@ -339,7 +339,7 @@ export function formatDamagedGoodsRowFilmWeight(
 
 function formatWeighingWeightNumber(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return '—';
-  const formatted = new Intl.NumberFormat('vi-VN', {
+  const formatted = new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 3
   }).format(value);
@@ -370,11 +370,11 @@ export function formatDamagedGoodsRowTotalWeight(
 }
 
 function trimTrailingDecimalZeros(formatted: string) {
-  const match = formatted.match(/^(.+),(\d+)$/);
+  const match = formatted.match(/^(.+)\.(\d+)$/);
   if (!match) return formatted;
   const [, intPart, decPart] = match;
   const trimmedDec = decPart.replace(/0+$/, '');
-  return trimmedDec ? `${intPart},${trimmedDec}` : intPart;
+  return trimmedDec ? `${intPart}.${trimmedDec}` : intPart;
 }
 
 export function formatWeighingRowTotalWeight(
@@ -382,7 +382,7 @@ export function formatWeighingRowTotalWeight(
 ): string {
   const total = parseWeighingWeight(row.weight);
   if (total === null) return '—';
-  const formatted = new Intl.NumberFormat('vi-VN', {
+  const formatted = new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 3
   }).format(total);
@@ -405,7 +405,7 @@ export function formatWeighingNetWeight(
 ): string {
   const net = computeWeighingNetWeight(row);
   if (net === null) return '—';
-  const formatted = new Intl.NumberFormat('vi-VN', {
+  const formatted = new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 3
   }).format(net);

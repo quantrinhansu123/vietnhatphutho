@@ -37,7 +37,7 @@ function toNum(value: unknown): number {
 
 function safeFixed(n: number, digits = 2): string {
   if (!Number.isFinite(n) || n === 0) return '-';
-  return n.toLocaleString('vi-VN', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
 function formatPrintDate(value: string): string {

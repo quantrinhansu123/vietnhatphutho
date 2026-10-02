@@ -6,6 +6,7 @@
  *  3) Tồn đầu kỳ = Nhập − Xuất trước `from`; Tồn cuối = Tồn đầu + Nhập − Xuất trong kỳ.
  *  4) Phiếu nhập: 1 ngày + nhiều ca → chọn nhiều sổ trộn.
  */
+import { parseLocalizedNumber } from '../../utils';
 
 export type SoTronProductLineInput = {
   soTronId?: string;
@@ -171,7 +172,7 @@ function round2(value: number) {
 
 export function parseThanhPhamNumber(value: unknown): number {
   if (value === null || value === undefined || value === '') return 0;
-  const n = Number(String(value).trim().replace(',', '.'));
+  const n = parseLocalizedNumber(value);
   return Number.isFinite(n) ? n : 0;
 }
 

@@ -1,3 +1,4 @@
+import { parseLocalizedNumber } from '../utils';
 export type WorkshopType = 'rong' | 'dac' | 'song' | 'unknown';
 
 export function normalizeNhomVatTuPhuKey(group: string): string {
@@ -172,7 +173,7 @@ type MixingNormHistoryProduct = {
 
 function normalizeHistoryNumber(value: unknown): number | null {
   if (value === null || value === undefined || String(value).trim() === '') return null;
-  const parsed = Number(String(value).replace(',', '.'));
+  const parsed = parseLocalizedNumber(value);
   return Number.isFinite(parsed) ? Math.round(parsed * 1_000_000) / 1_000_000 : null;
 }
 

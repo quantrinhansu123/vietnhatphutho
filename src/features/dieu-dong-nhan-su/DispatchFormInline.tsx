@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { TimePicker24h } from '../../components/shared/TimePicker24h';
+import { resolveScheduleStaffName } from '../../utils/externalStaff';
 
 /** Giá trị đặc biệt cho máy chuyển đến = Việc khác */
 export const MAY_VIEC_KHAC = 'Việc khác';
@@ -94,7 +95,8 @@ export function DispatchFormInline({
           </thead>
           <tbody>
             {selectedList.map(item => {
-              const personName = staffMap.get(item.person.ma_nhan_su) || item.tenNhanSu || item.person.ma_nhan_su || '-';
+              const personName =
+                resolveScheduleStaffName(item.person.ma_nhan_su, staffMap) || item.tenNhanSu || '-';
               const needNote = shiftsDiffer(item.caGoc, item.caDieuDong);
               return (
                 <tr key={item.key} className="border-b border-amber-100 transition-colors hover:bg-white">

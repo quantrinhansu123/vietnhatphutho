@@ -194,6 +194,31 @@ function round3(n: number) {
   return Math.round(n * 1000) / 1000;
 }
 
+/** Đọc số theo chuẩn mới `1,250,000.5`, vẫn chịu được số cũ `1.250.000,5`. */
+function parseLocalizedNumber(value: unknown): number {
+  const text = String(value ?? '').trim().replace(/\s/g, '');
+  if (!text) return NaN;
+  const lastDot = text.lastIndexOf('.');
+  const lastComma = text.lastIndexOf(',');
+  let normalized = text;
+  if (lastDot >= 0 && lastComma >= 0) {
+    if (lastComma > lastDot) {
+      const parts = text.replace(/\./g, '').split(',');
+      const dec = parts.pop() as string;
+      normalized = `${parts.join('')}.${dec}`;
+    } else {
+      const parts = text.replace(/,/g, '').split('.');
+      const dec = parts.pop() as string;
+      normalized = parts.length ? `${parts.join('')}.${dec}` : `0.${dec}`;
+    }
+  } else if (lastComma >= 0) {
+    normalized = /^-?\d{1,3}(,\d{3})+$/.test(text) ? text.replace(/,/g, '') : text.replace(/,/g, '.');
+  } else if ((text.match(/\./g) || []).length > 1) {
+    normalized = text.replace(/\./g, '');
+  }
+  return Number(normalized);
+}
+
 /** Thành tiền kèm theo do user nhập, không suy từ đơn giá. Thiếu mảng = []. */
 function parseChiPhiKemTheo(
   raw: unknown,
@@ -216,8 +241,8 @@ function parseChiPhiKemTheo(
       String(tienRaw ?? '').trim() === '';
     if (blank) continue;
     if (!ten) return { error: `Dòng ${lineNo} (${ma}), khoản ${index + 1}: thiếu tên chi phí.` };
-    const donGia = Number(String(donRaw ?? 0).replace(',', '.'));
-    const thanhTien = Number(String(tienRaw ?? 0).replace(',', '.'));
+    const donGia = parseLocalizedNumber(donRaw ?? 0);
+    const thanhTien = parseLocalizedNumber(tienRaw ?? 0);
     if (!Number.isFinite(donGia) || donGia < 0) {
       return { error: `Dòng ${lineNo} (${ma}), khoản ${index + 1}: đơn giá phải lớn hơn hoặc bằng 0.` };
     }
@@ -324,11 +349,11 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       const item = (raw[index] && typeof raw[index] === 'object' ? raw[index] : {}) as Record<string, unknown>;
       const ma = text(item.ma_hang ?? item.maHang ?? item.code);
       if (!ma) return { error: `Dòng ${index + 1}: thiếu mã.` };
-      const qty = Number(String(item.so_luong ?? item.soLuong ?? item.quantity ?? '').replace(',', '.'));
+      const qty = parseLocalizedNumber(item.so_luong ?? item.soLuong ?? item.quantity ?? '');
       if (!Number.isFinite(qty) || qty <= 0) return { error: `Dòng ${index + 1} (${ma}): số lượng phải lớn hơn 0.` };
-      const price = Number(String(item.don_gia ?? item.donGia ?? item.unitPrice ?? 0).replace(',', '.'));
+      const price = parseLocalizedNumber(item.don_gia ?? item.donGia ?? item.unitPrice ?? 0);
       const donGia = Number.isFinite(price) && price >= 0 ? price : 0;
-      const quyDoiRaw = Number(String(item.quy_doi_kg ?? item.quyDoiKg ?? item.weightKg ?? '').replace(',', '.'));
+      const quyDoiRaw = parseLocalizedNumber(item.quy_doi_kg ?? item.quyDoiKg ?? item.weightKg ?? '');
       const quyDoi = Number.isFinite(quyDoiRaw) && quyDoiRaw > 0 ? round3(quyDoiRaw) : null;
       const nguonDongLoaiRaw = text(item.nguon_dong_loai ?? item.nguonDongLoai).toLowerCase();
       const nguonDongId = text(item.nguon_dong_id ?? item.nguonDongId ?? item.kho_nguon ?? item.khoNguon ?? item.kho);
@@ -343,8 +368,8 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
         if (!dichDongId) return { error: `Dòng ${index + 1}: chọn nơi xuất đến.` };
       }
       const classRaw = text(item.phan_loai_nvl ?? item.phanLoaiNvl ?? item.warehouseClass);
-      const slCtRaw = Number(String(item.so_luong_ct ?? item.soLuongCt ?? item.documentQuantity ?? '').replace(',', '.'));
-      const normRaw = Number(String(item.norm_kg_per_unit ?? item.normKgPerUnit ?? '').replace(',', '.'));
+      const slCtRaw = parseLocalizedNumber(item.so_luong_ct ?? item.soLuongCt ?? item.documentQuantity ?? '');
+      const normRaw = parseLocalizedNumber(item.norm_kg_per_unit ?? item.normKgPerUnit ?? '');
       const imageUrl = text(item.link_anh_can_thuc_te ?? item.linkAnhCanThucTe ?? item.actualWeightImageUrl);
       const imageId = text(
         item.link_anh_can_thuc_te_public_id ?? item.linkAnhCanThucTePublicId ?? item.actualWeightImagePublicId
@@ -356,7 +381,7 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       const srcId = text(item.src_id ?? item.srcId ?? item.src_ten ?? item.srcTen);
       const ngayDong = text(item.ngay_dong ?? item.ngayDong).slice(0, 10);
       const caDong = text(item.ca_dong ?? item.caDong);
-      const tonDauRaw = Number(String(item.ton_dau_ca ?? item.tonDauCa ?? '').replace(',', '.'));
+      const tonDauRaw = parseLocalizedNumber(item.ton_dau_ca ?? item.tonDauCa ?? '');
       const kem = parseChiPhiKemTheo(item.chi_phi_kem_theo ?? item.chiPhiKemTheo, index + 1, ma);
       if ('error' in kem) return kem;
       lines.push({

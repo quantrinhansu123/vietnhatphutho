@@ -1,5 +1,6 @@
 import React from 'react';
 import { Users, Clock } from 'lucide-react';
+import { resolveScheduleStaffName } from '../../utils/externalStaff';
 
 export type SchedPerson = {
   sourceRowId: string;
@@ -58,7 +59,7 @@ export function MachineCardRow({
                 {group.personnel.map((person, idx) => {
                   const key = personKey(group.maMay, person.ma_nhan_su, person.ca_lam_viec);
                   const isSelected = selectedKeys.has(key);
-                  const personName = staffMap.get(person.ma_nhan_su) || person.ma_nhan_su || '-';
+                  const personName = resolveScheduleStaffName(person.ma_nhan_su, staffMap) || '-';
                   const timeRange = formatTimeRange(person.thoi_gian_bat_dau, person.thoi_gian_ket_thuc);
 
                   return (

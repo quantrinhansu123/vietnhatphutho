@@ -50,18 +50,18 @@ function num(value: unknown): number {
 
 function formatInt(value: number): string {
   if (!Number.isFinite(value)) return '-';
-  return Math.round(value).toLocaleString('vi-VN');
+  return Math.round(value).toLocaleString('en-US');
 }
 
 function formatKg(value: number): string {
   if (!Number.isFinite(value)) return '-';
   const rounded = Math.round(value * 1000) / 1000;
-  return rounded.toLocaleString('vi-VN', { maximumFractionDigits: 3 });
+  return rounded.toLocaleString('en-US', { maximumFractionDigits: 3 });
 }
 
 function formatUnitPrice(value: number): string {
   if (!Number.isFinite(value) || value === 0) return '-';
-  return value.toLocaleString('vi-VN', { maximumFractionDigits: 2 });
+  return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
 function formatPrintDate(value: string): string {

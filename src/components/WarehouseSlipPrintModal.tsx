@@ -336,7 +336,7 @@ function formatPrintQty(value: number | null | undefined, fractionDigits = 2) {
 function formatNvlExportNumber(value: number | null | undefined, fractionDigits = 2) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '';
   if (Number.isInteger(value)) return formatNumber(value, 0);
-  return new Intl.NumberFormat('vi-VN', {
+  return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits
   }).format(value);

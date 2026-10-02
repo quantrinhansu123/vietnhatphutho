@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRightLeft, ChevronLeft, Eye, Loader2, MessageSquarePlus, Pencil, Plus, Printer, RotateCcw, Trash2, X } from 'lucide-react';
+import { ArrowRightLeft, ChevronLeft, Eye, Loader2, MessageSquarePlus, Pencil, Plus, Printer, RotateCcw, Trash2, UserPlus, X } from 'lucide-react';
 import { useTabAccess } from '../../app/useTabAccess';
 import { DateInputVi } from '../../components/shared/DateInputVi';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
@@ -10,6 +10,11 @@ import {
   type ShiftSetting
 } from '../../utils/shiftSettings';
 import { LichLamViecPrintModal } from './LichLamViecPrintModal';
+import {
+  encodeExternalStaffCode,
+  isExternalStaffCode,
+  resolveScheduleStaffName
+} from '../../utils/externalStaff';
 
 /** Máy bổ sung (không thuộc danh_sach_may) — luôn có trong dropdown chọn máy. */
 const EXTRA_MACHINE_OPTS = [
@@ -119,6 +124,8 @@ type PersonForm = {
   thoiGianBatDau: string;
   thoiGianKetThuc: string;
   removable: boolean;
+  /** true: nhập tên tay, không chọn trong danh sách nhân viên. */
+  thueNgoai: boolean;
 };
 
 type ScheduleBlock = {
@@ -301,14 +308,42 @@ function normalizeStaff(data: unknown): StaffOpt[] {
   return [...byCode.values()].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
 }
 
-const emptyPerson = (vaiTro: string, removable: boolean, times: { start?: string; end?: string } = {}): PersonForm => ({
+const emptyPerson = (
+  vaiTro: string,
+  removable: boolean,
+  times: { start?: string; end?: string } = {},
+  thueNgoai = false
+): PersonForm => ({
   key: uid(),
   vaiTro,
   maNhanSu: '',
   thoiGianBatDau: times.start || '',
   thoiGianKetThuc: times.end || '',
-  removable
+  removable,
+  thueNgoai
 });
+
+function personFromStoredCode(
+  code: string,
+  fields: Omit<PersonForm, 'maNhanSu' | 'thueNgoai'>
+): PersonForm {
+  const external = isExternalStaffCode(code);
+  return {
+    ...fields,
+    maNhanSu: external ? resolveScheduleStaffName(code) : code,
+    thueNgoai: external
+  };
+}
+
+function storedStaffCode(person: Pick<PersonForm, 'maNhanSu' | 'thueNgoai'>): string {
+  const name = person.maNhanSu.trim().replace(/\s+/g, ' ');
+  return person.thueNgoai ? encodeExternalStaffCode(name) : name;
+}
+
+function personLabel(person: Pick<PersonForm, 'maNhanSu' | 'thueNgoai'>, lookup: (code: string) => string): string {
+  if (person.thueNgoai) return person.maNhanSu.trim() || 'Thuê ngoài';
+  return lookup(person.maNhanSu);
+}
 
 function rolePriority(role: string): number {
   const text = normalizeMachineText(role);
@@ -386,7 +421,8 @@ function buildPeopleForMachineRoles(
       maNhanSu: prev?.maNhanSu || '',
       thoiGianBatDau: prev?.thoiGianBatDau || times.start || '',
       thoiGianKetThuc: prev?.thoiGianKetThuc || times.end || '',
-      removable: false
+      removable: false,
+      thueNgoai: prev?.thueNgoai || false
     };
   });
 
@@ -398,7 +434,8 @@ function buildPeopleForMachineRoles(
     maNhanSu: prevEmpty?.maNhanSu || '',
     thoiGianBatDau: prevEmpty?.thoiGianBatDau || times.start || '',
     thoiGianKetThuc: prevEmpty?.thoiGianKetThuc || times.end || '',
-    removable: true
+    removable: true,
+    thueNgoai: prevEmpty?.thueNgoai || false
   });
 
   for (let i = emptySlotIndex + 1; i < existing.length; i++) {
@@ -409,7 +446,8 @@ function buildPeopleForMachineRoles(
       maNhanSu: prev.maNhanSu,
       thoiGianBatDau: prev.thoiGianBatDau,
       thoiGianKetThuc: prev.thoiGianKetThuc,
-      removable: true
+      removable: true,
+      thueNgoai: prev.thueNgoai
     });
   }
 
@@ -429,7 +467,8 @@ const emptyBlock = (
         maNhanSu: p.maNhanSu,
         thoiGianBatDau: p.thoiGianBatDau || '',
         thoiGianKetThuc: p.thoiGianKetThuc || '',
-        removable: p.removable
+        removable: p.removable,
+        thueNgoai: p.thueNgoai
       }))
     : [emptyPerson('', true)]
 });
@@ -441,14 +480,15 @@ const emptyBlock = (
  */
 function groupToBlock(group: SchedGroup): ScheduleBlock {
   const people: PersonForm[] = sortRowsByRole(group.rows.filter(row => row.ma_nhan_su))
-    .map(row => ({
-      key: uid(),
-      vaiTro: row.vai_tro || '',
-      maNhanSu: row.ma_nhan_su,
-      thoiGianBatDau: row.thoi_gian_bat_dau || '',
-      thoiGianKetThuc: row.thoi_gian_ket_thuc || '',
-      removable: true
-    }));
+    .map(row =>
+      personFromStoredCode(row.ma_nhan_su, {
+        key: uid(),
+        vaiTro: row.vai_tro || '',
+        thoiGianBatDau: row.thoi_gian_bat_dau || '',
+        thoiGianKetThuc: row.thoi_gian_ket_thuc || '',
+        removable: true
+      })
+    );
 
   if (people.length === 0) {
     const label = group.ten_may || group.ma_may || '';
@@ -527,6 +567,78 @@ function SingleShiftSelect({ value, onChange, options, disabled }: SingleShiftSe
   );
 }
 
+function PersonEditorRow({
+  person,
+  activeStaff,
+  directory,
+  rowClassName,
+  onPatch,
+  onRemove
+}: {
+  person: PersonForm;
+  activeStaff: StaffOpt[];
+  directory: Map<string, StaffOpt>;
+  rowClassName: string;
+  onPatch: (patch: Partial<PersonForm>) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className={rowClassName}>
+      <input
+        value={person.vaiTro}
+        onChange={e => onPatch({ vaiTro: e.target.value })}
+        className={`${inputClass} h-9 min-w-0`}
+        placeholder="Vai trò (VD: Trưởng ca)"
+      />
+      <div className="min-w-0">
+        {person.thueNgoai ? (
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-800">
+              Thuê ngoài
+            </span>
+            <input
+              value={person.maNhanSu}
+              onChange={e => onPatch({ maNhanSu: e.target.value })}
+              className={`${inputClass} h-9 min-w-0`}
+              placeholder="Nhập tên người thuê ngoài"
+            />
+          </div>
+        ) : (
+          <SingleStaffSelect
+            value={person.maNhanSu}
+            onChange={val => onPatch({ maNhanSu: val })}
+            staff={activeStaff}
+            directory={directory}
+          />
+        )}
+      </div>
+      <div className="flex items-center gap-1 whitespace-nowrap">
+        <TimePicker24h
+          value={person.thoiGianBatDau}
+          onChange={v => onPatch({ thoiGianBatDau: v })}
+          aria-label="Từ giờ"
+          className="w-[54px] rounded-md border border-zinc-200 bg-white px-1 py-1.5 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
+        />
+        <span className="shrink-0 text-[11px] font-black text-zinc-400">→</span>
+        <TimePicker24h
+          value={person.thoiGianKetThuc}
+          onChange={v => onPatch({ thoiGianKetThuc: v })}
+          aria-label="Đến giờ"
+          className="w-[54px] rounded-md border border-zinc-200 bg-white px-1 py-1.5 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
+        />
+      </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="inline-flex h-9 w-9 items-center justify-center justify-self-start rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 xl:justify-self-center"
+        title="Xóa dòng"
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
 // ── Component ───────────────────────────────────────────────────────────────
 interface Props {
   onBack: () => void;
@@ -584,7 +696,10 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
     return map;
   }, [machines]);
 
-  const staffName = useCallback((code: string) => staffByCode.get(code)?.name || code || '—', [staffByCode]);
+  const staffName = useCallback(
+    (code: string) => resolveScheduleStaffName(code, { get: key => staffByCode.get(key)?.name }) || '—',
+    [staffByCode]
+  );
   const machineName = useCallback(
     (code: string, fallback = '') => machineByCode.get(code) || fallback || code || '',
     [machineByCode]
@@ -726,14 +841,15 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
         people: sortPeopleForPreview(
           group.rows
             .filter(row => row.ma_nhan_su)
-            .map(row => ({
-              key: row.id,
-              vaiTro: row.vai_tro || '',
-              maNhanSu: row.ma_nhan_su,
-              thoiGianBatDau: row.thoi_gian_bat_dau || '',
-              thoiGianKetThuc: row.thoi_gian_ket_thuc || '',
-              removable: row.removable
-            }))
+            .map(row =>
+              personFromStoredCode(row.ma_nhan_su, {
+                key: row.id,
+                vaiTro: row.vai_tro || '',
+                thoiGianBatDau: row.thoi_gian_bat_dau || '',
+                thoiGianKetThuc: row.thoi_gian_ket_thuc || '',
+                removable: row.removable
+              })
+            )
         ),
         isDraft: false
       });
@@ -823,14 +939,15 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
         people: sortPeopleForPreview(
           group.rows
             .filter(row => row.ma_nhan_su)
-            .map(row => ({
-              key: row.id,
-              vaiTro: row.vai_tro || '',
-              maNhanSu: row.ma_nhan_su,
-              thoiGianBatDau: row.thoi_gian_bat_dau || '',
-              thoiGianKetThuc: row.thoi_gian_ket_thuc || '',
-              removable: row.removable
-            }))
+            .map(row =>
+              personFromStoredCode(row.ma_nhan_su, {
+                key: row.id,
+                vaiTro: row.vai_tro || '',
+                thoiGianBatDau: row.thoi_gian_bat_dau || '',
+                thoiGianKetThuc: row.thoi_gian_ket_thuc || '',
+                removable: row.removable
+              })
+            )
         ),
         isDraft: false
       });
@@ -874,14 +991,15 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
 
     const target = (caValue && matching.find(g => g.ca_lam_viec === caValue)) || matching[0];
     const people: PersonForm[] = sortRowsByRole(target.rows.filter(row => row.ma_nhan_su))
-      .map(row => ({
-        key: uid(),
-        vaiTro: row.vai_tro || '',
-        maNhanSu: row.ma_nhan_su,
-        thoiGianBatDau: row.thoi_gian_bat_dau || '',
-        thoiGianKetThuc: row.thoi_gian_ket_thuc || '',
-        removable: true
-      }));
+      .map(row =>
+        personFromStoredCode(row.ma_nhan_su, {
+          key: uid(),
+          vaiTro: row.vai_tro || '',
+          thoiGianBatDau: row.thoi_gian_bat_dau || '',
+          thoiGianKetThuc: row.thoi_gian_ket_thuc || '',
+          removable: true
+        })
+      );
     setBatchCa(target.ca_lam_viec);
     setBatchPeople(
       people.length > 0
@@ -922,6 +1040,11 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
     setBatchPeople(prev => [...prev, emptyPerson('', true, times)]);
   };
 
+  const addBatchExternalPerson = () => {
+    const times = batchCa ? lookupShiftTimes(batchCa, shiftTimeMap) : { start: '', end: '' };
+    setBatchPeople(prev => [...prev, emptyPerson('', true, times, true)]);
+  };
+
   const removeBatchPerson = (key: string) => {
     setBatchPeople(prev => {
       const target = prev.find(p => p.key === key);
@@ -936,11 +1059,15 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
     if (!batchDate.trim()) return setBatchError('Vui lòng chọn ngày làm việc.');
     if (!batchCa.trim()) return setBatchError('Vui lòng chọn ca làm việc.');
 
+    if (batchPeople.some(p => p.thueNgoai && !p.maNhanSu.trim())) {
+      return setBatchError('Vui lòng nhập tên người thuê ngoài hoặc xóa dòng trống.');
+    }
+
     const filledPeople = batchPeople.filter(p => p.maNhanSu.trim());
     if (filledPeople.length === 0) return setBatchError('Vui lòng chọn ít nhất 1 nhân sự.');
 
     // Kiểm tra trùng nhân sự trong cùng lịch (mỗi ô 1 người)
-    const allCodes = filledPeople.map(p => p.maNhanSu.trim());
+    const allCodes = filledPeople.map(p => storedStaffCode(p));
     const seenCodes = new Set<string>();
     for (const code of allCodes) {
       if (seenCodes.has(code)) {
@@ -985,7 +1112,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
       // Lưu 1 ca — mỗi người có giờ riêng (có thể trống, không validate)
       const nhanSuList = filledPeople.map(p => ({
         vai_tro: p.vaiTro,
-        ma_nhan_su: p.maNhanSu.trim(),
+        ma_nhan_su: storedStaffCode(p),
         thoi_gian_bat_dau: p.thoiGianBatDau || '',
         thoi_gian_ket_thuc: p.thoiGianKetThuc || '',
         removable: p.removable
@@ -1105,12 +1232,12 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
     );
   };
 
-  const addPerson = (blockKey: string) => {
+  const addPerson = (blockKey: string, thueNgoai = false) => {
     setFormBlocks(prev =>
       prev.map(block => {
         if (block.key !== blockKey) return block;
         const times = block.caLamViec ? lookupShiftTimes(block.caLamViec, shiftTimeMap) : { start: '', end: '' };
-        return { ...block, people: [...block.people, emptyPerson('', true, times)] };
+        return { ...block, people: [...block.people, emptyPerson('', true, times, thueNgoai)] };
       })
     );
   };
@@ -1137,11 +1264,15 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
       if (!block.maMay.trim()) return setError(`${label}Vui lòng chọn máy.`);
       if (!block.caLamViec.trim()) return setError(`${label}Vui lòng chọn ca làm việc.`);
 
+      if (block.people.some(p => p.thueNgoai && !p.maNhanSu.trim())) {
+        return setError(`${label}Vui lòng nhập tên người thuê ngoài hoặc xóa dòng trống.`);
+      }
+
       const filledPeople = block.people.filter(p => p.maNhanSu.trim());
       if (filledPeople.length === 0) return setError(`${label}Vui lòng chọn ít nhất 1 nhân sự.`);
 
       // Mỗi ô 1 người — kiểm tra trùng trong cùng lịch (không validate giờ)
-      const allCodes = filledPeople.map(p => p.maNhanSu.trim());
+      const allCodes = filledPeople.map(p => storedStaffCode(p));
       const seenCodes = new Set<string>();
       for (const code of allCodes) {
         if (seenCodes.has(code)) {
@@ -1189,7 +1320,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
         // Mỗi người có giờ riêng (có thể trống, không validate)
         const nhanSuList = filledPeople.map(p => ({
           vai_tro: p.vaiTro,
-          ma_nhan_su: p.maNhanSu.trim(),
+          ma_nhan_su: storedStaffCode(p),
           thoi_gian_bat_dau: p.thoiGianBatDau || '',
           thoi_gian_ket_thuc: p.thoiGianKetThuc || '',
           removable: p.removable
@@ -1448,12 +1579,18 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
                     <span className="min-w-[80px] font-bold text-zinc-500">{row.vai_tro || '—'}</span>
                     <span className="font-black text-zinc-800">{staffName(row.ma_nhan_su)}</span>
+                    {isExternalStaffCode(row.ma_nhan_su) ? (
+                      <span className="rounded bg-amber-100 px-1 py-0.5 text-[10px] font-black uppercase text-amber-800">
+                        Thuê ngoài
+                      </span>
+                    ) : null}
                     {(row.thoi_gian_bat_dau || row.thoi_gian_ket_thuc) ? (
                       <span className="font-bold text-zinc-500">
                         {row.thoi_gian_bat_dau || '--:--'} → {row.thoi_gian_ket_thuc || '--:--'}
                       </span>
                     ) : null}
                   </div>
+                  {isExternalStaffCode(row.ma_nhan_su) ? null : (
                   <button
                     type="button"
                     onClick={() => handleNavigateToDispatch(group, row)}
@@ -1463,6 +1600,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                     <ArrowRightLeft className="h-3 w-3" />
                     Điều động
                   </button>
+                  )}
                 </div>
               );
               return (
@@ -1700,53 +1838,29 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                           <Plus className="h-3.5 w-3.5" />
                           Thêm người
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => addPerson(block.key, true)}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-[11px] font-extrabold text-amber-800 hover:bg-amber-100"
+                          title="Nhập tên người thuê ngoài, không chọn trong danh sách nhân viên"
+                        >
+                          <UserPlus className="h-3.5 w-3.5" />
+                          Thêm thuê ngoài
+                        </button>
                       </div>
                     </div>
 
                     <div className="space-y-2">
                       {sortPeopleForPreview(block.people).map(person => (
-                        <div
+                        <PersonEditorRow
                           key={person.key}
-                          className="grid grid-cols-1 gap-2 rounded-xl border border-zinc-200 bg-white p-2.5 xl:grid-cols-[150px_minmax(0,1fr)_auto_36px] xl:items-center"
-                        >
-                          <input
-                            value={person.vaiTro}
-                            onChange={e => updatePerson(block.key, person.key, { vaiTro: e.target.value })}
-                            className={`${inputClass} h-9 min-w-0`}
-                            placeholder="Vai trò (VD: Trưởng ca)"
-                          />
-                          <div className="min-w-0">
-                            <SingleStaffSelect
-                              value={person.maNhanSu}
-                              onChange={val => updatePerson(block.key, person.key, { maNhanSu: val })}
-                              staff={activeStaff}
-                              directory={staffByCode}
-                            />
-                          </div>
-                          <div className="flex items-center gap-1 whitespace-nowrap">
-                            <TimePicker24h
-                              value={person.thoiGianBatDau}
-                              onChange={v => updatePerson(block.key, person.key, { thoiGianBatDau: v })}
-                              aria-label="Từ giờ"
-                              className="w-[54px] rounded-md border border-zinc-200 bg-white px-1 py-1.5 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
-                            />
-                            <span className="shrink-0 text-[11px] font-black text-zinc-400">→</span>
-                            <TimePicker24h
-                              value={person.thoiGianKetThuc}
-                              onChange={v => updatePerson(block.key, person.key, { thoiGianKetThuc: v })}
-                              aria-label="Đến giờ"
-                              className="w-[54px] rounded-md border border-zinc-200 bg-white px-1 py-1.5 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removePerson(block.key, person.key)}
-                            className="inline-flex h-9 w-9 items-center justify-center justify-self-start rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 xl:justify-self-center"
-                            title="Xóa dòng"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
+                          person={person}
+                          activeStaff={activeStaff}
+                          directory={staffByCode}
+                          rowClassName="grid grid-cols-1 gap-2 rounded-xl border border-zinc-200 bg-white p-2.5 xl:grid-cols-[150px_minmax(0,1fr)_auto_36px] xl:items-center"
+                          onPatch={patch => updatePerson(block.key, person.key, patch)}
+                          onRemove={() => removePerson(block.key, person.key)}
+                        />
                       ))}
                     </div>
                   </div>
@@ -1798,7 +1912,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                               group.people.map(person => (
                                 <div key={person.key} className="font-semibold text-zinc-800">
                                   {person.vaiTro ? <span className="font-black text-zinc-950">{person.vaiTro}: </span> : null}
-                                  {staffName(person.maNhanSu)}
+                                  {personLabel(person, staffName)}
                                   {(person.thoiGianBatDau || person.thoiGianKetThuc) ? (
                                     <span className="ml-1 text-[11px] font-bold text-zinc-400">
                                       {person.thoiGianBatDau || '--:--'}→{person.thoiGianKetThuc || '--:--'}
@@ -1922,13 +2036,25 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                     {sortRowsByRole(detailGroup.rows.filter(r => r.ma_nhan_su)).map(row => (
                       <tr key={row.id} className="hover:bg-zinc-50">
                         <td className="px-3 py-2 font-bold text-zinc-500">{row.vai_tro || '—'}</td>
-                        <td className="px-3 py-2 font-black text-zinc-800">{staffName(row.ma_nhan_su)}</td>
+                        <td className="px-3 py-2 font-black text-zinc-800">
+                          <span className="inline-flex flex-wrap items-center gap-1">
+                            {staffName(row.ma_nhan_su)}
+                            {isExternalStaffCode(row.ma_nhan_su) ? (
+                              <span className="rounded bg-amber-100 px-1 py-0.5 text-[10px] font-black uppercase text-amber-800">
+                                Thuê ngoài
+                              </span>
+                            ) : null}
+                          </span>
+                        </td>
                         <td className="px-3 py-2 font-bold text-zinc-600">
                           {(row.thoi_gian_bat_dau || row.thoi_gian_ket_thuc)
                             ? `${row.thoi_gian_bat_dau || '--:--'} → ${row.thoi_gian_ket_thuc || '--:--'}`
                             : '—'}
                         </td>
                         <td className="px-3 py-2 text-center">
+                          {isExternalStaffCode(row.ma_nhan_su) ? (
+                            <span className="text-[11px] font-bold text-zinc-400">—</span>
+                          ) : (
                           <button
                             type="button"
                             onClick={() => handleNavigateToDispatch(detailGroup, row)}
@@ -1938,6 +2064,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                             <ArrowRightLeft className="h-3 w-3" />
                             Điều động
                           </button>
+                          )}
                         </td>
                         {canDelete ? (
                           <td className="px-3 py-2 text-center">
@@ -2083,54 +2210,29 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                         <Plus className="h-3.5 w-3.5" />
                         Thêm người
                       </button>
+                      <button
+                        type="button"
+                        onClick={addBatchExternalPerson}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-[11px] font-extrabold text-amber-800 hover:bg-amber-100"
+                        title="Nhập tên người thuê ngoài, không chọn trong danh sách nhân viên"
+                      >
+                        <UserPlus className="h-3.5 w-3.5" />
+                        Thêm thuê ngoài
+                      </button>
                     </div>
                   </div>
 
                   <div className="space-y-2">
                     {sortPeopleForPreview(batchPeople).map(person => (
-                      <div
+                      <PersonEditorRow
                         key={person.key}
-                        className="grid grid-cols-1 gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-2.5 xl:grid-cols-[150px_minmax(0,1fr)_auto_36px] xl:items-center"
-                      >
-                        {/* Tên vai trò — luôn cho phép sửa */}
-                        <input
-                          value={person.vaiTro}
-                          onChange={e => updateBatchPerson(person.key, { vaiTro: e.target.value })}
-                          className={`${inputClass} h-9 min-w-0`}
-                          placeholder="Vai trò"
-                        />
-                        <div className="min-w-0">
-                          <SingleStaffSelect
-                            value={person.maNhanSu}
-                            onChange={val => updateBatchPerson(person.key, { maNhanSu: val })}
-                            staff={activeStaff}
-                            directory={staffByCode}
-                          />
-                        </div>
-                        <div className="flex items-center gap-1 whitespace-nowrap">
-                          <TimePicker24h
-                            value={person.thoiGianBatDau}
-                            onChange={v => updateBatchPerson(person.key, { thoiGianBatDau: v })}
-                            aria-label="Từ giờ"
-                            className="w-[54px] rounded-md border border-zinc-200 bg-white px-1 py-1.5 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
-                          />
-                          <span className="shrink-0 text-[11px] font-black text-zinc-400">→</span>
-                          <TimePicker24h
-                            value={person.thoiGianKetThuc}
-                            onChange={v => updateBatchPerson(person.key, { thoiGianKetThuc: v })}
-                            aria-label="Đến giờ"
-                            className="w-[54px] rounded-md border border-zinc-200 bg-white px-1 py-1.5 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeBatchPerson(person.key)}
-                          className="inline-flex h-9 w-9 items-center justify-center justify-self-start rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 xl:justify-self-center"
-                          title="Xóa dòng"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
+                        person={person}
+                        activeStaff={activeStaff}
+                        directory={staffByCode}
+                        rowClassName="grid grid-cols-1 gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-2.5 xl:grid-cols-[150px_minmax(0,1fr)_auto_36px] xl:items-center"
+                        onPatch={patch => updateBatchPerson(person.key, patch)}
+                        onRemove={() => removeBatchPerson(person.key)}
+                      />
                     ))}
                   </div>
                 </>
@@ -2170,7 +2272,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                               group.people.map(person => (
                                 <div key={person.key} className="font-semibold text-zinc-800">
                                   {person.vaiTro ? <span className="font-black text-zinc-950">{person.vaiTro}: </span> : null}
-                                  {staffName(person.maNhanSu)}
+                                  {personLabel(person, staffName)}
                                   {(person.thoiGianBatDau || person.thoiGianKetThuc) ? (
                                     <span className="ml-1 text-[11px] font-bold text-zinc-400">
                                       {person.thoiGianBatDau || '--:--'}→{person.thoiGianKetThuc || '--:--'}

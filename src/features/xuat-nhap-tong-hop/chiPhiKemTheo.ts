@@ -1,4 +1,5 @@
 /** Chi phí kèm theo từng dòng. Thành tiền nhập tay, không nhân với số lượng. */
+import { parseLocalizedNumber } from '../../utils';
 
 export type ChiPhiKemTheoStored = {
   ten: string;
@@ -29,7 +30,7 @@ export function roundKem(value: number) {
 }
 
 function moneyOf(value: unknown) {
-  const parsed = Number(String(value ?? '').replace(',', '.'));
+  const parsed = parseLocalizedNumber(value);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 

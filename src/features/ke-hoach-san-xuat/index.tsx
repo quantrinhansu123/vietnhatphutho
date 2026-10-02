@@ -22,6 +22,7 @@ import {
 } from './relatedReportsPrint';
 import OrderPrintSheet from '../../components/OrderPrintSheet';
 import { getProductionShiftOptions, normalizeShiftSettings, shiftNamesMatch, shiftIsoDateByDays, type ShiftOption } from '../../utils/shiftSettings';
+import { isExternalStaffCode, resolveScheduleStaffName } from '../../utils/externalStaff';
 import { STORAGE_WAREHOUSE_SLIP_DRAFT_KEY } from '../_shared/storageKeys';
 import type { WarehouseSlipPrefillDraft } from '../phieu-xuat-nhap-kho';
 import { STANDARD_SHIFTS } from '../../types';
@@ -7406,6 +7407,7 @@ function resolveProductionOrderScheduleStaffName(
 ) {
   const normalized = String(personnelId || '').trim();
   if (!normalized) return '-';
+  if (isExternalStaffCode(normalized)) return resolveScheduleStaffName(normalized);
   if (staffMap?.has(normalized)) {
     return staffMap.get(normalized) || normalized;
   }

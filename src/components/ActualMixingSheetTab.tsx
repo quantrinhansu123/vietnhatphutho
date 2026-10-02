@@ -11,6 +11,7 @@ import { getProductionShiftOptions, normalizeShiftSettings } from '../utils/shif
 import { STANDARD_SHIFTS } from '../types';
 import { normalizeProducts, type ProductRow } from '../features/san-pham';
 import { buildOrderTenGhep } from '../utils/productProductionName';
+import { parseLocalizedNumber } from '../utils';
 import type { MixingNormProduct } from './MixingNormMaterialsTab';
 
 /** Cối trộn mẫu tiêu chuẩn (định mức) — chỉ đọc, không cho sửa. */
@@ -89,19 +90,19 @@ const fieldClass =
 
 const numberValue = (value: unknown) => {
   if (value === null || value === undefined || String(value).trim() === '') return null;
-  const parsed = Number(String(value).replace(',', '.'));
+  const parsed = parseLocalizedNumber(value);
   return Number.isFinite(parsed) ? parsed : null;
 };
 
 const roundTo2 = (value: number) => Math.round(value * 100) / 100;
 
 const formatNumber = (value: number | null) =>
-  value === null ? '—' : new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(value);
+  value === null ? '—' : new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(value);
 
 const formatActualPercent = (value: number | null) =>
   value === null
     ? '—'
-    : new Intl.NumberFormat('vi-VN', {
+    : new Intl.NumberFormat('en-US', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
       }).format(value);

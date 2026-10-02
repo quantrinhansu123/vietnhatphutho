@@ -13,6 +13,7 @@ import {
   composeProductionDisplayName,
   isValidDoLiToken
 } from '../../utils/productProductionName';
+import { parseLocalizedNumber } from '../../utils';
 
 export const KHO_CAT_LE = 'Kho cắt lẻ';
 export const KHO_THANH_PHAM = 'Kho thành phẩm';
@@ -132,7 +133,7 @@ function round3(value: number): number {
 }
 
 function positiveNumber(value: unknown): number | null {
-  const n = Number(String(value ?? '').trim().replace(',', '.'));
+  const n = parseLocalizedNumber(value);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
@@ -379,7 +380,7 @@ export function computeCatLe(
 /** Số con/mẹ từ nhiều nguồn field (tương thích bản cũ). */
 export function parsePiecesValue(raw: unknown): number {
   if (raw === null || raw === undefined || raw === '') return 1;
-  const n = Math.floor(Number(String(raw).replace(',', '.')));
+  const n = Math.floor(parseLocalizedNumber(raw));
   return Number.isFinite(n) && n >= 1 ? n : 1;
 }
 

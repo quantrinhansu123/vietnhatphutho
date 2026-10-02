@@ -113,7 +113,7 @@ function monthYearOf(dateISO: string): { thang: number; nam: number } {
 
 function safeFixed(n: number, digits = 2): string {
   if (!Number.isFinite(n)) return '-';
-  return n.toLocaleString('vi-VN', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
 export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {

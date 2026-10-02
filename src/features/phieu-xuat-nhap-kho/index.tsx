@@ -29,7 +29,7 @@ import {
   Wrench,
   X
 } from 'lucide-react';
-import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
+import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput, parseLocalizedNumber } from '../../utils';
 import { useTabAccess } from '../../app/useTabAccess';
 import type { AuthUser } from '../../app/authUser';
 import { BackButton } from '../../components/layout/NavButtons';
@@ -1653,7 +1653,7 @@ export function resolveWarehouseProductionOrderEndDate(record: Record<string, un
 }
 
 function parseOptionalPositiveNumber(value: unknown): number | null {
-  const n = Number(String(value ?? '').toString().replace(',', '.'));
+  const n = parseLocalizedNumber(value);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
@@ -5904,6 +5904,11 @@ export function WarehouseSlipPanel({
                           inputMode="decimal"
                           value={line.documentQuantity || ''}
                           onChange={event => updateLine(line.key, { documentQuantity: event.target.value })}
+                          onBlur={event => {
+                            if (!event.target.value.trim()) return;
+                            const parsed = parseLocalizedNumber(event.target.value);
+                            if (Number.isFinite(parsed)) updateLine(line.key, { documentQuantity: formatNumber(parsed, 3) });
+                          }}
                           className={warehouseLineFieldClass}
                         />
                       </div>
@@ -5930,6 +5935,11 @@ export function WarehouseSlipPanel({
                               return;
                             }
                             updateLine(line.key, { quantity });
+                          }}
+                          onBlur={event => {
+                            if (!event.target.value.trim()) return;
+                            const parsed = parseLocalizedNumber(event.target.value);
+                            if (Number.isFinite(parsed)) updateLine(line.key, { quantity: formatNumber(parsed, 3) });
                           }}
                           className={warehouseLineFieldClass}
                           title={isNvlExport ? 'SL thực nhập tay' : undefined}
@@ -5961,6 +5971,11 @@ export function WarehouseSlipPanel({
                           }
                           updateLine(line.key, { quantity });
                         }}
+                        onBlur={event => {
+                          if (!event.target.value.trim()) return;
+                          const parsed = parseLocalizedNumber(event.target.value);
+                          if (Number.isFinite(parsed)) updateLine(line.key, { quantity: formatNumber(parsed, 3) });
+                        }}
                         className={warehouseLineFieldClass}
                       />
                     </div>
@@ -5984,6 +5999,11 @@ export function WarehouseSlipPanel({
                                   : undefined
                             });
                           }}
+                          onBlur={event => {
+                            if (!event.target.value.trim()) return;
+                            const parsed = parseLocalizedNumber(event.target.value);
+                            if (Number.isFinite(parsed)) updateLine(line.key, { weightKg: formatNumber(parsed, 3) });
+                          }}
                           className={`${warehouseLineFieldClass} min-w-0 font-mono`}
                           placeholder="kg"
                           title="Quy đổi kg"
@@ -6004,6 +6024,11 @@ export function WarehouseSlipPanel({
                                   : undefined
                             });
                           }}
+                          onBlur={event => {
+                            if (!event.target.value.trim()) return;
+                            const parsed = parseLocalizedNumber(event.target.value);
+                            if (Number.isFinite(parsed)) updateLine(line.key, { areaM2: formatNumber(parsed, 3) });
+                          }}
                           className={`${warehouseLineFieldClass} hidden min-w-0 font-mono md:block`}
                           placeholder="m²"
                           title="Quy đổi m²"
@@ -6023,6 +6048,11 @@ export function WarehouseSlipPanel({
                                   ? total / qty
                                   : undefined
                             });
+                          }}
+                          onBlur={event => {
+                            if (!event.target.value.trim()) return;
+                            const parsed = parseLocalizedNumber(event.target.value);
+                            if (Number.isFinite(parsed)) updateLine(line.key, { lengthM: formatNumber(parsed, 3) });
                           }}
                           className={`${warehouseLineFieldClass} hidden min-w-0 font-mono md:block`}
                           placeholder="m dài"

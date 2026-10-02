@@ -151,7 +151,7 @@ function formatDateTime(value?: string | null) {
 
 function formatQty(value: number | null) {
   if (value === null) return '—';
-  return value.toLocaleString('vi-VN', { maximumFractionDigits: 2 });
+  return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
 function formatLoaiKho(value: string | null) {

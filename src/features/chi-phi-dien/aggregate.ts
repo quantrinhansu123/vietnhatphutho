@@ -3,9 +3,11 @@ import type { ChiPhiDienRow } from './types';
 
 export const LOAI_CHUA_PHAN_LOAI = 'Chưa phân loại';
 
+import { parseLocalizedNumber } from '../../utils';
+
 export function parseNumLoose(value: unknown): number {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
-  const parsed = Number(String(value ?? '').trim().replace(/\s/g, '').replace(',', '.'));
+  const parsed = parseLocalizedNumber(String(value ?? '').trim().replace(/\s/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
@@ -18,7 +20,7 @@ export function calcDongKg(tienDien: number, thanhPham: number): number {
 }
 
 export function fmtInt(value: number): string {
-  return (Number(value) || 0).toLocaleString('vi-VN', { maximumFractionDigits: 0 });
+  return (Number(value) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
 
 /** Map mã/tên máy → Loại/Nhóm (sổ trộn chỉ lưu theo máy nên phải map qua danh mục máy). */

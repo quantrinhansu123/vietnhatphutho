@@ -205,7 +205,7 @@ function normalizeMaterials(data: unknown): MaterialOption[] {
 }
 
 function formatDamagedOtherMaterialWeightInput(value: number): string {
-  return new Intl.NumberFormat('vi-VN', {
+  return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 3
   }).format(value);

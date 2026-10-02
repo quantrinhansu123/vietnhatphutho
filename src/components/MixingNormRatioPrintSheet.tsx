@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import type { MixingNormLine, MixingNormProduct, MixingNormRow } from './MixingNormMaterialsTab';
 import { formatMixingNormSlipName, stripMixingNormStdPrefix } from '../utils/mixingNormAuxiliary';
+import { parseLocalizedNumber } from '../utils';
 
 export type MixingNormRatioPrintDoc = {
   tenPhieu?: string;
@@ -34,17 +35,17 @@ function formatPrintDateLong(iso: string) {
 
 function formatNumberVi(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '';
-  return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(value);
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(value);
 }
 
 function formatNumberVi2(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '';
-  return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(value);
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value);
 }
 
 function formatActualPercentVi(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '';
-  return new Intl.NumberFormat('vi-VN', {
+  return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(value);
@@ -116,7 +117,7 @@ function resolveSecondaryActualWeight(line: MixingNormLine) {
   const row = line as Record<string, unknown>;
   const val = row.trong_luong_thuc_te ?? row.thuc_te ?? row.actual_weight;
   if (val !== null && val !== undefined && String(val).trim() !== '') {
-    const parsed = Number(String(val).replace(',', '.'));
+    const parsed = parseLocalizedNumber(val);
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;

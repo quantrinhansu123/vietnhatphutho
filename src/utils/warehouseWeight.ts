@@ -1,4 +1,4 @@
-import { formatNumber } from '../utils';
+import { formatNumber, parseLocalizedNumber } from '../utils';
 
 export type WarehouseWeightKind = 'nvl' | 'san_pham';
 
@@ -60,10 +60,7 @@ function parseWeightNumber(value: string | number | undefined | null): number | 
   const trimmed = String(value).trim();
   if (!trimmed || trimmed === '-') return null;
 
-  const normalized = trimmed.includes(',')
-    ? trimmed.replace(/\./g, '').replace(',', '.')
-    : trimmed.replace(',', '.');
-  const num = Number(normalized);
+  const num = parseLocalizedNumber(trimmed);
   return Number.isFinite(num) && num > 0 ? num : null;
 }
 

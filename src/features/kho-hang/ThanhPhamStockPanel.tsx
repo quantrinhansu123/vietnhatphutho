@@ -30,12 +30,12 @@ export type ThanhPhamStockRow = {
 
 function formatQty(value: number | undefined) {
   if (!Number.isFinite(value)) return '—';
-  return String(value);
+  return (value as number).toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
 function formatKg(value: number | undefined) {
   if (!Number.isFinite(value)) return '—';
-  return `${value}`;
+  return (value as number).toLocaleString('en-US', { maximumFractionDigits: 3 });
 }
 
 type StockUnitKind = 'base' | 'm_dai' | 'm2' | 'kg';

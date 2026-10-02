@@ -1,4 +1,5 @@
 import type { MaterialOption } from '../features/san-pham/types.ts';
+import { parseLocalizedNumber } from '../utils';
 import {
   normalizeNhomVatTuPhuKey,
   resolveWorkshopType,
@@ -68,14 +69,14 @@ export function normalizeWarehouseVthh(value: unknown): string {
   return raw;
 }
 
-/** Chuẩn hóa đơn giá làm khóa gộp: "24.000" -> 24000 (cùng logic parseMoneyInput). */
+/** Chuẩn hóa đơn giá làm khóa gộp: "24,000" -> 24000 (cùng logic parseMoneyInput). */
 export function normalizeWarehousePriceKey(value: unknown): string {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? String(value) : '';
   }
   const trimmed = String(value ?? '').trim().replace(/\s/g, '');
   if (!trimmed) return '';
-  const parsed = Number(trimmed.replace(/\./g, '').replace(',', '.'));
+  const parsed = parseLocalizedNumber(trimmed);
   return Number.isFinite(parsed) ? String(parsed) : '';
 }
 
@@ -474,16 +475,16 @@ export function consolidateWarehouseLines<T extends {
     }
 
     const current = result[existingIndex];
-    const currentQty = Number(String(current.quantity || '').replace(',', '.'));
-    const lineQty = Number(String(line.quantity || '').replace(',', '.'));
+    const currentQty = parseLocalizedNumber(current.quantity || '');
+    const lineQty = parseLocalizedNumber(line.quantity || '');
     const totalQty = (Number.isFinite(currentQty) ? currentQty : 0) + (Number.isFinite(lineQty) ? lineQty : 0);
 
-    const currentDocQty = Number(String(current.documentQuantity || '').replace(',', '.'));
-    const lineDocQty = Number(String(line.documentQuantity || '').replace(',', '.'));
+    const currentDocQty = parseLocalizedNumber(current.documentQuantity || '');
+    const lineDocQty = parseLocalizedNumber(line.documentQuantity || '');
     const totalDocQty = (Number.isFinite(currentDocQty) ? currentDocQty : 0) + (Number.isFinite(lineDocQty) ? lineDocQty : 0);
 
-    const currentTonQty = Number(String((current as T).tonDauCaMay || '').replace(',', '.'));
-    const lineTonQty = Number(String((line as T).tonDauCaMay || '').replace(',', '.'));
+    const currentTonQty = parseLocalizedNumber((current as T).tonDauCaMay || '');
+    const lineTonQty = parseLocalizedNumber((line as T).tonDauCaMay || '');
     const totalTonQty = (Number.isFinite(currentTonQty) ? currentTonQty : 0) + (Number.isFinite(lineTonQty) ? lineTonQty : 0);
 
     const notes = [...new Set([current.lineNote, line.lineNote].map(v => String(v || '').trim()).filter(Boolean))];
