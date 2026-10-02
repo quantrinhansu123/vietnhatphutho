@@ -1,5 +1,5 @@
 /** Chi phí kèm theo từng dòng. Thành tiền nhập tay, không nhân với số lượng. */
-import { parseLocalizedNumber } from '../../utils';
+import { formatMoney, parseLocalizedNumber } from '../../utils';
 
 export type ChiPhiKemTheoStored = {
   ten: string;
@@ -61,8 +61,8 @@ export function kemDraftFromStored(raw: unknown): ChiPhiKemTheoDraft[] {
     return {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       ten: String(row.ten ?? row.name ?? '').trim().slice(0, 120),
-      donGia: donGia ? String(donGia) : '',
-      thanhTien: thanhTien ? String(thanhTien) : ''
+      donGia: donGia ? formatMoney(donGia, 0) : '',
+      thanhTien: thanhTien ? formatMoney(thanhTien, 0) : ''
     };
   });
 }

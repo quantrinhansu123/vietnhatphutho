@@ -5,7 +5,7 @@ import { MachineCardRow, type MachineGroup, type SchedPerson } from './MachineCa
 import { DispatchFormInline, MAY_VIEC_KHAC, type SelectedDispatchItem } from './DispatchFormInline';
 import { EditDispatchModal, type DispatchRecord } from './EditDispatchModal';
 import { DateInputVi } from '../../components/shared/DateInputVi';
-import { resolveScheduleStaffName } from '../../utils/externalStaff';
+import { isExternalStaffCode, resolveScheduleStaffName } from '../../utils/externalStaff';
 
 type SchedRow = {
   id: string;
@@ -106,7 +106,7 @@ function normalizeSchedRows(data: unknown): SchedRow[] {
       const id = str(r.id);
       const maNhanSu = str(r.ma_nhan_su);
       const maMay = str(r.ma_may);
-      if (!id || !maNhanSu || !maMay) return null;
+      if (!id || !maNhanSu || !maMay || isExternalStaffCode(maNhanSu)) return null;
       return {
         id,
         ma_lenh_sx: str(r.ma_lenh_sx),

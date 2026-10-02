@@ -19,7 +19,19 @@ import { convertWarehouseQuantityToKg, formatWarehouseWeightKg, isWarehouseKgUni
 import { fetchSoTronTonCuoiCaSlot, lookupSoTronPrevTon } from '../../utils/soTronPrevShiftTon';
 import type { MaterialOption } from '../san-pham/types';
 import { normalizeWarehouseName } from '../kho-hang';
-import { formatTongHopDate, isNhapCoreWarehouse, isNvlWarehouseName, LOAI_NHAP_OPTIONS, LOAI_XUAT_OPTIONS, pickNhapCoreWarehouses, takePendingTongHopEdit, xuatDenKind, type TongHopHeader, type TongHopMode } from './model';
+import {
+  formatTongHopDate,
+  isNhapCoreWarehouse,
+  isNvlWarehouseName,
+  LOAI_NHAP_OPTIONS,
+  LOAI_XUAT_OPTIONS,
+  pickNhapCoreWarehouses,
+  takePendingTongHopEdit,
+  takePendingTongHopView,
+  xuatDenKind,
+  type TongHopHeader,
+  type TongHopMode
+} from './model';
 import { emptyXuatNvlFields, ChiPhiKemTheoPanel, XuatNvlDetail, type XuatNvlLine } from './xuatNvlDetail';
 import { kemDraftError, kemDraftFromStored, kemStoredFromDraft, roundKem, sumKemDraft } from './chiPhiKemTheo';
 import { formatMoney, formatNumber, parseLocalizedNumber } from '../../utils';
@@ -104,12 +116,14 @@ function todayIso() {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpenList: () => void }) {
+export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => void; onOpenList: () => void; viewOnly?: boolean }) {
   const [mode, setMode] = useState<Mode>('nhap');
   const [ngay, setNgay] = useState(todayIso());
   const [cas, setCas] = useState<string[]>([]);
   const [shiftSettings, setShiftSettings] = useState<ReturnType<typeof normalizeShiftSettings>>([]);
-  const fieldClass = 'h-9 w-full rounded-lg border border-zinc-200 px-2.5 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+  const fieldClass = viewOnly
+    ? 'h-9 w-full rounded-lg border border-zinc-200 px-2.5 text-xs font-semibold text-zinc-600 bg-zinc-50'
+    : 'h-9 w-full rounded-lg border border-zinc-200 px-2.5 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
   const [warehouses, setWarehouses] = useState<Option[]>([]);
   const [machines, setMachines] = useState<Option[]>([]);
   const [suppliers, setSuppliers] = useState<Option[]>([]);
@@ -568,12 +582,12 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
             maHang: String(item.ma_hang || ''),
             tenHang: String(item.ten_hang || ''),
             donVi: String(item.don_vi || ''),
-            soLuong: String(item.so_luong ?? ''),
-            donGia: String(item.don_gia ?? ''),
+            soLuong: fmtQtyLoad(item.so_luong),
+            donGia: fmtMoneyLoad(item.don_gia),
             warehouseClass: String(item.phan_loai_nvl || '') === 'nvl_chinh' || String(item.phan_loai_nvl || '') === 'nvl_phu'
               ? String(item.phan_loai_nvl) as 'nvl_chinh' | 'nvl_phu'
               : 'chua_phan_loai',
-            slCt: String(item.so_luong_ct ?? ''),
+            slCt: fmtQtyLoad(item.so_luong_ct),
             nhomVthh: String(item.nhom_vthh || ''),
             normPerKg: Number(item.norm_kg_per_unit) > 0 ? Number(item.norm_kg_per_unit) : undefined,
             imageUrl: String(item.link_anh_can_thuc_te || ''),
@@ -585,6 +599,19 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
     );
   }
 
+  /** Nạp Sửa/Xem: hiện số đã ngăn cách trong ô input (rỗng giữ rỗng). */
+  function fmtQtyLoad(value: unknown): string {
+    if (value === null || value === undefined || String(value).trim() === '') return '';
+    const parsed = parseLocalizedNumber(value);
+    return Number.isFinite(parsed) ? formatNumber(parsed, 3) : String(value);
+  }
+
+  function fmtMoneyLoad(value: unknown): string {
+    if (value === null || value === undefined || String(value).trim() === '') return '';
+    const parsed = parseLocalizedNumber(value);
+    return Number.isFinite(parsed) ? formatMoney(parsed, 0) : String(value);
+  }
+
   const openedEdit = useRef(false);
   useEffect(() => {
     if (openedEdit.current) return;
@@ -592,6 +619,14 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
     const row = takePendingTongHopEdit();
     if (row) loadRecord(row);
   }, []);
+
+  const openedView = useRef(false);
+  useEffect(() => {
+    if (!viewOnly || openedView.current) return;
+    openedView.current = true;
+    const row = takePendingTongHopView();
+    if (row) loadRecord(row);
+  }, [viewOnly]);
 
   const nhapKho = warehouses.find(item => item.id === nguonId) || null;
 
@@ -986,14 +1021,17 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
             <button
               key={tab}
               type="button"
-              onClick={() => {
+              onClick={viewOnly ? undefined : () => {
                 setMode(tab);
                 resetLines();
               }}
+              disabled={viewOnly}
               className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-extrabold transition ${
-                mode === tab
-                  ? 'border-[#ef1b2d] bg-red-50 text-[#ef1b2d]'
-                  : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400'
+                viewOnly
+                  ? 'border-zinc-200 bg-zinc-50 text-zinc-600 cursor-not-allowed'
+                  : mode === tab
+                    ? 'border-[#ef1b2d] bg-red-50 text-[#ef1b2d]'
+                    : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400'
               }`}
             >
               {tab === 'nhap' ? 'Phiếu nhập' : 'Phiếu xuất'}
@@ -1006,17 +1044,19 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
         <div className="flex flex-wrap items-center gap-2 border-b border-zinc-100 pb-2">
           <p className="text-sm font-black text-zinc-950">Thông tin phiếu</p>
           <p className="text-xs font-semibold text-zinc-400">{mode === 'nhap' ? 'Nhập kho' : 'Xuất kho'}</p>
-          <p className={`rounded-full px-2 py-0.5 text-[11px] font-extrabold ${editingId ? 'bg-amber-50 text-amber-800' : 'bg-zinc-100 text-zinc-600'}`}>
-            {editingId ? `Đang sửa phiếu ${editingCode || editingId}` : 'Đang thêm phiếu mới'}
+          <p className={`rounded-full px-2 py-0.5 text-[11px] font-extrabold ${
+            viewOnly ? 'bg-blue-50 text-blue-800' : editingId ? 'bg-amber-50 text-amber-800' : 'bg-zinc-100 text-zinc-600'
+          }`}>
+            {viewOnly ? `Xem phiếu ${editingCode || editingId}` : editingId ? `Đang sửa phiếu ${editingCode || editingId}` : 'Đang thêm phiếu mới'}
           </p>
-          {editingId ? (
+          {!viewOnly && editingId ? (
             <button type="button" onClick={resetLines} className="ml-auto text-[11px] font-extrabold text-[#ef1b2d]">Thêm phiếu mới</button>
           ) : null}
         </div>
         <div className="grid gap-x-2 gap-y-1.5 md:grid-cols-2">
           <label className="block space-y-1">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày phiếu</span>
-            <VnCalendarPicker value={ngay} onChange={setNgay} />
+            <VnCalendarPicker value={ngay} onChange={setNgay} disabled={viewOnly} />
           </label>
           <label className="block space-y-1">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">{mode === 'nhap' ? 'Loại nhập' : 'Loại xuất'}</span>
@@ -1032,6 +1072,7 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
                 comboboxMode
                 comboboxSearchable
                 allowCustomValue
+                disabled={viewOnly}
               />
             ) : (
               <SearchableSelect
@@ -1050,6 +1091,7 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
                 comboboxMode
                 comboboxSearchable
                 allowCustomValue
+                disabled={viewOnly}
               />
             )}
           </label>
@@ -1094,11 +1136,12 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
               <div className="grid gap-2 md:grid-cols-[10rem_minmax(0,1fr)]">
                 <select
                   value={nguonLoai}
-                  onChange={event => {
+                  onChange={viewOnly ? undefined : event => {
                     setNguonLoai(event.target.value === 'ncc' ? 'ncc' : 'kho');
                     setNguonId('');
                     setLines(current => current.map(line => ({ ...line, maHang: '', tenHang: '', tenSanXuat: '', donVi: '', ton: null })));
                   }}
+                  disabled={viewOnly}
                   className={fieldClass}
                 >
                   <option value="kho">Kho</option>
@@ -1106,7 +1149,7 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
                 </select>
                 <SearchableSelect
                   value={nguonId}
-                  onChange={value => {
+                  onChange={viewOnly ? undefined : value => {
                     setNguonId(value);
                     setLines(current => current.map(line => ({ ...line, maHang: '', tenHang: '', tenSanXuat: '', donVi: '', ton: null })));
                   }}
@@ -1117,6 +1160,7 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
                   inputClassName={fieldClass}
                   comboboxMode
                   comboboxSearchable
+                  disabled={viewOnly}
                 />
               </div>
             </div>
@@ -1126,7 +1170,7 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Xuất từ</span>
                 <SearchableSelect
                   value={khoXuat}
-                  onChange={value => {
+                  onChange={viewOnly ? undefined : value => {
                     if (value === khoXuat) return;
                     setKhoXuat(value);
                     setLines(current => current.map(line => ({
@@ -1147,6 +1191,7 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
                   inputClassName={fieldClass}
                   comboboxMode
                   comboboxSearchable
+                  disabled={viewOnly}
                 />
               </label>
               {destKind === 'may-ptdm' ? (
@@ -1157,19 +1202,20 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
                   <button
                     type="button"
                     ref={ptdmTriggerRef}
-                    onClick={() => setPtdmOpen(open => !open)}
-                    className={`${fieldClass} flex items-center justify-between gap-2 text-left`}
+                    onClick={viewOnly ? undefined : () => setPtdmOpen(open => !open)}
+                    disabled={viewOnly}
+                    className={`${fieldClass} flex items-center justify-between gap-2 text-left ${viewOnly ? 'cursor-not-allowed' : ''}`}
                   >
                     <span className={`truncate ${ptdmKeys.length ? 'text-zinc-800' : 'text-zinc-400'}`}>
                       {ptdmKeys.length ? `Đã chọn (${ptdmKeys.length}) phiếu trộn định mức` : 'Chọn phiếu trộn định mức...'}
                     </span>
                     <ChevronDown className={`h-4 w-4 shrink-0 text-zinc-400 ${ptdmOpen ? 'rotate-180' : ''}`} />
                   </button>
-                  {ptdmOpen && ptdmMenu ? createPortal(
+                  {ptdmOpen && ptdmMenu && !viewOnly ? createPortal(
                     <div ref={ptdmPanelRef} className="fixed z-[200] space-y-2 rounded-lg border border-zinc-200 bg-white p-2.5 shadow-lg" style={ptdmMenu}>
                       <div className="relative">
                         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
-                        <input value={ptdmSearch} onChange={event => setPtdmSearch(event.target.value)} className={`${fieldClass} pl-8`} placeholder="Gõ để lọc tên phiếu trộn..." />
+                        <input value={ptdmSearch} onChange={viewOnly ? undefined : event => setPtdmSearch(event.target.value)} disabled={viewOnly} className={`${fieldClass} pl-8`} placeholder="Gõ để lọc tên phiếu trộn..." />
                       </div>
                       {loadingNorms ? (
                         <p className="flex items-center gap-1.5 text-xs font-semibold text-zinc-400"><Loader2 className="h-3.5 w-3.5 animate-spin" />Đang tải phiếu trộn định mức...</p>
@@ -1207,7 +1253,7 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Người lập</span>
             <SearchableSelect
               value={nguoiLap}
-              onChange={setNguoiLap}
+              onChange={viewOnly ? undefined : setNguoiLap}
               options={staff}
               getValue={(item: { id: string }) => item.id}
               getLabel={(item: { label: string }) => item.label}
@@ -1215,23 +1261,24 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
               inputClassName={fieldClass}
               comboboxMode
               comboboxSearchable
+              disabled={viewOnly}
             />
           </label>
           <label className="block space-y-1">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Người giao hàng</span>
-            <input value={nguoiGiao} onChange={event => setNguoiGiao(event.target.value)} className={fieldClass} placeholder="Họ tên người giao hàng" />
+            <input value={nguoiGiao} onChange={viewOnly ? undefined : event => setNguoiGiao(event.target.value)} disabled={viewOnly} className={fieldClass} placeholder="Họ tên người giao hàng" />
           </label>
           <label className="block space-y-1">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Địa điểm</span>
-            <input value={diaDiem} onChange={event => setDiaDiem(event.target.value)} className={fieldClass} placeholder="VD: Phú Thọ" />
+            <input value={diaDiem} onChange={viewOnly ? undefined : event => setDiaDiem(event.target.value)} disabled={viewOnly} className={fieldClass} placeholder="VD: Phú Thọ" />
           </label>
           <label className="block space-y-1">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Lý do</span>
-            <input value={lyDo} onChange={event => setLyDo(event.target.value)} className={fieldClass} placeholder={mode === 'nhap' ? 'VD: Nhập mua ngoài...' : 'VD: Xuất sản xuất...'} />
+            <input value={lyDo} onChange={viewOnly ? undefined : event => setLyDo(event.target.value)} disabled={viewOnly} className={fieldClass} placeholder={mode === 'nhap' ? 'VD: Nhập mua ngoài...' : 'VD: Xuất sản xuất...'} />
           </label>
           <label className="block space-y-1 md:col-span-2">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
-            <input value={ghiChu} onChange={event => setGhiChu(event.target.value)} className={fieldClass} placeholder="Số chứng từ gốc kèm theo..." />
+            <input value={ghiChu} onChange={viewOnly ? undefined : event => setGhiChu(event.target.value)} disabled={viewOnly} className={fieldClass} placeholder="Số chứng từ gốc kèm theo..." />
           </label>
         </div>
 
@@ -1249,6 +1296,7 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
             onChange={bindXuatLines}
             onRefreshCatalog={() => { void refreshCatalog(); }}
             refreshing={refreshingCatalog}
+            viewOnly={viewOnly}
           />
         ) : null}
         {mode === 'nhap' ? <><div className="overflow-x-auto rounded-lg border border-zinc-200">
@@ -1439,7 +1487,8 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
                       <ChiPhiKemTheoPanel
                         items={line.chiPhiKemTheo || []}
                         lineAmount={lineAmount(line) || 0}
-                        onChange={next => patchLine(index, { ...line, chiPhiKemTheo: next })}
+                        onChange={viewOnly ? undefined : next => patchLine(index, { ...line, chiPhiKemTheo: next })}
+                        disabled={viewOnly}
                       />
                     </td>
                   </tr>
@@ -1478,11 +1527,20 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
         {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}
         {info ? <p className="text-sm font-semibold text-emerald-700">{info}</p> : null}
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={previewDraft} className="inline-flex h-9 items-center gap-1 rounded-lg border border-[#ef1b2d] px-4 text-xs font-extrabold text-[#ef1b2d]">
-            <Printer className="h-4 w-4" /> Xem trước
-          </button>
-          <button type="button" disabled={saving} onClick={() => void onSave()} className="h-9 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white disabled:opacity-60">
-            {saving ? 'Đang lưu…' : editingId ? 'Cập nhật' : 'Lưu phiếu'}
+          {!viewOnly && (
+            <button type="button" onClick={previewDraft} className="inline-flex h-9 items-center gap-1 rounded-lg border border-[#ef1b2d] px-4 text-xs font-extrabold text-[#ef1b2d]">
+              <Printer className="h-4 w-4" /> Xem trước
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={viewOnly ? false : saving}
+            onClick={viewOnly ? onBack : () => void onSave()}
+            className={`h-9 rounded-lg px-4 text-xs font-extrabold text-white ${
+              viewOnly ? 'bg-zinc-400' : 'bg-[#ef1b2d] disabled:opacity-60'
+            }`}
+          >
+            {viewOnly ? 'Đóng' : saving ? 'Đang lưu…' : editingId ? 'Cập nhật' : 'Lưu phiếu'}
           </button>
         </div>
       </section>
@@ -1493,3 +1551,4 @@ export function TongHopPanel({ onBack, onOpenList }: { onBack: () => void; onOpe
 }
 
 export { TongHopListPanel } from './list';
+export { TongHopViewModal } from './ViewModal';
