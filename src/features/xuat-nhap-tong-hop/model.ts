@@ -86,12 +86,23 @@ export const LOAI_XUAT_TRA_NCC = LOAI_XUAT_OPTIONS[1];
 export const LOAI_XUAT_PHE_BAM = LOAI_XUAT_OPTIONS[2];
 export const LOAI_XUAT_PHE_CAI = LOAI_XUAT_OPTIONS[3];
 
+function foldLoai(value: string) {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /** Nơi hàng xuất đến, suy từ loại xuất. `flex` = kho hoặc máy (Xuất khác / loại tự gõ). */
 export function xuatDenKind(loaiXuat: string): 'may-ptdm' | 'ncc' | 'may' | 'flex' {
   const value = String(loaiXuat || '').trim();
-  if (value === LOAI_XUAT_MAY_PTDM) return 'may-ptdm';
-  if (value === LOAI_XUAT_TRA_NCC) return 'ncc';
-  if (value === LOAI_XUAT_PHE_BAM || value === LOAI_XUAT_PHE_CAI) return 'may';
+  const folded = foldLoai(value);
+  if (value === LOAI_XUAT_MAY_PTDM || folded.includes('phieu ty le tron')) return 'may-ptdm';
+  if (value === LOAI_XUAT_TRA_NCC || (folded.includes('tra lai') && folded.includes('nha cung cap'))) return 'ncc';
+  if (value === LOAI_XUAT_PHE_BAM || value === LOAI_XUAT_PHE_CAI || folded.includes('phe bam') || folded.includes('phe cai')) return 'may';
   return 'flex';
 }
 

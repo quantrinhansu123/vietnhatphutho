@@ -786,6 +786,13 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'phieu-nhap-xuat-tong-hop-list'
   },
   {
+    title: 'Tổng hợp NVL từ nhà cung cấp',
+    desc: 'Chi tiết mua vật tư theo NCC: SL nhập, giá nhập kho và SL trả lại NCC theo kỳ.',
+    icon: BarChart3,
+    icon3d: chartIncreasing3d,
+    tab: 'tong-hop-ncc'
+  },
+  {
     title: 'Lịch sử xuất nhập',
     desc: 'Tra cứu phiếu đã lưu, lọc theo loại và ngày.',
     icon: History,
@@ -1092,6 +1099,7 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Chuyển kho', tab: 'chuyen-kho' },
       { label: 'Xuất nhập kho NVL', tab: 'phieu-nhap-xuat-tong-hop' },
       { label: 'Danh sách xuất nhập kho NVL', tab: 'phieu-nhap-xuat-tong-hop-list' },
+      { label: 'Tổng hợp NVL từ nhà cung cấp', tab: 'tong-hop-ncc' },
       { label: 'Tồn kho', tab: 'ton-kho' },
       { label: 'Chuẩn bị xuất hàng', tab: 'factory-kho', disabled: true }
     ]
@@ -1168,6 +1176,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'chuyen-kho': { group: 'Kho', sub: 'Chuyển kho' },
   'phieu-nhap-xuat-tong-hop': { group: 'Kho', sub: 'Xuất nhập kho NVL' },
   'phieu-nhap-xuat-tong-hop-list': { group: 'Kho', sub: 'Danh sách xuất nhập kho NVL' },
+  'tong-hop-ncc': { group: 'Kho', sub: 'Tổng hợp NVL từ nhà cung cấp' },
   'warehouse-history-detail': { group: 'Kho', sub: 'Chi tiết phiếu' },
   'damaged-goods-warehouse': { group: 'Kho', sub: 'Kho hàng hỏng' },
   'ton-kho': { group: 'Kho', sub: 'Tồn kho' },

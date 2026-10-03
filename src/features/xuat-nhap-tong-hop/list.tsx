@@ -165,7 +165,19 @@ export function TongHopListPanel({
           <tbody>
             {records.map(row => (
               <tr key={row.id} className="border-b border-slate-100">
-                <td className="px-3 py-2 font-semibold">{row.ma_phieu_chung}</td>
+                <td className="px-3 py-2 font-semibold">
+                  <button
+                    type="button"
+                    title="Bấm để sửa phiếu"
+                    onClick={() => {
+                      queueTongHopEdit(row);
+                      onEdit();
+                    }}
+                    className="cursor-pointer font-mono text-[#ef1b2d] transition-colors hover:text-red-700 hover:underline"
+                  >
+                    {row.ma_phieu_chung}
+                  </button>
+                </td>
                 <td className="px-3 py-2">{row.loai === 'nhap' ? 'Nhập' : 'Xuất'}</td>
                 <td className="px-3 py-2">{formatTongHopDate(String(row.ngay || '').slice(0, 10))}</td>
                 <td className="px-3 py-2">{row.nguon_id || '—'}</td>
