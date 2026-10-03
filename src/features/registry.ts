@@ -54,6 +54,7 @@ export type TableId =
   | 'lenh_cat_le'
   | 'phieu_chuyen_kho'
   | 'phieu_nhap_xuat_tong_hop'
+  | 'tong_hop_ncc'
   | 'control_board';
 
 export interface TableRegistryEntry {
@@ -688,6 +689,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appLines: 'src/features/chuyen-kho/index.tsx',
     components: ['src/features/chuyen-kho/index.tsx'],
     utils: []
+  },
+  tong_hop_ncc: {
+    table: 'tong_hop_ncc',
+    label: 'Tổng hợp NVL từ nhà cung cấp (nhập NCC + trả NCC)',
+    sql: ['supabase-phieu-nhap-xuat-tong-hop.sql'],
+    apiPrefix: '/api/xuat-nhap-tong-hop',
+    serverLines: 'registerXuatNhapTongHopRoutes GET /api/xuat-nhap-tong-hop (?from&to&ncc&limit)',
+    appTab: 'tong-hop-ncc',
+    appLines: 'src/features/tong-hop-ncc/index.tsx',
+    components: ['src/features/xuat-nhap-tong-hop/model.ts', 'src/features/xuat-nhap-tong-hop/chiPhiKemTheo.ts'],
+    utils: ['src/utils.ts', 'src/features/so-che-do-may (VnCalendarPicker)']
   },
   control_board: {
     table: 'control_board',

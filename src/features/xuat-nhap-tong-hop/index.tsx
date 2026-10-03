@@ -135,6 +135,8 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
   const [loaiXuat, setLoaiXuat] = useState('');
   const [khoXuat, setKhoXuat] = useState('');
   const [xuatDenId, setXuatDenId] = useState('');
+  /** Xuất trả NCC: nhà cung cấp nhận hàng (chọn dưới danh sách chi tiết). */
+  const [xuatNccId, setXuatNccId] = useState('');
   const [ptdmKeys, setPtdmKeys] = useState<string[]>([]);
   const [ptdmOpen, setPtdmOpen] = useState(false);
   const [ptdmSearch, setPtdmSearch] = useState('');
@@ -378,6 +380,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     setLoaiXuat('');
     setKhoXuat('');
     setXuatDenId('');
+    setXuatNccId('');
     setPtdmKeys([]);
     setNguoiLap('');
     setNguoiGiao('');
@@ -390,6 +393,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
   function buildPayload() {
     const tonRef = resolveDefaultTonDauRef(ngay, cas[0] || '', getProductionShiftOptions(shiftSettings), shiftSettings);
     const payloadLines = mode === 'xuat' ? lines.filter(line => line.maHang.trim()) : lines;
+    const isTraNcc = mode === 'xuat' && xuatDenKind(loaiXuat) === 'ncc';
     return {
       loai: mode,
       ngay,
@@ -431,9 +435,9 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
             ...(line.imagePublicId ? { link_anh_can_thuc_te_public_id: line.imagePublicId } : {})
           }
           : {}),
-        kho_dong: mode === 'xuat' && line.khoLoai === 'may' ? '' : line.khoId,
-        dich_dong_loai: mode === 'xuat' ? (line.khoLoai === 'may' ? 'may' : 'kho') : '',
-        dich_dong_id: mode === 'xuat' ? line.khoId : '',
+        kho_dong: mode === 'xuat' && (isTraNcc || line.khoLoai === 'may') ? '' : line.khoId,
+        dich_dong_loai: mode === 'xuat' ? (isTraNcc ? 'ncc' : line.khoLoai === 'may' ? 'may' : 'kho') : '',
+        dich_dong_id: mode === 'xuat' ? (isTraNcc ? xuatNccId : line.khoId) : '',
         chi_phi_kem_theo: kemStoredFromDraft(line.chiPhiKemTheo)
       }))
     };
@@ -460,13 +464,20 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         return;
       }
       const filled = lines.filter(line => line.maHang.trim());
-      if (filled.some(line => !line.khoId)) {
-        setError(destKind === 'may-ptdm' ? 'Tick phiếu trộn định mức để lấy máy của lệnh sản xuất.' : 'Mỗi dòng cần chọn kho hoặc máy nhập.');
-        return;
-      }
-      if (filled.some(line => line.khoLoai !== 'may' && line.khoId === khoXuat)) {
-        setError('Xuất từ và kho nhập phải khác nhau.');
-        return;
+      if (destKind === 'ncc') {
+        if (!xuatNccId) {
+          setError('Chọn nhà cung cấp trả lại (ô dưới danh sách chi tiết).');
+          return;
+        }
+      } else {
+        if (filled.some(line => !line.khoId)) {
+          setError(destKind === 'may-ptdm' ? 'Tick phiếu trộn định mức để lấy máy của lệnh sản xuất.' : 'Mỗi dòng cần chọn kho hoặc máy nhập.');
+          return;
+        }
+        if (filled.some(line => line.khoLoai !== 'may' && line.khoId === khoXuat)) {
+          setError('Xuất từ và kho nhập phải khác nhau.');
+          return;
+        }
       }
       if (!filled.length) {
         setError('Nhập ít nhất một dòng NVL.');
@@ -545,6 +556,11 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     const firstDestId = String(first.dich_dong_id || first.kho_dong_id || first.kho_dong_ten || first.nguon_dong_id || '');
     setKhoXuat(row.loai === 'xuat' && firstSrcKind === 'kho' ? firstSrcId : '');
     setXuatDenId(row.loai === 'xuat' && firstDestKind === 'may' ? firstDestId : '');
+    setXuatNccId(
+      row.loai === 'xuat' && (firstDestKind === 'ncc' || String(row.dich_loai || '') === 'ncc')
+        ? String(firstDestKind === 'ncc' ? firstDestId : row.dich_id || '')
+        : ''
+    );
     setPtdmKeys([]);
     setNguoiLap(row.nguoi_lap || '');
     setNguoiGiao(row.nguoi_giao || '');
@@ -723,7 +739,11 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
       setError('Chọn xuất từ trước khi xem trước.');
       return;
     }
-    if (mode === 'xuat' && usable.some(line => !line.khoId)) {
+    if (mode === 'xuat' && destKind === 'ncc' && !xuatNccId) {
+      setError('Chọn nhà cung cấp trả lại (ô dưới danh sách chi tiết).');
+      return;
+    }
+    if (mode === 'xuat' && destKind !== 'ncc' && usable.some(line => !line.khoId)) {
       setError(destKind === 'may-ptdm' ? 'Tick phiếu trộn định mức để lấy máy của lệnh sản xuất.' : 'Mỗi dòng cần chọn kho hoặc máy nhập.');
       return;
     }
@@ -1101,6 +1121,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                 onChange={value => {
                   setLoaiXuat(value);
                   setXuatDenId('');
+                  setXuatNccId('');
                   setPtdmKeys([]);
                   if (xuatDenKind(value) !== 'may-ptdm') setCas([]);
                 }}
@@ -1304,21 +1325,27 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         </div>
 
         {mode === 'xuat' ? (
-          <XuatNvlDetail
-            lines={lines}
-            warehouses={warehouses}
-            machines={machines}
-            materials={exportCatalog}
-            shiftOptions={shiftOptions}
-            defaultTonNgay={tonDefault.ngay || ngay}
-            destLocked={destKind === 'may-ptdm'}
-            defaultKhoLoai={destKind === 'may-ptdm' ? 'may' : 'kho'}
-            defaultKhoId={destKind === 'may-ptdm' ? (lines.find(line => line.khoLoai === 'may' && line.khoId)?.khoId || xuatDenId) : ''}
-            onChange={bindXuatLines}
-            onRefreshCatalog={() => { void refreshCatalog(); }}
-            refreshing={refreshingCatalog}
-            viewOnly={viewOnly}
-          />
+          <>
+            <XuatNvlDetail
+              lines={lines}
+              warehouses={warehouses}
+              machines={machines}
+              materials={exportCatalog}
+              shiftOptions={shiftOptions}
+              defaultTonNgay={tonDefault.ngay || ngay}
+              destLocked={destKind === 'may-ptdm'}
+              returnToNcc={destKind === 'ncc'}
+              nccId={xuatNccId}
+              nccOptions={suppliers}
+              onNccChange={setXuatNccId}
+              defaultKhoLoai={destKind === 'may-ptdm' ? 'may' : 'kho'}
+              defaultKhoId={destKind === 'may-ptdm' ? (lines.find(line => line.khoLoai === 'may' && line.khoId)?.khoId || xuatDenId) : ''}
+              onChange={bindXuatLines}
+              onRefreshCatalog={() => { void refreshCatalog(); }}
+              refreshing={refreshingCatalog}
+              viewOnly={viewOnly}
+            />
+          </>
         ) : null}
         {mode === 'nhap' ? <><div className="overflow-x-auto rounded-lg border border-zinc-200">
           <table className="w-max min-w-full text-xs">
@@ -1346,7 +1373,9 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                   : [];
                 const sxOptions = khoMaterials.filter(item =>
                   item.code.trim().toLocaleLowerCase('vi') === line.maHang.trim().toLocaleLowerCase('vi')
+                  && String(item.productionName || '').trim()
                 );
+                const sxText = String(line.tenSanXuat || '').trim();
                 function applyNhapMaterial(item: MaterialOption) {
                   const next = {
                     ...line,
@@ -1433,7 +1462,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                         title={!line.materialId.trim() && line.tenSanXuat.trim() ? 'Tên SX mới — lưu phiếu sẽ tạo dòng NVL mới (mã + tên + tên SX + kho)' : undefined}
                       >
                         <SearchableSelect
-                          value={line.materialId || line.tenSanXuat}
+                          value={sxText ? (line.materialId || sxText) : ''}
                           onChange={value => {
                             const v = String(value || '').trim();
                             const match = khoMaterials.find(option => String(option.id || '').trim() === v)
@@ -1476,7 +1505,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                           }}
                           options={sxOptions}
                           getValue={item => String((item as MaterialOption).id || '').trim()}
-                          getLabel={item => String((item as MaterialOption).productionName || (item as MaterialOption).name || '')}
+                          getLabel={item => String((item as MaterialOption).productionName || '').trim()}
                           placeholder={line.maHang ? (line.materialId ? 'Không có dữ liệu' : 'Gõ tên SX mới hoặc chọn') : 'Chọn mã trước'}
                           disabled={!line.maHang.trim()}
                           inputClassName={`${fieldClass} ${!line.materialId.trim() && line.tenSanXuat.trim() ? 'border-amber-400 bg-amber-50' : ''}`}
@@ -1528,7 +1557,11 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         </button>
         <p className="text-[11px] font-semibold text-zinc-500">Nguồn nhập không bắt buộc. Để trống thì không trừ kho nguồn. Mã chỉ lấy dòng kho NVL của đúng kho nhập (mỗi dòng một id). Nếu chọn kho nguồn thì chỉ Kho NVL Chính, Kho NVL Phụ, Kho PC. Kho nhập cũng chỉ ba kho đó.</p>
         </> : (
-          <p className="text-[11px] font-semibold text-zinc-500">Xuất từ là kho lấy hàng. Mỗi dòng chọn Loại kho (kho hoặc máy) rồi chọn Nhập đến. Nhập đến máy hiện tên máy. Với xuất theo phiếu tỷ lệ trộn, máy nhận lấy từ lệnh sản xuất của phiếu trộn đã tick.</p>
+          <p className="text-[11px] font-semibold text-zinc-500">
+            {destKind === 'ncc'
+              ? 'Xuất từ là kho lấy hàng. Cột Nhà cung cấp trong danh sách và ô dưới danh sách là nơi trả hàng.'
+              : 'Xuất từ là kho lấy hàng. Mỗi dòng chọn Loại kho (kho hoặc máy) rồi chọn Nhập đến. Nhập đến máy hiện tên máy. Với xuất theo phiếu tỷ lệ trộn, máy nhận lấy từ lệnh sản xuất của phiếu trộn đã tick.'}
+          </p>
         )}
         {warning ? (
           <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">

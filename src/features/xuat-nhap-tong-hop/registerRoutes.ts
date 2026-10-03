@@ -1047,8 +1047,20 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
   app.get('/api/xuat-nhap-tong-hop', async (req, res) => {
     if (!deps.supabase) return res.json({ records: [], total: 0, source: 'local' });
     const loai = text(req.query.loai);
-    let query = deps.supabase.from(deps.tables.header).select(SELECT).order('ngay', { ascending: false }).limit(300);
+    const from = text(req.query.from || req.query.tu_ngay);
+    const to = text(req.query.to || req.query.den_ngay);
+    const ncc = text(req.query.ncc || req.query.nguon_id || req.query.nha_cung_cap);
+    const loaiNhap = text(req.query.loai_nhap);
+    const loaiXuat = text(req.query.loai_xuat);
+    const limit = Math.min(2000, Math.max(1, Number(req.query.limit) || 500));
+    const isoDate = (value: string) => (/^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '');
+    let query = deps.supabase.from(deps.tables.header).select(SELECT).order('ngay', { ascending: false }).limit(limit);
     if (loai === 'nhap' || loai === 'xuat') query = query.eq('loai', loai);
+    if (isoDate(from)) query = query.gte('ngay', from.slice(0, 10));
+    if (isoDate(to)) query = query.lte('ngay', to.slice(0, 10));
+    if (loaiNhap) query = query.eq('loai_nhap', loaiNhap);
+    if (loaiXuat) query = query.eq('loai_xuat', loaiXuat);
+    if (ncc) query = query.or(`nguon_id.eq.${ncc},dich_id.eq.${ncc}`);
     const { data, error } = await query;
     if (error) {
       if (deps.isMissingTable(error)) return res.status(503).json({ error: tableMissing(error), records: [] });

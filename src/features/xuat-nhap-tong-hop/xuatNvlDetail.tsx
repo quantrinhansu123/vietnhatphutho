@@ -4,7 +4,7 @@ import ProductQrScanner from '../../components/ProductQrScanner';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import WeighingImagePreviewModal, { WeighingImageThumbnail, type WeighingPreviewImage } from '../../components/WeighingImagePreviewModal';
 import { VnCalendarPicker } from '../so-che-do-may';
-import { insertWarehouseLineByClass, resolveWarehouseLineProductionName } from '../phieu-xuat-nhap-kho/nvlSlipLogic';
+import { insertWarehouseLineByClass } from '../phieu-xuat-nhap-kho/nvlSlipLogic';
 import type { MaterialOption } from '../san-pham/types';
 import { fileToOptimizedImageDataUrl, uploadImage } from '../_shared/recordHelpers';
 import { CAMERA_IMAGE_INPUT_PROPS } from '../../utils/cameraCapture';
@@ -227,6 +227,10 @@ export function XuatNvlDetail({
   destLocked,
   defaultKhoLoai,
   defaultKhoId,
+  returnToNcc,
+  nccId = '',
+  nccOptions = [],
+  onNccChange,
   onChange,
   onRefreshCatalog,
   refreshing,
@@ -242,6 +246,11 @@ export function XuatNvlDetail({
   destLocked?: boolean;
   defaultKhoLoai?: 'kho' | 'may';
   defaultKhoId?: string;
+  /** Xuất trả lại nhà cung cấp: hiện cột chọn NCC trong danh sách. */
+  returnToNcc?: boolean;
+  nccId?: string;
+  nccOptions?: KhoOption[];
+  onNccChange?: (id: string) => void;
   onChange: (lines: XuatNvlLine[]) => void;
   onRefreshCatalog: () => void;
   refreshing: boolean;
@@ -278,7 +287,9 @@ export function XuatNvlDetail({
 
   function productionOptions(code: string, currentId: string, currentName: string) {
     const key = code.trim().toLocaleLowerCase('vi');
-    const rows = materials.filter(item => item.code.trim().toLocaleLowerCase('vi') === key);
+    const rows = materials.filter(item =>
+      item.code.trim().toLocaleLowerCase('vi') === key && String(item.productionName || '').trim()
+    );
     if (currentId && rows.some(item => materialRowId(item) === currentId)) return rows;
     if (currentName && !rows.some(item => String(item.productionName || '').trim() === currentName)) {
       return [...rows, { id: currentId, code, name: '', productionName: currentName, unit: '' } as MaterialOption];
@@ -412,8 +423,8 @@ export function XuatNvlDetail({
       <div className="scrollbar-hidden overflow-x-auto">
         <div className={headerGrid}>
           <span className={`${head} text-center`}>STT</span>
-          <span className={head}>Loại kho</span>
-          <span className={head}>Nhập đến</span>
+          <span className={head}>{returnToNcc ? 'Nơi trả' : 'Loại kho'}</span>
+          <span className={head}>{returnToNcc ? 'Nhà cung cấp' : 'Nhập đến'}</span>
           <span className={head}>Mã nguyên vật liệu</span>
           <span className={head}>Tên nguyên vật liệu</span>
           <span className={head}>Tên sản xuất</span>
@@ -444,7 +455,7 @@ export function XuatNvlDetail({
               : line.normPerKg && line.normPerKg > 0
                 ? Math.round(qty * line.normPerKg * 1000) / 1000
                 : 0;
-          const sx = resolveWarehouseLineProductionName({ code: line.maHang, productionName: line.tenSanXuat }, materials);
+          const sxText = String(line.tenSanXuat || '').trim();
           const inputId = `tong-hop-can-${line.key}`;
           return (
             <React.Fragment key={line.key}>
@@ -455,6 +466,9 @@ export function XuatNvlDetail({
               ) : null}
               <div className={lineGrid}>
                 <div className="flex items-center justify-center text-xs font-bold text-zinc-500">{index + 1}</div>
+                {returnToNcc ? (
+                  <div className="truncate px-1 text-[11px] font-bold text-amber-800">Trả NCC</div>
+                ) : (
                 <select
                   value={line.khoLoai === 'may' ? 'may' : 'kho'}
                   disabled={destLocked || viewOnly}
@@ -465,6 +479,23 @@ export function XuatNvlDetail({
                   <option value="kho">Kho</option>
                   <option value="may">Máy</option>
                 </select>
+                )}
+                {returnToNcc ? (
+                  <SearchableSelect
+                    value={nccId}
+                    onChange={viewOnly ? undefined : value => onNccChange?.(value)}
+                    options={nccOptions}
+                    getValue={item => (item as KhoOption).id}
+                    getLabel={item => (item as KhoOption).label}
+                    getSearchText={item => (item as KhoOption).label}
+                    placeholder="Chọn nhà cung cấp"
+                    disabled={viewOnly}
+                    inputClassName={`${field} border-amber-300 bg-amber-50`}
+                    comboboxMode
+                    comboboxSearchable
+                    openUpward
+                  />
+                ) : (
                 <SearchableSelect
                   value={line.khoId}
                   onChange={viewOnly ? undefined : value => patchAt(index, { khoId: value })}
@@ -479,6 +510,7 @@ export function XuatNvlDetail({
                   comboboxSearchable
                   openUpward
                 />
+                )}
                 <SearchableSelect
                   value={line.materialId || line.maHang}
                   onChange={viewOnly ? undefined : value => {
@@ -500,14 +532,14 @@ export function XuatNvlDetail({
                 <div className="truncate text-[11px] font-semibold text-zinc-700" title={line.tenHang}>{line.tenHang || '—'}</div>
                 <div>
                   <SearchableSelect
-                    value={line.materialId}
+                    value={sxText ? (line.materialId || sxText) : ''}
                     onChange={viewOnly ? undefined : value => {
                       const found = findMaterial(value);
                       if (found) applyMaterial(index, found);
                     }}
-                    options={productionOptions(line.maHang, line.materialId, sx)}
+                    options={productionOptions(line.maHang, line.materialId, sxText)}
                     getValue={item => materialRowId(item as MaterialOption)}
-                    getLabel={item => String((item as MaterialOption).productionName || (item as MaterialOption).name || '')}
+                    getLabel={item => String((item as MaterialOption).productionName || '').trim()}
                     placeholder={line.maHang ? 'Không có dữ liệu' : 'Chọn mã NPL trước'}
                     disabled={!line.maHang.trim() || viewOnly}
                     inputClassName={field}
@@ -645,6 +677,32 @@ export function XuatNvlDetail({
           );
         })}
       </div>
+      {returnToNcc ? (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-2.5">
+          <label className="block space-y-1">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-700">
+              Nhà cung cấp trả lại <span className="text-[#ef1b2d]">*</span>
+            </span>
+            <SearchableSelect
+              value={nccId}
+              onChange={viewOnly ? undefined : value => onNccChange?.(value)}
+              options={nccOptions}
+              getValue={item => (item as KhoOption).id}
+              getLabel={item => (item as KhoOption).label}
+              getSearchText={item => (item as KhoOption).label}
+              placeholder="Chọn nhà cung cấp trả lại..."
+              disabled={viewOnly}
+              inputClassName="h-9 w-full rounded-lg border border-amber-300 bg-white px-2.5 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
+              comboboxMode
+              comboboxSearchable
+              openUpward
+            />
+          </label>
+          <p className="mt-1 text-[11px] font-semibold text-zinc-500">
+            Chọn nhà cung cấp nhận hàng trả. Cột Nhà cung cấp trong danh sách dùng chung lựa chọn này.
+          </p>
+        </div>
+      ) : null}
       {uploadError ? <p className="text-xs font-semibold text-rose-600">{uploadError}</p> : null}
       <ProductQrScanner open={scannerOpen} onClose={() => setScannerOpen(false)} onScan={onScan} closeAfterScan={false} requireConfirm={false} />
       <WeighingImagePreviewModal image={viewing} onClose={() => setViewing(null)} />
