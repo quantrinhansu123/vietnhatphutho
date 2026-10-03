@@ -494,7 +494,7 @@ export function buildWarehouseSlipDraftFromHistoryRows(
           row.tonDauCaMay != null && Number.isFinite(row.tonDauCaMay)
             ? formatNumber(row.tonDauCaMay, 3)
             : '',
-        unitPrice: row.unitPrice > 0 ? String(row.unitPrice) : '',
+        unitPrice: row.unitPrice > 0 ? sanitizeMoneyInput(String(Math.round(row.unitPrice))) : '',
         warehouseClass: row.materialClass || '',
         machine: row.machine || '',
         nhomVthh: row.nhomVthh || '',
@@ -1297,7 +1297,7 @@ export function createWarehouseLineDraftFromTpStock(row: TpStockOption): Warehou
     unit: row.don_vi,
     nhomVthh: row.nhom_vthh,
     quantity: '',
-    documentQuantity: sl > 0 ? String(sl) : '',
+    documentQuantity: sl > 0 ? formatNumber(sl, 2) : '',
     unitPrice: '',
     kgPerUnit: kgPer,
     m2PerUnit: m2Per,

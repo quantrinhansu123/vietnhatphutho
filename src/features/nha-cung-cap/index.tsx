@@ -10,6 +10,7 @@ import {
   downloadSupplierCsvTemplate,
   parseSupplierExcel
 } from '../../utils/supplierExcel';
+import { formatMoney, parseLocalizedNumber, sanitizeMoneyInput } from '../../utils';
 import {
   FilterCombobox,
   TableToolbar,
@@ -44,8 +45,7 @@ function pickNumber(record: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     const value = record[key];
     if (value === null || value === undefined || value === '') continue;
-    const normalized =
-      typeof value === 'number' ? value : Number(String(value).trim().replace(/\./g, '').replace(',', '.'));
+    const normalized = typeof value === 'number' ? value : parseLocalizedNumber(value);
     if (Number.isFinite(normalized)) return normalized;
   }
   return 0;
@@ -144,7 +144,7 @@ function emptyForm(code = ''): SupplierForm {
 function parseDebtInput(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return 0;
-  const normalized = Number(trimmed.replace(/\./g, '').replace(',', '.'));
+  const normalized = parseLocalizedNumber(trimmed);
   return Number.isFinite(normalized) ? normalized : 0;
 }
 
@@ -240,7 +240,7 @@ export function SuppliersPanel({ onBack }: { onBack: () => void }) {
       ma_nha_cung_cap: supplier.code,
       ten_nha_cung_cap: supplier.name,
       dia_chi: supplier.address,
-      so_tien_no: supplier.debt ? String(supplier.debt) : '',
+      so_tien_no: supplier.debt ? formatMoney(supplier.debt, 0) : '',
       ma_so_thue_cccd: supplier.taxCode,
       rui_ro_hoa_don: supplier.invoiceRisk,
       van_ban_tham_chieu: supplier.referenceDoc,
@@ -356,7 +356,7 @@ export function SuppliersPanel({ onBack }: { onBack: () => void }) {
           ma_nha_cung_cap: code,
           ten_nha_cung_cap: name,
           dia_chi: row.address.trim(),
-          so_tien_no: row.debt.trim() ? Number(String(row.debt).trim().replace(/\./g, '').replace(',', '.')) || 0 : 0,
+          so_tien_no: row.debt.trim() ? parseLocalizedNumber(row.debt) || 0 : 0,
           ma_so_thue_cccd: row.taxCode.trim(),
           rui_ro_hoa_don: row.invoiceRisk.trim(),
           van_ban_tham_chieu: row.referenceDoc.trim(),
@@ -722,9 +722,11 @@ export function SuppliersPanel({ onBack }: { onBack: () => void }) {
               <label className="block space-y-1.5">
                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Số tiền nợ</span>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   value={form.so_tien_no}
-                  onChange={event => setForm(prev => ({ ...prev, so_tien_no: event.target.value }))}
+                  onChange={event => setForm(prev => ({ ...prev, so_tien_no: sanitizeMoneyInput(event.target.value) }))}
+                  onBlur={event => setForm(prev => ({ ...prev, so_tien_no: sanitizeMoneyInput(event.target.value) }))}
                   className={orderFieldClass}
                   placeholder="0"
                 />

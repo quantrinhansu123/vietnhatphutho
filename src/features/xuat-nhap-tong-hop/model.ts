@@ -25,6 +25,7 @@ export type TongHopHeader = {
 };
 
 let pendingEdit: TongHopHeader | null = null;
+let pendingView: TongHopHeader | null = null;
 
 export function queueTongHopEdit(row: TongHopHeader) {
   pendingEdit = row;
@@ -33,6 +34,16 @@ export function queueTongHopEdit(row: TongHopHeader) {
 export function takePendingTongHopEdit() {
   const row = pendingEdit;
   pendingEdit = null;
+  return row;
+}
+
+export function queueTongHopView(row: TongHopHeader) {
+  pendingView = row;
+}
+
+export function takePendingTongHopView() {
+  const row = pendingView;
+  pendingView = null;
   return row;
 }
 

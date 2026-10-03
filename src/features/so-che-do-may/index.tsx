@@ -747,7 +747,8 @@ export function VnCalendarPicker({
   onChange,
   alignRight,
   compact = false,
-  openUpward = false
+  openUpward = false,
+  disabled = false
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -755,6 +756,7 @@ export function VnCalendarPicker({
   /** Ô hẹp trong bảng: cao bằng input dòng, lịch nổi ra ngoài để không tràn cột. */
   compact?: boolean;
   openUpward?: boolean;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const parsed = parseDateStr(value);
@@ -834,8 +836,8 @@ export function VnCalendarPicker({
             <button
               type="button"
               aria-label="Tháng trước"
-              disabled={isMin}
-              onClick={() => stepMonth(-1)}
+              disabled={isMin || disabled}
+              onClick={disabled ? undefined : () => stepMonth(-1)}
               className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 disabled:opacity-30"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -846,8 +848,8 @@ export function VnCalendarPicker({
             <button
               type="button"
               aria-label="Tháng sau"
-              disabled={isMax}
-              onClick={() => stepMonth(1)}
+              disabled={isMax || disabled}
+              onClick={disabled ? undefined : () => stepMonth(1)}
               className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 disabled:opacity-30"
             >
               <ChevronRight className="h-4 w-4" />
@@ -860,10 +862,15 @@ export function VnCalendarPicker({
               min={1}
               max={2999}
               value={view.nam}
-              onChange={e =>
+              onChange={disabled ? undefined : e =>
                 setView(v => ({ ...v, nam: Math.min(2999, Math.max(1, Number(e.target.value) || 1)) }))
               }
-              className="w-20 rounded-lg border border-slate-300 px-2 py-0.5 text-center text-xs outline-none focus:border-blue-400"
+              disabled={disabled}
+              className={`w-20 rounded-lg border px-2 py-0.5 text-center text-xs outline-none ${
+                disabled
+                  ? 'border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed'
+                  : 'border-slate-300 bg-white focus:border-blue-400'
+              }`}
             />
           </label>
           <div className="grid grid-cols-7 gap-0.5 text-center">
@@ -887,17 +894,18 @@ export function VnCalendarPicker({
                 <button
                   key={d}
                   type="button"
-                  onClick={() => {
+                  onClick={disabled ? undefined : () => {
                     onChange(toDateStr(view.nam, view.thang, d));
                     setOpen(false);
                   }}
+                  disabled={disabled}
                   className={`rounded-lg py-1.5 text-xs font-semibold transition ${
                     selected
                       ? 'bg-blue-600 text-white'
                       : isToday
                         ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-300'
                         : 'text-slate-700 hover:bg-slate-100'
-                  }`}
+                  } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {d}
                 </button>
@@ -906,12 +914,15 @@ export function VnCalendarPicker({
           </div>
           <button
             type="button"
-            onClick={() => {
+            onClick={disabled ? undefined : () => {
               const t = new Date();
               onChange(toDateStr(t.getFullYear(), t.getMonth() + 1, t.getDate()));
               setOpen(false);
             }}
-            className="mt-1.5 w-full rounded-lg bg-slate-50 py-1 text-xs font-bold text-slate-600 hover:bg-slate-100"
+            disabled={disabled}
+            className={`mt-1.5 w-full rounded-lg py-1 text-xs font-bold text-slate-600 hover:bg-slate-100 ${
+              disabled ? 'bg-slate-50 opacity-50 cursor-not-allowed' : 'bg-slate-50'
+            }`}
           >
           Hôm nay
         </button>
@@ -922,18 +933,27 @@ export function VnCalendarPicker({
     <div ref={boxRef} className={compact ? 'relative min-w-0' : 'relative'}>
       <button
         type="button"
-        onClick={() => setOpen(o => !o)}
+        onClick={disabled ? undefined : () => setOpen(o => !o)}
+        disabled={disabled}
         title={parsed ? formatDateVN(value) : 'Chọn ngày'}
         className={
           compact
-            ? 'inline-flex h-8 w-full min-w-0 items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] font-semibold text-zinc-800 outline-none hover:border-[#ef1b2d]'
-            : 'inline-flex w-full items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-800 hover:border-blue-400'
+            ? `inline-flex h-8 w-full min-w-0 items-center gap-1 rounded-md border px-1.5 text-[11px] font-semibold outline-none ${
+                disabled
+                  ? 'border-zinc-200 bg-zinc-50 text-zinc-600 cursor-not-allowed'
+                  : 'border-zinc-200 bg-white text-zinc-800 hover:border-[#ef1b2d]'
+              }`
+            : `inline-flex w-full items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-semibold ${
+                disabled
+                  ? 'border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed'
+                  : 'border-slate-300 bg-white text-slate-800 hover:border-blue-400'
+              }`
         }
       >
         <CalendarDays className={compact ? 'h-3.5 w-3.5 shrink-0 text-[#ef1b2d]' : 'h-4 w-4 shrink-0 text-slate-400'} />
         <span className={compact ? 'truncate' : undefined}>{parsed ? formatDateVN(value) : 'Chọn ngày'}</span>
       </button>
-      {open ? (compact ? createPortal(popup, document.body) : popup) : null}
+      {open && !disabled ? (compact ? createPortal(popup, document.body) : popup) : null}
     </div>
   );
 }

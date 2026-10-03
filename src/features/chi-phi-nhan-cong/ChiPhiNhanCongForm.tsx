@@ -26,6 +26,7 @@ import type {
 } from './types';
 import { MonthYearPickerVi } from './MonthYearPickerVi';
 import { calculateLaborCost } from './calculateLabor';
+import { parseLocalizedNumber } from '../../utils';
 
 interface ChiPhiNhanCongFormProps {
   initialRecord?: ChiPhiNhanCongRecord | null;
@@ -570,7 +571,7 @@ export function ChiPhiNhanCongForm({
                                       step={1000}
                                       value={hourlyRates[p.personCode] ?? p.hourlyRate ?? 0}
                                       onChange={e =>
-                                        handleRateChange(p.personCode, Number(e.target.value) || 0)
+                                        handleRateChange(p.personCode, parseLocalizedNumber(e.target.value) || 0)
                                       }
                                       className="w-24 rounded border border-slate-300 px-2 py-1 text-right text-xs font-semibold text-slate-800 focus:border-brand-500 focus:outline-none"
                                     />
@@ -843,7 +844,7 @@ export function ChiPhiNhanCongForm({
                         min={0}
                         step={1000}
                         value={hourlyRates[p.personCode] ?? p.hourlyRate ?? 0}
-                        onChange={e => handleRateChange(p.personCode, Number(e.target.value) || 0)}
+                        onChange={e => handleRateChange(p.personCode, parseLocalizedNumber(e.target.value) || 0)}
                         className="w-24 rounded border border-slate-300 px-2 py-1 text-right text-xs font-semibold text-slate-800 focus:border-brand-500 focus:outline-none"
                       />
                     </td>

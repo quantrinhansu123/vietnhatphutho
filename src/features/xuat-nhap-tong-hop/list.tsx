@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Printer } from 'lucide-react';
 import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from '../../components/WarehouseSlipPrintModal';
+import { TongHopViewModal } from './ViewModal';
 import {
   formatTongHopDate,
   isNvlWarehouseName,
   queueTongHopEdit,
+  queueTongHopView,
   type TongHopHeader,
   type TongHopMode
 } from './model';
@@ -83,6 +85,7 @@ export function TongHopListPanel({
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [printSlips, setPrintSlips] = useState<WarehouseSlipPrintData[] | null>(null);
+  const [viewOpen, setViewOpen] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -174,6 +177,16 @@ export function TongHopListPanel({
                     <button type="button" onClick={() => setPrintSlips(slipsFromRecord(row))} className="text-slate-600" aria-label="In phiếu">
                       <Printer className="h-4 w-4" />
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        queueTongHopView(row);
+                        setViewOpen(true);
+                      }}
+                      className="text-xs font-extrabold text-blue-600"
+                    >
+                      Xem
+                    </button>
                     {row.trang_thai !== 'huy' ? (
                       <>
                         <button
@@ -199,6 +212,7 @@ export function TongHopListPanel({
       </section>
 
       <WarehouseSlipPrintModal open={Boolean(printSlips)} slips={printSlips} onClose={() => setPrintSlips(null)} />
+      <TongHopViewModal open={viewOpen} onClose={() => setViewOpen(false)} />
     </div>
   );
 }

@@ -97,81 +97,90 @@ function newKey() {
 export function ChiPhiKemTheoPanel({
   items,
   lineAmount,
-  onChange
+  onChange,
+  disabled
 }: {
   items: ChiPhiKemTheoDraft[];
   lineAmount: number;
   onChange: (next: ChiPhiKemTheoDraft[]) => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const kem = sumKemDraft(items);
   const tongDong = roundKem(lineAmount + kem);
-  return (
+return (
     <div className="mb-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5">
       <button
         type="button"
-        onClick={() => setOpen(current => !current)}
-        className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-extrabold text-zinc-700"
+        onClick={disabled ? undefined : () => setOpen(current => !current)}
+        disabled={disabled}
+        className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-extrabold ${
+          disabled ? 'text-zinc-400 cursor-not-allowed' : 'text-zinc-700'
+        }`}
       >
         <ChevronDown className={`h-3.5 w-3.5 transition ${open ? 'rotate-180' : ''}`} />
         Chi phí ({items.length})
         <span className="font-semibold text-zinc-500">Tổng chi phí đi kèm {formatMoney(kem, 0)}</span>
         <span className="font-semibold text-zinc-900">Tổng thành tiền {formatMoney(tongDong, 0)}</span>
       </button>
-      {open ? (
+      {open && !disabled ? (
         <div className="mt-2 space-y-1">
           {items.map(item => (
             <div key={item.id} className="grid grid-cols-[minmax(8rem,1fr)_7rem_7rem_1.75rem] items-center gap-1">
               <input
                 value={item.ten}
                 placeholder="Nhập tên chi phí"
-                onChange={event => {
+                onChange={disabled ? undefined : event => {
                   const ten = event.target.value.slice(0, 120);
                   onChange(items.map(row => (row.id === item.id ? { ...row, ten } : row)));
                 }}
+                disabled={disabled}
                 className={field}
               />
               <input
                 value={item.donGia}
                 inputMode="decimal"
                 placeholder="Đơn giá"
-                onChange={event => onChange(items.map(row => (row.id === item.id ? { ...row, donGia: event.target.value } : row)))}
-                onBlur={event => {
+                onChange={disabled ? undefined : event => onChange(items.map(row => (row.id === item.id ? { ...row, donGia: event.target.value } : row)))}
+                onBlur={disabled ? undefined : event => {
                   if (!event.target.value.trim()) return;
                   const parsed = parseLocalizedNumber(event.target.value);
                   if (Number.isFinite(parsed)) onChange(items.map(row => (row.id === item.id ? { ...row, donGia: formatMoney(parsed, 0) } : row)));
                 }}
+                disabled={disabled}
                 className={`${field} text-right`}
               />
               <input
                 value={item.thanhTien}
                 inputMode="decimal"
                 placeholder="Thành tiền"
-                onChange={event => onChange(items.map(row => (row.id === item.id ? { ...row, thanhTien: event.target.value } : row)))}
-                onBlur={event => {
+                onChange={disabled ? undefined : event => onChange(items.map(row => (row.id === item.id ? { ...row, thanhTien: event.target.value } : row)))}
+                onBlur={disabled ? undefined : event => {
                   if (!event.target.value.trim()) return;
                   const parsed = parseLocalizedNumber(event.target.value);
                   if (Number.isFinite(parsed)) onChange(items.map(row => (row.id === item.id ? { ...row, thanhTien: formatMoney(parsed, 0) } : row)));
                 }}
+                disabled={disabled}
                 className={`${field} text-right`}
               />
-              <button
-                type="button"
-                onClick={() => onChange(items.filter(row => row.id !== item.id))}
-                className="text-rose-600"
-                aria-label="Xóa chi phí"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              {!disabled && (
+                <button
+                  type="button"
+                  onClick={() => onChange(items.filter(row => row.id !== item.id))}
+                  className="text-rose-600"
+                  aria-label="Xóa chi phí"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
           ))}
           <button
             type="button"
-            disabled={items.length >= 50}
-            onClick={() => onChange([...items, emptyChiPhiKemTheo()])}
-            className="inline-flex items-center gap-1 text-[11px] font-extrabold text-[#ef1b2d] disabled:opacity-40"
+            onClick={() => onChange([...items, { id: newKey(), ten: '', donGia: '', thanhTien: '' }])}
+            className="text-xs font-extrabold text-blue-600"
           >
-            <Plus className="h-3.5 w-3.5" /> Thêm chi phí
+            + Thêm chi phí
           </button>
         </div>
       ) : null}
@@ -220,7 +229,8 @@ export function XuatNvlDetail({
   defaultKhoId,
   onChange,
   onRefreshCatalog,
-  refreshing
+  refreshing,
+  viewOnly
 }: {
   lines: XuatNvlLine[];
   warehouses: KhoOption[];
@@ -235,6 +245,7 @@ export function XuatNvlDetail({
   onChange: (lines: XuatNvlLine[]) => void;
   onRefreshCatalog: () => void;
   refreshing: boolean;
+  viewOnly?: boolean;
 }) {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [uploadingKey, setUploadingKey] = useState('');
@@ -347,53 +358,55 @@ export function XuatNvlDetail({
     <div className="space-y-2 rounded-xl border border-zinc-200 bg-zinc-50 p-2.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-black uppercase tracking-wider text-zinc-500">Chi tiết NVL</p>
-        <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto">
-          <button
-            type="button"
-            onClick={() => setScannerOpen(true)}
-            className="flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-[#ef1b2d] px-2.5 text-[11px] font-extrabold text-white"
-          >
-            <ScanBarcode className="h-3.5 w-3.5" />
-            Quét ĐT
-          </button>
-          <button
-            type="button"
-            onClick={() => addClass('nvl_chinh')}
-            className="flex h-8 items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-[11px] font-extrabold text-blue-700"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Thêm NVL chính
-          </button>
-          <button
-            type="button"
-            onClick={() => addClass('nvl_phu')}
-            className="flex h-8 items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2.5 text-[11px] font-extrabold text-violet-700"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Thêm NVL phụ
-          </button>
-          <button
-            type="button"
-            onClick={onRefreshCatalog}
-            disabled={refreshing}
-            className="flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-[11px] font-extrabold text-emerald-800 disabled:opacity-60"
-            title="Tải lại cột Tổng kg từ kho NVL"
-          >
-            {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            Làm mới Tổng kg
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (!window.confirm('Xóa hết tất cả các dòng NVL trong phiếu?')) return;
-              onChange([blankLine()]);
-            }}
-            className="flex h-8 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] font-extrabold text-zinc-700 hover:border-red-200 hover:bg-red-50 hover:text-[#ef1b2d]"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Xóa hết
-          </button>
-        </div>
+        {!viewOnly && (
+          <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto">
+            <button
+              type="button"
+              onClick={() => setScannerOpen(true)}
+              className="flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d] bg-[#ef1b2d] px-2.5 text-[11px] font-extrabold text-white"
+            >
+              <ScanBarcode className="h-3.5 w-3.5" />
+              Quét ĐT
+            </button>
+            <button
+              type="button"
+              onClick={() => addClass('nvl_chinh')}
+              className="flex h-8 items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-[11px] font-extrabold text-blue-700"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Thêm NVL chính
+            </button>
+            <button
+              type="button"
+              onClick={() => addClass('nvl_phu')}
+              className="flex h-8 items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2.5 text-[11px] font-extrabold text-violet-700"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Thêm NVL phụ
+            </button>
+            <button
+              type="button"
+              onClick={onRefreshCatalog}
+              disabled={refreshing}
+              className="flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-[11px] font-extrabold text-emerald-800 disabled:opacity-60"
+              title="Tải lại cột Tổng kg từ kho NVL"
+            >
+              {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Làm mới Tổng kg
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!window.confirm('Xóa hết tất cả các dòng NVL trong phiếu?')) return;
+                onChange([blankLine()]);
+              }}
+              className="flex h-8 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] font-extrabold text-zinc-700 hover:border-red-200 hover:bg-red-50 hover:text-[#ef1b2d]"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Xóa hết
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="scrollbar-hidden overflow-x-auto">
@@ -444,8 +457,8 @@ export function XuatNvlDetail({
                 <div className="flex items-center justify-center text-xs font-bold text-zinc-500">{index + 1}</div>
                 <select
                   value={line.khoLoai === 'may' ? 'may' : 'kho'}
-                  disabled={destLocked}
-                  onChange={event => patchAt(index, { khoLoai: event.target.value === 'may' ? 'may' : 'kho', khoId: '' })}
+                  disabled={destLocked || viewOnly}
+                  onChange={viewOnly ? undefined : event => patchAt(index, { khoLoai: event.target.value === 'may' ? 'may' : 'kho', khoId: '' })}
                   className={field}
                   aria-label="Loại kho"
                 >
@@ -454,13 +467,13 @@ export function XuatNvlDetail({
                 </select>
                 <SearchableSelect
                   value={line.khoId}
-                  onChange={value => patchAt(index, { khoId: value })}
+                  onChange={viewOnly ? undefined : value => patchAt(index, { khoId: value })}
                   options={line.khoLoai === 'may' ? machines : warehouses}
                   getValue={item => (item as KhoOption).id}
                   getLabel={item => destLabel(item as KhoOption, line.khoLoai === 'may' ? 'may' : 'kho')}
                   getSearchText={item => (item as KhoOption).label}
                   placeholder={destLocked ? 'Máy theo lệnh sản xuất' : line.khoLoai === 'may' ? 'Chọn máy' : 'Chọn kho'}
-                  disabled={destLocked}
+                  disabled={destLocked || viewOnly}
                   inputClassName={field}
                   comboboxMode
                   comboboxSearchable
@@ -468,7 +481,7 @@ export function XuatNvlDetail({
                 />
                 <SearchableSelect
                   value={line.materialId || line.maHang}
-                  onChange={value => {
+                  onChange={viewOnly ? undefined : value => {
                     const found = findMaterial(value);
                     if (found) applyMaterial(index, found);
                   }}
@@ -482,12 +495,13 @@ export function XuatNvlDetail({
                   comboboxMode
                   comboboxSearchable
                   openUpward
+                  disabled={viewOnly}
                 />
                 <div className="truncate text-[11px] font-semibold text-zinc-700" title={line.tenHang}>{line.tenHang || '—'}</div>
                 <div>
                   <SearchableSelect
                     value={line.materialId}
-                    onChange={value => {
+                    onChange={viewOnly ? undefined : value => {
                       const found = findMaterial(value);
                       if (found) applyMaterial(index, found);
                     }}
@@ -495,7 +509,7 @@ export function XuatNvlDetail({
                     getValue={item => materialRowId(item as MaterialOption)}
                     getLabel={item => String((item as MaterialOption).productionName || (item as MaterialOption).name || '')}
                     placeholder={line.maHang ? 'Không có dữ liệu' : 'Chọn mã NPL trước'}
-                    disabled={!line.maHang.trim()}
+                    disabled={!line.maHang.trim() || viewOnly}
                     inputClassName={field}
                     comboboxMode
                     comboboxSearchable
@@ -507,11 +521,12 @@ export function XuatNvlDetail({
                   {tape ? (
                     <select
                       value={line.nhomVthh}
-                      onChange={event => {
+                      onChange={viewOnly ? undefined : event => {
                         const nhomVthh = event.target.value;
                         const per = resolveAuxiliaryWeightPerUnit(groupKey, nhomVthh, line.donVi);
                         patchAt(index, { nhomVthh, ...(per && per > 0 ? { normPerKg: per } : {}) });
                       }}
+                      disabled={viewOnly}
                       className={`${field} ${line.nhomVthh ? '' : 'border-amber-300 bg-amber-50'}`}
                     >
                       <option value="">-- VTHH --</option>
@@ -526,12 +541,14 @@ export function XuatNvlDetail({
                     compact
                     openUpward
                     value={line.ngayDong || defaultTonNgay}
-                    onChange={value => patchAt(index, { ngayDong: value, tonDau: null, tonDauDirty: false })}
+                    onChange={viewOnly ? undefined : value => patchAt(index, { ngayDong: value, tonDau: null, tonDauDirty: false })}
+                    disabled={viewOnly}
                   />
                 </div>
                 <select
                   value={line.caDong}
-                  onChange={event => patchAt(index, { caDong: event.target.value, tonDau: null, tonDauDirty: false })}
+                  onChange={viewOnly ? undefined : event => patchAt(index, { caDong: event.target.value, tonDau: null, tonDauDirty: false })}
+                  disabled={viewOnly}
                   className={field}
                   aria-label="Ca"
                 >
@@ -540,7 +557,7 @@ export function XuatNvlDetail({
                 </select>
                 <input
                   value={line.tonDau === null ? '' : String(line.tonDau)}
-                  onChange={event => {
+                  onChange={viewOnly ? undefined : event => {
                     const parsed = parseLocalizedNumber(event.target.value);
                     patchAt(index, {
                       tonDau: event.target.value.trim() && Number.isFinite(parsed) ? parsed : null,
@@ -551,33 +568,37 @@ export function XuatNvlDetail({
                   placeholder="0"
                   title="Tồn đầu ca"
                   aria-label="Tồn đầu ca"
+                  disabled={viewOnly}
                   className={`${field} text-right tabular-nums ${line.tonDauDirty ? '' : 'border-sky-200 bg-sky-50/50'}`}
                 />
-                <input value={line.slCt} onChange={event => patchAt(index, { slCt: event.target.value })} onBlur={event => {
+                <input value={line.slCt} onChange={viewOnly ? undefined : event => patchAt(index, { slCt: event.target.value })} onBlur={viewOnly ? undefined : event => {
                   if (!event.target.value.trim()) return;
                   const parsed = parseLocalizedNumber(event.target.value);
                   if (Number.isFinite(parsed)) patchAt(index, { slCt: formatNumber(parsed, 3) });
-                }} className={field} />
-                <input value={line.soLuong} onChange={event => patchAt(index, { soLuong: event.target.value })} onBlur={event => {
+                }} disabled={viewOnly} className={field} />
+                <input value={line.soLuong} onChange={viewOnly ? undefined : event => patchAt(index, { soLuong: event.target.value })} onBlur={viewOnly ? undefined : event => {
                   if (!event.target.value.trim()) return;
                   const parsed = parseLocalizedNumber(event.target.value);
                   if (Number.isFinite(parsed)) patchAt(index, { soLuong: formatNumber(parsed, 3) });
-                }} className={`${field} border-emerald-200 bg-emerald-50/50`} />
+                }} disabled={viewOnly} className={`${field} border-emerald-200 bg-emerald-50/50`} />
                 <div className={`${field} flex items-center bg-emerald-50/60 font-mono font-bold text-emerald-800`}>{formatNumber(kg || 0, 3)}</div>
-                <input value={line.donGia} onChange={event => patchAt(index, { donGia: event.target.value })} onBlur={event => {
+                <input value={line.donGia} onChange={viewOnly ? undefined : event => patchAt(index, { donGia: event.target.value })} onBlur={viewOnly ? undefined : event => {
                   if (!event.target.value.trim()) return;
                   const parsed = parseLocalizedNumber(event.target.value);
                   if (Number.isFinite(parsed)) patchAt(index, { donGia: formatMoney(parsed, 0) });
-                }} className={field} />
+                }} disabled={viewOnly} className={field} />
                 <div className="text-right font-mono text-[11px] font-bold tabular-nums">{amountText}</div>
-                <button type="button" onClick={() => onChange(lines.filter((_, i) => i !== index).length ? lines.filter((_, i) => i !== index) : [blankLine()])} className="text-rose-600">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                {!viewOnly && (
+                  <button type="button" onClick={() => onChange(lines.filter((_, i) => i !== index).length ? lines.filter((_, i) => i !== index) : [blankLine()])} className="text-rose-600">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
               <ChiPhiKemTheoPanel
                 items={line.chiPhiKemTheo || []}
                 lineAmount={amount}
-                onChange={next => patchAt(index, { chiPhiKemTheo: next })}
+                onChange={viewOnly ? undefined : next => patchAt(index, { chiPhiKemTheo: next })}
+                disabled={viewOnly}
               />
               {!line.isScanned ? (
                 <div className="mb-2 rounded-lg border border-red-100 bg-red-50/40 p-2">
@@ -595,15 +616,15 @@ export function XuatNvlDetail({
                   <input
                     id={inputId}
                     {...CAMERA_IMAGE_INPUT_PROPS}
-                    disabled={uploadingKey === line.key}
+                    disabled={uploadingKey === line.key || viewOnly}
                     className="hidden"
-                    onChange={event => {
+                    onChange={viewOnly ? undefined : event => {
                       const file = event.target.files?.[0] || null;
                       event.target.value = '';
                       if (file) void uploadPhoto(index, file);
                     }}
                   />
-                  <label htmlFor={inputId} className="mt-1.5 flex h-10 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700">
+                  <label htmlFor={inputId} className={`mt-1.5 flex h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-200 px-3 text-xs font-bold ${viewOnly ? 'bg-zinc-50 text-zinc-400 cursor-not-allowed' : 'bg-white text-zinc-700 cursor-pointer'}`}>
                     {uploadingKey === line.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
                     {uploadingKey === line.key ? 'Đang tải ảnh...' : line.imageUrl ? 'Chụp lại' : 'Chụp ảnh'}
                   </label>

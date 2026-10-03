@@ -6,6 +6,7 @@ import { normalizeHrBranches } from '../_shared/hr';
 import { orderFieldClass } from '../_shared/orderHelpers';
 import { showAppToast, showSaveFailure, readApiErrorMessage } from '../../lib/appToast';
 import { downloadCustomerExcel, downloadCustomerExcelTemplate, downloadCustomerCsvTemplate, parseCustomerExcel } from '../../utils/customerExcel';
+import { formatMoney, parseLocalizedNumber, sanitizeMoneyInput } from '../../utils';
 import {
   FilterCombobox,
   TableToolbar,
@@ -448,7 +449,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
       ten_khach_hang: customer.name,
       dia_chi: customer.address,
       dia_chi_moi: customer.newAddress,
-      cong_no: customer.debt ? String(customer.debt) : '',
+      cong_no: customer.debt ? formatMoney(customer.debt, 0) : '',
       ma_so_thue: customer.taxCode,
       so_dien_thoai: customer.phone,
       dt_di_dong_nlh: customer.mobilePhoneNlh,
@@ -480,7 +481,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
             ten_khach_hang: form.ten_khach_hang.trim(),
             dia_chi: form.dia_chi.trim(),
             dia_chi_moi: form.dia_chi_moi.trim(),
-            cong_no: form.cong_no.trim() ? Number(form.cong_no.trim()) : 0,
+            cong_no: form.cong_no.trim() ? parseLocalizedNumber(form.cong_no) || 0 : 0,
             ma_so_thue: form.ma_so_thue.trim(),
             so_dien_thoai: normalizePhoneList(form.so_dien_thoai),
             dt_di_dong_nlh: normalizePhoneList(form.dt_di_dong_nlh),
@@ -569,7 +570,7 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
           ten_khach_hang: name,
           dia_chi: row.address.trim(),
           dia_chi_moi: row.newAddress.trim(),
-          cong_no: row.debt.trim() ? Number(String(row.debt).trim().replace(',', '.')) || 0 : 0,
+          cong_no: row.debt.trim() ? parseLocalizedNumber(row.debt) || 0 : 0,
           ma_so_thue: row.taxCode.trim(),
           so_dien_thoai: normalizePhoneList(row.phone),
           dt_di_dong_nlh: normalizePhoneList(row.mobilePhoneNlh),
@@ -972,9 +973,11 @@ export function CustomersPanel({ onBack }: { onBack: () => void }) {
               <label className="block space-y-1.5">
                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Công nợ</span>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   value={form.cong_no}
-                  onChange={event => setForm(prev => ({ ...prev, cong_no: event.target.value }))}
+                  onChange={event => setForm(prev => ({ ...prev, cong_no: sanitizeMoneyInput(event.target.value) }))}
+                  onBlur={event => setForm(prev => ({ ...prev, cong_no: sanitizeMoneyInput(event.target.value) }))}
                   className={orderFieldClass}
                   placeholder="0"
                 />
