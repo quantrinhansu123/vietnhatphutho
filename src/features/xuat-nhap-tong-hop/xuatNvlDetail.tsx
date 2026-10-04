@@ -285,16 +285,22 @@ export function XuatNvlDetail({
     return materials.find(item => materialRowId(item) === id);
   }
 
+  function materialKnown(id: string) {
+    const key = id.trim();
+    return Boolean(key) && materials.some(item => materialRowId(item) === key);
+  }
+
   function productionOptions(code: string, currentId: string, currentName: string) {
     const key = code.trim().toLocaleLowerCase('vi');
     const rows = materials.filter(item =>
       item.code.trim().toLocaleLowerCase('vi') === key && String(item.productionName || '').trim()
     );
     if (currentId && rows.some(item => materialRowId(item) === currentId)) return rows;
-    if (currentName && !rows.some(item => String(item.productionName || '').trim() === currentName)) {
-      return [...rows, { id: currentId, code, name: '', productionName: currentName, unit: '' } as MaterialOption];
-    }
-    return rows;
+    const name = currentName.trim();
+    if (!name) return rows;
+    const sameName = rows.find(item => String(item.productionName || '').trim() === name);
+    if (sameName) return rows;
+    return [...rows, { id: currentId || name, code, name: '', productionName: name, unit: '' } as MaterialOption];
   }
 
   function blankLine(patch?: Partial<XuatNvlLine>) {
@@ -456,6 +462,10 @@ export function XuatNvlDetail({
                 ? Math.round(qty * line.normPerKg * 1000) / 1000
                 : 0;
           const sxText = String(line.tenSanXuat || '').trim();
+          const knownMaterial = materialKnown(line.materialId);
+          const codeValue = knownMaterial ? line.materialId : line.maHang;
+          const sxValue = sxText ? (knownMaterial ? line.materialId : sxText) : '';
+          const needsWarehousePick = Boolean(line.maHang.trim()) && !knownMaterial;
           const inputId = `tong-hop-can-${line.key}`;
           return (
             <React.Fragment key={line.key}>
@@ -512,7 +522,7 @@ export function XuatNvlDetail({
                 />
                 )}
                 <SearchableSelect
-                  value={line.materialId || line.maHang}
+                  value={codeValue}
                   onChange={viewOnly ? undefined : value => {
                     const found = findMaterial(value);
                     if (found) applyMaterial(index, found);
@@ -523,7 +533,7 @@ export function XuatNvlDetail({
                   getOptionLabel={item => materialMenuLabel(item as MaterialOption)}
                   getSearchText={item => materialMenuLabel(item as MaterialOption)}
                   placeholder="Mã NPL"
-                  inputClassName={field}
+                  inputClassName={`${field} ${needsWarehousePick ? 'border-amber-300 bg-amber-50' : ''}`}
                   comboboxMode
                   comboboxSearchable
                   openUpward
@@ -532,17 +542,17 @@ export function XuatNvlDetail({
                 <div className="truncate text-[11px] font-semibold text-zinc-700" title={line.tenHang}>{line.tenHang || '—'}</div>
                 <div>
                   <SearchableSelect
-                    value={sxText ? (line.materialId || sxText) : ''}
+                    value={sxValue}
                     onChange={viewOnly ? undefined : value => {
                       const found = findMaterial(value);
                       if (found) applyMaterial(index, found);
                     }}
-                    options={productionOptions(line.maHang, line.materialId, sxText)}
+                    options={productionOptions(line.maHang, knownMaterial ? line.materialId : '', sxText)}
                     getValue={item => materialRowId(item as MaterialOption)}
                     getLabel={item => String((item as MaterialOption).productionName || '').trim()}
-                    placeholder={line.maHang ? 'Không có dữ liệu' : 'Chọn mã NPL trước'}
+                    placeholder={line.maHang ? (needsWarehousePick ? 'Chọn tên SX trong kho xuất' : 'Không có dữ liệu') : 'Chọn mã NPL trước'}
                     disabled={!line.maHang.trim() || viewOnly}
-                    inputClassName={field}
+                    inputClassName={`${field} ${needsWarehousePick ? 'border-amber-300 bg-amber-50' : ''}`}
                     comboboxMode
                     comboboxSearchable
                     openUpward
