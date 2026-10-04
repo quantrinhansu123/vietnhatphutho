@@ -93,6 +93,56 @@ function materialInWarehouse(item: { tenKho?: string; loaiKho?: string }, ten: s
   return Boolean(maKho && item.loaiKho && item.loaiKho === maKho);
 }
 
+type WarehouseMaterialRef = {
+  id?: string;
+  code: string;
+  name: string;
+  productionName?: string;
+  unit?: string;
+};
+
+function sameWarehouseText(left: string, right: string) {
+  return left.trim().toLocaleLowerCase('vi') === right.trim().toLocaleLowerCase('vi');
+}
+
+/**
+ * Id trên phiếu trộn có thể thuộc kho khác kho đang xuất.
+ * Giữ id nếu đúng kho; không thì gắn dòng cùng mã + tên + tên SX trong kho xuất.
+ * Không khớp thì bỏ id — ô hiện mã và tên SX, không hiện UUID.
+ */
+function bindMaterialInWarehouse<T extends {
+  materialId: string;
+  maHang: string;
+  tenHang: string;
+  tenSanXuat: string;
+  donVi: string;
+}>(line: T, pool: WarehouseMaterialRef[]): T {
+  const id = line.materialId.trim();
+  if (id && pool.some(item => String(item.id || '').trim() === id)) return line;
+  const code = line.maHang.trim();
+  if (!code || !pool.length) return id ? { ...line, materialId: '' } : line;
+  const name = line.tenHang.trim();
+  const sx = line.tenSanXuat.trim();
+  const matches = pool.filter(item => {
+    if (!sameWarehouseText(item.code, code)) return false;
+    if (name && !sameWarehouseText(item.name, name)) return false;
+    if (sx && !sameWarehouseText(String(item.productionName || ''), sx)) return false;
+    return true;
+  });
+  if (matches.length !== 1) return { ...line, materialId: '' };
+  const hit = matches[0];
+  const nextId = String(hit.id || '').trim();
+  if (!nextId) return { ...line, materialId: '' };
+  return {
+    ...line,
+    materialId: nextId,
+    maHang: hit.code || line.maHang,
+    tenHang: hit.name || line.tenHang,
+    tenSanXuat: String(hit.productionName || line.tenSanXuat).trim(),
+    donVi: String(hit.unit || line.donVi).trim() || line.donVi
+  };
+}
+
 function warehouseClassFromPhanLoai(value: string): 'nvl_chinh' | 'nvl_phu' | 'chua_phan_loai' {
   const normalized = value
     .trim()
@@ -872,31 +922,16 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
           ? exportCatalog
           : materials.filter(item => materialInWarehouse(item, line.khoId, warehouses.find(kho => kho.id === line.khoId)?.maKho || ''));
         if (!pool.length) return line;
-        const id = line.materialId.trim();
-        if (id && pool.some(item => String(item.id || '').trim() === id)) return line;
-        const code = line.maHang.trim().toLocaleLowerCase('vi');
-        if (!code) {
-          if (!id) return line;
-          changed = true;
-          return { ...line, materialId: '' };
-        }
-        const name = line.tenHang.trim().toLocaleLowerCase('vi');
-        const sx = line.tenSanXuat.trim().toLocaleLowerCase('vi');
-        const matches = pool.filter(item => {
-          if (item.code.trim().toLocaleLowerCase('vi') !== code) return false;
-          if (name && item.name.trim().toLocaleLowerCase('vi') !== name) return false;
-          if (sx && String(item.productionName || '').trim().toLocaleLowerCase('vi') !== sx) return false;
-          return true;
-        });
-        if (matches.length !== 1 || !String(matches[0].id || '').trim()) {
-          if (!id) return line;
-          changed = true;
-          return { ...line, materialId: '' };
-        }
-        const nextId = String(matches[0].id).trim();
-        if (id === nextId) return line;
+        const bound = bindMaterialInWarehouse(line, pool);
+        if (
+          bound.materialId === line.materialId &&
+          bound.maHang === line.maHang &&
+          bound.tenHang === line.tenHang &&
+          bound.tenSanXuat === line.tenSanXuat &&
+          bound.donVi === line.donVi
+        ) return line;
         changed = true;
-        return { ...line, materialId: nextId };
+        return bound;
       });
       return changed ? next : current;
     });
@@ -1004,8 +1039,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
       return;
     }
     setError('');
-    setInfo(`Đã điền ${merged.length} dòng NVL từ ${selected.length} phiếu trộn định mức.`);
-    setLines(merged.map(line => ({
+    const nextLines = merged.map(line => bindMaterialInWarehouse({
       ...emptyLine(),
       khoLoai: 'may' as const,
       khoId: resolveMachineId(line.machine),
@@ -1020,7 +1054,14 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
       nhomVthh: line.nhomVthh || '',
       auxiliaryGroup: line.auxiliaryGroup || '',
       normPerKg: isWarehouseKgUnit(line.unit) ? 1 : line.normWeightPerUnitKg
-    })));
+    }, exportCatalog));
+    const unbound = nextLines.filter(line => line.maHang.trim() && !line.materialId.trim()).length;
+    setInfo(
+      unbound
+        ? `Đã điền ${nextLines.length} dòng NVL từ ${selected.length} phiếu trộn định mức. ${unbound} dòng không có trong kho xuất — ô tô vàng, chọn lại tên sản xuất đúng kho này.`
+        : `Đã điền ${nextLines.length} dòng NVL từ ${selected.length} phiếu trộn định mức.`
+    );
+    setLines(nextLines);
   }
 
   async function refreshCatalog() {
