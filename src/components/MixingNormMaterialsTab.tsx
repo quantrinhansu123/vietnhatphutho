@@ -13,7 +13,6 @@ import {
 } from '../utils/mixingOrderAutofill';
 import { buildOrderTenGhep } from '../utils/productProductionName';
 import { isCuonProduct, isTamProduct } from '../features/_shared/orderHelpers';
-import { normalizeWarehouseName } from '../features/kho-hang';
 import { waitForPrintImagesReady } from '../utils/printReady';
 import {
   MixingNormRatioPrintBatch,
@@ -32,6 +31,8 @@ import {
   calcAuxiliaryWeight,
   getAllowedSecondaryGroups,
   filterSecondaryMaterialOptions,
+  pickPreferredMainMaterials,
+  pickPreferredSecondaryMaterials,
   formatMixingNormSlipName,
   normalizeMixingSlipOrderCodes,
   hasMixingNormMaterialWeightChanges
@@ -144,15 +145,6 @@ type MaterialOption = {
   warehouse: string;
   nhomVatTuPhu?: string;
 };
-
-const KHO_NVL_CHINH_KEY = 'kho nvl chinh';
-const KHO_NVL_PHU_KEY = 'kho nvl phu';
-
-function materialWarehouseKey(name: string) {
-  const raw = String(name || '').trim();
-  if (!raw || raw === '-') return '';
-  return normalizeWarehouseName(raw);
-}
 
 type ProductOption = {
   id: string;
@@ -1203,17 +1195,11 @@ export default function MixingNormMaterialsTab() {
   const [pendingPrint, setPendingPrint] = useState(false);
 
   const mainMaterialOptions = useMemo(
-    () => materials.filter(item =>
-      item.phanLoai === 'Nguyên vật liệu chính' &&
-      materialWarehouseKey(item.warehouse) === KHO_NVL_CHINH_KEY
-    ),
+    () => pickPreferredMainMaterials(materials),
     [materials]
   );
   const secondaryMaterialOptions = useMemo(
-    () => materials.filter(item =>
-      item.phanLoai === 'Nguyên vật liệu phụ' &&
-      materialWarehouseKey(item.warehouse) === KHO_NVL_PHU_KEY
-    ),
+    () => pickPreferredSecondaryMaterials(materials),
     [materials]
   );
   const catalogProductsById = useMemo(

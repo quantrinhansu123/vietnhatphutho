@@ -9,7 +9,9 @@ import {
   buildMixingNormRevisionName,
   getMixingNormRevisionNumber,
   hasMixingNormMaterialWeightChanges,
-  stripMixingNormRevisionSuffix
+  stripMixingNormRevisionSuffix,
+  pickPreferredMainMaterials,
+  pickPreferredSecondaryMaterials
 } from './mixingNormAuxiliary.ts';
 
 test('normalizeNhomVatTuPhuKey chuan hoa dung cac nhom vat tu phu', () => {
@@ -283,5 +285,79 @@ test('mergeAuxiliaryWarehouseLines bo qua VTHH voi NVL phu khac', async () => {
   assert.equal(lines[0]?.quantity, 5);
   assert.equal(lines[0]?.weightKg, 5);
   assert.equal(lines[0]?.nhomVthh, undefined);
+});
+
+test('pickPreferredMainMaterials lay moi kho, trung thi uu tien chinh > phu > pc', () => {
+  const row = (
+    id: string,
+    warehouse: string,
+    phanLoai = 'Nguyên vật liệu chính',
+    productionName = 'Hat SX'
+  ) => ({
+    id,
+    code: 'NVL-01',
+    name: 'Hạt nhựa',
+    productionName,
+    warehouse,
+    phanLoai
+  });
+
+  const picked = pickPreferredMainMaterials([
+    row('pc', 'Kho PC'),
+    row('phu', 'Kho NVL Phụ'),
+    row('chinh', 'Kho NVL Chính'),
+    row('other', 'Kho NVL'),
+    row('aux', 'Kho NVL Phụ', 'Nguyên vật liệu phụ'),
+    row('only-pc', 'Kho PC', 'Nguyên vật liệu chính', 'Loai khac'),
+    row('only-other', 'Kho thành phẩm', 'Nguyên vật liệu chính', 'Chi co kho khac')
+  ]);
+
+  const byProduction = new Map(picked.map(item => [item.productionName, item.id]));
+  assert.equal(byProduction.get('Hat SX'), 'chinh');
+  assert.equal(byProduction.get('Loai khac'), 'only-pc');
+  assert.equal(byProduction.get('Chi co kho khac'), 'only-other');
+  assert.equal(picked.some(item => item.phanLoai !== 'Nguyên vật liệu chính'), false);
+
+  const withoutChinh = pickPreferredMainMaterials([
+    row('pc', 'kho pc'),
+    row('phu', 'kho nvl phu')
+  ]);
+  assert.equal(withoutChinh[0]?.id, 'phu');
+});
+
+test('pickPreferredSecondaryMaterials lay moi kho, trung thi uu tien phu > chinh > pc', () => {
+  const row = (
+    id: string,
+    warehouse: string,
+    phanLoai = 'Nguyên vật liệu phụ',
+    productionName = 'Mang SX'
+  ) => ({
+    id,
+    code: 'NVL-02',
+    name: 'Màng PE',
+    productionName,
+    warehouse,
+    phanLoai
+  });
+
+  const picked = pickPreferredSecondaryMaterials([
+    row('pc', 'Kho PC'),
+    row('chinh', 'Kho NVL Chính'),
+    row('phu', 'Kho NVL Phụ'),
+    row('other', 'Kho NVL'),
+    row('main', 'Kho NVL Chính', 'Nguyên vật liệu chính'),
+    row('only-chinh', 'Kho NVL Chính', 'Nguyên vật liệu phụ', 'Loai khac')
+  ]);
+
+  const byProduction = new Map(picked.map(item => [item.productionName, item.id]));
+  assert.equal(byProduction.get('Mang SX'), 'phu');
+  assert.equal(byProduction.get('Loai khac'), 'only-chinh');
+  assert.equal(picked.some(item => item.phanLoai !== 'Nguyên vật liệu phụ'), false);
+
+  const withoutPhu = pickPreferredSecondaryMaterials([
+    row('pc', 'Kho PC'),
+    row('chinh', 'Kho NVL Chính')
+  ]);
+  assert.equal(withoutPhu[0]?.id, 'chinh');
 });
 

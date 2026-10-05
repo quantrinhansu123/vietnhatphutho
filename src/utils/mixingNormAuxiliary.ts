@@ -91,6 +91,84 @@ export function getAllowedSecondaryGroups(workshop: WorkshopType): string[] | nu
   return null;
 }
 
+/** NVL chính: Kho NVL Chính, rồi Kho NVL Phụ, rồi Kho PC. */
+const MAIN_NVL_WAREHOUSE_PRIORITY = ['kho nvl chinh', 'kho nvl phu', 'kho pc'] as const;
+/** NVL phụ: Kho NVL Phụ, rồi Kho NVL Chính, rồi Kho PC. */
+const SECONDARY_NVL_WAREHOUSE_PRIORITY = ['kho nvl phu', 'kho nvl chinh', 'kho pc'] as const;
+
+type PreferredMaterial = {
+  code: string;
+  name: string;
+  productionName: string;
+  warehouse: string;
+  phanLoai: string;
+};
+
+function preferredWarehouseKey(name: string) {
+  const raw = String(name || '').trim();
+  if (!raw || raw === '-') return '';
+  return raw
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+}
+
+function preferredWarehouseRank(warehouse: string, priority: readonly string[]) {
+  const index = priority.indexOf(preferredWarehouseKey(warehouse));
+  return index === -1 ? priority.length : index;
+}
+
+function preferredMaterialIdentityKey(item: { code: string; name: string; productionName: string }) {
+  return [
+    item.code.trim().toLocaleLowerCase('vi'),
+    item.name.trim().toLocaleLowerCase('vi'),
+    item.productionName.trim().toLocaleLowerCase('vi')
+  ].join('\0');
+}
+
+function pickPreferredMaterials<T extends PreferredMaterial>(
+  materials: T[],
+  phanLoai: string,
+  warehousePriority: readonly string[]
+): T[] {
+  const best = new Map<string, T>();
+  for (const item of materials) {
+    if (item.phanLoai !== phanLoai) continue;
+    const key = preferredMaterialIdentityKey(item);
+    const current = best.get(key);
+    if (
+      !current ||
+      preferredWarehouseRank(item.warehouse, warehousePriority) <
+        preferredWarehouseRank(current.warehouse, warehousePriority)
+    ) {
+      best.set(key, item);
+    }
+  }
+  return [...best.values()].sort((a, b) =>
+    `${a.code} ${a.name} ${a.productionName}`.localeCompare(
+      `${b.code} ${b.name} ${b.productionName}`,
+      'vi'
+    )
+  );
+}
+
+/**
+ * NVL chính: mọi kho có phân loại Nguyên vật liệu chính.
+ * Trùng mã + tên + tên sản xuất thì giữ một dòng: Kho NVL Chính, rồi Kho NVL Phụ, rồi Kho PC.
+ */
+export function pickPreferredMainMaterials<T extends PreferredMaterial>(materials: T[]): T[] {
+  return pickPreferredMaterials(materials, 'Nguyên vật liệu chính', MAIN_NVL_WAREHOUSE_PRIORITY);
+}
+
+/**
+ * NVL phụ: mọi kho có phân loại Nguyên vật liệu phụ.
+ * Trùng mã + tên + tên sản xuất thì giữ một dòng: Kho NVL Phụ, rồi Kho NVL Chính, rồi Kho PC.
+ */
+export function pickPreferredSecondaryMaterials<T extends PreferredMaterial>(materials: T[]): T[] {
+  return pickPreferredMaterials(materials, 'Nguyên vật liệu phụ', SECONDARY_NVL_WAREHOUSE_PRIORITY);
+}
+
 export function filterSecondaryMaterialOptions<T extends { id?: string; code: string; nhomVatTuPhu?: string }>(
   options: T[],
   allowedGroups: string[] | null,
