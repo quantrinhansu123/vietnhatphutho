@@ -113,10 +113,17 @@ export function canDeleteSoTron(roles: readonly string[] | undefined): boolean {
   return Boolean(roles?.includes('ADMIN') || roles?.includes('TRUONG_CA'));
 }
 
+/** Mã ca trên sổ trộn (12C1, HC2…). Ca hồ sơ kiểu «Ca Ngày (06:00 - 18:00)» không thuộc hệ này. */
+function isProductionShiftCode(value: string) {
+  return /^(?:12c|hc)\d+$/i.test(value.trim());
+}
+
 function sameCa(actorCa: string, slipCa: string) {
   const left = actorCa.trim().toLowerCase();
   const right = slipCa.trim().toLowerCase();
   if (!left || !right) return true;
+  // Trưởng ca / trưởng phòng ghi ca làm việc theo hồ sơ, không theo mã 12C1/HC1 của sổ.
+  if (!isProductionShiftCode(left) || !isProductionShiftCode(right)) return true;
   return left === right;
 }
 
@@ -127,7 +134,8 @@ function deny(status: 401 | 403, error: string): SoTronDecision {
 /**
  * Deny by default.
  * Vật tư: Tổ trộn và NV phân xưởng tạo/sửa phiếu mình tạo, khi chưa chốt.
- * Thành phẩm: Trưởng ca tạo/sửa trong ca của mình, khi chưa chốt.
+ * Thành phẩm: Trưởng ca và trưởng phòng phân xưởng tạo/sửa khi chưa chốt.
+ * Khóa theo ca chỉ khi cả hai bên là mã ca sản xuất (12C1, HC1…) và khác nhau.
  * Xóa: trưởng ca và ADMIN. Chốt ca: Trưởng ca. Mở khóa: ADMIN và phải có lý do (kiểm tra ở API).
  */
 export function assertSoTron(

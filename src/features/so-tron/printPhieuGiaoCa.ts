@@ -180,7 +180,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       return `
       <tr class="grid-row">
         <td class="c font-mono">${esc(row?.ma_nvl ?? '') || '&nbsp;'}</td>
-        <td class="l ten">${esc(row?.ten_nvl_sx || row?.ten_nvl || '') || '&nbsp;'}</td>
+        <td class="l ten" title="${esc(row?.ten_nvl_sx || row?.ten_nvl || '')}">${esc(row?.ten_nvl_sx || row?.ten_nvl || '') || '&nbsp;'}</td>
         <td class="c">${esc(row?.dvt ?? (row ? 'Kg' : '')) || '&nbsp;'}</td>
         ${numCell(row?.dinh_muc ?? '', 8)}
         ${numCell(row && row.ton_dau_ca !== '' && row.ton_dau_ca !== 0 ? row.ton_dau_ca : '', 7.5)}
@@ -201,7 +201,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       return `
       <tr class="grid-row">
         <td class="c font-mono">${esc(row?.ma_sp ?? '') || '&nbsp;'}</td>
-        <td class="l ten">${esc(row?.ten_sp ?? '') || '&nbsp;'}</td>
+        <td class="l ten" title="${esc(row?.ten_sp ?? '')}">${esc(row?.ten_sp ?? '') || '&nbsp;'}</td>
         ${numCell(row?.dinh_muc ?? '', 13)}
         ${numCell(row?.lan_1 ?? '', 8)}
         ${numCell(row?.lan_2 ?? '', 8)}

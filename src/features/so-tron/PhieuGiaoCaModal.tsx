@@ -24,6 +24,7 @@ import {
   parseSuCo
 } from './suCoGiaoCa';
 import { readSoTronActor, soTronAuthHeaders, soTronScopesFor } from './soTronSession';
+import { computeSoTronSummary } from './summary';
 import type { SoTronSavedReport } from './index';
 import {
   auxiliaryNormWeightIndex,
@@ -64,11 +65,25 @@ function fmt(val: number): string {
   return formatSlipNumber(val);
 }
 
+type ThanhPhamEditRow = PhieuGiaoCaThanhPhamRow & {
+  origin: Record<string, unknown> | null;
+};
+
+function trongLuongTheoSoLuong(row: ThanhPhamEditRow, soLuong: string) {
+  const kg = Number(String(row.origin?.kg_1_sp ?? '').replace(',', '.'));
+  const per = Number.isFinite(kg) && kg > 0 ? kg : num(row.dinh_muc);
+  const qty = num(soLuong);
+  if (per > 0 && qty > 0) return String(round2(qty * per));
+  if (!str(soLuong)) return '';
+  return String(row.trong_luong ?? '');
+}
+
 export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
   const [activeTab, setActiveTab] = useState<'all' | 'p1' | 'p2'>('all');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [hoverName, setHoverName] = useState<{ text: string; left: number; top: number } | null>(null);
 
   // Draft state
   const [header, setHeader] = useState<PhieuGiaoCaHeader>({
@@ -86,7 +101,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
 
   const [vatTuRows, setVatTuRows] = useState<PhieuGiaoCaVatTuRow[]>([]);
   const [giaoCaNote, setGiaoCaNote] = useState('');
-  const [thanhPhamRows, setThanhPhamRows] = useState<PhieuGiaoCaThanhPhamRow[]>([]);
+  const [thanhPhamRows, setThanhPhamRows] = useState<ThanhPhamEditRow[]>([]);
   const [hangLoiRows, setHangLoiRows] = useState<PhieuGiaoCaHangLoiRow[]>([]);
   const [suCoLuuY, setSuCoLuuY] = useState('');
   const [suCoRows, setSuCoRows] = useState<SuCoRow[]>([]);
@@ -190,9 +205,15 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
     setVatTuRows(combinedVatTu);
 
     // Thành phẩm
-    const tpList: PhieuGiaoCaThanhPhamRow[] = (report.bang_san_pham || []).map(sp => {
+    const tpList: ThanhPhamEditRow[] = (report.bang_san_pham || []).map(sp => {
+      const saved = sp as {
+        kg_1_sp?: unknown;
+        lan_1?: unknown;
+        lan_2?: unknown;
+        lan_3?: unknown;
+      };
       const sl = str(sp.so_luong);
-      const dm = str(sp.dinh_muc) || str((sp as { kg_1_sp?: unknown }).kg_1_sp);
+      const dm = str(sp.dinh_muc) || str(saved.kg_1_sp);
       let tl = str(sp.trong_luong);
       if (!tl && sl && dm) {
         tl = fmt(round2(num(sl) * num(dm)));
@@ -202,12 +223,13 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
         ma_sp: sp.ma_sp || '',
         ten_sp: sp.ten_sp || '',
         dinh_muc: dm,
-        lan_1: '',
-        lan_2: '',
-        lan_3: '',
+        lan_1: str(saved.lan_1),
+        lan_2: str(saved.lan_2),
+        lan_3: str(saved.lan_3),
         so_luong: sl,
         trong_luong: tl,
-        ghi_chu: sp.ghi_chu || ''
+        ghi_chu: sp.ghi_chu || '',
+        origin: { ...sp }
       };
     });
     setThanhPhamRows(tpList);
@@ -336,7 +358,35 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
     setVatTuRows(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Thành phẩm chỉ xem trên phiếu giao ca — sửa tại sổ trộn.
+  const canEditThanhPham = useMemo(() => {
+    if (!report) return false;
+    return soTronScopesFor(readSoTronActor(), 'update', {
+      ca: report.ca,
+      khoa_ca: Boolean(report.khoa_ca),
+      vat_tu_owner_id: String(report.vat_tu_owner_id || '')
+    }).includes('thanh_pham');
+  }, [report]);
+
+  const updateThanhPhamRow = (index: number, patch: Partial<ThanhPhamEditRow>) => {
+    setThanhPhamRows(prev =>
+      prev.map((row, i) => {
+        if (i !== index) return row;
+        const next = { ...row, ...patch };
+        if ('so_luong' in patch) next.trong_luong = trongLuongTheoSoLuong(next, str(patch.so_luong));
+        return next;
+      })
+    );
+  };
+
+  const showFullName = (event: React.MouseEvent<HTMLInputElement>, text: string) => {
+    const value = text.trim();
+    if (!value) {
+      setHoverName(null);
+      return;
+    }
+    const box = event.currentTarget.getBoundingClientRect();
+    setHoverName({ text: value, left: box.left, top: box.bottom + 4 });
+  };
 
   // Handler hàng lỗi
   const updateHangLoiRow = (index: number, patch: Partial<PhieuGiaoCaHangLoiRow>) => {
@@ -437,48 +487,40 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
           ton_cuoi_ca: r.ton_cuoi_ca
         }));
 
-      // Thành phẩm: chỉ đọc từ sổ trộn — không ghi đè khi lưu phiếu giao ca.
-      // Giữ nguyên snapshot quy đổi 1 SP (kg/m2/m dài) đã lưu trong sổ trộn.
-      const nextBangSanPham = (report.bang_san_pham || []).map(sp => {
-        const conv = sp as {
-          san_pham_id?: unknown;
-          kg_1_sp?: unknown;
-          m2_1_sp?: unknown;
-          m_dai_1_sp?: unknown;
-          nguon_quy_doi?: unknown;
-        };
-        const numOrUndefined = (value: unknown) => {
-          const parsed = Number(String(value ?? '').trim().replace(',', '.'));
-          return Number.isFinite(parsed) && parsed > 0
-            ? Math.round((parsed + Number.EPSILON) * 100) / 100
-            : undefined;
-        };
-        const kg = numOrUndefined(conv.kg_1_sp);
-        const m2 = numOrUndefined(conv.m2_1_sp);
-        const mDai = numOrUndefined(conv.m_dai_1_sp);
-        return {
-          ma_lenh_sx: sp.ma_lenh_sx || '',
-          ...(str(conv.san_pham_id) ? { san_pham_id: str(conv.san_pham_id) } : {}),
-          ma_sp: sp.ma_sp || '',
-          ten_sp: sp.ten_sp || '',
-          mang: (sp as { mang?: string }).mang || '',
-          so_luong: str(sp.so_luong),
-          dinh_muc: str(sp.dinh_muc),
-          trong_luong: str(sp.trong_luong),
-          ...(kg !== undefined ? { kg_1_sp: kg } : {}),
-          ...(m2 !== undefined ? { m2_1_sp: m2 } : {}),
-          ...(mDai !== undefined ? { m_dai_1_sp: mDai } : {}),
-          ...(str(conv.nguon_quy_doi) && (kg !== undefined || m2 !== undefined || mDai !== undefined)
-            ? { nguon_quy_doi: str(conv.nguon_quy_doi) }
-            : {}),
-          ghi_chu: sp.ghi_chu || ''
-        };
-      });
+      // Thành phẩm: trưởng ca / trưởng phòng sửa trên xem trước, giữ snapshot quy đổi 1 SP.
+      const nextBangSanPham = thanhPhamRows
+        .filter(r => str(r.ten_sp) || str(r.ma_sp) || str(r.so_luong) || str(r.trong_luong) || str(r.dinh_muc))
+        .map(r => {
+          const orig = r.origin ? { ...r.origin } : {};
+          return {
+            ...orig,
+            ma_lenh_sx: str(orig.ma_lenh_sx),
+            ma_sp: r.ma_sp,
+            ten_sp: r.ten_sp,
+            mang: str(orig.mang),
+            so_luong: str(r.so_luong),
+            dinh_muc: str(r.dinh_muc),
+            trong_luong: str(r.trong_luong),
+            ghi_chu: str(r.ghi_chu || orig.ghi_chu),
+            lan_1: str(r.lan_1),
+            lan_2: str(r.lan_2),
+            lan_3: str(r.lan_3)
+          };
+        });
 
-      const nextBangHangLoi = hangLoiRows.map(r => ({
-        ten_loi: r.ten_loi,
-        so_luong: str(r.so_luong)
-      }));
+      const nextBangHangLoi = hangLoiRows
+        .filter(r => str(r.ten_loi) || str(r.so_luong))
+        .map(r => ({
+          ten_loi: r.ten_loi,
+          so_luong: str(r.so_luong)
+        }));
+
+      const tongNvl = Math.round((nextBangBanGiao.reduce((s, l) => s + (Number(l.tong_su_dung) || 0), 0) + Number.EPSILON) * 100) / 100;
+      const summary = computeSoTronSummary({
+        spLines: nextBangSanPham.map(sp => ({ trong_luong: sp.trong_luong, mang: sp.mang })),
+        tongNvl,
+        tongLoi: nextBangHangLoi.reduce((s, r) => s + num(r.so_luong), 0)
+      });
 
       const payload = {
         chi_nhanh: report.chi_nhanh || 'Phú Thọ',
@@ -494,12 +536,12 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
         bang_san_pham: nextBangSanPham,
         bang_hang_loi: nextBangHangLoi,
         bang_ban_giao: nextBangBanGiao,
-        tong_nvl: Math.round((nextBangBanGiao.reduce((s, l) => s + (Number(l.tong_su_dung) || 0), 0) + Number.EPSILON) * 100) / 100,
+        tong_nvl: summary.tong_nvl,
         tong_nhap_nvl: Math.round((nextBangBanGiao.reduce((s, l) => s + (Number(l.lay_trong_kho) || 0), 0) + Number.EPSILON) * 100) / 100,
-        tong_sp_co_mang: Number((report as unknown as Record<string, unknown>).tong_sp_co_mang) || 0,
-        tong_sp_khong_mang: Number((report as unknown as Record<string, unknown>).tong_sp_khong_mang) || 0,
-        tong_loi_hong: Number((report as unknown as Record<string, unknown>).tong_loi_hong) || 0,
-        chi_tieu_phan_tram: Number((report as unknown as Record<string, unknown>).chi_tieu_phan_tram) || 0,
+        tong_sp_co_mang: summary.tong_sp_co_mang,
+        tong_sp_khong_mang: summary.tong_sp_khong_mang,
+        tong_loi_hong: summary.tong_loi_hong,
+        chi_tieu_phan_tram: summary.chi_tieu_phan_tram,
         ghi_chu: composeSuCo(suCoRows, suCoLuuY)
       };
 
@@ -563,7 +605,8 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
     return m ? { d: m[3], m: m[2], y: m[1] } : { d: '', m: '', y: '' };
   })();
 
-  return createPortal(
+  return (<>
+  {createPortal(
     <div className="fixed inset-0 z-[9999] flex flex-col bg-slate-950/80 backdrop-blur-sm overflow-y-auto p-2 sm:p-4">
       {/* Top Navbar */}
       <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-900/95 px-4 py-2.5 text-white shadow-xl backdrop-blur">
@@ -840,10 +883,13 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                         <td className="border border-slate-800 p-0.5">
                           <input
                             value={row.ten_nvl_sx || row.ten_nvl}
+                            title={row.ten_nvl_sx || row.ten_nvl}
+                            onMouseEnter={e => showFullName(e, row.ten_nvl_sx || row.ten_nvl)}
+                            onMouseLeave={() => setHoverName(null)}
                             onChange={e =>
                               updateVatTuRow(ri, row.ten_nvl_sx ? { ten_nvl_sx: e.target.value } : { ten_nvl: e.target.value })
                             }
-                            className={`${inputStyle} font-semibold text-black`}
+                            className={`${inputStyle} truncate font-semibold text-black`}
                             style={{ color: '#000', fontSize: 16 }}
                             placeholder="Tên sản xuất"
                           />
@@ -962,11 +1008,10 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
 
             <div className="mt-2 grid grid-cols-1 items-start gap-5 lg:grid-cols-12">
               
-              {/* CỘT TRÁI: BẢNG II. THÀNH PHẨM — chỉ xem, sửa ở sổ trộn */}
+              {/* CỘT TRÁI: BẢNG II. THÀNH PHẨM — trưởng ca / trưởng phòng sửa trên xem trước */}
               <div className="lg:col-span-8">
-                <div className="flex items-center justify-between mb-1">
+                <div className="mb-1">
                   <h4 className="text-xs font-bold uppercase tracking-wide">II. THÀNH PHẨM</h4>
-                  <span className="text-[10px] text-slate-500 italic">Chỉ xem — sửa tại sổ trộn</span>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -1004,31 +1049,83 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                           </td>
                         </tr>
                       )}
-                      {thanhPhamRows.map(row => (
-                        <tr key={row.key} className="h-9 bg-slate-50/40" style={{ height: 36 }}>
+                      {thanhPhamRows.map((row, ri) => (
+                        <tr key={row.key} className="h-9 hover:bg-slate-50/80" style={{ height: 36 }}>
                           <td className="border border-slate-800 p-0.5">
-                            <span className={`${readOnlyCell} text-center`} style={{ fontSize: 12 }}>{row.ma_sp}</span>
+                            <input
+                              value={row.ma_sp}
+                              readOnly
+                              title={row.ma_sp}
+                              onMouseEnter={e => showFullName(e, row.ma_sp)}
+                              onMouseLeave={() => setHoverName(null)}
+                              className={`${centerInputStyle} cursor-default truncate font-mono`}
+                              style={{ fontSize: 12 }}
+                            />
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <span className={`${readOnlyCell} text-left font-semibold`} style={{ color: '#000', fontSize: 16 }}>{row.ten_sp}</span>
+                            <input
+                              value={row.ten_sp}
+                              readOnly
+                              title={row.ten_sp}
+                              onMouseEnter={e => showFullName(e, row.ten_sp)}
+                              onMouseLeave={() => setHoverName(null)}
+                              className={`${inputStyle} cursor-default truncate text-left font-semibold`}
+                              style={{ color: '#000', fontSize: 16 }}
+                            />
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <span className={numReadStyle}>{formatSlipNumber(row.dinh_muc)}</span>
+                            <input
+                              inputMode="decimal"
+                              value={formatSlipNumber(row.dinh_muc)}
+                              readOnly={!canEditThanhPham}
+                              onChange={e => updateThanhPhamRow(ri, { dinh_muc: e.target.value })}
+                              className={numInputStyle}
+                            />
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <span className={numReadStyle}>{formatSlipNumber(row.lan_1)}</span>
+                            <input
+                              inputMode="decimal"
+                              value={formatSlipNumber(row.lan_1)}
+                              readOnly={!canEditThanhPham}
+                              onChange={e => updateThanhPhamRow(ri, { lan_1: e.target.value })}
+                              className={numInputStyle}
+                            />
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <span className={numReadStyle}>{formatSlipNumber(row.lan_2)}</span>
+                            <input
+                              inputMode="decimal"
+                              value={formatSlipNumber(row.lan_2)}
+                              readOnly={!canEditThanhPham}
+                              onChange={e => updateThanhPhamRow(ri, { lan_2: e.target.value })}
+                              className={numInputStyle}
+                            />
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <span className={numReadStyle}>{formatSlipNumber(row.lan_3)}</span>
+                            <input
+                              inputMode="decimal"
+                              value={formatSlipNumber(row.lan_3)}
+                              readOnly={!canEditThanhPham}
+                              onChange={e => updateThanhPhamRow(ri, { lan_3: e.target.value })}
+                              className={numInputStyle}
+                            />
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <span className={numReadStyle}>{formatSlipNumber(row.so_luong)}</span>
+                            <input
+                              inputMode="decimal"
+                              value={formatSlipNumber(row.so_luong)}
+                              readOnly={!canEditThanhPham}
+                              onChange={e => updateThanhPhamRow(ri, { so_luong: e.target.value })}
+                              className={numInputStyle}
+                            />
                           </td>
                           <td className="border border-slate-800 p-0.5">
-                            <span className={numReadStyle}>{formatSlipNumber(row.trong_luong)}</span>
+                            <input
+                              inputMode="decimal"
+                              value={formatSlipNumber(row.trong_luong)}
+                              readOnly={!canEditThanhPham}
+                              onChange={e => updateThanhPhamRow(ri, { trong_luong: e.target.value })}
+                              className={numInputStyle}
+                            />
                           </td>
                         </tr>
                       ))}
@@ -1060,13 +1157,17 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <h4 className="text-xs font-bold uppercase tracking-wide">III. HÀNG LỖI HỎNG/PHẾ</h4>
-                    <button
-                      type="button"
-                      onClick={addHangLoiRow}
-                      className="flex items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-100"
-                    >
-                      <Plus className="h-3 w-3" /> Thêm lỗi
-                    </button>
+                    {canEditThanhPham ? (
+                      <button
+                        type="button"
+                        onClick={addHangLoiRow}
+                        className="flex items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-100"
+                      >
+                        <Plus className="h-3 w-3" /> Thêm lỗi
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-slate-500 italic">Chỉ trưởng ca và trưởng phòng phân xưởng được sửa</span>
+                    )}
                   </div>
 
                   <div className="overflow-x-auto">
@@ -1092,6 +1193,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                           <td className="border border-slate-800 p-0.5">
                             <input
                               value={row.ten_loi}
+                              readOnly={!canEditThanhPham}
                               onChange={e => updateHangLoiRow(ri, { ten_loi: e.target.value })}
                               className={inputStyle}
                               placeholder="Băm 02 (DM)..."
@@ -1100,6 +1202,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                           <td className="border border-slate-800 p-0.5">
                             <input
                               value={row.dvt}
+                              readOnly={!canEditThanhPham}
                               onChange={e => updateHangLoiRow(ri, { dvt: e.target.value })}
                               className={centerInputStyle}
                             />
@@ -1108,19 +1211,22 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                             <input
                               inputMode="decimal"
                               value={formatSlipNumber(row.so_luong)}
+                              readOnly={!canEditThanhPham}
                               onChange={e => updateHangLoiRow(ri, { so_luong: e.target.value })}
                               className={numInputStyle}
                               placeholder="708"
                             />
                           </td>
                           <td className="border border-slate-800 p-0.5 text-center">
-                            <button
-                              type="button"
-                              onClick={() => removeHangLoiRow(ri)}
-                              className="text-slate-400 hover:text-rose-600"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
+                            {canEditThanhPham ? (
+                              <button
+                                type="button"
+                                onClick={() => removeHangLoiRow(ri)}
+                                className="text-slate-400 hover:text-rose-600"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            ) : null}
                           </td>
                         </tr>
                       ))}
@@ -1294,6 +1400,18 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
       </div>
     </div>,
     document.body
-  );
+  )}
+  {hoverName
+    ? createPortal(
+        <div
+          className="pointer-events-none fixed z-[10000] max-w-lg whitespace-normal break-words rounded border border-slate-400 bg-white px-2 py-1 text-left text-[15px] font-semibold leading-snug text-black shadow-lg"
+          style={{ left: hoverName.left, top: hoverName.top, fontFamily: '"Times New Roman", Times, serif' }}
+        >
+          {hoverName.text}
+        </div>,
+        document.body
+      )
+    : null}
+  </>);
 }
 export default PhieuGiaoCaModal;
