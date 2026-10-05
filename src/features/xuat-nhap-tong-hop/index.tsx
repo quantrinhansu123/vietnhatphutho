@@ -183,7 +183,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
   const [nguonId, setNguonId] = useState('');
   const [loaiNhap, setLoaiNhap] = useState('');
   const [loaiXuat, setLoaiXuat] = useState('');
-  const [khoXuat, setKhoXuat] = useState('');
+  const [xuatDenLoai, setXuatDenLoai] = useState<'kho' | 'may'>('kho');
   const [xuatDenId, setXuatDenId] = useState('');
   /** Xuất trả NCC: nhà cung cấp nhận hàng (chọn dưới danh sách chi tiết). */
   const [xuatNccId, setXuatNccId] = useState('');
@@ -334,9 +334,10 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
       const ton = Number(data.ton) || 0;
-      // Nguồn kho: mirror tồn sổ sang tồn đầu khi chưa sửa tay (nguồn máy lấy từ sổ trộn).
+      // Nguồn kho: mirror tồn sổ sang tồn đầu khi chưa sửa tay (đích máy lấy từ sổ trộn).
       const patch: Partial<Line> = { ton };
-      const destMay = line.khoLoai === 'may';
+      const destKindNow = xuatDenKind(loaiXuat);
+      const destMay = destKindNow === 'may' || destKindNow === 'may-ptdm' || (destKindNow === 'flex' && xuatDenLoai === 'may');
       if (mode === 'xuat' && srcLoai === 'kho' && !destMay && !line.tonDauDirty && line.tonDau === null) {
         patch.tonDau = ton;
       }
@@ -347,14 +348,17 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
   const allShifts = [...cas, ...lines.map(line => line.caDong).filter(Boolean)];
   const shiftError = validateWarehouseShiftsSameLoaiCa(allShifts, shiftSettings);
   const destKind = xuatDenKind(loaiXuat);
-  const lineMayDest = lines.some(line => line.khoLoai === 'may' && Boolean(line.khoId));
+  const headerMay = mode === 'xuat' && (destKind === 'may' || destKind === 'may-ptdm' || (destKind === 'flex' && xuatDenLoai === 'may'))
+    ? xuatDenId
+    : '';
+  const lineMayDest = Boolean(headerMay);
   const warning = !shiftError && cas.length === 0 && mode === 'xuat' && destKind === 'may-ptdm'
     ? 'Xuất NVL cho máy nên có ca để sổ trộn tính Nhập Trong Ngày. Vẫn lưu được nếu để trống.'
     : '';
 
   // Tồn đầu ca từng dòng: nguồn máy → tồn cuối đúng ô (ngày dòng, ca dòng, máy nguồn) trong sổ trộn.
   const tonDauFingerprint = mode === 'xuat'
-    ? lines.map(line => `${line.key}|${line.maHang}|${line.materialId}|${line.ngayDong}|${line.caDong}|${line.khoLoai}|${line.khoId}|${ngay}|${cas.join(',')}`).join(';;')
+    ? `${headerMay}|${lines.map(line => `${line.key}|${line.maHang}|${line.materialId}|${line.ngayDong}|${line.caDong}|${line.srcId}|${ngay}|${cas.join(',')}`).join(';;')}`
     : '';
   useEffect(() => {
     if (mode !== 'xuat' || !lineMayDest) return;
@@ -362,7 +366,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     const tonDefault = resolveDefaultTonDauRef(ngay, cas[0] || '', shiftRows, shiftSettings);
     const jobs: Array<{ key: string; maHang: string; materialId: string; may: string; ngay: string; ca: string }> = [];
     for (const line of lines) {
-      const may = line.khoLoai === 'may' ? line.khoId : '';
+      const may = headerMay;
       if (!may || !line.maHang.trim() || line.tonDauDirty) continue;
       const lineNgay = line.ngayDong || tonDefault.ngay || ngay;
       const lineCa = line.caDong || tonDefault.ca || cas[0] || '';
@@ -428,7 +432,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     setCas([]);
     setLoaiNhap('');
     setLoaiXuat('');
-    setKhoXuat('');
+    setXuatDenLoai('kho');
     setXuatDenId('');
     setXuatNccId('');
     setPtdmKeys([]);
@@ -440,10 +444,17 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     setError('');
   }
 
+  function exportDestination() {
+    const kind = xuatDenKind(loaiXuat);
+    if (kind === 'ncc') return { loai: 'ncc' as const, id: xuatNccId };
+    if (kind === 'may' || kind === 'may-ptdm') return { loai: 'may' as const, id: xuatDenId };
+    return { loai: xuatDenLoai, id: xuatDenId };
+  }
+
   function buildPayload() {
     const tonRef = resolveDefaultTonDauRef(ngay, cas[0] || '', getProductionShiftOptions(shiftSettings), shiftSettings);
     const payloadLines = mode === 'xuat' ? lines.filter(line => line.maHang.trim()) : lines;
-    const isTraNcc = mode === 'xuat' && xuatDenKind(loaiXuat) === 'ncc';
+    const dest = mode === 'xuat' ? exportDestination() : { loai: '' as const, id: '' };
     return {
       loai: mode,
       ngay,
@@ -472,9 +483,11 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         phan_loai_nvl: line.warehouseClass,
         ...(mode === 'xuat'
           ? {
-            src_loai: 'kho',
-            src_id: khoXuat,
-            src_ten: khoXuat,
+            src_loai: line.srcLoai === 'may' ? 'may' : 'kho',
+            src_id: line.srcId,
+            src_ten: line.srcLoai === 'may'
+              ? (machines.find(item => item.id === line.srcId)?.label || line.srcId)
+              : line.srcId,
             ngay_dong: line.ngayDong || tonRef.ngay || ngay,
             ca_dong: line.caDong || tonRef.ca || cas[0] || '',
             ...(line.tonDau !== null ? { ton_dau_ca: line.tonDau } : {}),
@@ -485,9 +498,9 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
             ...(line.imagePublicId ? { link_anh_can_thuc_te_public_id: line.imagePublicId } : {})
           }
           : {}),
-        kho_dong: mode === 'xuat' && (isTraNcc || line.khoLoai === 'may') ? '' : line.khoId,
-        dich_dong_loai: mode === 'xuat' ? (isTraNcc ? 'ncc' : line.khoLoai === 'may' ? 'may' : 'kho') : '',
-        dich_dong_id: mode === 'xuat' ? (isTraNcc ? xuatNccId : line.khoId) : '',
+        kho_dong: mode === 'xuat' ? (dest.loai === 'kho' ? dest.id : '') : line.khoId,
+        dich_dong_loai: mode === 'xuat' ? dest.loai : '',
+        dich_dong_id: mode === 'xuat' ? dest.id : '',
         chi_phi_kem_theo: kemStoredFromDraft(line.chiPhiKemTheo)
       }))
     };
@@ -509,25 +522,25 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         setError('Chọn loại xuất.');
         return;
       }
-      if (!khoXuat) {
-        setError('Chọn xuất từ.');
+      const dest = exportDestination();
+      if (!dest.id) {
+        setError(
+          destKind === 'may-ptdm'
+            ? 'Tick phiếu trộn định mức để lấy máy xuất đến.'
+            : destKind === 'ncc'
+              ? 'Chọn nhà cung cấp xuất đến.'
+              : 'Chọn xuất đến.'
+        );
         return;
       }
       const filled = lines.filter(line => line.maHang.trim());
-      if (destKind === 'ncc') {
-        if (!xuatNccId) {
-          setError('Chọn nhà cung cấp trả lại (ô dưới danh sách chi tiết).');
-          return;
-        }
-      } else {
-        if (filled.some(line => !line.khoId)) {
-          setError(destKind === 'may-ptdm' ? 'Tick phiếu trộn định mức để lấy máy của lệnh sản xuất.' : 'Mỗi dòng cần chọn kho hoặc máy nhập.');
-          return;
-        }
-        if (filled.some(line => line.khoLoai !== 'may' && line.khoId === khoXuat)) {
-          setError('Xuất từ và kho nhập phải khác nhau.');
-          return;
-        }
+      if (filled.some(line => !line.srcId)) {
+        setError('Mỗi dòng cần chọn xuất từ.');
+        return;
+      }
+      if (filled.some(line => (line.srcLoai === 'may' ? 'may' : 'kho') === dest.loai && line.srcId === dest.id)) {
+        setError('Xuất từ và xuất đến phải khác nhau.');
+        return;
       }
       if (!filled.length) {
         setError('Nhập ít nhất một dòng NVL.');
@@ -600,12 +613,10 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     setLoaiXuat(row.loai_xuat || '');
     const detail = Array.isArray(row.chi_tiet) ? row.chi_tiet : [];
     const first = (detail[0] || {}) as Record<string, unknown>;
-    const firstSrcKind = String(first.src_loai || (row.nguon_loai === 'may' ? 'may' : 'kho'));
-    const firstSrcId = String(first.src_id || row.nguon_id || '');
     const firstDestKind = String(first.dich_dong_loai || (first.nguon_dong_loai === 'may' ? 'may' : 'kho'));
     const firstDestId = String(first.dich_dong_id || first.kho_dong_id || first.kho_dong_ten || first.nguon_dong_id || '');
-    setKhoXuat(row.loai === 'xuat' && firstSrcKind === 'kho' ? firstSrcId : '');
-    setXuatDenId(row.loai === 'xuat' && firstDestKind === 'may' ? firstDestId : '');
+    setXuatDenLoai(firstDestKind === 'may' ? 'may' : 'kho');
+    setXuatDenId(row.loai === 'xuat' && firstDestKind !== 'ncc' ? firstDestId : '');
     setXuatNccId(
       row.loai === 'xuat' && (firstDestKind === 'ncc' || String(row.dich_loai || '') === 'ncc')
         ? String(firstDestKind === 'ncc' ? firstDestId : row.dich_id || '')
@@ -699,7 +710,8 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
   function lineKind(line: Line): 'nvl' | 'san_pham' {
     if (mode === 'nhap') return !nguonId || nguonLoai === 'ncc' || Boolean(nhapKho?.vatTu) ? 'nvl' : 'san_pham';
     // Xuất: loại hàng theo NGUỒN từng dòng (máy luôn là NVL).
-    const kho = warehouses.find(item => item.id === (khoXuat || line.srcId));
+    if (line.srcLoai === 'may') return 'nvl';
+    const kho = warehouses.find(item => item.id === line.srcId);
     return !kho || kho.vatTu ? 'nvl' : 'san_pham';
   }
 
@@ -785,16 +797,12 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
       setError('Nhập ít nhất một dòng có mã và số lượng để xem trước.');
       return;
     }
-    if (mode === 'xuat' && !khoXuat) {
-      setError('Chọn xuất từ trước khi xem trước.');
+    if (mode === 'xuat' && !exportDestination().id) {
+      setError(destKind === 'may-ptdm' ? 'Tick phiếu trộn định mức để lấy máy xuất đến.' : 'Chọn xuất đến trước khi xem trước.');
       return;
     }
-    if (mode === 'xuat' && destKind === 'ncc' && !xuatNccId) {
-      setError('Chọn nhà cung cấp trả lại (ô dưới danh sách chi tiết).');
-      return;
-    }
-    if (mode === 'xuat' && destKind !== 'ncc' && usable.some(line => !line.khoId)) {
-      setError(destKind === 'may-ptdm' ? 'Tick phiếu trộn định mức để lấy máy của lệnh sản xuất.' : 'Mỗi dòng cần chọn kho hoặc máy nhập.');
+    if (mode === 'xuat' && usable.some(line => !line.srcId)) {
+      setError('Mỗi dòng cần chọn xuất từ.');
       return;
     }
     if (mode === 'nhap' && usable.some(line => !line.khoId)) {
@@ -849,13 +857,19 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         });
       }
     } else {
-      const byDest = new Map<string, Line[]>();
-      for (const line of usable) byDest.set(`${line.khoLoai}|${line.khoId}`, [...(byDest.get(`${line.khoLoai}|${line.khoId}`) || []), line]);
-      const sourceLabel = srcLabel('kho', khoXuat);
-      const sourceKind = srcIsNvl('kho', khoXuat) ? 'nvl' as const : 'san_pham' as const;
-      for (const [key, group] of byDest) {
-        const [destLoai, destId] = key.split('|');
-        const destKho = destLoai === 'kho' ? warehouses.find(item => item.id === destId) : null;
+      const dest = exportDestination();
+      const bySrc = new Map<string, Line[]>();
+      for (const line of usable) {
+        const key = `${line.srcLoai === 'may' ? 'may' : 'kho'}|${line.srcId}`;
+        bySrc.set(key, [...(bySrc.get(key) || []), line]);
+      }
+      for (const [key, group] of bySrc) {
+        const splitAt = key.indexOf('|');
+        const srcLoai = key.slice(0, splitAt);
+        const srcId = key.slice(splitAt + 1);
+        const sourceLabel = srcLabel(srcLoai, srcId);
+        const sourceKind = srcLoai === 'may' || srcIsNvl(srcLoai, srcId) ? 'nvl' as const : 'san_pham' as const;
+        const destKho = dest.loai === 'kho' ? warehouses.find(item => item.id === dest.id) : null;
         const lineDate = group[0]?.ngayDong || ngay;
         const lineShift = group[0]?.caDong || shift;
         pushSlip({
@@ -864,18 +878,18 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
           warehouseKind: sourceKind,
           ...printCostTotals(group),
           warehouseName: sourceLabel,
-          machine: destLoai === 'may' ? destId : '',
+          machine: dest.loai === 'may' ? dest.id : '',
           shift: lineShift,
           slipDate: formatTongHopDate(lineDate),
           lines: toPrintLines(group)
         });
-        if (destLoai === 'kho') {
+        if (dest.loai === 'kho') {
           pushSlip({
             slipCode: 'XEM-NH',
             slipType: 'nhap',
             warehouseKind: destKho?.vatTu ? 'nvl' : 'san_pham',
             ...printCostTotals(group),
-            warehouseName: destId,
+            warehouseName: dest.id,
             deliverer: sourceLabel,
             shift: lineShift,
             slipDate: formatTongHopDate(lineDate),
@@ -891,13 +905,13 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
   const tonDefault = resolveDefaultTonDauRef(ngay, cas[0] || '', shiftOptionRows, shiftSettings);
   const nvlWarehouses = warehouses.filter(item => item.vatTu);
   const nhapCoreWarehouses = pickNhapCoreWarehouses(warehouses);
-  /** Xuất từ = tên kho. Mỗi option là một dòng kho_nvl (id), không gộp theo mã. */
-  const exportCatalog = useMemo(() => {
-    const want = normalizeWarehouseName(khoXuat);
-    if (mode !== 'xuat' || !want) return [];
-    const maKho = warehouses.find(item => item.id === khoXuat)?.maKho || '';
-    if (srcIsNvl('kho', khoXuat)) {
-      return materials.filter(item => materialInWarehouse(item, khoXuat, maKho));
+  /** NVL của đúng kho nguồn trên từng dòng xuất. */
+  function materialsForSource(srcId: string) {
+    const want = normalizeWarehouseName(srcId);
+    if (!want) return [];
+    const maKho = warehouses.find(item => item.id === srcId)?.maKho || '';
+    if (srcIsNvl('kho', srcId)) {
+      return materials.filter(item => materialInWarehouse(item, srcId, maKho));
     }
     return products
       .filter(item => normalizeWarehouseName(item.tenKho) === want)
@@ -911,15 +925,17 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         tenKho: item.tenKho,
         loaiKho: ''
       }));
-  }, [khoXuat, materials, mode, products, warehouses]);
+  }
 
   useEffect(() => {
-    if (!materials.length && !exportCatalog.length) return;
+    if (!materials.length && !products.length) return;
     setLines(current => {
       let changed = false;
       const next = current.map(line => {
         const pool = mode === 'xuat'
-          ? exportCatalog
+          ? (line.srcLoai === 'may'
+            ? (line.srcId ? materials : [])
+            : (line.srcId ? materialsForSource(line.srcId) : []))
           : materials.filter(item => materialInWarehouse(item, line.khoId, warehouses.find(kho => kho.id === line.khoId)?.maKho || ''));
         if (!pool.length) return line;
         const bound = bindMaterialInWarehouse(line, pool);
@@ -935,7 +951,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
       });
       return changed ? next : current;
     });
-  }, [exportCatalog, materials, mode, warehouses]);
+  }, [materials, mode, products, warehouses]);
 
   useEffect(() => {
     if (mode !== 'xuat' || destKind !== 'may-ptdm') return;
@@ -998,7 +1014,8 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
       if (linked.length > 0 && linkedOrders.length > 0 && linkedOrders.every(order => doneOrderStatus(String(order?.status || '')))) {
         return [];
       }
-      const orderMachine = linked.map(code => String(orders.get(code)?.machine || '').trim()).find(Boolean) || '';
+      const slipMachine = String(record.may ?? '').trim();
+      const orderMachine = linked.map(code => String(orders.get(code)?.machine || '').trim()).find(Boolean) || slipMachine;
       const machineId = resolveMachineId(orderMachine);
       const name = String(record.ten_phieu ?? '').trim() || formatMixingNormSlipName(orderMachine, orderCode);
       return [{ key: lenhSxInstanceKey({ dinh_muc_id: normId, ma_lenh_sx: orderCode, ngay: ngayNorm, ca: String(record.ca ?? '') }), name, machineId, record, ca: String(record.ca ?? '') }];
@@ -1019,7 +1036,10 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
       setLines([emptyLine()]);
       return;
     }
-    if (machineIds[0]) setXuatDenId(machineIds[0]);
+    if (machineIds[0]) {
+      setXuatDenLoai('may');
+      setXuatDenId(machineIds[0]);
+    }
     const matchedShifts = new Set<string>();
     for (const item of selected) {
       if (!item.ca) continue;
@@ -1030,7 +1050,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     if (firstShift) setCas(current => (current.length > 0 ? current : [firstShift]));
     const merged = mergeNormMaterialLines(
       selected.map(item => ({ record: item.record, machine: item.machineId })),
-      exportCatalog
+      materials
     );
     if (!merged.length) {
       setInfo('');
@@ -1039,26 +1059,32 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
       return;
     }
     setError('');
-    const nextLines = merged.map(line => bindMaterialInWarehouse({
-      ...emptyLine(),
-      khoLoai: 'may' as const,
-      khoId: resolveMachineId(line.machine),
-      sourceLoai: 'may' as const,
-      materialId: line.materialId,
-      maHang: line.code,
-      tenHang: line.name,
-      tenSanXuat: line.productionName,
-      donVi: line.unit,
-      slCt: String(line.documentQuantity),
-      warehouseClass: line.warehouseClass,
-      nhomVthh: line.nhomVthh || '',
-      auxiliaryGroup: line.auxiliaryGroup || '',
-      normPerKg: isWarehouseKgUnit(line.unit) ? 1 : line.normWeightPerUnitKg
-    }, exportCatalog));
+    const nextLines = merged.map(line => {
+      const matched = materials.find(item => String(item.id || '').trim() === line.materialId.trim());
+      const srcId = String(matched?.tenKho || '').trim();
+      return bindMaterialInWarehouse({
+        ...emptyLine(),
+        srcLoai: 'kho' as const,
+        srcId,
+        sourceLoai: 'kho' as const,
+        khoLoai: 'kho' as const,
+        khoId: '',
+        materialId: line.materialId,
+        maHang: line.code,
+        tenHang: line.name,
+        tenSanXuat: line.productionName,
+        donVi: line.unit,
+        slCt: String(line.documentQuantity),
+        warehouseClass: line.warehouseClass,
+        nhomVthh: line.nhomVthh || '',
+        auxiliaryGroup: line.auxiliaryGroup || '',
+        normPerKg: isWarehouseKgUnit(line.unit) ? 1 : line.normWeightPerUnitKg
+      }, srcId ? materialsForSource(srcId) : materials);
+    });
     const unbound = nextLines.filter(line => line.maHang.trim() && !line.materialId.trim()).length;
     setInfo(
       unbound
-        ? `Đã điền ${nextLines.length} dòng NVL từ ${selected.length} phiếu trộn định mức. ${unbound} dòng không có trong kho xuất — ô tô vàng, chọn lại tên sản xuất đúng kho này.`
+        ? `Đã điền ${nextLines.length} dòng NVL từ ${selected.length} phiếu trộn định mức. ${unbound} dòng chưa khớp kho — chọn Xuất từ rồi chọn lại NVL.`
         : `Đã điền ${nextLines.length} dòng NVL từ ${selected.length} phiếu trộn định mức.`
     );
     setLines(nextLines);
@@ -1076,16 +1102,41 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     }
   }
 
+  function machineChoiceLabel(item: Option) {
+    const split = item.label.split(' — ');
+    if (split.length < 2) return item.label;
+    const code = split[0].trim();
+    const name = split.slice(1).join(' — ').trim();
+    return name ? `${name} (${code})` : item.label;
+  }
+
+  const xuatDenChoices = destKind === 'ncc'
+    ? suppliers.map(item => ({ value: `ncc|${item.id}`, label: item.label }))
+    : destKind === 'may' || destKind === 'may-ptdm'
+      ? machines.map(item => ({ value: `may|${item.id}`, label: machineChoiceLabel(item) }))
+      : [
+          ...warehouses.map(item => ({ value: `kho|${item.id}`, label: item.label })),
+          ...machines.map(item => ({ value: `may|${item.id}`, label: `Máy · ${machineChoiceLabel(item)}` }))
+        ];
+  const xuatDenValue = destKind === 'ncc'
+    ? (xuatNccId ? `ncc|${xuatNccId}` : '')
+    : destKind === 'may' || destKind === 'may-ptdm'
+      ? (xuatDenId ? `may|${xuatDenId}` : '')
+      : (xuatDenId ? `${xuatDenLoai}|${xuatDenId}` : '');
+
   function bindXuatLines(next: XuatNvlLine[]) {
-    setLines(next.map(line => ({
-      ...emptyLine(),
-      ...line,
-      srcLoai: 'kho',
-      srcId: khoXuat,
-      sourceLoai: line.khoLoai === 'may' ? 'may' : 'kho',
-      khoLoai: line.khoLoai === 'may' ? 'may' : 'kho',
-      khoId: line.khoId || ''
-    })));
+    setLines(next.map(line => {
+      const srcLoai = line.srcLoai === 'may' ? 'may' : 'kho';
+      return {
+        ...emptyLine(),
+        ...line,
+        srcLoai,
+        srcId: String(line.srcId || ''),
+        sourceLoai: srcLoai,
+        khoLoai: srcLoai,
+        khoId: ''
+      };
+    }));
   }
 
   return (
@@ -1164,7 +1215,9 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                   setXuatDenId('');
                   setXuatNccId('');
                   setPtdmKeys([]);
-                  if (xuatDenKind(value) !== 'may-ptdm') setCas([]);
+                  const kind = xuatDenKind(value);
+                  setXuatDenLoai(kind === 'may' || kind === 'may-ptdm' ? 'may' : 'kho');
+                  if (kind !== 'may-ptdm') setCas([]);
                 }}
                 options={LOAI_XUAT_OPTIONS.map(item => ({ id: item, label: item }))}
                 getValue={(item: unknown) => String((item as { id: string }).id)}
@@ -1250,27 +1303,33 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
           ) : (
             <div className="space-y-2 md:col-span-2">
               <label className="block space-y-1">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Xuất từ</span>
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Xuất đến</span>
                 <SearchableSelect
-                  value={khoXuat}
+                  value={xuatDenValue}
                   onChange={viewOnly ? undefined : value => {
-                    if (value === khoXuat) return;
-                    setKhoXuat(value);
-                    setLines(current => current.map(line => ({
-                      ...line,
-                      materialId: '',
-                      maHang: '',
-                      tenHang: '',
-                      tenSanXuat: '',
-                      donVi: '',
-                      auxiliaryGroup: '',
-                      ton: null
-                    })));
+                    const splitAt = value.indexOf('|');
+                    const kind = splitAt >= 0 ? value.slice(0, splitAt) : '';
+                    const id = splitAt >= 0 ? value.slice(splitAt + 1) : value;
+                    if (kind === 'ncc') {
+                      setXuatNccId(id);
+                      return;
+                    }
+                    setXuatDenLoai(kind === 'may' ? 'may' : 'kho');
+                    setXuatDenId(id);
                   }}
-                  options={(nvlWarehouses.length ? nvlWarehouses : warehouses) as Option[]}
-                  getValue={(item: Option) => item.id}
-                  getLabel={(item: Option) => item.label}
-                  placeholder="Chọn kho lấy hàng"
+                  options={xuatDenChoices}
+                  getValue={(item: { value: string }) => item.value}
+                  getLabel={(item: { label: string }) => item.label}
+                  getSearchText={(item: { label: string }) => item.label}
+                  placeholder={
+                    destKind === 'may-ptdm'
+                      ? 'Máy theo phiếu trộn định mức'
+                      : destKind === 'ncc'
+                        ? 'Chọn nhà cung cấp'
+                        : destKind === 'may'
+                          ? 'Chọn máy'
+                          : 'Chọn kho hoặc máy'
+                  }
                   inputClassName={fieldClass}
                   comboboxMode
                   comboboxSearchable
@@ -1369,18 +1428,12 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
           <>
             <XuatNvlDetail
               lines={lines}
-              warehouses={warehouses}
+              sourceWarehouses={(nvlWarehouses.length ? nvlWarehouses : warehouses) as Option[]}
               machines={machines}
-              materials={exportCatalog}
+              materials={materials}
+              materialsForSource={materialsForSource}
               shiftOptions={shiftOptions}
               defaultTonNgay={tonDefault.ngay || ngay}
-              destLocked={destKind === 'may-ptdm'}
-              returnToNcc={destKind === 'ncc'}
-              nccId={xuatNccId}
-              nccOptions={suppliers}
-              onNccChange={setXuatNccId}
-              defaultKhoLoai={destKind === 'may-ptdm' ? 'may' : 'kho'}
-              defaultKhoId={destKind === 'may-ptdm' ? (lines.find(line => line.khoLoai === 'may' && line.khoId)?.khoId || xuatDenId) : ''}
               onChange={bindXuatLines}
               onRefreshCatalog={() => { void refreshCatalog(); }}
               refreshing={refreshingCatalog}
@@ -1600,8 +1653,10 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         </> : (
           <p className="text-[11px] font-semibold text-zinc-500">
             {destKind === 'ncc'
-              ? 'Xuất từ là kho lấy hàng. Cột Nhà cung cấp trong danh sách và ô dưới danh sách là nơi trả hàng.'
-              : 'Xuất từ là kho lấy hàng. Mỗi dòng chọn Loại kho (kho hoặc máy) rồi chọn Nhập đến. Nhập đến máy hiện tên máy. Với xuất theo phiếu tỷ lệ trộn, máy nhận lấy từ lệnh sản xuất của phiếu trộn đã tick.'}
+              ? 'Xuất đến là nhà cung cấp nhận hàng trả. Mỗi dòng chọn Xuất từ là kho hoặc máy. Chọn kho thì danh sách NVL là NVL của kho đó.'
+              : destKind === 'may-ptdm'
+                ? 'Xuất đến là máy nhận hàng, tự điền từ phiếu trộn định mức đã tick. Mỗi dòng vẫn chọn Xuất từ là kho hoặc máy.'
+                : 'Xuất đến là nơi nhận (kho hoặc máy). Mỗi dòng chọn Xuất từ là kho hoặc máy. Chọn kho thì danh sách NVL là NVL của kho đó.'}
           </p>
         )}
         {warning ? (

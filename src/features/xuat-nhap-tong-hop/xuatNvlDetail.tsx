@@ -25,9 +25,12 @@ export type { ChiPhiKemTheoDraft as ChiPhiKemTheo };
 
 export type XuatNvlLine = {
   key: string;
-  /** Nơi nhận của dòng: kho hoặc máy. */
+  /** Nơi nhận của dòng: kho hoặc máy. Phiếu xuất tổng hợp để đích ở header. */
   khoLoai: 'kho' | 'may';
   khoId: string;
+  /** Phiếu xuất: nguồn lấy hàng của dòng, kho hoặc máy. */
+  srcLoai: 'kho' | 'may';
+  srcId: string;
   warehouseClass: XuatNvlClass;
   materialId: string;
   maHang: string;
@@ -53,15 +56,16 @@ export type XuatNvlLine = {
 const VTHH_OPTIONS = ['TP; PX Rỗng', 'TP; PX Đặc', 'TP; PX Sóng'] as const;
 
 const gridCols =
-  'grid-cols-[2.25rem_5.75rem_minmax(12rem,1.25fr)_minmax(6.5rem,0.85fr)_minmax(6.5rem,0.95fr)_minmax(6rem,0.85fr)_3.25rem_5rem_9rem_6.25rem_5.5rem_4.25rem_5.75rem_5rem_4.25rem_5.5rem_2rem]';
-const headerGrid = `mb-1 grid min-w-[128rem] ${gridCols} items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-2 py-2`;
-const lineGrid = `grid min-w-[128rem] ${gridCols} items-center gap-1.5 border-b border-zinc-200/80 py-1.5`;
+  'grid-cols-[2.25rem_5.75rem_minmax(12rem,1.1fr)_minmax(6.5rem,0.85fr)_minmax(6.5rem,0.95fr)_minmax(6rem,0.85fr)_3.25rem_5rem_9rem_6.25rem_5.5rem_4.25rem_5.75rem_5rem_4.25rem_5.5rem_2rem]';
+const headerGrid = `mb-1 grid min-w-[124rem] ${gridCols} items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-2 py-2`;
+const lineGrid = `grid min-w-[124rem] ${gridCols} items-center gap-1.5 border-b border-zinc-200/80 py-1.5`;
 const head = 'text-[10px] font-black uppercase tracking-wide text-white';
 const field = 'h-8 w-full min-w-0 rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]';
 
 type KhoOption = { id: string; label: string };
+type CatalogMaterial = MaterialOption & { tenKho?: string };
 
-function destLabel(item: KhoOption, kind: 'kho' | 'may') {
+function sourceChoiceLabel(item: KhoOption, kind: 'kho' | 'may') {
   if (kind !== 'may') return item.label;
   const split = item.label.split(' — ');
   if (split.length < 2) return item.label;
@@ -193,6 +197,8 @@ export function emptyXuatNvlFields(patch?: Partial<XuatNvlLine>): XuatNvlLine {
     key: newKey(),
     khoLoai: 'kho',
     khoId: '',
+    srcLoai: 'kho',
+    srcId: '',
     warehouseClass: 'chua_phan_loai',
     materialId: '',
     maHang: '',
@@ -219,38 +225,24 @@ export function emptyXuatNvlFields(patch?: Partial<XuatNvlLine>): XuatNvlLine {
 
 export function XuatNvlDetail({
   lines,
-  warehouses,
+  sourceWarehouses,
   machines,
   materials,
+  materialsForSource,
   shiftOptions,
   defaultTonNgay,
-  destLocked,
-  defaultKhoLoai,
-  defaultKhoId,
-  returnToNcc,
-  nccId = '',
-  nccOptions = [],
-  onNccChange,
   onChange,
   onRefreshCatalog,
   refreshing,
   viewOnly
 }: {
   lines: XuatNvlLine[];
-  warehouses: KhoOption[];
+  sourceWarehouses: KhoOption[];
   machines: KhoOption[];
-  materials: MaterialOption[];
+  materials: CatalogMaterial[];
+  materialsForSource: (srcId: string) => MaterialOption[];
   shiftOptions: string[];
   defaultTonNgay: string;
-  /** Xuất theo phiếu tỷ lệ trộn: máy nhận lấy từ lệnh sản xuất, không chọn tay. */
-  destLocked?: boolean;
-  defaultKhoLoai?: 'kho' | 'may';
-  defaultKhoId?: string;
-  /** Xuất trả lại nhà cung cấp: hiện cột chọn NCC trong danh sách. */
-  returnToNcc?: boolean;
-  nccId?: string;
-  nccOptions?: KhoOption[];
-  onNccChange?: (id: string) => void;
   onChange: (lines: XuatNvlLine[]) => void;
   onRefreshCatalog: () => void;
   refreshing: boolean;
@@ -281,18 +273,18 @@ export function XuatNvlDetail({
     });
   }
 
-  function findMaterial(id: string) {
-    return materials.find(item => materialRowId(item) === id);
+  function findMaterial(id: string, pool: MaterialOption[]) {
+    return pool.find(item => materialRowId(item) === id);
   }
 
-  function materialKnown(id: string) {
+  function materialKnown(id: string, pool: MaterialOption[]) {
     const key = id.trim();
-    return Boolean(key) && materials.some(item => materialRowId(item) === key);
+    return Boolean(key) && pool.some(item => materialRowId(item) === key);
   }
 
-  function productionOptions(code: string, currentId: string, currentName: string) {
+  function productionOptions(pool: MaterialOption[], code: string, currentId: string, currentName: string) {
     const key = code.trim().toLocaleLowerCase('vi');
-    const rows = materials.filter(item =>
+    const rows = pool.filter(item =>
       item.code.trim().toLocaleLowerCase('vi') === key && String(item.productionName || '').trim()
     );
     if (currentId && rows.some(item => materialRowId(item) === currentId)) return rows;
@@ -304,11 +296,7 @@ export function XuatNvlDetail({
   }
 
   function blankLine(patch?: Partial<XuatNvlLine>) {
-    return emptyXuatNvlFields({
-      khoLoai: defaultKhoLoai || 'kho',
-      khoId: defaultKhoId || '',
-      ...patch
-    });
+    return emptyXuatNvlFields(patch);
   }
 
   function addClass(kind: XuatNvlClass) {
@@ -347,6 +335,8 @@ export function XuatNvlDetail({
         tenSanXuat: String(found.productionName || '').trim(),
         donVi: unit,
         materialId: String(found.id || '').trim(),
+        srcLoai: 'kho',
+        srcId: String(found.tenKho || '').trim(),
         auxiliaryGroup: String(found.nhomVatTuPhu || '').trim(),
         soLuong: '1',
         isScanned: true,
@@ -429,8 +419,8 @@ export function XuatNvlDetail({
       <div className="scrollbar-hidden overflow-x-auto">
         <div className={headerGrid}>
           <span className={`${head} text-center`}>STT</span>
-          <span className={head}>{returnToNcc ? 'Nơi trả' : 'Loại kho'}</span>
-          <span className={head}>{returnToNcc ? 'Nhà cung cấp' : 'Nhập đến'}</span>
+          <span className={head}>Loại</span>
+          <span className={head}>Xuất từ</span>
           <span className={head}>Mã nguyên vật liệu</span>
           <span className={head}>Tên nguyên vật liệu</span>
           <span className={head}>Tên sản xuất</span>
@@ -461,8 +451,10 @@ export function XuatNvlDetail({
               : line.normPerKg && line.normPerKg > 0
                 ? Math.round(qty * line.normPerKg * 1000) / 1000
                 : 0;
+          const sourceKind = line.srcLoai === 'may' ? 'may' : 'kho';
+          const sourceMaterials = sourceKind === 'may' ? materials : materialsForSource(line.srcId);
           const sxText = String(line.tenSanXuat || '').trim();
-          const knownMaterial = materialKnown(line.materialId);
+          const knownMaterial = materialKnown(line.materialId, sourceMaterials);
           const codeValue = knownMaterial ? line.materialId : line.maHang;
           const sxValue = sxText ? (knownMaterial ? line.materialId : sxText) : '';
           const needsWarehousePick = Boolean(line.maHang.trim()) && !knownMaterial;
@@ -476,78 +468,86 @@ export function XuatNvlDetail({
               ) : null}
               <div className={lineGrid}>
                 <div className="flex items-center justify-center text-xs font-bold text-zinc-500">{index + 1}</div>
-                {returnToNcc ? (
-                  <div className="truncate px-1 text-[11px] font-bold text-amber-800">Trả NCC</div>
-                ) : (
                 <select
-                  value={line.khoLoai === 'may' ? 'may' : 'kho'}
-                  disabled={destLocked || viewOnly}
-                  onChange={viewOnly ? undefined : event => patchAt(index, { khoLoai: event.target.value === 'may' ? 'may' : 'kho', khoId: '' })}
+                  value={sourceKind}
+                  disabled={viewOnly}
+                  onChange={viewOnly ? undefined : event => {
+                    const nextKind = event.target.value === 'may' ? 'may' : 'kho';
+                    if (nextKind === sourceKind) return;
+                    patchAt(index, {
+                      srcLoai: nextKind,
+                      srcId: '',
+                      materialId: '',
+                      maHang: '',
+                      tenHang: '',
+                      tenSanXuat: '',
+                      donVi: '',
+                      auxiliaryGroup: '',
+                      tonDau: null,
+                      tonDauDirty: false
+                    });
+                  }}
                   className={field}
-                  aria-label="Loại kho"
+                  aria-label="Loại xuất từ"
                 >
                   <option value="kho">Kho</option>
                   <option value="may">Máy</option>
                 </select>
-                )}
-                {returnToNcc ? (
-                  <SearchableSelect
-                    value={nccId}
-                    onChange={viewOnly ? undefined : value => onNccChange?.(value)}
-                    options={nccOptions}
-                    getValue={item => (item as KhoOption).id}
-                    getLabel={item => (item as KhoOption).label}
-                    getSearchText={item => (item as KhoOption).label}
-                    placeholder="Chọn nhà cung cấp"
-                    disabled={viewOnly}
-                    inputClassName={`${field} border-amber-300 bg-amber-50`}
-                    comboboxMode
-                    comboboxSearchable
-                    openUpward
-                  />
-                ) : (
                 <SearchableSelect
-                  value={line.khoId}
-                  onChange={viewOnly ? undefined : value => patchAt(index, { khoId: value })}
-                  options={line.khoLoai === 'may' ? machines : warehouses}
+                  value={line.srcId}
+                  onChange={viewOnly ? undefined : value => {
+                    if (value === line.srcId) return;
+                    patchAt(index, {
+                      srcLoai: sourceKind,
+                      srcId: value,
+                      materialId: '',
+                      maHang: '',
+                      tenHang: '',
+                      tenSanXuat: '',
+                      donVi: '',
+                      auxiliaryGroup: '',
+                      tonDau: null,
+                      tonDauDirty: false
+                    });
+                  }}
+                  options={sourceKind === 'may' ? machines : sourceWarehouses}
                   getValue={item => (item as KhoOption).id}
-                  getLabel={item => destLabel(item as KhoOption, line.khoLoai === 'may' ? 'may' : 'kho')}
+                  getLabel={item => sourceChoiceLabel(item as KhoOption, sourceKind)}
                   getSearchText={item => (item as KhoOption).label}
-                  placeholder={destLocked ? 'Máy theo lệnh sản xuất' : line.khoLoai === 'may' ? 'Chọn máy' : 'Chọn kho'}
-                  disabled={destLocked || viewOnly}
+                  placeholder={sourceKind === 'may' ? 'Chọn máy' : 'Chọn kho'}
+                  disabled={viewOnly}
                   inputClassName={field}
                   comboboxMode
                   comboboxSearchable
                   openUpward
                 />
-                )}
                 <SearchableSelect
                   value={codeValue}
                   onChange={viewOnly ? undefined : value => {
-                    const found = findMaterial(value);
+                    const found = findMaterial(value, sourceMaterials);
                     if (found) applyMaterial(index, found);
                   }}
-                  options={materials}
+                  options={sourceMaterials}
                   getValue={item => materialRowId(item as MaterialOption)}
                   getLabel={item => (item as MaterialOption).code}
                   getOptionLabel={item => materialMenuLabel(item as MaterialOption)}
                   getSearchText={item => materialMenuLabel(item as MaterialOption)}
-                  placeholder="Mã NPL"
+                  placeholder={line.srcId ? 'Mã NPL' : 'Chọn xuất từ trước'}
                   inputClassName={`${field} ${needsWarehousePick ? 'border-amber-300 bg-amber-50' : ''}`}
                   comboboxMode
                   comboboxSearchable
                   openUpward
-                  disabled={viewOnly}
+                  disabled={viewOnly || !line.srcId}
                 />
                 <div className="truncate text-[11px] font-semibold text-zinc-700" title={line.tenHang}>{line.tenHang || '—'}</div>
                 <div>
                   <SearchableSelect
                     value={sxValue}
                     onChange={viewOnly ? undefined : value => {
-                      const found = findMaterial(value);
+                      const found = findMaterial(value, sourceMaterials);
                       if (found) applyMaterial(index, found);
                     }}
-                    options={productionOptions(line.maHang, knownMaterial ? line.materialId : '', sxText)}
+                    options={productionOptions(sourceMaterials, line.maHang, knownMaterial ? line.materialId : '', sxText)}
                     getValue={item => materialRowId(item as MaterialOption)}
                     getLabel={item => String((item as MaterialOption).productionName || '').trim()}
                     placeholder={line.maHang ? (needsWarehousePick ? 'Chọn tên SX trong kho xuất' : 'Không có dữ liệu') : 'Chọn mã NPL trước'}
@@ -687,32 +687,6 @@ export function XuatNvlDetail({
           );
         })}
       </div>
-      {returnToNcc ? (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-2.5">
-          <label className="block space-y-1">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-700">
-              Nhà cung cấp trả lại <span className="text-[#ef1b2d]">*</span>
-            </span>
-            <SearchableSelect
-              value={nccId}
-              onChange={viewOnly ? undefined : value => onNccChange?.(value)}
-              options={nccOptions}
-              getValue={item => (item as KhoOption).id}
-              getLabel={item => (item as KhoOption).label}
-              getSearchText={item => (item as KhoOption).label}
-              placeholder="Chọn nhà cung cấp trả lại..."
-              disabled={viewOnly}
-              inputClassName="h-9 w-full rounded-lg border border-amber-300 bg-white px-2.5 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
-              comboboxMode
-              comboboxSearchable
-              openUpward
-            />
-          </label>
-          <p className="mt-1 text-[11px] font-semibold text-zinc-500">
-            Chọn nhà cung cấp nhận hàng trả. Cột Nhà cung cấp trong danh sách dùng chung lựa chọn này.
-          </p>
-        </div>
-      ) : null}
       {uploadError ? <p className="text-xs font-semibold text-rose-600">{uploadError}</p> : null}
       <ProductQrScanner open={scannerOpen} onClose={() => setScannerOpen(false)} onScan={onScan} closeAfterScan={false} requireConfirm={false} />
       <WeighingImagePreviewModal image={viewing} onClose={() => setViewing(null)} />
