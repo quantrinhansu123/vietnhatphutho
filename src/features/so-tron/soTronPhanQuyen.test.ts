@@ -99,6 +99,26 @@ test('xóa là trưởng ca và quản trị, mở khóa chỉ ADMIN, kiêm nhi�
   assert.equal(canSeeSoTronThanhPham(['TRUONG_CA', 'TO_TRON']), true);
 });
 
+test('trưởng phòng có ca hồ sơ vẫn sửa thành phẩm mọi mã ca sản xuất', () => {
+  const truongPhong: SoTronActor = {
+    ...lead,
+    name: 'Trưởng ca máy sóng',
+    ca: 'Ca Ngày (06:00 - 18:00) SG1'
+  };
+  assert.equal(
+    assertSoTron(truongPhong, 'update', 'thanh_pham', { ca: '12C1', khoa_ca: false, vat_tu_owner_id: '' }).ok,
+    true
+  );
+  assert.equal(
+    assertSoTron(truongPhong, 'update', 'thanh_pham', { ca: 'HC2', khoa_ca: false, vat_tu_owner_id: '' }).ok,
+    true
+  );
+  assert.equal(
+    assertSoTron(lead, 'update', 'thanh_pham', { ca: '12C2', khoa_ca: false, vat_tu_owner_id: '' }).ok,
+    false
+  );
+});
+
 test('ghi thành phẩm không đè vật tư đã lưu', () => {
   const merged = applySoTronScopes(
     { bang_nvl: [{ ma_nvl: 'A' }], bang_san_pham: [], ca: '12C1', ghi_chu: 'cũ' },
