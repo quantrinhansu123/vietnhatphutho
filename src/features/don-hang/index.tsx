@@ -1939,8 +1939,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       const cutWeight = line.shouldRecalculateConversion
                         ? calculateCutOrderWeight(line.daiM, cutEffectiveQty, matchedConversion, 'Tấm', line.productCode, matchedLineProduct?.name || line.productName)
                         : null;
+                      const southDinhMucTotal = isFormSouthOrder
+                        ? southDinhMucKgTotal(line.dinhMucKg, cutEffectiveQty)
+                        : null;
                       const displayedCutWeight = line.shouldRecalculateConversion
-                        ? (southDinhMucKgTotal(line.dinhMucKg, cutEffectiveQty)
+                        ? (southDinhMucTotal
                             ?? (line.manualTongKg
                             ? parsePercentInput(String(line.tongKg ?? ''))
                             : cutWeight?.tongKg ?? null))
@@ -1997,31 +2000,33 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           />
                         </div>
                         {isFormSouthOrder ? (
-                          <div className="col-span-1 min-w-0">
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              value={line.doLiDm || ''}
-                              onChange={e => updateConversionProductLine(line.key, { doLiDm: e.target.value })}
-                              className={orderFieldClass}
-                              placeholder="0.75"
-                              title="Độ li định mức thực tế — chỉ nhập số, tự hiểu là (đm n li)"
-                            />
-                          </div>
+                          <>
+                            <div className="col-span-1 min-w-0">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={line.doLiDm || ''}
+                                onChange={e => updateConversionProductLine(line.key, { doLiDm: e.target.value })}
+                                className={orderFieldClass}
+                                placeholder="0.75"
+                                title="Độ li định mức thực tế — chỉ nhập số, tự hiểu là (đm n li)"
+                              />
+                            </div>
+                            <div className="col-span-1 min-w-0">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={line.dinhMucKg ?? ''}
+                                onChange={e => updateConversionProductLine(line.key, { dinhMucKg: e.target.value })}
+                                title="Định mức KG/tấm — có giá trị thì Tổng KG = Định mức × SL tổng"
+                                className={`${orderFieldClass} bg-white text-right`}
+                                placeholder="ĐM KG"
+                              />
+                            </div>
+                          </>
                         ) : null}
-                        <div className="col-span-1 min-w-0">
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={line.dinhMucKg ?? ''}
-                            onChange={e => updateConversionProductLine(line.key, { dinhMucKg: e.target.value })}
-                            title="Định mức KG/tấm — có giá trị thì Tổng KG = Định mức × SL tổng"
-                            className={`${orderFieldClass} bg-white text-right`}
-                            placeholder="ĐM KG"
-                          />
-                        </div>
                         <div className="col-span-1 min-w-0">
                           <input
                             type="number"
@@ -2079,7 +2084,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               manualTongKg: e.target.value.trim() !== '',
                               shouldRecalculateConversion: true
                             })}
-                            title={southDinhMucKgTotal(line.dinhMucKg, cutEffectiveQty) !== null
+                            title={southDinhMucTotal !== null
                               ? 'Tổng KG = Định mức KG × SL tổng (xóa Định mức để nhập tay)'
                               : line.manualTongKg
                               ? 'Tổng KG do khách hàng nhập; TL/tấm = Tổng KG / SL'
