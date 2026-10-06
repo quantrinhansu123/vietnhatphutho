@@ -1090,9 +1090,10 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className={slipTableClass} style={{ minWidth: 760 }}>
+                  <table className={slipTableClass} style={{ minWidth: 820 }}>
                     <colgroup>
-                      <col style={{ width: 280 }} />
+                      <col style={{ width: 72 }} />
+                      <col style={{ width: 250 }} />
                       <col style={{ width: 90 }} />
                       <col style={{ width: 80 }} />
                       <col style={{ width: 80 }} />
@@ -1102,6 +1103,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
                     </colgroup>
                     <thead>
                       <tr className="bg-slate-100 text-black">
+                        <th rowSpan={2} className="border border-slate-800">Mã TP</th>
                         <th rowSpan={2} className="border border-slate-800">Thành phẩm</th>
                         <th rowSpan={2} className="border border-slate-800">TL định mức / tấm (Kg)</th>
                         <th colSpan={3} className="border border-slate-800">TP Nhập kho</th>
@@ -1117,13 +1119,14 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
                     <tbody>
                       {thanhPhamRows.length === 0 && (
                         <tr>
-                          <td colSpan={7} className="border border-slate-800 p-4 text-center text-slate-400 italic">
+                          <td colSpan={8} className="border border-slate-800 p-4 text-center text-slate-400 italic">
                             Chưa có dữ liệu thành phẩm trên sổ trộn.
                           </td>
                         </tr>
                       )}
                       {thanhPhamRows.map((row, ri) => (
                         <tr key={row.key} className="h-9 hover:bg-slate-50/80" style={{ height: 36 }}>
+                          <td className="border border-slate-800 p-0.5">{'\u00a0'}</td>
                           <td className="border border-slate-800 p-0.5">
                             <input
                               value={row.ten_sp}
@@ -1193,13 +1196,13 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
                       ))}
                       {Array.from({ length: Math.max(0, 30 - thanhPhamRows.length) }, (_, i) => (
                         <tr key={`tp-blank-${i}`} className="h-9" style={{ height: 36 }} aria-hidden>
-                          {Array.from({ length: 7 }, (_, ci) => (
+                          {Array.from({ length: 8 }, (_, ci) => (
                             <td key={ci} className="h-9 border border-slate-800" style={{ height: 36 }}>{'\u00a0'}</td>
                           ))}
                         </tr>
                       ))}
                       <tr className="bg-slate-100 font-bold">
-                        <td colSpan={5} className="border border-slate-800 p-1 text-right pr-2">
+                        <td colSpan={6} className="border border-slate-800 p-1 text-right pr-2">
                           Cộng:
                         </td>
                         <td className={`border border-slate-800 ${numReadStyle}`}>
