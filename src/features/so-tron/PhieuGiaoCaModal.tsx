@@ -34,6 +34,7 @@ import {
   lookupAuxiliaryNormWeight
 } from './dinhMucVatTu';
 import { SuCoTimeInput } from './SuCoTimeInput';
+import { formatGiaoCaKg, tongGiaoCaKg } from './giaoCa';
 
 interface Props {
   open: boolean;
@@ -106,6 +107,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
 
   const [vatTuRows, setVatTuRows] = useState<PhieuGiaoCaVatTuRow[]>([]);
   const [giaoCaNote, setGiaoCaNote] = useState('');
+  const [giaoCaTouched, setGiaoCaTouched] = useState(false);
   const [thanhPhamRows, setThanhPhamRows] = useState<ThanhPhamEditRow[]>([]);
   const [hangLoiRows, setHangLoiRows] = useState<PhieuGiaoCaHangLoiRow[]>([]);
   const [suCoLuuY, setSuCoLuuY] = useState('');
@@ -266,14 +268,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
     const parsedSuCo = parseSuCo(report.ghi_chu || '');
     setSuCoRows(parsedSuCo.rows);
     setSuCoLuuY(parsedSuCo.note);
-    // Giao ca: lấy đã lưu, chưa có thì gợi ý = tổng tồn cuối ca (người dùng sửa được)
-    const savedGiaoCa = str((report as { giao_ca_note?: unknown }).giao_ca_note);
-    if (savedGiaoCa) {
-      setGiaoCaNote(savedGiaoCa);
-    } else {
-      const tongTonCuoi = round1(combinedVatTu.reduce((s, r) => s + num(r.ton_cuoi_ca), 0));
-      setGiaoCaNote(tongTonCuoi > 0 ? `${formatSlipNumber(tongTonCuoi)} kg` : '');
-    }
+    setGiaoCaTouched(false);
     setSaveSuccess(false);
     setErrorMessage('');
   }, [report, open]);
@@ -325,6 +320,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
 
   // Handler cập nhật bảng vật tư
   const updateVatTuRow = (index: number, patch: Partial<PhieuGiaoCaVatTuRow>) => {
+    setGiaoCaTouched(false);
     setVatTuRows(prev =>
       prev.map((row, i) => {
         if (i !== index) return row;
@@ -343,6 +339,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
   };
 
   const updateVatTuLan = (rowIndex: number, lanIndex: number, val: string) => {
+    setGiaoCaTouched(false);
     setVatTuRows(prev =>
       prev.map((row, i) => {
         if (i !== rowIndex) return row;
@@ -361,6 +358,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
   };
 
   const addVatTuRow = () => {
+    setGiaoCaTouched(false);
     setVatTuRows(prev => [
       ...prev,
       {
@@ -381,6 +379,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
   };
 
   const removeVatTuRow = (index: number) => {
+    setGiaoCaTouched(false);
     setVatTuRows(prev => prev.filter((_, i) => i !== index));
   };
 
@@ -452,6 +451,25 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
   const tongCongSuDungVatTu = useMemo(() => {
     return round2(vatTuRows.reduce((sum, r) => sum + r.tong_su_dung, 0));
   }, [vatTuRows]);
+
+  /** Giao ca = Σ (Tồn đầu ca + Lấy kho − Tổng SD). Đổi số liệu thì tính lại, trừ khi vừa sửa tay ô Giao ca. */
+  const giaoCaFormula = useMemo(
+    () =>
+      formatGiaoCaKg(
+        tongGiaoCaKg(
+          vatTuRows.map(row => ({
+            tonDau: row.ton_dau_ca,
+            layKho: row.lay_trong_kho,
+            tongSd: row.tong_su_dung
+          }))
+        )
+      ),
+    [vatTuRows]
+  );
+  useEffect(() => {
+    if (!open || giaoCaTouched) return;
+    setGiaoCaNote(giaoCaFormula);
+  }, [open, giaoCaFormula, giaoCaTouched]);
 
   // Tính tổng thành phẩm
   const tongNhapKhoThanhPham = useMemo(() => {
@@ -1039,9 +1057,13 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
                   <span>Giao ca:</span>
                   <input
                     value={giaoCaNote}
-                    onChange={e => setGiaoCaNote(e.target.value)}
+                    onChange={e => {
+                      setGiaoCaTouched(true);
+                      setGiaoCaNote(e.target.value);
+                    }}
+                    title="Tồn đầu ca + Lấy kho − Tổng SD, cộng mọi dòng. Đổi số liệu thì tính lại."
                     className="w-48 border-b border-dotted border-slate-700 px-1 text-xs outline-none"
-                    placeholder="VD: 652 kg..."
+                    placeholder="Tự tính theo tồn cuối"
                   />
                 </div>
                 <div>
