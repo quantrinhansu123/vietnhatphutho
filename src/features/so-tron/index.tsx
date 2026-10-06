@@ -21,6 +21,7 @@ import { assertSoTron, canDeleteSoTron, canSeeSoTronThanhPham, type SoTronSlipGa
 import type { AuthUser } from '../../app/authUser';
 import { actorForSoTron, soTronAuthHeaders, soTronScopesFor } from './soTronSession';
 import { SoTronDatePicker, formatNgayVN } from './SoTronDatePicker';
+import { SuCoTimeInput } from './SuCoTimeInput';
 import { printPhieuGiaoCaSlip } from './printPhieuGiaoCa';
 import { normalizeProductionOrders, type ProductionOrderRow } from '../ke-hoach-san-xuat';
 import type { OrderProductLine } from '../_shared/productionProductHelpers';
@@ -2276,9 +2277,11 @@ export function SoTronPanel({
 
   /** Điền SP từ gợi ý lệnh SX kèm snapshot quy đổi 1 SP (kg/m2/m dài). */
   const applySpSuggestion = (row: SanPhamRow, value: string): SanPhamRow => {
-    const hit = productSuggestions.find(
+    const cands = productSuggestions.filter(
       s => s.value === value || s.label === value || s.tenSp === value || s.maSp === value
     );
+    // Ưu tiên SP thuộc đúng Mã lệnh của dòng (cùng mã SP có thể nằm ở nhiều lệnh)
+    const hit = cands.find(s => str(row.ma_lenh_sx) && s.maLenh === str(row.ma_lenh_sx)) || cands[0];
     if (!hit) {
       const split = splitMaTenSp(value);
       const ma = split.ma || row.ma_sp;
@@ -2304,7 +2307,9 @@ export function SoTronPanel({
   /** Điền SP khi gõ/chọn Mã sản phẩm: khớp mã thì fill tên + snapshot, không thì chỉ set mã. */
   const applySpSuggestionByMa = (row: SanPhamRow, ma: string): SanPhamRow => {
     const code = str(ma);
-    const hit = productSuggestions.find(s => s.maSp === code);
+    const cands = productSuggestions.filter(s => s.maSp === code);
+    // Ưu tiên SP thuộc đúng Mã lệnh của dòng; chưa chọn lệnh thì tự gán lệnh của SP
+    const hit = cands.find(s => str(row.ma_lenh_sx) && s.maLenh === str(row.ma_lenh_sx)) || cands[0];
     if (!hit) {
       return { ...row, ma_sp: code, mang: row.mang || resolveMang(code, row.ten_sp) };
     }
@@ -5155,13 +5160,26 @@ export function SoTronPanel({
                                     title={row.ma_sp}
                                   />
                                   <datalist id={`so-tron-paper-sp-ma-${row.key}`}>
-                                    {productSuggestions
-                                      .filter(s => s.maSp === row.ma_sp || !spRows.some((other, index) => index !== ri && other.ma_sp && other.ma_sp === s.maSp))
-                                      .map(s => (
-                                      <option key={`${s.maLenh}-${s.maSp}`} value={s.maSp}>
-                                        {s.tenSp}
-                                      </option>
-                                    ))}
+                                    {(() => {
+                                      const inOrder = productSuggestions.filter(
+                                        s => !str(row.ma_lenh_sx) || s.maLenh === str(row.ma_lenh_sx)
+                                      );
+                                      // Lệnh chưa có dòng SP (hoặc chưa chọn lệnh) → hiện tất cả để vẫn chọn được
+                                      const list = inOrder.length > 0 ? inOrder : productSuggestions;
+                                      return list
+                                        .filter(
+                                          s =>
+                                            s.maSp === row.ma_sp ||
+                                            !spRows.some(
+                                              (other, index) => index !== ri && other.ma_sp && other.ma_sp === s.maSp
+                                            )
+                                        )
+                                        .map(s => (
+                                          <option key={`${s.maLenh}-${s.maSp}`} value={s.maSp}>
+                                            {s.tenSp}
+                                          </option>
+                                        ));
+                                    })()}
                                   </datalist>
                                 </td>
                                 <td className={`${paperTd} min-w-[200px]`}>
@@ -5179,13 +5197,27 @@ export function SoTronPanel({
                                     title={tenSpHienThi(row.ma_sp, row.ten_sp)}
                                   />
                                   <datalist id={`so-tron-paper-sp-${row.key}`}>
-                                    {productSuggestions
-                                      .filter(s => s.tenSp === tenSpHienThi(row.ma_sp, row.ten_sp) || !spRows.some((other, index) => index !== ri && tenSpHienThi(other.ma_sp, other.ten_sp) === s.tenSp))
-                                      .map(s => (
-                                      <option key={`${s.maLenh}-${s.maSp}`} value={s.tenSp}>
-                                        {s.maSp ? `${s.maSp} · ${s.maLenh}` : s.maLenh}
-                                      </option>
-                                    ))}
+                                    {(() => {
+                                      const inOrder = productSuggestions.filter(
+                                        s => !str(row.ma_lenh_sx) || s.maLenh === str(row.ma_lenh_sx)
+                                      );
+                                      // Lệnh chưa có dòng SP (hoặc chưa chọn lệnh) → hiện tất cả để vẫn chọn được
+                                      const list = inOrder.length > 0 ? inOrder : productSuggestions;
+                                      return list
+                                        .filter(
+                                          s =>
+                                            s.tenSp === tenSpHienThi(row.ma_sp, row.ten_sp) ||
+                                            !spRows.some(
+                                              (other, index) =>
+                                                index !== ri && tenSpHienThi(other.ma_sp, other.ten_sp) === s.tenSp
+                                            )
+                                        )
+                                        .map(s => (
+                                          <option key={`${s.maLenh}-${s.maSp}`} value={s.tenSp}>
+                                            {s.maSp ? `${s.maSp} · ${s.maLenh}` : s.maLenh}
+                                          </option>
+                                        ));
+                                    })()}
                                   </datalist>
                                 </td>
                                 <td className={`${paperTd} w-[70px] min-w-[64px]`}>
@@ -5280,7 +5312,8 @@ export function SoTronPanel({
                             ...rows,
                             {
                               key: uid(),
-                              ma_lenh_sx: selectedLenh[0] || '',
+                              // 1 lệnh → gán sẵn để gợi ý lọc đúng; nhiều lệnh → để trống, chọn lệnh trước rồi chọn SP
+                              ma_lenh_sx: selectedLenh.length === 1 ? selectedLenh[0] : '',
                               san_pham_id: '',
                               ma_sp: '',
                               ten_sp: '',
@@ -5513,11 +5546,9 @@ export function SoTronPanel({
                                   className={`${paperCellInputLeft} text-[16px]`}
                                 />
                                 <div className="flex items-center gap-1 px-1 pb-1">
-                                  <input
-                                    type="time"
+                                  <SuCoTimeInput
                                     value={row.gio_tu || ''}
-                                    onChange={e => {
-                                      const gioTu = e.target.value;
+                                    onChange={gioTu => {
                                       setSuCoMainRows(rows =>
                                         rows.map((item, i) => {
                                           if (i !== index) return item;
@@ -5526,15 +5557,12 @@ export function SoTronPanel({
                                         })
                                       );
                                     }}
-                                    className="h-7 rounded border border-slate-300 px-1 text-[13px] font-bold text-black outline-none"
                                     title="Từ giờ"
                                   />
                                   <span className="text-[13px] font-bold">→</span>
-                                  <input
-                                    type="time"
+                                  <SuCoTimeInput
                                     value={row.gio_den || ''}
-                                    onChange={e => {
-                                      const gioDen = e.target.value;
+                                    onChange={gioDen => {
                                       setSuCoMainRows(rows =>
                                         rows.map((item, i) => {
                                           if (i !== index) return item;
@@ -5543,7 +5571,6 @@ export function SoTronPanel({
                                         })
                                       );
                                     }}
-                                    className="h-7 rounded border border-slate-300 px-1 text-[13px] font-bold text-black outline-none"
                                     title="Đến giờ"
                                   />
                                 </div>
@@ -5635,7 +5662,7 @@ export function SoTronPanel({
                   </table>
                 </div>
                 ) : null}
-                <div data-so-tron-scope="vat-tu" className="mx-2 mb-3 mt-5 overflow-hidden rounded-md border border-slate-800" inert={!soTronAccess.canVatTu}>
+                <div data-so-tron-scope={isTruongCaView ? 'thanh-pham' : 'vat-tu'} className="mx-2 mb-3 mt-5 overflow-hidden rounded-md border border-slate-800" inert={isTruongCaView ? !soTronAccess.canThanhPham : !soTronAccess.canVatTu}>
                   <p className="border-b border-slate-800 bg-slate-100 py-1 text-center text-[12px] font-bold uppercase tracking-wide">
                     Nhựa bàn giao ca sau
                   </p>

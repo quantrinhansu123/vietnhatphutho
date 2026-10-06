@@ -96,7 +96,14 @@ Kiêm nhiệm được cộng quyền. Xem phiếu ca khác vẫn được. Sử
 
 - Nút `Lưu Ln` nằm ở dòng cuối (footer) của từng khối NVL, dưới ô tổng từng Lần (bỏ ở strip tổng chung).
 - Accordion từng khối: Cối trộn mẫu bấm mở từng SP (mặc định ẩn hết, có Mở tất cả/Thu gọn); khối NVL bấm thu gọn từng SP (mặc định mở hết, nút `Xem` tự mở khối đang gấp rồi scroll tới).
-- Bảng Thành phẩm có lại cột `Mã lệnh` (select theo lệnh đã chọn) đầu tiên.
+- Bảng Thành phẩm có lại cột `Mã lệnh` (select theo lệnh đã chọn) đầu tiên. Chọn Mã lệnh thì gợi ý Mã SP/Tên ở dòng đó chỉ hiện SP thuộc lệnh đó; lệnh chưa có dòng SP (hoặc mã lệnh lệch) thì hiện tất cả để vẫn chọn được; dòng mới khi 1 lệnh thì gán sẵn lệnh, nhiều lệnh thì để trống. Fill trùng mã ở nhiều lệnh thì ưu tiên đúng lệnh của dòng.
+
+## Cập nhật 10/2026 đợt 4 (phân quyền + giờ 24h)
+
+- Trưởng ca (không kiêm trộn): form ẩn khối Lần + DS NVL; xem/sửa/xóa SP, Hàng lỗi, Sự cố, Nhựa bàn giao (bàn giao đổi scope `vat-tu → thanh-pham` trên form + server `applySoTronScopes` cho `thanh_pham` ghi `bang_ban_giao/tong_nhap_nvl`).
+- Tổ trộn / NV PX: modal giao ca chỉ hiện Trang 1 (ẩn Trang 2 = SP + lỗi + sự cố, bản in cũng lọc); form chính đã ẩn SP + sự cố từ trước.
+- Giờ sự cố tự do dùng `SuCoTimeInput` (text HH:MM 24h, tự chèn `:`, blur chuẩn hóa) thay `input type="time"`, chung cho form chính + modal.
+- Xả cối: nút `Xả cối` từng Lần mở popup nhập kg xả → `Xác nhận xả`: `Cối thực tế = Cối hiện tại − xả`, tự tính lại NVL lần đó (xả ≥ cối thì chặn).
 
 ## Liên kết
 

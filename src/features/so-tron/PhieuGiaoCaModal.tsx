@@ -33,6 +33,7 @@ import {
   formatNormWeight,
   lookupAuxiliaryNormWeight
 } from './dinhMucVatTu';
+import { SuCoTimeInput } from './SuCoTimeInput';
 
 interface Props {
   open: boolean;
@@ -392,6 +393,19 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
     }).includes('thanh_pham');
   }, [report, sessionActor]);
 
+  /**
+   * Phân vai trên modal giao ca:
+   * - Tổ trộn / NV phân xưởng: chỉ Trang 1 (vật tư), ẩn Trang 2 (SP + lỗi + sự cố), bản in cũng lọc.
+   * - Trưởng ca (không kiêm trộn): chỉ Trang 2 + sự cố, ẩn Trang 1 (NVL).
+   * - Quản trị / kiêm nhiệm / chưa rõ vai: xem cả 2 (ghi theo scope lúc lưu).
+   */
+  const modalRoles = sessionActor?.roles ?? [];
+  const modalIsAdmin = modalRoles.includes('ADMIN');
+  const modalHasMixer = modalRoles.includes('TO_TRON') || modalRoles.includes('NV_PX');
+  const modalHasLead = modalRoles.includes('TRUONG_CA');
+  const modalHideP2 = !modalIsAdmin && modalHasMixer && !modalHasLead;
+  const modalHideP1 = !modalIsAdmin && modalHasLead && !modalHasMixer;
+
   const updateThanhPhamRow = (index: number, patch: Partial<ThanhPhamEditRow>) => {
     setThanhPhamRows(prev =>
       prev.map((row, i) => {
@@ -453,7 +467,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
     return round2(hangLoiRows.reduce((sum, r) => sum + num(r.so_luong), 0));
   }, [hangLoiRows]);
 
-  // Đối tượng in
+  // Đối tượng in (tổ trộn/NV PX không được xem SP + lỗi + sự cố → bản in cũng lọc)
   const currentPrintInput: PhieuGiaoCaInput = useMemo(
     () => ({
       header,
@@ -465,6 +479,14 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
       chuKy
     }),
     [header, vatTuRows, giaoCaNote, thanhPhamRows, hangLoiRows, suCoLuuY, suCoRows, chuKy]
+  );
+  const printInputForRole: PhieuGiaoCaInput = useMemo(
+    () =>
+      modalHideP2
+        ? { ...currentPrintInput, thanhPham: [], hangLoi: [], suCoLuuY: '' }
+        : currentPrintInput,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [currentPrintInput, modalHideP2]
   );
 
   // Lưu dữ liệu vào CSDL
@@ -597,7 +619,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
 
       if (andPrint) {
         setTimeout(() => {
-          printPhieuGiaoCaSlip(currentPrintInput);
+          printPhieuGiaoCaSlip(printInputForRole);
         }, 150);
       }
 
@@ -646,36 +668,42 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
           </div>
         </div>
 
-        {/* Chuyển trang xem */}
+        {/* Chuyển trang xem (ẩn trang ngoài phạm vi vai trò) */}
         <div className="flex items-center rounded-lg bg-slate-800 p-0.5 text-xs font-semibold">
-          <button
-            type="button"
-            onClick={() => setActiveTab('all')}
-            className={`rounded-md px-3 py-1 transition ${activeTab === 'all' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white'}`}
-          >
-            Cả 2 trang
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('p1')}
-            className={`rounded-md px-3 py-1 transition ${activeTab === 'p1' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white'}`}
-          >
-            Trang 1 (Vật tư)
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('p2')}
-            className={`rounded-md px-3 py-1 transition ${activeTab === 'p2' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white'}`}
-          >
-            Trang 2 (Thành phẩm)
-          </button>
+          {!modalHideP1 && !modalHideP2 ? (
+            <button
+              type="button"
+              onClick={() => setActiveTab('all')}
+              className={`rounded-md px-3 py-1 transition ${activeTab === 'all' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white'}`}
+            >
+              Cả 2 trang
+            </button>
+          ) : null}
+          {!modalHideP1 ? (
+            <button
+              type="button"
+              onClick={() => setActiveTab('p1')}
+              className={`rounded-md px-3 py-1 transition ${activeTab === 'p1' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white'}`}
+            >
+              Trang 1 (Vật tư)
+            </button>
+          ) : null}
+          {!modalHideP2 ? (
+            <button
+              type="button"
+              onClick={() => setActiveTab('p2')}
+              className={`rounded-md px-3 py-1 transition ${activeTab === 'p2' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white'}`}
+            >
+              Trang 2 (Thành phẩm)
+            </button>
+          ) : null}
         </div>
 
         {/* Nút thao tác */}
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => printPhieuGiaoCaSlip(currentPrintInput)}
+            onClick={() => printPhieuGiaoCaSlip(printInputForRole)}
             className="flex items-center gap-1.5 rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-200 hover:bg-slate-700 transition"
           >
             <Printer className="h-4 w-4" /> In phiếu
@@ -724,7 +752,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
       <div className="mx-auto my-4 flex w-full max-w-[1680px] flex-col gap-6">
         
         {/* ===================== TRANG 1: ẢNH 1 (I. VẬT TƯ) ===================== */}
-        {(activeTab === 'all' || activeTab === 'p1') && (
+        {(activeTab === 'all' || activeTab === 'p1') && !modalHideP1 && (
           <div className="relative rounded-sm border border-slate-300 bg-white p-5 text-slate-900 shadow-2xl sm:p-6" style={paperFontStyle}>
             <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-indigo-700">
               Trang 1 / 2 — Nhật ký vật tư &amp; sử dụng (Ảnh 1)
@@ -1025,7 +1053,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
         )}
 
         {/* ===================== TRANG 2: ẢNH 2 (THÀNH PHẨM, HÀNG LỖI, SỰ CỐ, CHỮ KÝ) ===================== */}
-        {(activeTab === 'all' || activeTab === 'p2') && (
+        {(activeTab === 'all' || activeTab === 'p2') && !modalHideP2 && (
           <div className="relative rounded-sm border border-slate-300 bg-white p-5 text-slate-900 shadow-2xl sm:p-6" style={paperFontStyle}>
             <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-indigo-700">
               Trang 2 / 2 — Thành phẩm, Hàng lỗi hỏng, Sự cố &amp; Chữ ký (Ảnh 2)
@@ -1336,11 +1364,9 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
                                   className="w-full bg-transparent px-1 py-1 text-[16px] font-semibold text-black outline-none"
                                 />
                                 <div className="flex items-center gap-1 px-1 pb-1">
-                                  <input
-                                    type="time"
+                                  <SuCoTimeInput
                                     value={row.gio_tu || ''}
-                                    onChange={e => {
-                                      const gioTu = e.target.value;
+                                    onChange={gioTu => {
                                       setSuCoRows(rows =>
                                         rows.map((item, i) => {
                                           if (i !== index) return item;
@@ -1353,15 +1379,12 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
                                         })
                                       );
                                     }}
-                                    className="h-7 rounded border border-slate-300 px-1 text-[13px] font-bold text-black outline-none"
                                     title="Từ giờ"
                                   />
                                   <span className="text-[13px] font-bold">→</span>
-                                  <input
-                                    type="time"
+                                  <SuCoTimeInput
                                     value={row.gio_den || ''}
-                                    onChange={e => {
-                                      const gioDen = e.target.value;
+                                    onChange={gioDen => {
                                       setSuCoRows(rows =>
                                         rows.map((item, i) => {
                                           if (i !== index) return item;
@@ -1374,7 +1397,6 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
                                         })
                                       );
                                     }}
-                                    className="h-7 rounded border border-slate-300 px-1 text-[13px] font-bold text-black outline-none"
                                     title="Đến giờ"
                                   />
                                 </div>

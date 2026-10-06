@@ -242,6 +242,9 @@ export function applySoTronScopes(
     if (!allowVat) {
       if ('ghi_chu' in incoming) base.ghi_chu = incoming.ghi_chu;
       if ('giao_ca_note' in incoming) base.giao_ca_note = incoming.giao_ca_note;
+      // Trưởng ca được sửa Nhựa bàn giao ca sau (không chạm NVL/cối trộn)
+      if ('bang_ban_giao' in incoming) base.bang_ban_giao = incoming.bang_ban_giao;
+      if ('tong_nhap_nvl' in incoming) base.tong_nhap_nvl = incoming.tong_nhap_nvl;
       if ('chi_tieu_phan_tram' in incoming) base.chi_tieu_phan_tram = incoming.chi_tieu_phan_tram;
     }
   }
