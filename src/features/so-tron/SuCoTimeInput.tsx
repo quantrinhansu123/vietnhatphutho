@@ -1,6 +1,20 @@
 import React from 'react';
 
-/** Ô nhập giờ 24h (HH:MM) cho sự cố tự do — thay `input type="time"` để hiển thị luôn 24h. */
+const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
+
+function splitTime(value: string) {
+  const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return { hh: '', mm: '' };
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return { hh: '', mm: '' };
+  }
+  return { hh: String(hour).padStart(2, '0'), mm: String(minute).padStart(2, '0') };
+}
+
+/** Chọn giờ 24h (00–23) và phút, không gõ tay. Giá trị lưu dạng HH:MM. */
 export function SuCoTimeInput({
   value,
   onChange,
@@ -12,46 +26,49 @@ export function SuCoTimeInput({
   title?: string;
   className?: string;
 }) {
-  const formatDigits = (raw: string) => {
-    const digits = raw.replace(/\D/g, '').slice(0, 4);
-    if (digits.length <= 2) return digits;
-    return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+  const { hh, mm } = splitTime(value);
+  const label = title || 'Giờ';
+  const selectClass =
+    className ||
+    'h-7 rounded border border-slate-300 bg-white px-0.5 text-[13px] font-bold tabular-nums text-black outline-none';
+
+  const emit = (nextHour: string, nextMinute: string) => {
+    if (!nextHour && !nextMinute) {
+      onChange('');
+      return;
+    }
+    onChange(`${nextHour || '00'}:${nextMinute || '00'}`);
   };
+
   return (
-    <input
-      value={value || ''}
-      inputMode="numeric"
-      placeholder="07:30"
-      title={`${title || 'Giờ'} (24h, HH:MM)`}
-      onChange={e => {
-        const text = e.target.value;
-        // Cho gõ dấu : tự nhiên, còn lại chỉ giữ số
-        if (/^\d{0,2}:?\d{0,2}$/.test(text)) {
-          onChange(text.includes(':') ? text : formatDigits(text));
-        }
-      }}
-      onBlur={e => {
-        const text = e.target.value.trim();
-        if (!text) {
-          onChange('');
-          return;
-        }
-        let normalized = text;
-        // Gõ "7" hoặc "0730" → chuẩn hóa HH:MM
-        if (/^\d{1,4}$/.test(text)) {
-          const digits = text.padStart(4, '0');
-          normalized = `${digits.slice(0, 2)}:${digits.slice(2)}`;
-        }
-        const m = normalized.match(/^(\d{1,2}):(\d{2})$/);
-        if (!m) return;
-        const hh = Math.min(23, Math.max(0, Number(m[1])));
-        const mm = Math.min(59, Math.max(0, Number(m[2])));
-        onChange(`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
-      }}
-      className={
-        className ||
-        'h-7 rounded border border-slate-300 px-1 text-[13px] font-bold tabular-nums text-black outline-none'
-      }
-    />
+    <span className="inline-flex items-center gap-0.5" title={`${label} (chọn giờ 24h)`}>
+      <select
+        aria-label={`${label} — giờ`}
+        value={hh}
+        onChange={event => emit(event.target.value, mm)}
+        className={selectClass}
+      >
+        <option value="">Giờ</option>
+        {HOURS.map(hour => (
+          <option key={hour} value={hour}>
+            {hour}
+          </option>
+        ))}
+      </select>
+      <span className="text-[13px] font-bold text-black">:</span>
+      <select
+        aria-label={`${label} — phút`}
+        value={mm}
+        onChange={event => emit(hh, event.target.value)}
+        className={selectClass}
+      >
+        <option value="">Phút</option>
+        {MINUTES.map(minute => (
+          <option key={minute} value={minute}>
+            {minute}
+          </option>
+        ))}
+      </select>
+    </span>
   );
 }

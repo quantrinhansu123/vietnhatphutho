@@ -634,7 +634,7 @@ export const FACTORY_QC_MENU_ITEMS: MenuCardConfig[] = [
 /** Công nhân sản xuất: chỉ sổ trộn, sổ giao ca MMTB và sổ chế độ máy. */
 export const BAO_CAO_TRUONG_CA_TRON_MENU_ITEMS: MenuCardConfig[] = [
   {
-    title: 'Sổ trộn',
+    title: 'Sổ trộn và biên bản phiếu giao ca',
     desc: 'Báo cáo cuối ngày của công nhân: ngày + máy/ca, lệnh SX, NVL thực tế, sản phẩm, hàng lỗi và nhựa bàn giao.',
     icon: ClipboardList,
     icon3d: spiralNotepad3d,
@@ -1145,7 +1145,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'mixing-report': { group: 'Sản xuất', sub: 'Báo cáo trộn' },
   'mixing-report-list': { group: 'QC', sub: 'BOM và tỷ lệ phối trộn' },
   'machine-nvl-report': { group: 'Sản xuất', sub: 'Báo cáo máy-NVL' },
-  'so-tron': { group: 'Báo cáo Trưởng ca + Trộn', sub: 'Sổ trộn' },
+  'so-tron': { group: 'Báo cáo Trưởng ca + Trộn', sub: 'Sổ trộn và biên bản phiếu giao ca' },
   'so-tron-list': { group: 'Sản xuất', sub: 'Danh sách phiếu giao ca' },
   'so-giao-ca-mmtb': { group: 'Báo cáo Trưởng ca + Trộn', sub: 'Sổ giao ca MMTB' },
   'so-giao-ca-mmtb-list': { group: 'Báo cáo Trưởng ca + Trộn', sub: 'Danh sách sổ giao ca MMTB' },
