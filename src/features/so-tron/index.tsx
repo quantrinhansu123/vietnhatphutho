@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ClipboardList, ExternalLink, Loader2, Lock, Minus, Plus, Printer, RefreshCw, Save, Trash2, Unlock, X } from 'lucide-react';
 import { BackButton } from '../../components/layout/NavButtons';
 import { pathFromTab } from '../../routes';
@@ -964,6 +964,10 @@ export function SoTronPanel({
   /** Trạng thái lưu phiếu trộn thực tế theo từng Lần (key = lan index). */
   const [phieuThucTeSaving, setPhieuThucTeSaving] = useState<Record<number, boolean>>({});
   const [phieuThucTeNote, setPhieuThucTeNote] = useState<Record<number, string>>({});
+  /** Id phiếu trộn thực tế theo dinh_muc_id — lần đầu tạo, các lần sau cập nhật đúng id, không tải lại trang. */
+  const [phieuThucTeIds, setPhieuThucTeIds] = useState<Record<string, string>>({});
+  const phieuThucTeCache = useRef(new Map<string, { id: string; chiTiet: unknown[] }>());
+  const phieuThucTeQueue = useRef(new Map<string, Promise<void>>());
   /** Popup Xả cối: mở theo Lần, nhập kg xả rồi trừ vào Cối thực tế + tính lại NVL. */
   const [xaCoiLan, setXaCoiLan] = useState<number | null>(null);
   const [xaCoiValue, setXaCoiValue] = useState('');
@@ -2459,8 +2463,8 @@ export function SoTronPanel({
   };
 
   /**
-   * Lưu 1 Lần trộn vào phieu_tron_thuc_te (upsert theo dinh_muc_id).
-   * Các lần tiếp theo mở lại sẽ GET đúng phiếu cũ rồi append/replace lan tương ứng.
+   * Lưu 1 Lần trộn vào phieu_tron_thuc_te.
+   * Chưa có phiếu thì tạo và giữ id trả về. Các lần sau gửi đúng id đó để cập nhật, không tải lại trang.
    */
   const savePhieuTronThucTe = async (index: number) => {
     const next = lanCoi[index] || emptyLanCoi();
@@ -2517,18 +2521,31 @@ export function SoTronPanel({
         phan_tram_thuc_te: tongCoi > 0 ? round2((x.w * 100) / tongCoi) : null
       }));
       const lanNo = index + 1;
+      let created = false;
       for (const dinhMucId of dinhMucIds) {
-        // Lấy phiếu cũ (nếu có) để append đúng phiếu, không ghi đè các lần khác
-        let cur: { id?: string; chi_tiet?: unknown[] } | null = null;
-        try {
-          const listRes = await fetch('/api/phieu-tron-thuc-te?limit=500');
-          const listData = await listRes.json().catch(() => ({}));
-          const records = Array.isArray(listData?.records) ? listData.records : [];
-          cur = records.find((r: { dinh_muc_id?: unknown }) => str(r.dinh_muc_id) === dinhMucId) || null;
-        } catch {
-          cur = null;
-        }
-        const rawChiTiet = Array.isArray(cur?.chi_tiet) ? [...(cur!.chi_tiet as unknown[])] : [];
+        await new Promise<string>((resolve, reject) => {
+          const run = async () => {
+            let cached = phieuThucTeCache.current.get(dinhMucId) || null;
+            if (!cached) {
+              const listRes = await fetch(
+                `/api/phieu-tron-thuc-te?dinh_muc_id=${encodeURIComponent(dinhMucId)}&limit=1`
+              );
+              const listData = await listRes.json().catch(() => ({}));
+              if (!listRes.ok) throw new Error(str(listData.error) || 'Không tải được phiếu trộn để cập nhật.');
+              const records = Array.isArray(listData?.records) ? listData.records : [];
+              const found = (records.find(
+                (row: { dinh_muc_id?: unknown }) => str(row?.dinh_muc_id) === dinhMucId
+              ) || null) as { id?: unknown; chi_tiet?: unknown; dinh_muc_id?: unknown } | null;
+              if (found?.id) {
+                cached = {
+                  id: str(found.id),
+                  chiTiet: Array.isArray(found.chi_tiet) ? found.chi_tiet : []
+                };
+                phieuThucTeCache.current.set(dinhMucId, cached);
+              }
+            }
+            const rawChiTiet: unknown[] = cached ? JSON.parse(JSON.stringify(cached.chiTiet)) : [];
+            const wasNew = !cached?.id;
         const maSp = group.ma_sp || group.ten_sp;
         let prodIdx = rawChiTiet.findIndex(p => {
           if (!p || typeof p !== 'object') return false;
@@ -2556,24 +2573,49 @@ export function SoTronPanel({
         prod.lan_tron = lanTron;
         prod.nvl = nvlPayload;
         rawChiTiet[prodIdx] = prod;
-        const res = await fetch('/api/phieu-tron-thuc-te', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...(cur?.id ? { id: cur.id } : {}),
-            ngay,
-            ca: caValue,
-            dinh_muc_id: dinhMucId,
-            ma_lenh_sx: group.blocks[0]?.ma_lenh_sx || selectedLenh[0] || '',
-            chi_tiet: rawChiTiet
-          })
+            const res = await fetch('/api/phieu-tron-thuc-te', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ...(cached?.id ? { id: cached.id } : {}),
+                ngay,
+                ca: caValue,
+                dinh_muc_id: dinhMucId,
+                ma_lenh_sx: group.blocks[0]?.ma_lenh_sx || selectedLenh[0] || '',
+                chi_tiet: rawChiTiet
+              })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(str(data.error) || 'Không lưu được phiếu trộn thực tế.');
+            const record = (data.record || {}) as { id?: unknown; chi_tiet?: unknown };
+            const nextId = str(record.id || cached?.id);
+            if (!nextId) throw new Error('Máy chủ không trả id phiếu trộn.');
+            phieuThucTeCache.current.set(dinhMucId, {
+              id: nextId,
+              chiTiet: Array.isArray(record.chi_tiet) ? record.chi_tiet : rawChiTiet
+            });
+            setPhieuThucTeIds(prev => (prev[dinhMucId] === nextId ? prev : { ...prev, [dinhMucId]: nextId }));
+            if (wasNew) created = true;
+            return nextId;
+          };
+          const prev = phieuThucTeQueue.current.get(dinhMucId) ?? Promise.resolve();
+          const next = prev.then(run, run);
+          phieuThucTeQueue.current.set(
+            dinhMucId,
+            next.then(
+              () => undefined,
+              () => undefined
+            )
+          );
+          next.then(resolve, reject);
         });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(str(data.error) || 'Không lưu được phiếu trộn thực tế.');
       }
       const time = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-      setPhieuThucTeNote(prev => ({ ...prev, [index]: `Đã lưu L${index + 1} vào phiếu trộn thực tế (${time}).` }));
-      setLanCoiNote(`Đã lưu L${index + 1} vào phiếu trộn thực tế — lần sau sẽ update đúng phiếu này.`);
+      const verb = created ? 'Đã lưu phiếu mới' : 'Đã cập nhật phiếu';
+      setPhieuThucTeNote(prev => ({ ...prev, [index]: `${verb} L${index + 1} (${time}).` }));
+      setLanCoiNote(
+        `${verb} L${index + 1}. Lần sau bấm lưu sẽ cập nhật đúng phiếu này, không tải lại trang.`
+      );
     } catch (e) {
       setLanCoiNote(`L${index + 1}: ${e instanceof Error ? e.message : 'không lưu được phiếu trộn thực tế.'}`);
     } finally {
@@ -5027,20 +5069,29 @@ export function SoTronPanel({
                           {section.lanIndexes.map(lan => {
                             const picked = fieldOf(lan);
                             const saving = Boolean(phieuThucTeSaving[lan]);
+                            const group = coiMauGroups.find(entry => entry.key === picked.key);
+                            const savedPhieuId = (group?.blocks || [])
+                              .map(block => phieuThucTeIds[str(block.dinh_muc_id)])
+                              .find(Boolean);
                             return (
                               <td key={lan} className="border border-slate-700 bg-white px-1 py-1 text-center">
                                 <button
                                   type="button"
                                   disabled={saving || !picked.key}
-                                  onClick={() => void savePhieuTronThucTe(lan)}
+                                  onClick={event => {
+                                    event.preventDefault();
+                                    void savePhieuTronThucTe(lan);
+                                  }}
                                   title={
-                                    picked.key
-                                      ? `Lưu L${lan + 1} vào phiếu trộn thực tế (lần sau update đúng phiếu)`
-                                      : 'Chọn sản phẩm cho lần này trước khi lưu'
+                                    !picked.key
+                                      ? 'Chọn sản phẩm cho lần này trước khi lưu'
+                                      : savedPhieuId
+                                        ? `Cập nhật phiếu ${savedPhieuId}`
+                                        : 'Lưu phiếu mới. Máy chủ trả id, các lần sau cập nhật đúng phiếu này.'
                                   }
                                   className="h-7 rounded-md bg-emerald-600 px-2.5 text-[12px] font-bold text-white hover:bg-emerald-700 disabled:opacity-40"
                                 >
-                                  {saving ? 'Đang lưu...' : `Lưu L${lan + 1}`}
+                                  {saving ? 'Đang lưu...' : savedPhieuId ? `Cập nhật L${lan + 1}` : `Lưu L${lan + 1}`}
                                 </button>
                                 {phieuThucTeNote[lan] ? (
                                   <div className="mt-0.5 text-[11px] font-semibold leading-tight text-emerald-700">

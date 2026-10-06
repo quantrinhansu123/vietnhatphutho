@@ -204,7 +204,6 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
     .map(row => {
       return `
       <tr class="grid-row">
-        <td class="c font-mono">${esc(row?.ma_sp ?? '') || '&nbsp;'}</td>
         <td class="l ten" title="${esc(row?.ten_sp ?? '')}">${esc(row?.ten_sp ?? '') || '&nbsp;'}</td>
         ${numCell(row?.dinh_muc ?? '', 13)}
         ${numCell(row?.lan_1 ?? '', 8)}
@@ -658,10 +657,9 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
       <!-- Cột trái: II. THÀNH PHẨM -->
       <div class="p2-left">
         <div class="sec-title">II. THÀNH PHẨM</div>
-        <table class="data-table" data-fill="page" data-cells="8">
+        <table class="data-table" data-fill="page" data-cells="7">
           <colgroup>
-            <col style="width:11%" />
-            <col style="width:23%" />
+            <col style="width:34%" />
             <col style="width:12%" />
             <col style="width:10%" />
             <col style="width:10%" />
@@ -671,7 +669,6 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
           </colgroup>
           <thead>
             <tr>
-              <th rowspan="2" class="th-ma">Mã TP</th>
               <th rowspan="2">Thành phẩm</th>
               <th rowspan="2">TL định mức/tấm (Kg)</th>
               <th colspan="3">TP Nhập kho</th>
@@ -687,7 +684,7 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
           <tbody>
             ${thanhPhamRowsHtml}
             <tr class="grid-row total-row" style="background-color: #f7f7f7;">
-              <td colspan="6" class="l b" style="text-align: right; padding-right: 6px;">Cộng:</td>
+              <td colspan="5" class="l b" style="text-align: right; padding-right: 6px;">Cộng:</td>
               <td class="num b">${tongNhapKhoThanhPham > 0 ? esc(fmt(tongNhapKhoThanhPham)) : ''}</td>
               <td class="num b">${tongTrongLuongThanhPham > 0 ? esc(fmt(tongTrongLuongThanhPham)) : ''}</td>
             </tr>

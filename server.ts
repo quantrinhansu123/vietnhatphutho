@@ -19259,6 +19259,7 @@ async function loadKiemKhoLiveTongHopForDot(
     try {
       const ngay = typeof req.query.ngay === 'string' ? req.query.ngay.trim() : '';
       const ca = typeof req.query.ca === 'string' ? req.query.ca.trim() : '';
+      const dinhMucId = typeof req.query.dinh_muc_id === 'string' ? req.query.dinh_muc_id.trim() : '';
       const limitRaw = Number(req.query.limit ?? 300);
       const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 500) : 300;
       let query = supabase
@@ -19268,6 +19269,7 @@ async function loadKiemKhoLiveTongHopForDot(
         .order('created_at', { ascending: false });
       if (ngay) query = query.eq('ngay', ngay);
       if (ca) query = query.eq('ca', ca);
+      if (dinhMucId) query = query.eq('dinh_muc_id', dinhMucId);
       const { data, error } = await query.limit(limit);
       if (error) {
         const message = isMissingTableError(error)
