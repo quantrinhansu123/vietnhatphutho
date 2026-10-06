@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ClipboardList, ExternalLink, Loader2, Lock, Minus, Plus, Printer, RefreshCw, Save, Trash2, Unlock, X } from 'lucide-react';
 import { BackButton } from '../../components/layout/NavButtons';
 import { pathFromTab } from '../../routes';
@@ -16,6 +16,7 @@ import { normalizeProducts } from '../san-pham';
 import { parseProductionNameParts } from '../../utils/productProductionName';
 import { isExternalStaffCode, resolveScheduleStaffName } from '../../utils/externalStaff';
 import { computeSoTronSummary, normalizeMang, SO_TRON_CHI_TIEU_MAU } from './summary';
+import { formatGiaoCaKg, tongGiaoCaKg } from './giaoCa';
 import { PhieuGiaoCaModal } from './PhieuGiaoCaModal';
 import { assertSoTron, canDeleteSoTron, canSeeSoTronThanhPham, type SoTronSlipGate } from './soTronPhanQuyen';
 import type { AuthUser } from '../../app/authUser';
@@ -197,7 +198,7 @@ export type SoTronSavedReport = {
     ton_cuoi_ca: number;
   }[];
   ghi_chu: string;
-  /** Giao ca (VD: 652 kg) — người dùng sửa được, gợi ý mặc định = tổng tồn cuối ca. */
+  /** Giao ca = tổng tồn cuối (Tồn đầu + Lấy kho − Tổng SD). */
   giao_ca_note?: string;
   /** 5 số tổng hợp lưu cùng phiếu (tự tính khi lưu, xem summary.ts) */
   tong_nvl: number;
@@ -961,9 +962,15 @@ export function SoTronPanel({
   const [coiRowLans, setCoiRowLans] = useState<number[]>([0]);
   const [lanCoi, setLanCoi] = useState<LanCoiItem[]>([]);
   const [lanCoiNote, setLanCoiNote] = useState('');
-  /** Trạng thái lưu phiếu trộn thực tế theo từng Lần (key = lan index). */
+  /** Trạng thái lưu phiếu theo từng Lần (key = lan index). */
   const [phieuThucTeSaving, setPhieuThucTeSaving] = useState<Record<number, boolean>>({});
   const [phieuThucTeNote, setPhieuThucTeNote] = useState<Record<number, string>>({});
+  /**
+   * Id phiếu sổ trộn vừa tạo. Có giá trị thì các lần lưu sau là cập nhật;
+   * trống thì lần lưu kế tiếp là thêm mới. Ref cập nhật ngay để lần bấm sau không tạo phiếu thứ hai.
+   */
+  const [createdSoTronId, setCreatedSoTronId] = useState('');
+  const createdSoTronIdRef = useRef('');
   /** Popup Xả cối: mở theo Lần, nhập kg xả rồi trừ vào Cối thực tế + tính lại NVL. */
   const [xaCoiLan, setXaCoiLan] = useState<number | null>(null);
   const [xaCoiValue, setXaCoiValue] = useState('');
@@ -2158,6 +2165,17 @@ export function SoTronPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [banGiaoRows]
   );
+  /** Giao ca = Σ (Tồn đầu ca + Lấy kho − Tổng SD), làm tròn 1 số. */
+  const giaoCaNoteTinh = useMemo(() => {
+    const kg = tongGiaoCaKg(
+      banGiaoRows.map(row => ({
+        tonDau: row.ton_dau_ca,
+        layKho: row.lay_trong_kho,
+        tongSd: nvlTotals.get((row.material_id || row.ma_nvl).toLowerCase()) || 0
+      }))
+    );
+    return formatGiaoCaKg(kg);
+  }, [banGiaoRows, nvlTotals]);
 
   // Gom cối mẫu theo SẢN PHẨM (tên hiển thị cho công nhân trộn, không hiện tên phiếu
   // trộn định mức). Chỉ lấy NVL cối chính — NVL phụ (nvl_phu) không đọc vào.
@@ -2458,124 +2476,142 @@ export function SoTronPanel({
     );
   };
 
+  const rememberCreatedSoTronId = (id: string) => {
+    createdSoTronIdRef.current = id;
+    setCreatedSoTronId(id);
+    setEditingId(id || null);
+  };
+
   /**
-   * Lưu 1 Lần trộn vào phieu_tron_thuc_te (upsert theo dinh_muc_id).
-   * Các lần tiếp theo mở lại sẽ GET đúng phiếu cũ rồi append/replace lan tương ứng.
+   * Nút Lưu dưới từng lần ghi sổ trộn đang mở.
+   * createdSoTronId trống → thêm mới và giữ id trả về. Có id → cập nhật đúng phiếu đó.
+   * Không tải lại trang, không đòi phiếu định mức hay chọn sản phẩm.
    */
-  const savePhieuTronThucTe = async (index: number) => {
-    const next = lanCoi[index] || emptyLanCoi();
-    const savedKey = next.ma_sp || next.ten_sp;
-    const group =
-      coiMauGroups.find(item => item.key === savedKey) ||
-      (next.ty_le
-        ? coiMauGroups.find(item => item.ratioLabel === next.ty_le && (item.ma_sp === next.ma_sp || item.ten_sp === next.ten_sp))
-        : undefined) ||
-      coiMauGroups.find(item => next.ten_sp && (item.ten_sp === next.ten_sp || item.key === next.ten_sp)) ||
-      coiMauGroups.find(item => next.ma_sp && item.ma_sp === next.ma_sp);
-    if (!group) {
-      setLanCoiNote(`L${index + 1}: chọn sản phẩm trước khi lưu phiếu trộn.`);
+  const saveLanSoTron = async (index: number) => {
+    if (!ngay) {
+      setLanCoiNote(`L${index + 1}: chọn Ngày trước khi lưu.`);
       return;
     }
-    const pot = parseNum(next.trong_luong_coi);
-    if (!(pot > 0)) {
-      setLanCoiNote(`L${index + 1}: nhập Bội số/Cối thực tế và bấm Xác nhận trước khi lưu.`);
+    const identities = saveCombos
+      .map(resolveComboIdentity)
+      .filter(id => id.ma_may && id.ma_may !== '-' && id.ca && id.ca !== '-');
+    if (identities.length === 0) {
+      setLanCoiNote(`L${index + 1}: thiếu máy hoặc ca. Chọn lệnh SX có máy và ca rồi lưu lại.`);
       return;
     }
-    const dinhMucIds = Array.from(new Set(group.blocks.map(b => str(b.dinh_muc_id)).filter(Boolean)));
-    if (dinhMucIds.length === 0) {
-      setLanCoiNote(`L${index + 1}: phiếu định mức chưa có id — mở lại sổ để tải cối mẫu mới nhất.`);
-      return;
-    }
-    const caValue = selectedCa.trim() || orderCombos[0]?.ca || '';
-    if (!ngay || !caValue) {
-      setLanCoiNote(`L${index + 1}: thiếu Ngày/Ca — chọn ở mục 1 trước khi lưu phiếu trộn.`);
-      return;
-    }
+    const idn = identities[0];
+    const knownId = createdSoTronIdRef.current.trim();
+    const existing = knownId
+      ? undefined
+      : savedReports.find(r => r.ngay === ngay && r.ma_may === idn.ma_may && r.ca === idn.ca);
+    const phieuId = knownId || existing?.id || '';
+    const isUpdate = Boolean(phieuId);
     setPhieuThucTeSaving(prev => ({ ...prev, [index]: true }));
     try {
-      // Gom NVL của đúng sản phẩm này tại Lần đang lưu
-      const memberKeys = new Set<string>();
-      for (const block of group.blocks) {
-        for (const line of block.nvl || []) {
-          const k = nvlIdentity(line.material_id, line.ma_nvl);
-          if (k) memberKeys.add(k);
-        }
-      }
-      const lanLines = nvlRows.filter(row => memberKeys.has(nvlIdentity(row.material_id, row.ma_nvl)));
-      const weights = lanLines
-        .map(row => ({ row, w: round2(parseNum(row.lan[index] || '')) }))
-        .filter(x => x.w > 0);
-      if (weights.length === 0) {
-        setLanCoiNote(`L${index + 1}: chưa có kg NVL nào — bấm Xác nhận trước khi lưu.`);
-        return;
-      }
-      const tongCoi = round2(weights.reduce((s, x) => s + x.w, 0));
-      const nvlPayload = weights.map(x => ({
-        ma_nvl: x.row.ma_nvl,
-        ten_nvl: x.row.ten_nvl || x.row.ten_nvl_sx || x.row.ma_nvl,
-        trong_luong_thuc_te: String(round2(x.w)),
-        phan_tram_thuc_te: tongCoi > 0 ? round2((x.w * 100) / tongCoi) : null
-      }));
-      const lanNo = index + 1;
-      for (const dinhMucId of dinhMucIds) {
-        // Lấy phiếu cũ (nếu có) để append đúng phiếu, không ghi đè các lần khác
-        let cur: { id?: string; chi_tiet?: unknown[] } | null = null;
-        try {
-          const listRes = await fetch('/api/phieu-tron-thuc-te?limit=500');
-          const listData = await listRes.json().catch(() => ({}));
-          const records = Array.isArray(listData?.records) ? listData.records : [];
-          cur = records.find((r: { dinh_muc_id?: unknown }) => str(r.dinh_muc_id) === dinhMucId) || null;
-        } catch {
-          cur = null;
-        }
-        const rawChiTiet = Array.isArray(cur?.chi_tiet) ? [...(cur!.chi_tiet as unknown[])] : [];
-        const maSp = group.ma_sp || group.ten_sp;
-        let prodIdx = rawChiTiet.findIndex(p => {
-          if (!p || typeof p !== 'object') return false;
-          const rec = p as Record<string, unknown>;
-          return str(rec.ma_sp) === str(maSp) || (str(group.ten_sp) && str(rec.ten_sp) === str(group.ten_sp));
+      const bangNvl = nvlRows
+        .filter(row => row.ma_nvl.trim() !== '')
+        .map(row => {
+          const lan = row.lan.map(parseNum).map(round3);
+          return {
+            material_id: row.material_id,
+            ma_nvl: row.ma_nvl.trim(),
+            ten_nvl: row.ten_nvl.trim(),
+            ten_nvl_sx: row.ten_nvl_sx.trim(),
+            dvt: row.dvt.trim() || 'kg',
+            dinh_muc: row.dinh_muc.trim(),
+            lan,
+            tong: round2(lan.reduce((s, v) => s + v, 0)),
+            lenh_sx: row.nguon
+          };
         });
-        if (prodIdx < 0) {
-          rawChiTiet.push({
-            ma_sp: group.ma_sp,
-            ten_sp: group.ten_sp || group.ma_sp,
-            tong_trong_luong: group.blocks.reduce((s, b) => s + parseNum(b.tong_trong_luong), 0) || null,
-            nvl: nvlPayload,
-            lan_tron: []
+      const bangBanGiao = banGiaoRows
+        .filter(row => row.ma_nvl.trim() !== '')
+        .map(row => {
+          const lay = parseNum(row.lay_trong_kho);
+          const dau = parseNum(row.ton_dau_ca);
+          const suDung = nvlUsageOf(row.material_id, row.ma_nvl);
+          return {
+            material_id: row.material_id,
+            ma_nvl: row.ma_nvl.trim(),
+            ten_nvl: row.ten_nvl.trim(),
+            ten_nvl_sx: row.ten_nvl_sx.trim(),
+            lay_trong_kho: round2(lay),
+            ton_dau_ca: round2(dau),
+            tong_su_dung: suDung,
+            ton_cuoi_ca: round1(lay + dau - suDung)
+          };
+        });
+      const scopes = soTronScopesFor(soTronActor, isUpdate ? 'update' : 'create', {
+        ca: idn.ca,
+        khoa_ca: slipGate?.khoa_ca || false,
+        vat_tu_owner_id: slipGate?.vat_tu_owner_id || ''
+      });
+      if (scopes.length === 0) {
+        throw new Error(soTronActor ? 'Bạn không được ghi sổ trộn này.' : 'Đăng nhập lại để lưu sổ trộn.');
+      }
+      const res = await fetch(isUpdate ? `/api/so-tron/${encodeURIComponent(phieuId)}` : '/api/so-tron', {
+        method: isUpdate ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json', ...soTronAuthHeaders() },
+        body: JSON.stringify({
+          chi_nhanh: CHI_NHANH_MAC_DINH,
+          ngay,
+          ma_may: idn.ma_may,
+          ten_may: idn.ten_may,
+          ca: idn.ca,
+          nhan_su: nhanSuText.trim(),
+          nhan_su_chi_tiet: phanCong,
+          lenh_sx: selectedOrders.map(o => ({ id: o.id, ma_lenh: o.code })),
+          coi_tron_mau: withLanCoi(coiMau, lanCoi.slice(0, numLan)),
+          bang_nvl: bangNvl,
+          bang_san_pham: spRows
+            .filter(row => row.ten_sp.trim() !== '' || row.ma_sp.trim() !== '')
+            .map(toBangSanPhamLine),
+          bang_hang_loi: loiRows
+            .filter(row => row.ten_loi.trim() !== '')
+            .map(row => ({ ten_loi: row.ten_loi.trim(), so_luong: row.so_luong.trim() })),
+          bang_ban_giao: bangBanGiao,
+          tong_nvl: soTronSummary.tong_nvl,
+          tong_nhap_nvl: round2(bangBanGiao.reduce((s, line) => s + (Number(line.lay_trong_kho) || 0), 0)),
+          tong_sp_co_mang: soTronSummary.tong_sp_co_mang,
+          tong_sp_khong_mang: soTronSummary.tong_sp_khong_mang,
+          tong_loi_hong: soTronSummary.tong_loi_hong,
+          chi_tieu_phan_tram: soTronSummary.chi_tieu_phan_tram,
+          ghi_chu: soTronAccess.canSeeThanhPham ? composeSuCo(suCoMainRows, ghiChu) : ghiChu.trim(),
+          giao_ca_note: giaoCaNoteTinh,
+          scope: scopes
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(str(data.error) || 'Không lưu được sổ trộn.');
+      const nextId = str(data?.report?.id || phieuId);
+      if (!nextId) throw new Error('Máy chủ không trả id phiếu.');
+      rememberCreatedSoTronId(nextId);
+      const report = data?.report;
+      if (report && typeof report === 'object') {
+        setSlipGate({
+          ca: str((report as { ca?: unknown }).ca) || idn.ca,
+          khoa_ca: Boolean((report as { khoa_ca?: unknown }).khoa_ca),
+          vat_tu_owner_id: str((report as { vat_tu_owner_id?: unknown }).vat_tu_owner_id)
+        });
+        const [normalized] = normalizeSoTronReports({ reports: [report] });
+        if (normalized) {
+          setSavedReports(prev => {
+            const rest = prev.filter(item => item.id !== normalized.id);
+            return [normalized, ...rest];
           });
-          prodIdx = rawChiTiet.length - 1;
         }
-        const prod = { ...(rawChiTiet[prodIdx] as Record<string, unknown>) } as Record<string, unknown> & {
-          lan_tron?: { lan?: number; tong_trong_luong?: number; nvl?: unknown[] }[];
-        };
-        const lanTron = Array.isArray(prod.lan_tron) ? [...prod.lan_tron] : [];
-        const pos = lanTron.findIndex(e => Number(e?.lan) === lanNo);
-        const entry = { lan: lanNo, tong_trong_luong: tongCoi, nvl: nvlPayload };
-        if (pos >= 0) lanTron[pos] = entry;
-        else lanTron.push(entry);
-        prod.lan_tron = lanTron;
-        prod.nvl = nvlPayload;
-        rawChiTiet[prodIdx] = prod;
-        const res = await fetch('/api/phieu-tron-thuc-te', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...(cur?.id ? { id: cur.id } : {}),
-            ngay,
-            ca: caValue,
-            dinh_muc_id: dinhMucId,
-            ma_lenh_sx: group.blocks[0]?.ma_lenh_sx || selectedLenh[0] || '',
-            chi_tiet: rawChiTiet
-          })
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(str(data.error) || 'Không lưu được phiếu trộn thực tế.');
       }
       const time = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-      setPhieuThucTeNote(prev => ({ ...prev, [index]: `Đã lưu L${index + 1} vào phiếu trộn thực tế (${time}).` }));
-      setLanCoiNote(`Đã lưu L${index + 1} vào phiếu trộn thực tế — lần sau sẽ update đúng phiếu này.`);
+      const verb = isUpdate ? 'Đã cập nhật' : 'Đã lưu mới';
+      setPhieuThucTeNote(prev => ({ ...prev, [index]: `${verb} L${index + 1} (${time}).` }));
+      setLanCoiNote(
+        isUpdate
+          ? `Đã cập nhật phiếu. Các lần lưu sau vẫn dùng id này.`
+          : `Đã lưu phiếu mới. Id đã được giữ, lần sau sẽ cập nhật phiếu này.`
+      );
+      setMessage({ text: isUpdate ? 'Đã cập nhật sổ trộn.' : 'Đã lưu sổ trộn.', type: 'success' });
     } catch (e) {
-      setLanCoiNote(`L${index + 1}: ${e instanceof Error ? e.message : 'không lưu được phiếu trộn thực tế.'}`);
+      setLanCoiNote(`L${index + 1}: ${e instanceof Error ? e.message : 'không lưu được sổ trộn.'}`);
     } finally {
       setPhieuThucTeSaving(prev => ({ ...prev, [index]: false }));
     }
@@ -2753,6 +2789,8 @@ export function SoTronPanel({
 
   const resetForm = () => {
     setEditingId(null);
+    createdSoTronIdRef.current = '';
+    setCreatedSoTronId('');
     setSlipGate(null);
     setMachineRef('');
     setSelectedCa('');
@@ -2768,6 +2806,8 @@ export function SoTronPanel({
     setCoiRowLans([0]);
     setLanIndex(0);
     setLanCoiNote('');
+    setPhieuThucTeNote({});
+    setPhieuThucTeSaving({});
     setNvlRows([]);
     setSpRows([]);
     setLoiRows([]);
@@ -2785,6 +2825,8 @@ export function SoTronPanel({
 
   const loadReportToForm = (report: SoTronSavedReport) => {
     setEditingId(report.id);
+    createdSoTronIdRef.current = report.id;
+    setCreatedSoTronId(report.id);
     setSlipGate({
       ca: report.ca,
       khoa_ca: Boolean(report.khoa_ca),
@@ -3029,12 +3071,7 @@ export function SoTronPanel({
         chi_tieu_phan_tram: soTronSummary.chi_tieu_phan_tram,
         // Khối sự cố trên form chính (trưởng ca): gộp dòng sự cố + ghi chú như phiếu giao ca
         ghi_chu: soTronAccess.canSeeThanhPham ? composeSuCo(suCoMainRows, ghiChu) : ghiChu.trim(),
-        // Giữ Giao ca đã lưu trên phiếu giao ca (form chính không sửa field này)
-        giao_ca_note: str(
-          (savedReports.find(r => r.id === editingId) as { giao_ca_note?: unknown } | undefined)?.giao_ca_note ??
-            (editReport as { giao_ca_note?: unknown } | null | undefined)?.giao_ca_note ??
-            ''
-        )
+        giao_ca_note: giaoCaNoteTinh
       };
       const sendOne = async (idn: { ma_may: string; ten_may: string; ca: string }) => {
         const dup = editingId
@@ -3087,7 +3124,11 @@ export function SoTronPanel({
               : `${results[0].updated ? 'Đã cập nhật sổ trộn.' : 'Đã lưu sổ trộn.'}${skipNote}${caNote}`,
           type: 'success'
         });
-        if (results.length === 1 && results[0].id) setEditingId(results[0].id);
+        if (results.length === 1 && results[0].id) {
+          createdSoTronIdRef.current = results[0].id;
+          setCreatedSoTronId(results[0].id);
+          setEditingId(results[0].id);
+        }
       }
       const listRes = await fetch('/api/so-tron?limit=100');
       const listData = await listRes.json().catch(() => ({}));
@@ -4505,25 +4546,18 @@ export function SoTronPanel({
                   </p>
                 ) : null}
                 {(() => {
-                  const seen = new Set<string>();
-                  const lines: { key: string; name: string; total: string; note: string }[] = [];
-                  for (const lan of coiRowLans) {
-                    const picked = fieldOf(lan);
-                    if (!picked.key || seen.has(picked.key)) continue;
-                    seen.add(picked.key);
-                    const group = coiMauGroups.find(item => item.key === picked.key);
-                    if (!group) continue;
+                  const lines = coiMauGroups.map(group => {
                     const total = group.blocks.reduce((sum, block) => sum + parseNum(block.tong_trong_luong), 0);
                     const note = Array.from(
                       new Set(group.blocks.map(b => str(b.ghi_chu)).filter(Boolean))
                     ).join(' · ');
-                    lines.push({
-                      key: picked.key,
+                    return {
+                      key: group.key,
                       name: `${group.ten_sp || group.ma_sp || 'Sản phẩm'}${group.ratioLabel ? ` · ${group.ratioLabel}` : ''}`,
                       total: formatTongTrongLuongSp(String(total)) || '0.00',
                       note
-                    });
-                  }
+                    };
+                  });
                   if (lines.length === 0) return null;
                   return (
                     <div className="border-b border-slate-300 bg-yellow-200 px-3 py-2">
@@ -5025,22 +5059,25 @@ export function SoTronPanel({
                             Lưu phiếu trộn
                           </td>
                           {section.lanIndexes.map(lan => {
-                            const picked = fieldOf(lan);
                             const saving = Boolean(phieuThucTeSaving[lan]);
+                            const anySaving = Object.values(phieuThucTeSaving).some(Boolean);
                             return (
                               <td key={lan} className="border border-slate-700 bg-white px-1 py-1 text-center">
                                 <button
                                   type="button"
-                                  disabled={saving || !picked.key}
-                                  onClick={() => void savePhieuTronThucTe(lan)}
+                                  disabled={saving || anySaving || !soTronAccess.canSave}
+                                  onClick={event => {
+                                    event.preventDefault();
+                                    void saveLanSoTron(lan);
+                                  }}
                                   title={
-                                    picked.key
-                                      ? `Lưu L${lan + 1} vào phiếu trộn thực tế (lần sau update đúng phiếu)`
-                                      : 'Chọn sản phẩm cho lần này trước khi lưu'
+                                    createdSoTronId
+                                      ? `Cập nhật phiếu ${createdSoTronId}`
+                                      : 'Lưu phiếu mới. Id trả về được giữ lại, lần sau sẽ cập nhật.'
                                   }
                                   className="h-7 rounded-md bg-emerald-600 px-2.5 text-[12px] font-bold text-white hover:bg-emerald-700 disabled:opacity-40"
                                 >
-                                  {saving ? 'Đang lưu...' : `Lưu L${lan + 1}`}
+                                  {saving ? 'Đang lưu...' : createdSoTronId ? `Cập nhật L${lan + 1}` : `Lưu L${lan + 1}`}
                                 </button>
                                 {phieuThucTeNote[lan] ? (
                                   <div className="mt-0.5 text-[11px] font-semibold leading-tight text-emerald-700">
@@ -5080,7 +5117,10 @@ export function SoTronPanel({
                 );
                 })}
                 </div>
-                <div className="mx-2 mb-1 flex flex-wrap items-center justify-end gap-2 rounded-md border border-slate-300 px-3 py-1.5">
+                <div className="mx-2 mb-1 flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-300 px-3 py-1.5">
+                  <span className="text-[12.5px] font-bold text-slate-700" title="Tồn đầu ca + Lấy kho − Tổng SD, cộng mọi dòng nhựa">
+                    Giao ca: <span className="tabular-nums text-black">{giaoCaNoteTinh || '—'}</span>
+                  </span>
                   <span className="text-[12.5px] font-bold text-slate-700">
                     Tổng sử dụng: <span className="tabular-nums text-brand-600">{formatQty(tongSuDungChung)} kg</span>
                     <span className="ml-2">
@@ -5751,6 +5791,16 @@ export function SoTronPanel({
                             </tr>
                           );
                         })}
+                        {banGiaoRows.length > 0 ? (
+                          <tr className="bg-slate-50 font-bold">
+                            <td colSpan={4} className="border border-slate-700 px-2 py-1 text-right text-[13px] text-black">
+                              Giao ca
+                            </td>
+                            <td className="border border-slate-700 px-1 py-1 text-right text-[16px] font-bold tabular-nums text-black" title="Tồn đầu ca + Lấy kho − Tổng SD, cộng mọi dòng">
+                              {giaoCaNoteTinh || '—'}
+                            </td>
+                          </tr>
+                        ) : null}
                       </tbody>
                     </table>
                   </div>
@@ -5858,11 +5908,7 @@ export function SoTronPanel({
                     tong_loi_hong: soTronSummary.tong_loi_hong,
                     chi_tieu_phan_tram: soTronSummary.chi_tieu_phan_tram,
                     ghi_chu: soTronAccess.canSeeThanhPham ? composeSuCo(suCoMainRows, ghiChu) : ghiChu.trim(),
-                    giao_ca_note: str(
-                      (savedReports.find(r => r.id === editingId) as { giao_ca_note?: unknown } | undefined)?.giao_ca_note ??
-                        (editReport as { giao_ca_note?: unknown } | null | undefined)?.giao_ca_note ??
-                        ''
-                    )
+                    giao_ca_note: giaoCaNoteTinh
                   };
                   setPreviewPhieuGiaoCaReport(reportSnapshot);
                 }}

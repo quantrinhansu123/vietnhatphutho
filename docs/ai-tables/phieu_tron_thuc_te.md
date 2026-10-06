@@ -4,7 +4,7 @@
 | **Tab** | `/danh-sach-bao-cao-phoi-tron` → **Phiếu trộn thực tế** |
 | **SQL** | `supabase-phieu-tron-thuc-te.sql` |
 
-**API:** `/api/phieu-tron-thuc-te`  
+**API:** `/api/phieu-tron-thuc-te` (`GET` lọc thêm `dinh_muc_id`; `POST` không `id` thì tạo, có `id` thì cập nhật và trả `record.id`)  
 **UI:** `src/components/ActualMixingSheetTab.tsx`
 
 Mỗi phiếu tham chiếu một `dinh_muc_id` (FK tới `bang_tron_vat_tu_dinh_muc.id`) và unique theo `dinh_muc_id`
