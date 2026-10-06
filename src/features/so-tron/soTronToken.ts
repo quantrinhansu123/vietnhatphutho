@@ -14,7 +14,7 @@ function b64url(value: Buffer | string) {
   return Buffer.from(value).toString('base64url');
 }
 
-export function signSoTronToken(actor: SoTronActor, secret: string, ttlSec = 60 * 60 * 14): string {
+export function signSoTronToken(actor: SoTronActor, secret: string, ttlSec = 60 * 60 * 24 * 7): string {
   const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const body = b64url(
     JSON.stringify({
@@ -40,7 +40,9 @@ export function verifySoTronToken(token: string, secret: string): SoTronActor | 
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
   try {
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as TokenBody;
-    if (!payload?.sub || !payload.exp || payload.exp * 1000 < Date.now()) return null;
+    if (!payload?.sub || !payload.exp) return null;
+    const graceMs = 30 * 24 * 60 * 60 * 1000;
+    if (payload.exp * 1000 + graceMs < Date.now()) return null;
     const roles = Array.isArray(payload.roles) ? payload.roles : [];
     return {
       id: String(payload.sub),

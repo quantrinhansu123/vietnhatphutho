@@ -22,7 +22,7 @@
 
 | File | Nội dung |
 |------|----------|
-| `src/features/so-tron/index.tsx` | Panel nhập (`SoTronPanel`: props `onBack/onOpenList/editReport/onEditConsumed`) + danh sách (`SoTronListView`: props `onBack/onCreate/onEdit`). Cụm nút thao tác dòng dùng `SoTronRowActions` (inline, xem quy ước UI bên dưới). Ô chọn ngày dùng `SoTronDatePicker` (lịch popup 1 nút). |
+| `src/features/so-tron/index.tsx` | Panel nhập (`SoTronPanel`: props `onBack/onOpenList/editReport/onEditConsumed/currentUser`) + danh sách (`SoTronListView`: props `onBack/onCreate/onEdit/currentUser`). Cụm nút thao tác dòng dùng `SoTronRowActions` (inline, xem quy ước UI bên dưới). Ô chọn ngày dùng `SoTronDatePicker` (lịch popup 1 nút). |
 | `src/features/so-tron/SoTronDatePicker.tsx` | Lịch popup chọn ngày 1 nút (hiển thị DD/MM/YYYY, lưới tháng T2–CN tiếng Việt, nút Hôm nay/Xóa, đóng khi click ngoài/Esc) + `formatNgayVN`. Chọn năm nhanh: nút « / » nhảy ±1 năm, bấm `Tháng M / YYYY` mở panel gõ năm (1–2999) + lưới 12 tháng. Dùng cho ô lọc ngày ở cả 2 màn hình danh sách + toàn bộ ô ngày sổ MMTB — KHÔNG dùng 3 ô Ngày/Tháng/Năm rời (`VnDatePicker`). |
 | `src/features/so-tron/PhieuGiaoCaModal.tsx` | Modal xem trước & cho phép sửa trực tiếp phiếu giao ca (nhật ký sản xuất) 2 trang chuẩn theo mẫu thực tế (Trang 1: Vật tư L1..L10 + tồn đầu + lấy kho + tồn cuối; Trang 2: Thành phẩm + Hàng lỗi + Sự cố + 4 Chữ ký). Có các nút: Lưu, Lưu & In, In, Đóng. |
 | `src/features/so-tron/printPhieuGiaoCa.ts` | Tạo HTML và kích hoạt in phiếu giao ca 2 trang A4 dọc (`@page size: A4 portrait`). Cột 2 chỉ ghi «Tên vật tư» / «Thành phẩm». Cột lần trang vật tư trống trên mọi dòng thì không in. Mọi chữ xuống dòng, không cắt bằng dấu ba chấm. Phần chưa kín trang được chèn ô trống cho đủ trang, không tràn thêm trang. |
@@ -39,7 +39,7 @@ Vai trò lấy từ chức vụ / vị trí gán của `nhan_su`. Phòng ban **P
 |---|---|---|
 | Tổ trộn, NV phân xưởng | Tạo và sửa phiếu mình tạo, khi chưa chốt | Ẩn trên sổ trộn, không xem và không sửa |
 | Trưởng ca, Trưởng phòng phân xưởng | Chỉ xem, được xóa cả phiếu | Tạo và sửa thành phẩm + hàng lỗi khi chưa chốt, kể cả trên xem trước phiếu giao ca. Ca hồ sơ (Ca Ngày…) không khóa theo mã ca sổ (12C1, HC1). Chỉ 403 khi cả hai bên là mã ca sản xuất và khác nhau. Được chốt ca |
-| Quản trị | Đủ quyền, kể cả xóa và mở khóa (bắt buộc lý do) | Đủ quyền |
+| Quản trị, Quản trị viên, Admin | Thêm, sửa, xóa mọi phần (vật tư, thành phẩm, hàng lỗi, bàn giao), kể cả xem trước phiếu giao ca. JWT cũ thiếu vai ADMIN vẫn được nhận lại lúc ghi | Đủ quyền, kể cả xóa và mở khóa (bắt buộc lý do) |
 
 Kiêm nhiệm được cộng quyền. Xem phiếu ca khác vẫn được. Sửa thành phẩm khác mã ca sản xuất thì 403 khi tài khoản được gán đúng mã đó (12C1, HC1…). Trưởng phòng ghi «Ca Ngày» trên hồ sơ vẫn sửa mọi ca. Sau khi chốt, cả vật tư và thành phẩm khóa đến khi quản trị mở khóa. Phiếu cũ chưa có người tạo: lần sửa vật tư đầu tiên ghi `vat_tu_owner_id`. `GET /api/so-tron` không đòi token vì báo cáo ngày/tuần vẫn đọc sổ. Nhật ký nằm ở `so_tron_audit_log`.
 
@@ -72,6 +72,38 @@ Kiêm nhiệm được cộng quyền. Xem phiếu ca khác vẫn được. Sử
 - Nguyên nhân đã gặp: `public/sw.js` cache-first mọi request + `VERSION` cứng → trình duyệt giữ `index.html`/bundle cũ mãi, người dùng không thấy nút mới.
 - Quy tắc: `sw.js` dùng network-first cho navigation (`req.mode === 'navigate'`) để `index.html` luôn mới (bundle JS/CSS có hash nên cache-first vẫn an toàn); **mỗi bản build có đổi giao diện phải đổi `VERSION`** trong `public/sw.js` để xóa cache cũ.
 - Sau build (`npm run build`), kiểm tra `dist/assets/*.js` mới nhất có chứa chuỗi UI mới (vd đếm `In A4`) và `dist/sw.js` đã lên VERSION mới; dặn người dùng hard-reload (Ctrl+F5) 1–2 lần nếu vẫn thấy giao diện cũ.
+
+## Cập nhật 10/2026 (sổ trộn công nhân)
+
+- Số trong ô tờ giấy + modal lên `16px`; tên SP hiển thị bôi vàng `bg-yellow-200` **chỉ màn hình** (bản in giữ trắng-đen).
+- Mỗi dòng Lần có nút `Xem` (scroll tới đúng khối NVL của SP) + ô `Bội số` (`Cối thực tế = Bội số × Định lượng cối mẫu`, lưu trong `coi_tron_mau.lan_coi[].boi_so`) + nút `Lưu` (upsert 1 cối vào `phieu_tron_thuc_te` theo `dinh_muc_id` của block cối mẫu, lần sau update đúng phiếu; `CoiMauItem.dinh_muc_id` lấy từ `bang_tron_vat_tu_dinh_muc.id`).
+- Tổng NVL từng Lần: strip dưới cụm Lần + dòng `Tổng NVL` cuối mỗi khối SP.
+- Ghi chú SP từ phiếu định mức (`block.ghi_chu`) hiện dưới tên vàng.
+- Bảng Thành phẩm tờ giấy còn 8 cột: Mã SP | Tên Hàng Hóa (chỉ tên, bản ghi cũ `"Mã — Tên"` tự tách lúc mở) | M dài/1 tấm | Màng | SL | TL ĐM/tấm | Trọng lượng | Ghi chú. Snapshot `kg/m2/m dài + ma_lenh_sx` vẫn giữ ngầm để tự tính Trọng lượng và lưu DB.
+- `so_tron.giao_ca_note` (migration `supabase-so-tron-giao-ca-note.sql`, pass-through `parseSoTronBody`, thuộc `HEADER_FIELDS` + nhánh `thanh_pham` trong `applySoTronScopes`): modal tự gợi ý = tổng tồn cuối, người dùng sửa được, có in.
+- Sự cố: nút cũ → `Thêm sự cố cố định` (9 mẫu); thêm nút `Thêm sự cố` tự do (Ghi chú + Từ giờ → Đến giờ + Tổng giờ tự tính, sửa được; lưu chung `ghi_chu` dòng `Tự do — ...`, đọc được bản ghi cũ).
+- Ca trước/sau logic chỉ xem/sửa ở `/cai-dat`; tờ giấy có dòng hint + link sang Cài đặt.
+
+## Cập nhật 10/2026 đợt 2
+
+- Nút `Lưu Ln` nằm dưới strip `Tổng NVL Ln` (không còn trên dòng Lần).
+- Cối trộn mẫu thu gọn mặc định ẩn (nút Hiện/Ẩn, giữ cảnh báo lệnh thiếu định mức); Danh sách NVL thu gọn mặc định hiện.
+- Giao diện trưởng ca (`canSeeThanhPham && !canVatTu`): ẩn toàn bộ khối Lần trộn + DS NVL; giữ SP/Hàng lỗi/Sự cố/Nhựa bàn giao. Khối `Sự cố sản xuất` sửa trực tiếp trên form chính (parse/compose `ghi_chu` giống modal, dùng chung `suCoGiaoCa.ts`).
+- Xả cối: ô `Xả cối (kg)` từng Lần (`lan_coi[].xa_coi`), bấm `Xác nhận` tự trừ vào Cối thực tế (≥ cối thì báo lỗi, xong xóa về trống).
+- Khối `Thành phẩm còn phải sản xuất (Lệnh − Đã nhập)`: SL đặt từ `lenh_sx.products[].quantity` trừ Σ `so_luong` SP đã nhập khớp `(ma_lenh_sx, ma_sp)`, chỉ hiện dòng còn thiếu.
+
+## Cập nhật 10/2026 đợt 3
+
+- Nút `Lưu Ln` nằm ở dòng cuối (footer) của từng khối NVL, dưới ô tổng từng Lần (bỏ ở strip tổng chung).
+- Accordion từng khối: Cối trộn mẫu bấm mở từng SP (mặc định ẩn hết, có Mở tất cả/Thu gọn); khối NVL bấm thu gọn từng SP (mặc định mở hết, nút `Xem` tự mở khối đang gấp rồi scroll tới).
+- Bảng Thành phẩm có lại cột `Mã lệnh` (select theo lệnh đã chọn) đầu tiên. Chọn Mã lệnh thì gợi ý Mã SP/Tên ở dòng đó chỉ hiện SP thuộc lệnh đó; lệnh chưa có dòng SP (hoặc mã lệnh lệch) thì hiện tất cả để vẫn chọn được; dòng mới khi 1 lệnh thì gán sẵn lệnh, nhiều lệnh thì để trống. Fill trùng mã ở nhiều lệnh thì ưu tiên đúng lệnh của dòng.
+
+## Cập nhật 10/2026 đợt 4 (phân quyền + giờ 24h)
+
+- Trưởng ca (không kiêm trộn): form ẩn khối Lần + DS NVL; xem/sửa/xóa SP, Hàng lỗi, Sự cố, Nhựa bàn giao (bàn giao đổi scope `vat-tu → thanh-pham` trên form + server `applySoTronScopes` cho `thanh_pham` ghi `bang_ban_giao/tong_nhap_nvl`).
+- Tổ trộn / NV PX: modal giao ca chỉ hiện Trang 1 (ẩn Trang 2 = SP + lỗi + sự cố, bản in cũng lọc); form chính đã ẩn SP + sự cố từ trước.
+- Giờ sự cố tự do dùng `SuCoTimeInput` (text HH:MM 24h, tự chèn `:`, blur chuẩn hóa) thay `input type="time"`, chung cho form chính + modal.
+- Xả cối: nút `Xả cối` từng Lần mở popup nhập kg xả → `Xác nhận xả`: `Cối thực tế = Cối hiện tại − xả`, tự tính lại NVL lần đó (xả ≥ cối thì chặn).
 
 ## Liên kết
 

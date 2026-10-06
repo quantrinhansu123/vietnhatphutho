@@ -1,4 +1,4 @@
-import { PRIMARY_ADMIN_USERNAME } from '../nhan-su/menuViews';
+import { hasFullMenuAccess, PRIMARY_ADMIN_USERNAME } from '../nhan-su/menuViews';
 
 /** Vai trò sổ trộn. Một người có thể kiêm nhiều vai. */
 export type SoTronRole = 'TRUONG_CA' | 'TO_TRON' | 'NV_PX' | 'ADMIN';
@@ -52,7 +52,8 @@ const HEADER_FIELDS = [
   'nhan_su_chi_tiet',
   'lenh_sx',
   'chi_tieu_phan_tram',
-  'ghi_chu'
+  'ghi_chu',
+  'giao_ca_note'
 ] as const;
 
 function fold(value: string): string {
@@ -60,7 +61,8 @@ function fold(value: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/gi, 'd')
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ');
 }
 
 function pushRole(roles: SoTronRole[], role: SoTronRole) {
@@ -76,7 +78,7 @@ export function resolveSoTronRoles(input: {
 }): SoTronRole[] {
   const roles: SoTronRole[] = [];
   const username = String(input.username || '').trim().toLowerCase();
-  if (input.fullAccess || username === PRIMARY_ADMIN_USERNAME.toLowerCase()) {
+  if (input.fullAccess || hasFullMenuAccess(input.role, username) || username === PRIMARY_ADMIN_USERNAME.toLowerCase()) {
     pushRole(roles, 'ADMIN');
   }
   const blob = fold([input.role, ...(input.extra || [])].filter(Boolean).join(' | '));
@@ -239,6 +241,10 @@ export function applySoTronScopes(
     }
     if (!allowVat) {
       if ('ghi_chu' in incoming) base.ghi_chu = incoming.ghi_chu;
+      if ('giao_ca_note' in incoming) base.giao_ca_note = incoming.giao_ca_note;
+      // Trưởng ca được sửa Nhựa bàn giao ca sau (không chạm NVL/cối trộn)
+      if ('bang_ban_giao' in incoming) base.bang_ban_giao = incoming.bang_ban_giao;
+      if ('tong_nhap_nvl' in incoming) base.tong_nhap_nvl = incoming.tong_nhap_nvl;
       if ('chi_tieu_phan_tram' in incoming) base.chi_tieu_phan_tram = incoming.chi_tieu_phan_tram;
     }
   }

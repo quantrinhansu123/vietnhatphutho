@@ -15,15 +15,17 @@ import {
 import {
   SU_CO_MAU,
   type SuCoRow,
-  gioSuCo,
+  gioSuCoRow,
   kgSuCo,
   tongSuCo,
   formatTongSuCo,
   suCoOptionLabel,
   composeSuCo,
-  parseSuCo
+  parseSuCo,
+  tinhTongGioTuKhoang
 } from './suCoGiaoCa';
 import { readSoTronActor, soTronAuthHeaders, soTronScopesFor } from './soTronSession';
+import type { SoTronActor } from './soTronPhanQuyen';
 import { computeSoTronSummary } from './summary';
 import type { SoTronSavedReport } from './index';
 import {
@@ -31,12 +33,14 @@ import {
   formatNormWeight,
   lookupAuxiliaryNormWeight
 } from './dinhMucVatTu';
+import { SuCoTimeInput } from './SuCoTimeInput';
 
 interface Props {
   open: boolean;
   report: SoTronSavedReport | null;
   onClose: () => void;
   onSaved?: (updated: SoTronSavedReport) => void;
+  actor?: SoTronActor | null;
 }
 
 function uid() {
@@ -78,7 +82,8 @@ function trongLuongTheoSoLuong(row: ThanhPhamEditRow, soLuong: string) {
   return String(row.trong_luong ?? '');
 }
 
-export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
+export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Props) {
+  const sessionActor = actor !== undefined ? actor : readSoTronActor();
   const [activeTab, setActiveTab] = useState<'all' | 'p1' | 'p2'>('all');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -204,7 +209,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
 
     setVatTuRows(combinedVatTu);
 
-    // Thành phẩm
+    // Thành phẩm (ten_sp bản ghi cũ có thể lưu dạng "Mã — Tên" → tách về Mã + Tên riêng)
     const tpList: ThanhPhamEditRow[] = (report.bang_san_pham || []).map(sp => {
       const saved = sp as {
         kg_1_sp?: unknown;
@@ -212,6 +217,20 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
         lan_2?: unknown;
         lan_3?: unknown;
       };
+      const rawMa = str(sp.ma_sp);
+      const rawTen = str(sp.ten_sp);
+      let maSp = rawMa;
+      let tenSp = rawTen;
+      if (rawMa && rawTen.startsWith(rawMa)) {
+        const rest = rawTen.slice(rawMa.length).replace(/^[—–\-\s]+/, '').trim();
+        if (rest) tenSp = rest;
+      } else if (!rawMa) {
+        const m = rawTen.match(/^(.*?)\s+[—–]\s+(.*)$/);
+        if (m && m[1].trim() && m[2].trim()) {
+          maSp = m[1].trim();
+          tenSp = m[2].trim();
+        }
+      }
       const sl = str(sp.so_luong);
       const dm = str(sp.dinh_muc) || str(saved.kg_1_sp);
       let tl = str(sp.trong_luong);
@@ -220,8 +239,8 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
       }
       return {
         key: uid(),
-        ma_sp: sp.ma_sp || '',
-        ten_sp: sp.ten_sp || '',
+        ma_sp: maSp,
+        ten_sp: tenSp,
         dinh_muc: dm,
         lan_1: str(saved.lan_1),
         lan_2: str(saved.lan_2),
@@ -247,7 +266,14 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
     const parsedSuCo = parseSuCo(report.ghi_chu || '');
     setSuCoRows(parsedSuCo.rows);
     setSuCoLuuY(parsedSuCo.note);
-    setGiaoCaNote('');
+    // Giao ca: lấy đã lưu, chưa có thì gợi ý = tổng tồn cuối ca (người dùng sửa được)
+    const savedGiaoCa = str((report as { giao_ca_note?: unknown }).giao_ca_note);
+    if (savedGiaoCa) {
+      setGiaoCaNote(savedGiaoCa);
+    } else {
+      const tongTonCuoi = round1(combinedVatTu.reduce((s, r) => s + num(r.ton_cuoi_ca), 0));
+      setGiaoCaNote(tongTonCuoi > 0 ? `${formatSlipNumber(tongTonCuoi)} kg` : '');
+    }
     setSaveSuccess(false);
     setErrorMessage('');
   }, [report, open]);
@@ -360,12 +386,25 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
 
   const canEditThanhPham = useMemo(() => {
     if (!report) return false;
-    return soTronScopesFor(readSoTronActor(), 'update', {
+    return soTronScopesFor(sessionActor, 'update', {
       ca: report.ca,
       khoa_ca: Boolean(report.khoa_ca),
       vat_tu_owner_id: String(report.vat_tu_owner_id || '')
     }).includes('thanh_pham');
-  }, [report]);
+  }, [report, sessionActor]);
+
+  /**
+   * Phân vai trên modal giao ca:
+   * - Tổ trộn / NV phân xưởng: chỉ Trang 1 (vật tư), ẩn Trang 2 (SP + lỗi + sự cố), bản in cũng lọc.
+   * - Trưởng ca (không kiêm trộn): chỉ Trang 2 + sự cố, ẩn Trang 1 (NVL).
+   * - Quản trị / kiêm nhiệm / chưa rõ vai: xem cả 2 (ghi theo scope lúc lưu).
+   */
+  const modalRoles = sessionActor?.roles ?? [];
+  const modalIsAdmin = modalRoles.includes('ADMIN');
+  const modalHasMixer = modalRoles.includes('TO_TRON') || modalRoles.includes('NV_PX');
+  const modalHasLead = modalRoles.includes('TRUONG_CA');
+  const modalHideP2 = !modalIsAdmin && modalHasMixer && !modalHasLead;
+  const modalHideP1 = !modalIsAdmin && modalHasLead && !modalHasMixer;
 
   const updateThanhPhamRow = (index: number, patch: Partial<ThanhPhamEditRow>) => {
     setThanhPhamRows(prev =>
@@ -428,7 +467,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
     return round2(hangLoiRows.reduce((sum, r) => sum + num(r.so_luong), 0));
   }, [hangLoiRows]);
 
-  // Đối tượng in
+  // Đối tượng in (tổ trộn/NV PX không được xem SP + lỗi + sự cố → bản in cũng lọc)
   const currentPrintInput: PhieuGiaoCaInput = useMemo(
     () => ({
       header,
@@ -440,6 +479,14 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
       chuKy
     }),
     [header, vatTuRows, giaoCaNote, thanhPhamRows, hangLoiRows, suCoLuuY, suCoRows, chuKy]
+  );
+  const printInputForRole: PhieuGiaoCaInput = useMemo(
+    () =>
+      modalHideP2
+        ? { ...currentPrintInput, thanhPham: [], hangLoi: [], suCoLuuY: '' }
+        : currentPrintInput,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [currentPrintInput, modalHideP2]
   );
 
   // Lưu dữ liệu vào CSDL
@@ -542,17 +589,17 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
         tong_sp_khong_mang: summary.tong_sp_khong_mang,
         tong_loi_hong: summary.tong_loi_hong,
         chi_tieu_phan_tram: summary.chi_tieu_phan_tram,
-        ghi_chu: composeSuCo(suCoRows, suCoLuuY)
+        ghi_chu: composeSuCo(suCoRows, suCoLuuY),
+        giao_ca_note: giaoCaNote.trim()
       };
 
-      const actor = readSoTronActor();
-      const scopes = soTronScopesFor(actor, 'update', {
+      const scopes = soTronScopesFor(sessionActor, 'update', {
         ca: report.ca,
         khoa_ca: Boolean(report.khoa_ca),
         vat_tu_owner_id: String(report.vat_tu_owner_id || '')
       });
       if (scopes.length === 0) {
-        throw new Error(actor ? 'Bạn không được sửa phiếu giao ca này.' : 'Đăng nhập lại để lưu phiếu giao ca.');
+        throw new Error(sessionActor ? 'Bạn không được sửa phiếu giao ca này.' : 'Đăng nhập lại để lưu phiếu giao ca.');
       }
       const res = await fetch(`/api/so-tron/${encodeURIComponent(report.id)}`, {
         method: 'PUT',
@@ -572,7 +619,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
 
       if (andPrint) {
         setTimeout(() => {
-          printPhieuGiaoCaSlip(currentPrintInput);
+          printPhieuGiaoCaSlip(printInputForRole);
         }, 150);
       }
 
@@ -590,12 +637,12 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
   const inputStyle =
     'box-border h-8 w-full bg-transparent border-0 px-1 py-0 text-[16px] leading-8 text-black outline-none focus:bg-indigo-50/50';
   const numInputStyle =
-    'box-border h-8 w-full max-w-full overflow-hidden whitespace-nowrap bg-transparent px-0.5 py-0 text-right text-[13px] font-semibold leading-8 text-black tabular-nums outline-none';
+    'box-border h-8 w-full max-w-full overflow-hidden whitespace-nowrap bg-transparent px-0.5 py-0 text-right text-[16px] font-semibold leading-8 text-black tabular-nums outline-none';
   const centerInputStyle = `${inputStyle} text-center`;
   const readOnlyCell =
     'block h-8 w-full max-w-full truncate px-1 py-0 text-[16px] leading-8 text-black';
   const numReadStyle =
-    '!whitespace-nowrap ![text-overflow:clip] px-0.5 text-right text-[13px] font-semibold leading-8 text-black tabular-nums';
+    '!whitespace-nowrap ![text-overflow:clip] px-0.5 text-right text-[16px] font-semibold leading-8 text-black tabular-nums';
   const slipTableClass =
     'w-full table-fixed border-collapse border border-slate-800 text-center text-[16px] leading-none text-black [&_tbody_tr]:h-9 [&_tbody_td]:h-9 [&_tbody_td]:box-border [&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap [&_tbody_td]:p-0 [&_tbody_td]:align-middle [&_th]:box-border [&_th]:px-1 [&_th]:py-1 [&_th]:align-middle [&_th]:text-[16px] [&_th]:leading-tight [&_th]:text-black';
   const paperFontStyle = { fontFamily: '"Times New Roman", Times, serif' } as const;
@@ -621,36 +668,42 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
           </div>
         </div>
 
-        {/* Chuyển trang xem */}
+        {/* Chuyển trang xem (ẩn trang ngoài phạm vi vai trò) */}
         <div className="flex items-center rounded-lg bg-slate-800 p-0.5 text-xs font-semibold">
-          <button
-            type="button"
-            onClick={() => setActiveTab('all')}
-            className={`rounded-md px-3 py-1 transition ${activeTab === 'all' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white'}`}
-          >
-            Cả 2 trang
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('p1')}
-            className={`rounded-md px-3 py-1 transition ${activeTab === 'p1' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white'}`}
-          >
-            Trang 1 (Vật tư)
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('p2')}
-            className={`rounded-md px-3 py-1 transition ${activeTab === 'p2' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white'}`}
-          >
-            Trang 2 (Thành phẩm)
-          </button>
+          {!modalHideP1 && !modalHideP2 ? (
+            <button
+              type="button"
+              onClick={() => setActiveTab('all')}
+              className={`rounded-md px-3 py-1 transition ${activeTab === 'all' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white'}`}
+            >
+              Cả 2 trang
+            </button>
+          ) : null}
+          {!modalHideP1 ? (
+            <button
+              type="button"
+              onClick={() => setActiveTab('p1')}
+              className={`rounded-md px-3 py-1 transition ${activeTab === 'p1' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white'}`}
+            >
+              Trang 1 (Vật tư)
+            </button>
+          ) : null}
+          {!modalHideP2 ? (
+            <button
+              type="button"
+              onClick={() => setActiveTab('p2')}
+              className={`rounded-md px-3 py-1 transition ${activeTab === 'p2' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white'}`}
+            >
+              Trang 2 (Thành phẩm)
+            </button>
+          ) : null}
         </div>
 
         {/* Nút thao tác */}
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => printPhieuGiaoCaSlip(currentPrintInput)}
+            onClick={() => printPhieuGiaoCaSlip(printInputForRole)}
             className="flex items-center gap-1.5 rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-200 hover:bg-slate-700 transition"
           >
             <Printer className="h-4 w-4" /> In phiếu
@@ -699,7 +752,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
       <div className="mx-auto my-4 flex w-full max-w-[1680px] flex-col gap-6">
         
         {/* ===================== TRANG 1: ẢNH 1 (I. VẬT TƯ) ===================== */}
-        {(activeTab === 'all' || activeTab === 'p1') && (
+        {(activeTab === 'all' || activeTab === 'p1') && !modalHideP1 && (
           <div className="relative rounded-sm border border-slate-300 bg-white p-5 text-slate-900 shadow-2xl sm:p-6" style={paperFontStyle}>
             <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-indigo-700">
               Trang 1 / 2 — Nhật ký vật tư &amp; sử dụng (Ảnh 1)
@@ -1000,7 +1053,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
         )}
 
         {/* ===================== TRANG 2: ẢNH 2 (THÀNH PHẨM, HÀNG LỖI, SỰ CỐ, CHỮ KÝ) ===================== */}
-        {(activeTab === 'all' || activeTab === 'p2') && (
+        {(activeTab === 'all' || activeTab === 'p2') && !modalHideP2 && (
           <div className="relative rounded-sm border border-slate-300 bg-white p-5 text-slate-900 shadow-2xl sm:p-6" style={paperFontStyle}>
             <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-indigo-700">
               Trang 2 / 2 — Thành phẩm, Hàng lỗi hỏng, Sự cố &amp; Chữ ký (Ảnh 2)
@@ -1253,20 +1306,35 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
 
                 {/* Bảng IV: Sự cố */}
                 <div className="mt-4">
-                  <div className="mb-1 flex items-center justify-between">
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
                     <h4 className="text-xs font-bold uppercase tracking-wide">IV. SỰ CỐ SẢN XUẤT / LƯU Ý KHÁC</h4>
-                    <button
-                      type="button"
-                      onClick={() => setSuCoRows(rows => [...rows, { key: uid(), ten: '', lan: '' }])}
-                      className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50"
-                    >
-                      <Plus className="h-3 w-3" /> Thêm sự cố
-                    </button>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setSuCoRows(rows => [...rows, { key: uid(), kind: 'mau', ten: '', lan: '' }])}
+                        className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50"
+                      >
+                        <Plus className="h-3 w-3" /> Thêm sự cố cố định
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSuCoRows(rows => [
+                            ...rows,
+                            { key: uid(), kind: 'tu_do', ten: '', lan: '', ghi_chu: '', gio_tu: '', gio_den: '', tong_gio: '' }
+                          ])
+                        }
+                        className="inline-flex items-center gap-1 rounded border border-indigo-300 bg-indigo-50 px-2 py-0.5 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100"
+                        title="Nhập ghi chú + từ giờ đến giờ, tự tính tổng giờ"
+                      >
+                        <Plus className="h-3 w-3" /> Thêm sự cố
+                      </button>
+                    </div>
                   </div>
                   <table className="mb-2 w-full border-collapse text-[16px] text-black">
                     <thead>
                       <tr className="bg-slate-100 text-black">
-                        <th className="border border-slate-800 px-1 py-1 text-left">Sự cố</th>
+                        <th className="border border-slate-800 px-1 py-1 text-left">Sự cố / Ghi chú</th>
                         <th className="border border-slate-800 px-1 py-1 w-[72px]">Số lần</th>
                         <th className="border border-slate-800 px-1 py-1 w-[72px]">Số giờ</th>
                         <th className="border border-slate-800 px-1 py-1 w-[88px]">Giảm trừ kg</th>
@@ -1277,11 +1345,93 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                       {suCoRows.length === 0 && (
                         <tr>
                           <td colSpan={5} className="border border-slate-800 px-2 py-2 text-center text-slate-400 italic">
-                            Chưa có sự cố. Bấm Thêm sự cố.
+                            Chưa có sự cố. Bấm Thêm sự cố cố định / Thêm sự cố.
                           </td>
                         </tr>
                       )}
-                      {suCoRows.map((row, index) => (
+                      {suCoRows.map((row, index) => {
+                        const isFree = row.kind === 'tu_do';
+                        if (isFree) {
+                          return (
+                            <tr key={row.key}>
+                              <td className="border border-slate-800 p-0.5">
+                                <input
+                                  value={row.ghi_chu || ''}
+                                  onChange={e =>
+                                    setSuCoRows(rows => rows.map((item, i) => (i === index ? { ...item, ghi_chu: e.target.value } : item)))
+                                  }
+                                  placeholder="Ghi chú sự cố..."
+                                  className="w-full bg-transparent px-1 py-1 text-[16px] font-semibold text-black outline-none"
+                                />
+                                <div className="flex items-center gap-1 px-1 pb-1">
+                                  <SuCoTimeInput
+                                    value={row.gio_tu || ''}
+                                    onChange={gioTu => {
+                                      setSuCoRows(rows =>
+                                        rows.map((item, i) => {
+                                          if (i !== index) return item;
+                                          const auto = tinhTongGioTuKhoang(gioTu, item.gio_den || '');
+                                          return {
+                                            ...item,
+                                            gio_tu: gioTu,
+                                            tong_gio: auto || item.tong_gio || ''
+                                          };
+                                        })
+                                      );
+                                    }}
+                                    title="Từ giờ"
+                                  />
+                                  <span className="text-[13px] font-bold">→</span>
+                                  <SuCoTimeInput
+                                    value={row.gio_den || ''}
+                                    onChange={gioDen => {
+                                      setSuCoRows(rows =>
+                                        rows.map((item, i) => {
+                                          if (i !== index) return item;
+                                          const auto = tinhTongGioTuKhoang(item.gio_tu || '', gioDen);
+                                          return {
+                                            ...item,
+                                            gio_den: gioDen,
+                                            tong_gio: auto || item.tong_gio || ''
+                                          };
+                                        })
+                                      );
+                                    }}
+                                    title="Đến giờ"
+                                  />
+                                </div>
+                              </td>
+                              <td className="border border-slate-800 p-0.5 text-center text-[11px] font-semibold text-slate-500">
+                                Tự do
+                              </td>
+                              <td className="border border-slate-800 p-0.5">
+                                <input
+                                  inputMode="decimal"
+                                  value={row.tong_gio || ''}
+                                  onChange={e =>
+                                    setSuCoRows(rows => rows.map((item, i) => (i === index ? { ...item, tong_gio: e.target.value } : item)))
+                                  }
+                                  placeholder="giờ"
+                                  title="Tổng giờ (tự tính từ khoảng giờ, sửa được)"
+                                  className="w-full overflow-hidden whitespace-nowrap bg-transparent px-1 py-1 text-center text-[16px] font-bold text-black outline-none"
+                                />
+                              </td>
+                              <td className="overflow-hidden whitespace-nowrap border border-slate-800 bg-slate-50 px-1 text-center text-[16px] font-bold tabular-nums text-black">
+                                —
+                              </td>
+                              <td className="border border-slate-800 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => setSuCoRows(rows => rows.filter((_, i) => i !== index))}
+                                  className="text-slate-400 hover:text-rose-600"
+                                >
+                                  <Trash2 className="mx-auto h-3 w-3" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        }
+                        return (
                         <tr key={row.key}>
                           <td className="border border-slate-800 p-0.5">
                             <select
@@ -1302,13 +1452,13 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                               inputMode="decimal"
                               value={row.lan}
                               onChange={e => setSuCoRows(rows => rows.map((item, i) => (i === index ? { ...item, lan: e.target.value } : item)))}
-                              className="w-full overflow-hidden whitespace-nowrap bg-transparent px-1 py-1 text-center text-[13px] font-bold text-black outline-none"
+                              className="w-full overflow-hidden whitespace-nowrap bg-transparent px-1 py-1 text-center text-[16px] font-bold text-black outline-none"
                             />
                           </td>
-                          <td className="overflow-hidden whitespace-nowrap border border-slate-800 bg-slate-50 px-1 text-center text-[13px] font-bold tabular-nums text-black">
-                            {gioSuCo(row.ten, row.lan)}
+                          <td className="overflow-hidden whitespace-nowrap border border-slate-800 bg-slate-50 px-1 text-center text-[16px] font-bold tabular-nums text-black">
+                            {gioSuCoRow(row)}
                           </td>
-                          <td className="overflow-hidden whitespace-nowrap border border-slate-800 bg-slate-50 px-1 text-center text-[13px] font-bold tabular-nums text-black">
+                          <td className="overflow-hidden whitespace-nowrap border border-slate-800 bg-slate-50 px-1 text-center text-[16px] font-bold tabular-nums text-black">
                             {kgSuCo(row.ten, row.lan)}
                           </td>
                           <td className="border border-slate-800 text-center">
@@ -1321,7 +1471,8 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
                             </button>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                       {suCoRows.length > 0 && (
                         <tr className="bg-slate-100 font-bold">
                           <td colSpan={5} className="border border-slate-800 px-2 py-1 text-[13px]">

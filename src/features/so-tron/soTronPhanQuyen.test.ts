@@ -8,6 +8,7 @@ import {
   resolveSoTronRoles,
   type SoTronActor
 } from './soTronPhanQuyen.ts';
+import { actorForSoTron } from './soTronSession.ts';
 import { signSoTronToken, verifySoTronToken } from './soTronToken.ts';
 
 const mixer: SoTronActor = {
@@ -131,10 +132,49 @@ test('ghi thành phẩm không đè vật tư đã lưu', () => {
   assert.equal(merged.ghi_chu, 'mới');
 });
 
+test('quản trị viên thêm sửa xóa mọi phần sổ trộn', () => {
+  for (const role of ['Quản trị viên', 'Admin', 'Quản trị']) {
+    assert.ok(resolveSoTronRoles({ role }).includes('ADMIN'), role);
+  }
+  assert.ok(resolveSoTronRoles({ fullAccess: true }).includes('ADMIN'));
+  assert.ok(resolveSoTronRoles({ role: 'Nhân sự', extra: ['Phòng_điều_Hành_Quản_trị'] }).includes('ADMIN'));
+
+  const quanTri: SoTronActor = {
+    id: 'qtv',
+    username: 'quan.tri',
+    name: 'Quản trị viên',
+    roles: resolveSoTronRoles({ role: 'Quản trị viên' }),
+    ca: '12C2'
+  };
+  assert.equal(
+    assertSoTron(quanTri, 'update', 'vat_tu', { ca: 'HC1', khoa_ca: false, vat_tu_owner_id: 'nguoi-khac' }).ok,
+    true
+  );
+  assert.equal(
+    assertSoTron(quanTri, 'update', 'thanh_pham', { ca: 'HC1', khoa_ca: false, vat_tu_owner_id: '' }).ok,
+    true
+  );
+  assert.equal(assertSoTron(quanTri, 'create', 'vat_tu').ok, true);
+  assert.equal(assertSoTron(quanTri, 'delete', 'thanh_pham').ok, true);
+  assert.equal(
+    assertSoTron(lead, 'update', 'thanh_pham', { ca: '12C2', khoa_ca: false, vat_tu_owner_id: '' }).ok,
+    false
+  );
+});
+
+test('phiên quản trị viên đang đăng nhập được sửa sổ trộn dù JWT chưa có ADMIN', () => {
+  const actor = actorForSoTron({ id: '1', name: 'Quản trị viên', username: 'qtv', role: 'Quản trị viên' });
+  assert.ok(actor?.roles.includes('ADMIN'));
+  assert.equal(actor?.ca, '');
+  assert.equal(actorForSoTron({ id: '2', name: 'Trưởng ca', username: 'tc', role: 'Trưởng ca' }), null);
+});
+
 test('JWT hết hạn hoặc sai chữ ký không thành actor', () => {
   const token = signSoTronToken(lead, 'secret', 60);
   assert.equal(verifySoTronToken(token, 'secret')?.id, 'tc-1');
   assert.equal(verifySoTronToken(token, 'khac'), null);
-  const expired = signSoTronToken(lead, 'secret', -10);
+  const recent = signSoTronToken(lead, 'secret', -10);
+  assert.equal(verifySoTronToken(recent, 'secret')?.id, 'tc-1');
+  const expired = signSoTronToken(lead, 'secret', -31 * 24 * 60 * 60);
   assert.equal(verifySoTronToken(expired, 'secret'), null);
 });

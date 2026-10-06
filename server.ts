@@ -6,7 +6,7 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { ProductionReport } from './src/types';
-import { normalizeStaffViewPermissions, PRIMARY_ADMIN_USERNAME } from './src/features/nhan-su/menuViews';
+import { hasFullMenuAccess, normalizeStaffViewPermissions, PRIMARY_ADMIN_USERNAME } from './src/features/nhan-su/menuViews';
 import {
   applySoTronScopes,
   assertSoTron,
@@ -19586,7 +19586,8 @@ async function loadKiemKhoLiveTongHopForDot(
         tong_sp_khong_mang: asNum(source.tong_sp_khong_mang ?? source.tongSpKhongMang),
         tong_loi_hong: asNum(source.tong_loi_hong ?? source.tongLoiHong),
         chi_tieu_phan_tram: asNum(source.chi_tieu_phan_tram ?? source.chiTieuPhanTram),
-        ghi_chu: asText(source.ghi_chu ?? source.ghiChu).trim()
+        ghi_chu: asText(source.ghi_chu ?? source.ghiChu).trim(),
+        giao_ca_note: asText(source.giao_ca_note ?? source.giaoCaNote).trim()
       }
     };
   }
@@ -19614,6 +19615,43 @@ async function loadKiemKhoLiveTongHopForDot(
     const header = Array.isArray(raw) ? raw[0] : String(raw || '');
     const token = /^bearer\s+/i.test(header) ? header.replace(/^bearer\s+/i, '').trim() : '';
     return verifySoTronToken(token, soTronJwtSecret());
+  }
+
+  /** JWT cũ có thể thiếu ADMIN dù tài khoản là Quản trị / Admin. Tra lại hồ sơ nhân sự lúc ghi. */
+  async function elevateSoTronActor(actor: SoTronActor | null): Promise<SoTronActor | null> {
+    if (!actor) return null;
+    if (actor.roles.includes('ADMIN') || hasFullMenuAccess(undefined, actor.username)) {
+      const roles = actor.roles.includes('ADMIN') ? actor.roles : (['ADMIN' as const, ...actor.roles]);
+      return { ...actor, roles, ca: '' };
+    }
+    if (!supabase) return actor;
+    let row: Record<string, unknown> | null = null;
+    const username = actor.username.trim();
+    if (username) {
+      const { data } = await supabase.from('nhan_su').select('*').ilike('ten_dang_nhap', username).limit(20);
+      row =
+        ((data || []) as Record<string, unknown>[]).find(item => !item?.deleted_at) || null;
+    }
+    if (!row && actor.id && actor.id !== 'admin') {
+      const { data } = await supabase.from('nhan_su').select('*').eq('ma_nhan_su', actor.id).limit(1);
+      row = ((data || [])[0] as Record<string, unknown> | undefined) || null;
+    }
+    if (!row) return actor;
+    const role = pickStaffField(row, ['Cong_Viec', 'cong_viec', 'chuc_vu', 'role'], '');
+    const position = pickStaffField(row, ['vi_tri', 'ma_vi_tri'], '');
+    const department = pickStaffField(row, ['phong_ban', 'phongban', 'department'], '');
+    const assigned = Array.isArray(row.vi_tri_gan) ? row.vi_tri_gan : [];
+    const extra = assigned.flatMap(item => {
+      const pos = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+      return [pos.position, pos.department, pos.permissionKey].map(value => String(value || ''));
+    });
+    const roles = resolveSoTronRoles({
+      role,
+      username: actor.username,
+      extra: [department, position, role, ...extra]
+    });
+    if (!roles.length) return actor;
+    return { ...actor, roles, ca: roles.includes('ADMIN') ? '' : actor.ca };
   }
 
   function slipGateOf(row: Record<string, unknown> | null | undefined) {
@@ -19656,14 +19694,14 @@ async function loadKiemKhoLiveTongHopForDot(
     return { data: null, error: { message: 'Không lưu được sổ trộn.', code: '' } };
   }
 
-  function guardSoTronScopes(
+  async function guardSoTronScopes(
     req: { headers: { authorization?: string | string[] }; body?: unknown },
     action: 'create' | 'update',
     existing: Record<string, unknown> | null,
     ca: string,
     forced?: SoTronResource[]
   ) {
-    const actor = readSoTronActorReq(req);
+    const actor = await elevateSoTronActor(readSoTronActorReq(req));
     const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
     const scopes = forced?.length ? forced : normalizeScopes(body.scope);
     if (scopes.length === 0) {
@@ -19717,14 +19755,17 @@ async function loadKiemKhoLiveTongHopForDot(
       const pos = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
       return [pos.position, pos.department, pos.permissionKey].map(value => String(value || ''));
     });
+    const staffRole = pickStaffField(row, ['Cong_Viec', 'cong_viec', 'chuc_vu', 'role'], '');
+    const staffPosition = pickStaffField(row, ['vi_tri', 'ma_vi_tri'], '');
+    const staffDepartment = pickStaffField(row, ['phong_ban', 'phongban', 'department'], '');
     const actor: SoTronActor = {
       id: String(row.id || row.ma_nhan_su || username),
       username,
       name: String(row.nhan_su || row.ho_ten || username),
       roles: resolveSoTronRoles({
-        role: String(row.chuc_vu || row.cong_viec || row.vi_tri || ''),
+        role: staffRole,
         username,
-        extra: [String(row.phong_ban || ''), String(row.cong_viec || ''), ...extra]
+        extra: [staffDepartment, staffPosition, staffRole, ...extra]
       }),
       ca: (() => {
         const raw = String(row.ca_lam || row.ca || '').trim();
@@ -19785,7 +19826,7 @@ async function loadKiemKhoLiveTongHopForDot(
     if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     const parsed = parseSoTronBody(req.body);
     if ('error' in parsed) return res.status(400).json({ error: parsed.error });
-    const guard = guardSoTronScopes(req, 'create', null, parsed.record.ca, forced);
+    const guard = await guardSoTronScopes(req, 'create', null, parsed.record.ca, forced);
     if ('error' in guard && guard.error) return res.status(guard.error.status).json({ error: guard.error.message });
     const record = applySoTronScopes(null, parsed.record as Record<string, unknown>, guard.scopes);
     record.created_by_id = guard.actor.id;
@@ -19819,7 +19860,7 @@ async function loadKiemKhoLiveTongHopForDot(
     if (existingRes.error) return res.status(500).json({ error: soTronWriteError(existingRes.error) });
     if (!existingRes.data) return res.status(404).json({ error: 'Không tìm thấy sổ trộn.' });
     const existing = existingRes.data as Record<string, unknown>;
-    const guard = guardSoTronScopes(req, 'update', existing, parsed.record.ca, forced);
+    const guard = await guardSoTronScopes(req, 'update', existing, parsed.record.ca, forced);
     if ('error' in guard && guard.error) return res.status(guard.error.status).json({ error: guard.error.message });
     const record = applySoTronScopes(existing, parsed.record as Record<string, unknown>, guard.scopes);
     if (guard.scopes.includes('vat_tu') && !String(existing.vat_tu_owner_id || '').trim()) {
@@ -19900,7 +19941,7 @@ async function loadKiemKhoLiveTongHopForDot(
       if (existingRes.error) return res.status(500).json({ error: soTronWriteError(existingRes.error) });
       if (!existingRes.data) return res.status(404).json({ error: 'Không tìm thấy sổ trộn.' });
       const existing = existingRes.data as Record<string, unknown>;
-      const actor = readSoTronActorReq(req);
+      const actor = await elevateSoTronActor(readSoTronActorReq(req));
       const decision = assertSoTron(actor, 'lock', 'thanh_pham', slipGateOf(existing));
       if (!decision.ok) return res.status(decision.status).json({ error: decision.error });
       const lyDo = String((req.body as { ly_do?: string } | undefined)?.ly_do || '').trim();
@@ -19939,7 +19980,7 @@ async function loadKiemKhoLiveTongHopForDot(
       if (existingRes.error) return res.status(500).json({ error: soTronWriteError(existingRes.error) });
       if (!existingRes.data) return res.status(404).json({ error: 'Không tìm thấy sổ trộn.' });
       const existing = existingRes.data as Record<string, unknown>;
-      const actor = readSoTronActorReq(req);
+      const actor = await elevateSoTronActor(readSoTronActorReq(req));
       const decision = assertSoTron(actor, 'unlock', 'vat_tu', slipGateOf(existing));
       if (!decision.ok) return res.status(decision.status).json({ error: decision.error });
       const saved = await persistSoTron(id, {
@@ -19970,7 +20011,7 @@ async function loadKiemKhoLiveTongHopForDot(
     try {
       const id = String(req.params.id || '').trim();
       if (!id) return res.status(400).json({ error: 'Thiếu ID sổ trộn.' });
-      const actor = readSoTronActorReq(req);
+      const actor = await elevateSoTronActor(readSoTronActorReq(req));
       const decision = assertSoTron(actor, 'delete', 'vat_tu');
       if (!decision.ok) return res.status(decision.status).json({ error: decision.error });
 
