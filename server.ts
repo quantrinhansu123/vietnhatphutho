@@ -17,6 +17,8 @@ import {
 } from './src/features/so-tron/soTronPhanQuyen';
 import { signSoTronToken, verifySoTronToken } from './src/features/so-tron/soTronToken';
 import { aggregateSlipOwnsCode, registerXuatNhapTongHopRoutes } from './src/features/xuat-nhap-tong-hop/registerRoutes';
+import { registerViberNotifyRoutes } from './src/features/viber-notify/registerRoutes';
+import { notifyNewOrder } from './src/features/viber-notify/orderNotify';
 import { normalizeAssignablePositions } from './src/features/cai-dat-thoi-gian/staffAssignments';
 import { isExternalStaffCode, resolveScheduleStaffName } from './src/utils/externalStaff';
 import { calculateProductConversionFormulas, roundImportedConversionWeight } from './src/utils/productConversionCalculation';
@@ -139,6 +141,8 @@ const SUPABASE_WAREHOUSE_LENH_SX_LINKS_TABLE =
 const SUPABASE_WAREHOUSE_HISTORY_TABLE =
   process.env.SUPABASE_WAREHOUSE_HISTORY_TABLE || 'phieu_xuat_nhap_kho_lich_su';
 const SUPABASE_NHAP_KHO_TABLE = process.env.SUPABASE_NHAP_KHO_TABLE || 'nhap_kho';
+/** Viber notify 1-chieu (OTP/don hang): lich su gui + webhook Vonage (supabase-viber-messages.sql). */
+const SUPABASE_VIBER_MESSAGES_TABLE = process.env.SUPABASE_VIBER_MESSAGES_TABLE || 'viber_messages';
 const NHAP_KHO_LOAI_THANH_PHAM = 'thanh_pham';
 /** Lệnh cắt lẻ: cuộn mẹ kho cắt lẻ -> SP con kho TP + thừa nhập lại kho cắt lẻ. */
 const SUPABASE_LENH_CAT_LE_TABLE = process.env.SUPABASE_LENH_CAT_LE_TABLE || 'lenh_cat_le';
@@ -9923,6 +9927,12 @@ export function createApp() {
         return res.status(500).json({ error: orderWriteErrorMessage(insertResult.error || {}) });
       }
 
+      // Auto bao don moi ve SDT noi bo co dinh (fire-and-forget, khong chan tao don).
+      void notifyNewOrder(insertResult.data as Record<string, unknown>, {
+        supabase,
+        table: SUPABASE_VIBER_MESSAGES_TABLE
+      });
+
       return res.status(201).json({
         success: true,
         order: insertResult.data,
@@ -18421,6 +18431,8 @@ async function loadKiemKhoLiveTongHopForDot(
     newSlipCode: generateWarehouseSlipCode,
     normalizeKho: normalizeKhoLabel
   });
+
+  registerViberNotifyRoutes(app, { supabase, table: SUPABASE_VIBER_MESSAGES_TABLE });
 
   app.get('/api/ton-kho/chi-tiet', async (req, res) => {
     if (!supabase) {
