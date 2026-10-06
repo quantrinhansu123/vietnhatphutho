@@ -52,7 +52,8 @@ const HEADER_FIELDS = [
   'nhan_su_chi_tiet',
   'lenh_sx',
   'chi_tieu_phan_tram',
-  'ghi_chu'
+  'ghi_chu',
+  'giao_ca_note'
 ] as const;
 
 function fold(value: string): string {
@@ -240,6 +241,7 @@ export function applySoTronScopes(
     }
     if (!allowVat) {
       if ('ghi_chu' in incoming) base.ghi_chu = incoming.ghi_chu;
+      if ('giao_ca_note' in incoming) base.giao_ca_note = incoming.giao_ca_note;
       if ('chi_tieu_phan_tram' in incoming) base.chi_tieu_phan_tram = incoming.chi_tieu_phan_tram;
     }
   }

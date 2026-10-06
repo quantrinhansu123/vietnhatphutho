@@ -8,7 +8,7 @@
 
 import { vietNhatLogoUrl } from '../../components/layout/constants';
 import { parseSlipNumber } from './parseSlipNumber';
-import { formatTongSuCo, gioSuCo, kgSuCo, parseSuCo, tongSuCo } from './suCoGiaoCa';
+import { formatTongSuCo, gioSuCoRow, kgSuCo, parseSuCo, tongSuCo } from './suCoGiaoCa';
 
 export { parseSlipNumber };
 
@@ -81,6 +81,10 @@ function esc(value: unknown): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function str(value: unknown): string {
+  return value === null || value === undefined ? '' : String(value).trim();
 }
 
 function num(value: unknown): number {
@@ -219,11 +223,23 @@ export function buildPhieuGiaoCaHtml(input: PhieuGiaoCaInput): string {
   const tongSuCoIn = tongSuCo(parsedSuCo.rows);
   const suCoRowsHtml = parsedSuCo.rows
     .map(row => {
+      if (row.kind === 'tu_do') {
+        const range =
+          str(row.gio_tu) || str(row.gio_den) ? `${str(row.gio_tu) || '--:--'}–${str(row.gio_den) || '--:--'}` : '';
+        const label = [str(row.ghi_chu) || 'Sự cố', range].filter(Boolean).join(' · ');
+        return `
+      <tr class="grid-row">
+        <td class="l">${esc(label) || '&nbsp;'}</td>
+        <td class="c">Tự do</td>
+        <td class="c">${esc(str(row.tong_gio)) || '&nbsp;'}</td>
+        <td class="c">—</td>
+      </tr>`;
+      }
       return `
       <tr class="grid-row">
         <td class="l">${esc(row.ten) || '&nbsp;'}</td>
         <td class="c">${esc(String(row.lan).trim()) || '&nbsp;'}</td>
-        <td class="c">${esc(gioSuCo(row.ten, row.lan)) || '&nbsp;'}</td>
+        <td class="c">${esc(gioSuCoRow(row)) || '&nbsp;'}</td>
         <td class="c">${esc(kgSuCo(row.ten, row.lan)) || '&nbsp;'}</td>
       </tr>`;
     })

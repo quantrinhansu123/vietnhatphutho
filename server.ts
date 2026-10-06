@@ -19586,7 +19586,8 @@ async function loadKiemKhoLiveTongHopForDot(
         tong_sp_khong_mang: asNum(source.tong_sp_khong_mang ?? source.tongSpKhongMang),
         tong_loi_hong: asNum(source.tong_loi_hong ?? source.tongLoiHong),
         chi_tieu_phan_tram: asNum(source.chi_tieu_phan_tram ?? source.chiTieuPhanTram),
-        ghi_chu: asText(source.ghi_chu ?? source.ghiChu).trim()
+        ghi_chu: asText(source.ghi_chu ?? source.ghiChu).trim(),
+        giao_ca_note: asText(source.giao_ca_note ?? source.giaoCaNote).trim()
       }
     };
   }

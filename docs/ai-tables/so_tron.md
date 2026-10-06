@@ -73,6 +73,31 @@ Kiêm nhiệm được cộng quyền. Xem phiếu ca khác vẫn được. Sử
 - Quy tắc: `sw.js` dùng network-first cho navigation (`req.mode === 'navigate'`) để `index.html` luôn mới (bundle JS/CSS có hash nên cache-first vẫn an toàn); **mỗi bản build có đổi giao diện phải đổi `VERSION`** trong `public/sw.js` để xóa cache cũ.
 - Sau build (`npm run build`), kiểm tra `dist/assets/*.js` mới nhất có chứa chuỗi UI mới (vd đếm `In A4`) và `dist/sw.js` đã lên VERSION mới; dặn người dùng hard-reload (Ctrl+F5) 1–2 lần nếu vẫn thấy giao diện cũ.
 
+## Cập nhật 10/2026 (sổ trộn công nhân)
+
+- Số trong ô tờ giấy + modal lên `16px`; tên SP hiển thị bôi vàng `bg-yellow-200` **chỉ màn hình** (bản in giữ trắng-đen).
+- Mỗi dòng Lần có nút `Xem` (scroll tới đúng khối NVL của SP) + ô `Bội số` (`Cối thực tế = Bội số × Định lượng cối mẫu`, lưu trong `coi_tron_mau.lan_coi[].boi_so`) + nút `Lưu` (upsert 1 cối vào `phieu_tron_thuc_te` theo `dinh_muc_id` của block cối mẫu, lần sau update đúng phiếu; `CoiMauItem.dinh_muc_id` lấy từ `bang_tron_vat_tu_dinh_muc.id`).
+- Tổng NVL từng Lần: strip dưới cụm Lần + dòng `Tổng NVL` cuối mỗi khối SP.
+- Ghi chú SP từ phiếu định mức (`block.ghi_chu`) hiện dưới tên vàng.
+- Bảng Thành phẩm tờ giấy còn 8 cột: Mã SP | Tên Hàng Hóa (chỉ tên, bản ghi cũ `"Mã — Tên"` tự tách lúc mở) | M dài/1 tấm | Màng | SL | TL ĐM/tấm | Trọng lượng | Ghi chú. Snapshot `kg/m2/m dài + ma_lenh_sx` vẫn giữ ngầm để tự tính Trọng lượng và lưu DB.
+- `so_tron.giao_ca_note` (migration `supabase-so-tron-giao-ca-note.sql`, pass-through `parseSoTronBody`, thuộc `HEADER_FIELDS` + nhánh `thanh_pham` trong `applySoTronScopes`): modal tự gợi ý = tổng tồn cuối, người dùng sửa được, có in.
+- Sự cố: nút cũ → `Thêm sự cố cố định` (9 mẫu); thêm nút `Thêm sự cố` tự do (Ghi chú + Từ giờ → Đến giờ + Tổng giờ tự tính, sửa được; lưu chung `ghi_chu` dòng `Tự do — ...`, đọc được bản ghi cũ).
+- Ca trước/sau logic chỉ xem/sửa ở `/cai-dat`; tờ giấy có dòng hint + link sang Cài đặt.
+
+## Cập nhật 10/2026 đợt 2
+
+- Nút `Lưu Ln` nằm dưới strip `Tổng NVL Ln` (không còn trên dòng Lần).
+- Cối trộn mẫu thu gọn mặc định ẩn (nút Hiện/Ẩn, giữ cảnh báo lệnh thiếu định mức); Danh sách NVL thu gọn mặc định hiện.
+- Giao diện trưởng ca (`canSeeThanhPham && !canVatTu`): ẩn toàn bộ khối Lần trộn + DS NVL; giữ SP/Hàng lỗi/Sự cố/Nhựa bàn giao. Khối `Sự cố sản xuất` sửa trực tiếp trên form chính (parse/compose `ghi_chu` giống modal, dùng chung `suCoGiaoCa.ts`).
+- Xả cối: ô `Xả cối (kg)` từng Lần (`lan_coi[].xa_coi`), bấm `Xác nhận` tự trừ vào Cối thực tế (≥ cối thì báo lỗi, xong xóa về trống).
+- Khối `Thành phẩm còn phải sản xuất (Lệnh − Đã nhập)`: SL đặt từ `lenh_sx.products[].quantity` trừ Σ `so_luong` SP đã nhập khớp `(ma_lenh_sx, ma_sp)`, chỉ hiện dòng còn thiếu.
+
+## Cập nhật 10/2026 đợt 3
+
+- Nút `Lưu Ln` nằm ở dòng cuối (footer) của từng khối NVL, dưới ô tổng từng Lần (bỏ ở strip tổng chung).
+- Accordion từng khối: Cối trộn mẫu bấm mở từng SP (mặc định ẩn hết, có Mở tất cả/Thu gọn); khối NVL bấm thu gọn từng SP (mặc định mở hết, nút `Xem` tự mở khối đang gấp rồi scroll tới).
+- Bảng Thành phẩm có lại cột `Mã lệnh` (select theo lệnh đã chọn) đầu tiên.
+
 ## Liên kết
 
 `lenh_sx`, `bang_tron_vat_tu_dinh_muc`, `phan_cong_nhan_su_chi_tiet`, `danh_sach_may`, `cai_dat_thoi_gian`
