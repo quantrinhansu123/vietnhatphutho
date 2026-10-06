@@ -1,5 +1,6 @@
 import {
   assertSoTron,
+  resolveSoTronRoles,
   type SoTronActor,
   type SoTronResource,
   type SoTronRole,
@@ -50,11 +51,40 @@ function decodePayload(token: string): Record<string, unknown> | null {
   }
 }
 
+/** Quản trị viên đăng nhập app được sửa mọi phần sổ trộn, kể cả khi JWT sổ trộn chưa kịp có vai ADMIN. */
+export function actorForSoTron(authUser?: {
+  id?: string;
+  name?: string;
+  username?: string;
+  role?: string;
+  fullAccess?: boolean;
+} | null): SoTronActor | null {
+  const tokenActor = readSoTronActor();
+  const isAdmin = resolveSoTronRoles({
+    role: authUser?.role,
+    username: authUser?.username,
+    fullAccess: authUser?.fullAccess
+  }).includes('ADMIN');
+  if (!isAdmin) return tokenActor;
+  const roles: SoTronRole[] = [];
+  for (const role of [...(tokenActor?.roles || []), 'ADMIN' as const]) {
+    if (!roles.includes(role)) roles.push(role);
+  }
+  return {
+    id: tokenActor?.id || authUser?.id || 'admin',
+    username: tokenActor?.username || authUser?.username || '',
+    name: tokenActor?.name || authUser?.name || 'Quản trị viên',
+    roles,
+    ca: ''
+  };
+}
+
 export function readSoTronActor(): SoTronActor | null {
   const payload = decodePayload(readSoTronToken());
   if (!payload) return null;
   const exp = Number(payload.exp);
-  if (!payload.sub || !Number.isFinite(exp) || exp * 1000 < Date.now()) return null;
+  const graceMs = 30 * 24 * 60 * 60 * 1000;
+  if (!payload.sub || !Number.isFinite(exp) || exp * 1000 + graceMs < Date.now()) return null;
   const roles = Array.isArray(payload.roles)
     ? payload.roles.filter(
         (role): role is SoTronRole =>

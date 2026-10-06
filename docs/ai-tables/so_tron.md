@@ -22,7 +22,7 @@
 
 | File | Nội dung |
 |------|----------|
-| `src/features/so-tron/index.tsx` | Panel nhập (`SoTronPanel`: props `onBack/onOpenList/editReport/onEditConsumed`) + danh sách (`SoTronListView`: props `onBack/onCreate/onEdit`). Cụm nút thao tác dòng dùng `SoTronRowActions` (inline, xem quy ước UI bên dưới). Ô chọn ngày dùng `SoTronDatePicker` (lịch popup 1 nút). |
+| `src/features/so-tron/index.tsx` | Panel nhập (`SoTronPanel`: props `onBack/onOpenList/editReport/onEditConsumed/currentUser`) + danh sách (`SoTronListView`: props `onBack/onCreate/onEdit/currentUser`). Cụm nút thao tác dòng dùng `SoTronRowActions` (inline, xem quy ước UI bên dưới). Ô chọn ngày dùng `SoTronDatePicker` (lịch popup 1 nút). |
 | `src/features/so-tron/SoTronDatePicker.tsx` | Lịch popup chọn ngày 1 nút (hiển thị DD/MM/YYYY, lưới tháng T2–CN tiếng Việt, nút Hôm nay/Xóa, đóng khi click ngoài/Esc) + `formatNgayVN`. Chọn năm nhanh: nút « / » nhảy ±1 năm, bấm `Tháng M / YYYY` mở panel gõ năm (1–2999) + lưới 12 tháng. Dùng cho ô lọc ngày ở cả 2 màn hình danh sách + toàn bộ ô ngày sổ MMTB — KHÔNG dùng 3 ô Ngày/Tháng/Năm rời (`VnDatePicker`). |
 | `src/features/so-tron/PhieuGiaoCaModal.tsx` | Modal xem trước & cho phép sửa trực tiếp phiếu giao ca (nhật ký sản xuất) 2 trang chuẩn theo mẫu thực tế (Trang 1: Vật tư L1..L10 + tồn đầu + lấy kho + tồn cuối; Trang 2: Thành phẩm + Hàng lỗi + Sự cố + 4 Chữ ký). Có các nút: Lưu, Lưu & In, In, Đóng. |
 | `src/features/so-tron/printPhieuGiaoCa.ts` | Tạo HTML và kích hoạt in phiếu giao ca 2 trang A4 dọc (`@page size: A4 portrait`). Cột 2 chỉ ghi «Tên vật tư» / «Thành phẩm». Cột lần trang vật tư trống trên mọi dòng thì không in. Mọi chữ xuống dòng, không cắt bằng dấu ba chấm. Phần chưa kín trang được chèn ô trống cho đủ trang, không tràn thêm trang. |
@@ -39,7 +39,7 @@ Vai trò lấy từ chức vụ / vị trí gán của `nhan_su`. Phòng ban **P
 |---|---|---|
 | Tổ trộn, NV phân xưởng | Tạo và sửa phiếu mình tạo, khi chưa chốt | Ẩn trên sổ trộn, không xem và không sửa |
 | Trưởng ca, Trưởng phòng phân xưởng | Chỉ xem, được xóa cả phiếu | Tạo và sửa thành phẩm + hàng lỗi khi chưa chốt, kể cả trên xem trước phiếu giao ca. Ca hồ sơ (Ca Ngày…) không khóa theo mã ca sổ (12C1, HC1). Chỉ 403 khi cả hai bên là mã ca sản xuất và khác nhau. Được chốt ca |
-| Quản trị | Đủ quyền, kể cả xóa và mở khóa (bắt buộc lý do) | Đủ quyền |
+| Quản trị, Quản trị viên, Admin | Thêm, sửa, xóa mọi phần (vật tư, thành phẩm, hàng lỗi, bàn giao), kể cả xem trước phiếu giao ca. JWT cũ thiếu vai ADMIN vẫn được nhận lại lúc ghi | Đủ quyền, kể cả xóa và mở khóa (bắt buộc lý do) |
 
 Kiêm nhiệm được cộng quyền. Xem phiếu ca khác vẫn được. Sửa thành phẩm khác mã ca sản xuất thì 403 khi tài khoản được gán đúng mã đó (12C1, HC1…). Trưởng phòng ghi «Ca Ngày» trên hồ sơ vẫn sửa mọi ca. Sau khi chốt, cả vật tư và thành phẩm khóa đến khi quản trị mở khóa. Phiếu cũ chưa có người tạo: lần sửa vật tư đầu tiên ghi `vat_tu_owner_id`. `GET /api/so-tron` không đòi token vì báo cáo ngày/tuần vẫn đọc sổ. Nhật ký nằm ở `so_tron_audit_log`.
 

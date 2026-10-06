@@ -1330,6 +1330,7 @@ export default function App() {
                   onOpenList={() => navigateToTab('so-tron-list')}
                   editReport={soTronEditReport}
                   onEditConsumed={() => setSoTronEditReport(null)}
+                  currentUser={authUser}
                 />
               </motion.div>
             ) : activeTab === 'so-tron-list' ? (
@@ -1341,6 +1342,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <SoTronListView
+                  currentUser={authUser}
                   onBack={() => goBack('bao-cao-truong-ca-tron')}
                   onCreate={() => {
                     setSoTronEditReport(null);

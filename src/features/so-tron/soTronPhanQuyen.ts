@@ -1,4 +1,4 @@
-import { PRIMARY_ADMIN_USERNAME } from '../nhan-su/menuViews';
+import { hasFullMenuAccess, PRIMARY_ADMIN_USERNAME } from '../nhan-su/menuViews';
 
 /** Vai trò sổ trộn. Một người có thể kiêm nhiều vai. */
 export type SoTronRole = 'TRUONG_CA' | 'TO_TRON' | 'NV_PX' | 'ADMIN';
@@ -60,7 +60,8 @@ function fold(value: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/gi, 'd')
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ');
 }
 
 function pushRole(roles: SoTronRole[], role: SoTronRole) {
@@ -76,7 +77,7 @@ export function resolveSoTronRoles(input: {
 }): SoTronRole[] {
   const roles: SoTronRole[] = [];
   const username = String(input.username || '').trim().toLowerCase();
-  if (input.fullAccess || username === PRIMARY_ADMIN_USERNAME.toLowerCase()) {
+  if (input.fullAccess || hasFullMenuAccess(input.role, username) || username === PRIMARY_ADMIN_USERNAME.toLowerCase()) {
     pushRole(roles, 'ADMIN');
   }
   const blob = fold([input.role, ...(input.extra || [])].filter(Boolean).join(' | '));

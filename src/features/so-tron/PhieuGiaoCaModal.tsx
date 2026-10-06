@@ -24,6 +24,7 @@ import {
   parseSuCo
 } from './suCoGiaoCa';
 import { readSoTronActor, soTronAuthHeaders, soTronScopesFor } from './soTronSession';
+import type { SoTronActor } from './soTronPhanQuyen';
 import { computeSoTronSummary } from './summary';
 import type { SoTronSavedReport } from './index';
 import {
@@ -37,6 +38,7 @@ interface Props {
   report: SoTronSavedReport | null;
   onClose: () => void;
   onSaved?: (updated: SoTronSavedReport) => void;
+  actor?: SoTronActor | null;
 }
 
 function uid() {
@@ -78,7 +80,8 @@ function trongLuongTheoSoLuong(row: ThanhPhamEditRow, soLuong: string) {
   return String(row.trong_luong ?? '');
 }
 
-export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
+export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Props) {
+  const sessionActor = actor !== undefined ? actor : readSoTronActor();
   const [activeTab, setActiveTab] = useState<'all' | 'p1' | 'p2'>('all');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -360,12 +363,12 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
 
   const canEditThanhPham = useMemo(() => {
     if (!report) return false;
-    return soTronScopesFor(readSoTronActor(), 'update', {
+    return soTronScopesFor(sessionActor, 'update', {
       ca: report.ca,
       khoa_ca: Boolean(report.khoa_ca),
       vat_tu_owner_id: String(report.vat_tu_owner_id || '')
     }).includes('thanh_pham');
-  }, [report]);
+  }, [report, sessionActor]);
 
   const updateThanhPhamRow = (index: number, patch: Partial<ThanhPhamEditRow>) => {
     setThanhPhamRows(prev =>
@@ -545,14 +548,13 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved }: Props) {
         ghi_chu: composeSuCo(suCoRows, suCoLuuY)
       };
 
-      const actor = readSoTronActor();
-      const scopes = soTronScopesFor(actor, 'update', {
+      const scopes = soTronScopesFor(sessionActor, 'update', {
         ca: report.ca,
         khoa_ca: Boolean(report.khoa_ca),
         vat_tu_owner_id: String(report.vat_tu_owner_id || '')
       });
       if (scopes.length === 0) {
-        throw new Error(actor ? 'Bạn không được sửa phiếu giao ca này.' : 'Đăng nhập lại để lưu phiếu giao ca.');
+        throw new Error(sessionActor ? 'Bạn không được sửa phiếu giao ca này.' : 'Đăng nhập lại để lưu phiếu giao ca.');
       }
       const res = await fetch(`/api/so-tron/${encodeURIComponent(report.id)}`, {
         method: 'PUT',

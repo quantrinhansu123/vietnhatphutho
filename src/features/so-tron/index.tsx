@@ -18,7 +18,8 @@ import { isExternalStaffCode, resolveScheduleStaffName } from '../../utils/exter
 import { computeSoTronSummary, normalizeMang, SO_TRON_CHI_TIEU_MAU } from './summary';
 import { PhieuGiaoCaModal } from './PhieuGiaoCaModal';
 import { assertSoTron, canDeleteSoTron, canSeeSoTronThanhPham, type SoTronSlipGate } from './soTronPhanQuyen';
-import { readSoTronActor, soTronAuthHeaders, soTronScopesFor } from './soTronSession';
+import type { AuthUser } from '../../app/authUser';
+import { actorForSoTron, soTronAuthHeaders, soTronScopesFor } from './soTronSession';
 import { SoTronDatePicker, formatNgayVN } from './SoTronDatePicker';
 import { printPhieuGiaoCaSlip } from './printPhieuGiaoCa';
 import { normalizeProductionOrders, type ProductionOrderRow } from '../ke-hoach-san-xuat';
@@ -864,12 +865,14 @@ export function SoTronPanel({
   onBack,
   onOpenList,
   editReport,
-  onEditConsumed
+  onEditConsumed,
+  currentUser
 }: {
   onBack: () => void;
   onOpenList: () => void;
   editReport?: SoTronSavedReport | null;
   onEditConsumed?: () => void;
+  currentUser?: AuthUser | null;
 }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -937,7 +940,7 @@ export function SoTronPanel({
   const [ghiChu, setGhiChu] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [slipGate, setSlipGate] = useState<SoTronSlipGate | null>(null);
-  const soTronActor = useMemo(() => readSoTronActor(), []);
+  const soTronActor = useMemo(() => actorForSoTron(currentUser), [currentUser]);
   const soTronAccess = useMemo(() => {
     const gate: SoTronSlipGate = editingId
       ? slipGate ?? { ca: selectedCa, khoa_ca: false, vat_tu_owner_id: '' }
@@ -4946,6 +4949,7 @@ export function SoTronPanel({
         <PhieuGiaoCaModal
           open={!!previewPhieuGiaoCaReport}
           report={previewPhieuGiaoCaReport}
+          actor={soTronActor}
           onClose={() => setPreviewPhieuGiaoCaReport(null)}
           onSaved={updated => {
             setPreviewPhieuGiaoCaReport(null);
@@ -4962,11 +4966,13 @@ export default SoTronPanel;
 export function SoTronListView({
   onBack,
   onCreate,
-  onEdit
+  onEdit,
+  currentUser
 }: {
   onBack: () => void;
   onCreate: () => void;
   onEdit: (report: SoTronSavedReport) => void;
+  currentUser?: AuthUser | null;
 }) {
   const [reports, setReports] = useState<SoTronSavedReport[]>([]);
   const [selectedPhieuGiaoCa, setSelectedPhieuGiaoCa] = useState<SoTronSavedReport | null>(null);
@@ -4977,7 +4983,8 @@ export function SoTronListView({
   const [filterDate, setFilterDate] = useState('');
   const [filterMachine, setFilterMachine] = useState('');
   const [filterCa, setFilterCa] = useState('');
-  const allowDelete = useMemo(() => canDeleteSoTron(readSoTronActor()?.roles), []);
+  const soTronActor = useMemo(() => actorForSoTron(currentUser), [currentUser]);
+  const allowDelete = useMemo(() => canDeleteSoTron(soTronActor?.roles), [soTronActor]);
 
   const load = async () => {
     setIsLoading(true);
@@ -5201,6 +5208,7 @@ export function SoTronListView({
         <PhieuGiaoCaModal
           open={!!selectedPhieuGiaoCa}
           report={selectedPhieuGiaoCa}
+          actor={soTronActor}
           onClose={() => setSelectedPhieuGiaoCa(null)}
           onSaved={updated => {
             setReports(prev => prev.map(r => (r.id === updated.id ? updated : r)));
