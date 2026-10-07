@@ -748,7 +748,8 @@ export function VnCalendarPicker({
   alignRight,
   compact = false,
   openUpward = false,
-  disabled = false
+  disabled = false,
+  triggerClassName = ''
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -757,6 +758,8 @@ export function VnCalendarPicker({
   compact?: boolean;
   openUpward?: boolean;
   disabled?: boolean;
+  /** Class thêm vào nút trigger (vd `min-h-10` để cao bằng ô đa chọn). */
+  triggerClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const parsed = parseDateStr(value);
@@ -947,7 +950,7 @@ export function VnCalendarPicker({
                 disabled
                   ? 'border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed'
                   : 'border-slate-300 bg-white text-slate-800 hover:border-blue-400'
-              }`
+              } ${triggerClassName}`
         }
       >
         <CalendarDays className={compact ? 'h-3.5 w-3.5 shrink-0 text-[#ef1b2d]' : 'h-4 w-4 shrink-0 text-slate-400'} />

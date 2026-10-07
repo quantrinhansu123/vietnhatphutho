@@ -296,11 +296,11 @@ export function TongHopListPanel({
         <div className="grid items-end gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
           <label className="block min-w-0 space-y-1">
             <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Từ ngày</span>
-            <VnCalendarPicker value={from} onChange={setFrom} />
+            <VnCalendarPicker value={from} onChange={setFrom} triggerClassName="min-h-10" />
           </label>
           <label className="block min-w-0 space-y-1">
             <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Đến ngày</span>
-            <VnCalendarPicker value={to} onChange={setTo} />
+            <VnCalendarPicker value={to} onChange={setTo} triggerClassName="min-h-10" />
           </label>
           <div className="block min-w-0 space-y-1">
             <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Máy (chọn nhiều)</span>
