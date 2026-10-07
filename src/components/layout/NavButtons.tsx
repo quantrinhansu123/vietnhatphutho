@@ -89,6 +89,8 @@ export const BACK_TAB_MAP: Record<string, string> = {
   'warehouse-slip': 'factory-kho',
   'warehouse-history': 'factory-kho',
   'lenh-cat-le': 'factory-kho',
+  'bao-cao-don-cat-le': 'factory-kho',
+  'theo-doi-cat-le': 'factory-kho',
   'chuyen-kho': 'factory-kho',
   'phieu-nhap-xuat-tong-hop': 'factory-kho',
   'phieu-nhap-xuat-tong-hop-list': 'factory-kho',

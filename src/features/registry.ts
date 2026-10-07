@@ -52,6 +52,8 @@ export type TableId =
   | 'chi_phi_dien'
   | 'chi_phi_bao_duong'
   | 'lenh_cat_le'
+  | 'bao_cao_don_cat_le'
+  | 'theo_doi_cat_le'
   | 'phieu_chuyen_kho'
   | 'phieu_nhap_xuat_tong_hop'
   | 'tong_hop_ncc'
@@ -668,6 +670,28 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     appLines: 'src/features/lenh-cat-le/index.tsx',
     components: ['src/features/lenh-cat-le/index.tsx'],
     utils: ['src/features/lenh-cat-le/logic.ts', 'src/utils/productProductionName.ts']
+  },
+  bao_cao_don_cat_le: {
+    table: 'bao_cao_don_cat_le',
+    label: 'Báo cáo đơn cắt lẻ (dòng SP: ma_amis, ma_amis_cu, ten_san_pham, ten_san_xuat, chi_tiet)',
+    sql: ['supabase-bao-cao-don-cat-le.sql'],
+    apiPrefix: '/api/bao-cao-don-cat-le',
+    serverLines: 'GET/POST /api/bao-cao-don-cat-le + PUT/DELETE /:id (sau lenh-cat-le)',
+    appTab: 'bao-cao-don-cat-le',
+    appLines: 'src/features/bao-cao-don-cat-le/index.tsx',
+    components: ['src/features/bao-cao-don-cat-le/index.tsx'],
+    utils: ['src/features/lenh-cat-le/logic.ts']
+  },
+  theo_doi_cat_le: {
+    table: 'bao_cao_don_cat_le',
+    label: 'Theo dõi cắt lẻ (gộp mã AMIS cũ; nhập/xuất khớp mã + tên SP + tên SX)',
+    sql: ['supabase-bao-cao-don-cat-le.sql', 'supabase-phieu-nhap-kho.sql', 'supabase-phieu-xuat-kho.sql'],
+    apiPrefix: '/api/theo-doi-cat-le',
+    serverLines: 'GET /api/theo-doi-cat-le (sau bao-cao-don-cat-le)',
+    appTab: 'theo-doi-cat-le',
+    appLines: 'src/features/theo-doi-cat-le/index.tsx',
+    components: ['src/features/theo-doi-cat-le/index.tsx'],
+    utils: []
   },
   phieu_nhap_xuat_tong_hop: {
     table: 'phieu_nhap_xuat_tong_hop',

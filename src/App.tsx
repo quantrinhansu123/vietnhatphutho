@@ -70,6 +70,8 @@ import { MachinesPanel } from './features/danh-sach-may';
 import { MaterialsCatalogPage } from './features/kho-nvl';
 import { WarehouseSlipPanel, WarehouseHistoryPanel } from './features/phieu-xuat-nhap-kho';
 import { LenCatLePanel } from './features/lenh-cat-le';
+import { BaoCaoDonCatLePanel } from './features/bao-cao-don-cat-le';
+import { TheoDoiCatLePanel } from './features/theo-doi-cat-le';
 import { ChuyenKhoPanel } from './features/chuyen-kho';
 import { TongHopListPanel, TongHopPanel } from './features/xuat-nhap-tong-hop';
 import { TongHopNccPanel } from './features/tong-hop-ncc';
@@ -1699,6 +1701,26 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <LenCatLePanel onBack={() => goBack('factory-kho')} />
+              </motion.div>
+            ) : activeTab === 'bao-cao-don-cat-le' ? (
+              <motion.div
+                key="bao-cao-don-cat-le"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <BaoCaoDonCatLePanel onBack={() => goBack('factory-kho')} />
+              </motion.div>
+            ) : activeTab === 'theo-doi-cat-le' ? (
+              <motion.div
+                key="theo-doi-cat-le"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <TheoDoiCatLePanel onBack={() => goBack('factory-kho')} />
               </motion.div>
             ) : activeTab === 'chuyen-kho' ? (
               <motion.div

@@ -142,6 +142,9 @@ const SUPABASE_NHAP_KHO_TABLE = process.env.SUPABASE_NHAP_KHO_TABLE || 'nhap_kho
 const NHAP_KHO_LOAI_THANH_PHAM = 'thanh_pham';
 /** Lệnh cắt lẻ: cuộn nguồn kho chính -> SP cắt kho TP + thừa nhập lại kho nguồn. */
 const SUPABASE_LENH_CAT_LE_TABLE = process.env.SUPABASE_LENH_CAT_LE_TABLE || 'lenh_cat_le';
+const SUPABASE_BAO_CAO_DON_CAT_LE_TABLE = process.env.SUPABASE_BAO_CAO_DON_CAT_LE_TABLE || 'bao_cao_don_cat_le';
+const SUPABASE_BAO_CAO_DON_CAT_LE_SAN_PHAM_TABLE =
+  process.env.SUPABASE_BAO_CAO_DON_CAT_LE_SAN_PHAM_TABLE || 'bao_cao_don_cat_le_san_pham';
 /** Cột thông số ghép tên cắt lẻ trên nhap_kho (nullable với DB chưa migrate). */
 const NHAP_KHO_CAT_LE_SPEC_COLUMNS = [
   'ten_goc',
@@ -17438,9 +17441,36 @@ async function loadKiemKhoLiveTongHopForDot(
             doLiMoi,
             kgCanThucTe: kgCan,
             pieces,
-            ghiChu: String(item.ghiChu ?? item.ghi_chu ?? '').trim()
+            ghiChu: String(item.ghiChu ?? item.ghi_chu ?? '').trim(),
+            tem: String(item.tem ?? '').trim(),
+            mauTem: String(item.mauTem ?? item.mau_tem ?? '').trim(),
+            danTem2Dau: item.danTem2Dau === true || item.dan_tem_2_dau === true || String(item.danTem2Dau ?? item.dan_tem_2_dau ?? '') === '1',
+            doLiDm: mother.doLiDm
           })
         );
+        const saved = lines[lines.length - 1];
+        const formText = (value: unknown) => String(value ?? '').trim();
+        const slCan = Number(String(item.slCan ?? item.sl_can ?? '').replace(',', '.'));
+        if (Number.isFinite(slCan) && slCan > 0) saved.sl_can = slCan;
+        const slBac = formText(item.slBac ?? item.sl_bac);
+        const slTrung = formText(item.slTrung ?? item.sl_trung);
+        const slNam = formText(item.slNam ?? item.sl_nam);
+        const dinhMuc = formText(item.dinhMucKg ?? item.dinh_muc_kg);
+        const tongKg = formText(item.tongKg ?? item.tong_kg);
+        const tem = formText(item.tem);
+        const mauTem = formText(item.mauTem ?? item.mau_tem);
+        const danTem =
+          item.danTem2Dau === true ||
+          item.dan_tem_2_dau === true ||
+          String(item.danTem2Dau ?? item.dan_tem_2_dau ?? '') === '1';
+        if (slBac) saved.sl_bac = slBac;
+        if (slTrung) saved.sl_trung = slTrung;
+        if (slNam) saved.sl_nam = slNam;
+        if (dinhMuc) saved.dinh_muc_kg = dinhMuc;
+        if (tongKg) saved.tong_kg = tongKg;
+        if (tem) saved.tem = tem;
+        if (mauTem) saved.mau_tem = mauTem;
+        if (danTem) saved.dan_tem_2_dau = true;
       } catch (err: any) {
         return { error: `Dòng ${index + 1} (${mother.maSp}): ${err?.message || 'Thông số cắt không hợp lệ.'}` };
       }
@@ -17653,6 +17683,8 @@ async function loadKiemKhoLiveTongHopForDot(
             cutLengthM: lCon !== null && (lMe === null || Math.abs(lCon - lMe) > 1e-9) ? lCon : undefined,
             doLi:
               liCon && liCon.toLocaleLowerCase('vi') !== liMe.toLocaleLowerCase('vi') ? liCon : undefined,
+            doLiDm: piece.do_li_dm || nguon.do_li_dm || undefined,
+            hangPhe: nguon.hang_phe || undefined,
             mang: nguon.mang || undefined
           });
           if (maMoi) {
@@ -18001,6 +18033,429 @@ async function loadKiemKhoLiveTongHopForDot(
       return res.json({ success: true, record: (data || [])[0] || null });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi hủy lệnh cắt.' });
+    }
+  });
+
+  /* ================= Báo cáo đơn cắt lẻ =================
+   * Phiếu ở bao_cao_don_cat_le. Sản phẩm ở bao_cao_don_cat_le_san_pham:
+   * ma_amis, ma_amis_cu, ten_san_pham, ten_san_xuat, chi_tiet.
+   * Mỗi sản phẩm nguồn / cắt / còn lại là một dòng. Không gom san_pham JSON.
+   */
+  const BAO_CAO_DON_CAT_LE_SELECT = 'id, ma_bao_cao, ngay, ma_lenh, nguoi_lap, ghi_chu, created_at, updated_at';
+  const BAO_CAO_DON_CAT_LE_DONG_SELECT =
+    'id, bao_cao_id, stt, ma_amis, ma_amis_cu, ten_san_pham, ten_san_xuat, chi_tiet';
+
+  function generateMaBaoCaoDonCatLe(): string {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `BCL-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  }
+
+  function baoCaoText(value: unknown): string | null {
+    const text = String(value ?? '').trim();
+    return text || null;
+  }
+
+  function baoCaoChiTiet(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  }
+
+  function buildBaoCaoDonCatLeDong(lines: unknown[]): { error: string } | { rows: Array<Record<string, unknown>> } {
+    const rows: Array<Record<string, unknown>> = [];
+    lines.forEach((raw, index) => {
+      const line = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+      const cut = line.cut && typeof line.cut === 'object' ? (line.cut as Record<string, unknown>) : {};
+      const rest = line.rest && typeof line.rest === 'object' ? (line.rest as Record<string, unknown>) : {};
+      const nhom = index + 1;
+      const sourceCode = baoCaoText(line.amisCode ?? line.ma_amis);
+      const pushPiece = (piece: Record<string, unknown>, loai: 'nguon' | 'cat' | 'con_lai', extra: Record<string, unknown>) => {
+        rows.push({
+          stt: rows.length + 1,
+          ma_amis: loai === 'nguon' ? sourceCode : baoCaoText(piece.maAmis ?? piece.ma_amis),
+          ma_amis_cu:
+            loai === 'nguon'
+              ? baoCaoText(line.maAmisCu ?? line.ma_amis_cu)
+              : baoCaoText(piece.maAmisCu ?? piece.ma_amis_cu) || sourceCode,
+          ten_san_pham: baoCaoText(loai === 'nguon' ? line.tenSanPham ?? line.ten_san_pham : piece.tenSanPham ?? piece.ten_san_pham),
+          ten_san_xuat: baoCaoText(loai === 'nguon' ? line.productionName ?? line.ten_san_xuat : piece.tenSanXuat ?? piece.ten_san_xuat),
+          chi_tiet: { loai, nhom, ...extra }
+        });
+      };
+      pushPiece({}, 'nguon', {
+        lenh_id: String(line.lenhId ?? line.lenh_id ?? '').trim(),
+        ma_lenh: String(line.maLenh ?? line.ma_lenh ?? '').trim(),
+        don_vi: String(line.unit ?? line.don_vi ?? '').trim(),
+        dai_m: String(line.dai ?? line.dai_m ?? '').trim(),
+        do_li_dm: String(line.doLiDm ?? line.do_li_dm ?? '').trim(),
+        sl: String(line.slTong ?? line.sl ?? '').trim(),
+        tong_kg: String(line.tongKg ?? line.tong_kg ?? '').trim(),
+        ghi_chu: String(line.ghiChu ?? line.ghi_chu ?? '').trim()
+      });
+      pushPiece(cut, 'cat', {
+        sl: String(cut.sl ?? '').trim(),
+        trong_luong: String(cut.trongLuong ?? cut.trong_luong ?? '').trim(),
+        m2: String(cut.m2 ?? '').trim()
+      });
+      pushPiece(rest, 'con_lai', {
+        sl: String(rest.sl ?? '').trim(),
+        trong_luong: String(rest.trongLuong ?? rest.trong_luong ?? '').trim(),
+        m2: String(rest.m2 ?? '').trim()
+      });
+    });
+    if (rows.length === 0) return { error: 'Báo cáo phải có ít nhất 1 sản phẩm.' };
+    return { rows };
+  }
+
+  function assembleBaoCaoDonCatLeLines(dong: Array<Record<string, unknown>>) {
+    const groups = new Map<number, { line?: Record<string, unknown>; cat?: Record<string, string>; rest?: Record<string, string> }>();
+    const emptyPiece = () => ({ maAmis: '', maAmisCu: '', tenSanPham: '', tenSanXuat: '', sl: '', trongLuong: '', m2: '' });
+    for (const row of dong) {
+      const chi = baoCaoChiTiet(row.chi_tiet);
+      const nhom = Number(chi.nhom) || Number(row.stt) || 0;
+      const bucket = groups.get(nhom) || {};
+      const loai = String(chi.loai || '');
+      if (loai === 'nguon') {
+        bucket.line = {
+          key: String(row.id || ''),
+          lenhId: String(chi.lenh_id || ''),
+          maLenh: String(chi.ma_lenh || ''),
+          amisCode: String(row.ma_amis || ''),
+          maAmisCu: String(row.ma_amis_cu || ''),
+          tenSanPham: String(row.ten_san_pham || ''),
+          productionName: String(row.ten_san_xuat || ''),
+          unit: String(chi.don_vi || ''),
+          dai: String(chi.dai_m || ''),
+          doLiDm: String(chi.do_li_dm || ''),
+          slTong: String(chi.sl || ''),
+          tongKg: String(chi.tong_kg || ''),
+          ghiChu: String(chi.ghi_chu || '')
+        };
+      } else if (loai === 'cat' || loai === 'con_lai') {
+        const piece = {
+          maAmis: String(row.ma_amis || ''),
+          maAmisCu: String(row.ma_amis_cu || ''),
+          tenSanPham: String(row.ten_san_pham || ''),
+          tenSanXuat: String(row.ten_san_xuat || ''),
+          sl: String(chi.sl || ''),
+          trongLuong: String(chi.trong_luong || ''),
+          m2: String(chi.m2 || '')
+        };
+        if (loai === 'cat') bucket.cat = piece;
+        else bucket.rest = piece;
+      }
+      groups.set(nhom, bucket);
+    }
+    return [...groups.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([, group]) => ({
+        ...(group.line || {
+          key: '',
+          lenhId: '',
+          maLenh: '',
+          amisCode: '',
+          maAmisCu: '',
+          tenSanPham: '',
+          productionName: '',
+          unit: '',
+          dai: '',
+          doLiDm: '',
+          slTong: '',
+          tongKg: '',
+          ghiChu: ''
+        }),
+        cut: group.cat || emptyPiece(),
+        rest: group.rest || emptyPiece()
+      }));
+  }
+
+  async function loadBaoCaoDonCatLeRecords() {
+    const { data, error } = await supabase!
+      .from(SUPABASE_BAO_CAO_DON_CAT_LE_TABLE)
+      .select(BAO_CAO_DON_CAT_LE_SELECT)
+      .order('ngay', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(500);
+    if (error) return { error, records: [] as Array<Record<string, unknown>> };
+    const headers = (data || []) as unknown as Array<Record<string, unknown>>;
+    const ids = headers.map(row => String(row.id || '')).filter(Boolean);
+    let dong: Array<Record<string, unknown>> = [];
+    if (ids.length > 0) {
+      const lines = await supabase!
+        .from(SUPABASE_BAO_CAO_DON_CAT_LE_SAN_PHAM_TABLE)
+        .select(BAO_CAO_DON_CAT_LE_DONG_SELECT)
+        .in('bao_cao_id', ids)
+        .order('stt', { ascending: true });
+      if (lines.error) return { error: lines.error, records: [] as Array<Record<string, unknown>> };
+      dong = (lines.data || []) as unknown as Array<Record<string, unknown>>;
+    }
+    const byReport = new Map<string, Array<Record<string, unknown>>>();
+    for (const row of dong) {
+      const key = String(row.bao_cao_id || '');
+      const list = byReport.get(key) || [];
+      list.push(row);
+      byReport.set(key, list);
+    }
+    return {
+      error: null,
+      records: headers.map(row => ({
+        ...row,
+        san_pham: assembleBaoCaoDonCatLeLines(byReport.get(String(row.id || '')) || [])
+      }))
+    };
+  }
+
+  async function replaceBaoCaoDonCatLeDong(baoCaoId: string, rows: Array<Record<string, unknown>>) {
+    const removed = await supabase!.from(SUPABASE_BAO_CAO_DON_CAT_LE_SAN_PHAM_TABLE).delete().eq('bao_cao_id', baoCaoId);
+    if (removed.error) return removed.error;
+    const inserted = await supabase!
+      .from(SUPABASE_BAO_CAO_DON_CAT_LE_SAN_PHAM_TABLE)
+      .insert(rows.map(row => ({ ...row, bao_cao_id: baoCaoId })))
+      .select(BAO_CAO_DON_CAT_LE_DONG_SELECT);
+    return inserted.error;
+  }
+
+  function parseBaoCaoDonCatLeBody(source: any): { error: string } | { header: Record<string, unknown>; rows: Array<Record<string, unknown>> } {
+    const ngay = String(source?.ngay ?? '').trim().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ngay)) return { error: 'Ngày báo cáo không hợp lệ.' };
+    const lines = source?.sanPham ?? source?.san_pham;
+    if (!Array.isArray(lines) || lines.length === 0) return { error: 'Báo cáo phải có ít nhất 1 sản phẩm.' };
+    const built = buildBaoCaoDonCatLeDong(lines);
+    if ('error' in built) return built;
+    return {
+      header: {
+        ngay,
+        ma_lenh: baoCaoText(source?.maLenh ?? source?.ma_lenh),
+        nguoi_lap: baoCaoText(source?.nguoiLap ?? source?.nguoi_lap),
+        ghi_chu: baoCaoText(source?.ghiChu ?? source?.ghi_chu),
+        updated_at: new Date().toISOString()
+      },
+      rows: built.rows
+    };
+  }
+
+  function baoCaoMissingTableMessage(error: { message?: string } | null) {
+    return `Chưa có bảng báo cáo đơn cắt lẻ. Chạy file supabase-bao-cao-don-cat-le.sql. ${error?.message || ''}`.trim();
+  }
+
+  app.get('/api/bao-cao-don-cat-le', async (_req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    try {
+      const loaded = await loadBaoCaoDonCatLeRecords();
+      if (loaded.error) {
+        if (isMissingTableError(loaded.error)) {
+          return res.status(503).json({ error: baoCaoMissingTableMessage(loaded.error) });
+        }
+        return res.status(500).json({ error: `Không thể tải báo cáo đơn cắt lẻ. ${loaded.error.message}` });
+      }
+      return res.json({ records: loaded.records });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải báo cáo đơn cắt lẻ.' });
+    }
+  });
+
+  app.post('/api/bao-cao-don-cat-le', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    try {
+      const parsed = parseBaoCaoDonCatLeBody(req.body || {});
+      if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+      const { data, error } = await supabase
+        .from(SUPABASE_BAO_CAO_DON_CAT_LE_TABLE)
+        .insert({ ...parsed.header, ma_bao_cao: generateMaBaoCaoDonCatLe() })
+        .select(BAO_CAO_DON_CAT_LE_SELECT);
+      if (error) {
+        if (isMissingTableError(error)) return res.status(503).json({ error: baoCaoMissingTableMessage(error) });
+        return res.status(500).json({ error: `Không thể lưu báo cáo. ${error.message}` });
+      }
+      const header = ((data || [])[0] || null) as unknown as Record<string, unknown> | null;
+      if (!header?.id) return res.status(500).json({ error: 'Không nhận được mã báo cáo vừa lưu.' });
+      const lineError = await replaceBaoCaoDonCatLeDong(String(header.id), parsed.rows);
+      if (lineError) {
+        await supabase.from(SUPABASE_BAO_CAO_DON_CAT_LE_TABLE).delete().eq('id', header.id);
+        if (isMissingTableError(lineError)) return res.status(503).json({ error: baoCaoMissingTableMessage(lineError) });
+        return res.status(500).json({ error: `Không thể lưu sản phẩm báo cáo. ${lineError.message}` });
+      }
+      return res.json({ success: true, record: { ...header, san_pham: assembleBaoCaoDonCatLeLines(parsed.rows) } });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi lưu báo cáo đơn cắt lẻ.' });
+    }
+  });
+
+  app.put('/api/bao-cao-don-cat-le/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    try {
+      const id = String(req.params.id || '').trim();
+      const parsed = parseBaoCaoDonCatLeBody(req.body || {});
+      if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+      const { data, error } = await supabase
+        .from(SUPABASE_BAO_CAO_DON_CAT_LE_TABLE)
+        .update(parsed.header)
+        .eq('id', id)
+        .select(BAO_CAO_DON_CAT_LE_SELECT);
+      if (error) return res.status(500).json({ error: `Không thể sửa báo cáo. ${error.message}` });
+      const header = ((data || [])[0] || null) as unknown as Record<string, unknown> | null;
+      if (!header) return res.status(404).json({ error: 'Không tìm thấy báo cáo.' });
+      const lineError = await replaceBaoCaoDonCatLeDong(id, parsed.rows);
+      if (lineError) return res.status(500).json({ error: `Không thể lưu sản phẩm báo cáo. ${lineError.message}` });
+      return res.json({ success: true, record: { ...header, san_pham: assembleBaoCaoDonCatLeLines(parsed.rows) } });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi sửa báo cáo đơn cắt lẻ.' });
+    }
+  });
+
+  app.delete('/api/bao-cao-don-cat-le/:id', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    try {
+      const id = String(req.params.id || '').trim();
+      const { error } = await supabase.from(SUPABASE_BAO_CAO_DON_CAT_LE_TABLE).delete().eq('id', id);
+      if (error) return res.status(500).json({ error: `Không thể xóa báo cáo. ${error.message}` });
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa báo cáo đơn cắt lẻ.' });
+    }
+  });
+
+  /* ================= Theo dõi cắt lẻ =================
+   * Gộp sản phẩm báo cáo theo mã AMIS cũ (không có mã cũ thì dùng mã AMIS).
+   * Nhập / xuất chỉ lấy dòng phieu_nhap_kho, phieu_xuat_kho trùng
+   * mã AMIS + tên sản phẩm + tên sản xuất với dòng báo cáo.
+   */
+  function theoDoiCatLeKey(value: unknown): string {
+    return String(value ?? '').trim().toLocaleLowerCase('vi');
+  }
+
+  function theoDoiCatLeSlipIdentity(row: Record<string, unknown>) {
+    const maSp = String(row.ma_sp ?? '').trim();
+    const maNpl = String(row.ma_npl ?? '').trim();
+    const tenSp = String(row.ten_sp ?? '').trim();
+    const tenNpl = String(row.ten_npl ?? '').trim();
+    return {
+      code: maSp || maNpl,
+      tenSanPham: maSp ? tenSp : tenNpl || tenSp,
+      tenSanXuat: String(row.ten_nvl_sx ?? row.ten_san_xuat ?? '').trim()
+    };
+  }
+
+  function theoDoiCatLeSame(left: string, right: string): boolean {
+    const a = theoDoiCatLeKey(left);
+    return Boolean(a) && a === theoDoiCatLeKey(right);
+  }
+
+  /** Phiếu thành phẩm chỉ có một tên (ten_sp). Phiếu NVL có thêm ten_nvl_sx. */
+  function theoDoiCatLeSlipMatches(
+    slip: { code: string; tenSanPham: string; tenSanXuat: string },
+    product: { ma_amis: string; ten_san_pham: string; ten_san_xuat: string }
+  ): boolean {
+    if (!theoDoiCatLeSame(slip.code, product.ma_amis)) return false;
+    const name = String(product.ten_san_pham || '').trim();
+    const prod = String(product.ten_san_xuat || '').trim();
+    if (slip.tenSanXuat) {
+      const nameOk = !name || theoDoiCatLeSame(slip.tenSanPham, name);
+      const prodOk = !prod || theoDoiCatLeSame(slip.tenSanXuat, prod);
+      return nameOk && prodOk;
+    }
+    if (prod && name && theoDoiCatLeKey(prod) !== theoDoiCatLeKey(name)) {
+      return theoDoiCatLeSame(slip.tenSanPham, prod) || theoDoiCatLeSame(slip.tenSanPham, name);
+    }
+    return theoDoiCatLeSame(slip.tenSanPham, prod || name);
+  }
+
+  async function fetchTheoDoiCatLeTable(table: string, columns: string) {
+    const pageSize = 1000;
+    const rows: Array<Record<string, unknown>> = [];
+    for (let from = 0; from < 20000; from += pageSize) {
+      const { data, error } = await supabase!.from(table).select(columns).range(from, from + pageSize - 1);
+      if (error) return { error, rows };
+      const batch = (data || []) as unknown as Array<Record<string, unknown>>;
+      rows.push(...batch);
+      if (batch.length < pageSize) break;
+    }
+    return { error: null, rows };
+  }
+
+  app.get('/api/theo-doi-cat-le', async (_req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    try {
+      const productsResult = await fetchTheoDoiCatLeTable(
+        SUPABASE_BAO_CAO_DON_CAT_LE_SAN_PHAM_TABLE,
+        'ma_amis, ma_amis_cu, ten_san_pham, ten_san_xuat, chi_tiet'
+      );
+      if (productsResult.error) {
+        if (isMissingTableError(productsResult.error)) {
+          return res.status(503).json({ error: 'Chưa có bảng bao_cao_don_cat_le_san_pham. Chạy file supabase-bao-cao-don-cat-le.sql.' });
+        }
+        return res.status(500).json({ error: `Không thể tải sản phẩm cắt lẻ. ${productsResult.error.message}` });
+      }
+      const slipColumns = 'ma_sp, ten_sp, ma_npl, ten_npl, ten_nvl_sx, don_vi, so_luong, trong_luong_kg, thanh_tien, treo';
+      const [nhapResult, xuatResult] = await Promise.all([
+        fetchTheoDoiCatLeTable(SUPABASE_WAREHOUSE_NHAP_TABLE, slipColumns),
+        fetchTheoDoiCatLeTable(SUPABASE_WAREHOUSE_XUAT_TABLE, slipColumns)
+      ]);
+      if (nhapResult.error) return res.status(500).json({ error: `Không thể tải phiếu nhập. ${nhapResult.error.message}` });
+      if (xuatResult.error) return res.status(500).json({ error: `Không thể tải phiếu xuất. ${xuatResult.error.message}` });
+
+      type ProductHit = { ma_amis: string; ten_san_pham: string; ten_san_xuat: string; don_vi: string; group: string };
+      const products: ProductHit[] = [];
+      for (const row of productsResult.rows) {
+        const maAmis = String(row.ma_amis ?? '').trim();
+        const maCu = String(row.ma_amis_cu ?? '').trim();
+        if (!maAmis && !maCu) continue;
+        const chi = row.chi_tiet && typeof row.chi_tiet === 'object' ? (row.chi_tiet as Record<string, unknown>) : {};
+        products.push({
+          ma_amis: maAmis,
+          ten_san_pham: String(row.ten_san_pham ?? '').trim(),
+          ten_san_xuat: String(row.ten_san_xuat ?? '').trim(),
+          don_vi: String(chi.don_vi ?? '').trim(),
+          group: maCu || maAmis
+        });
+      }
+
+      type Bucket = { maHang: string; donVi: string; nhap: number; xuat: number; trongLuong: number; thanhTien: number };
+      const groups = new Map<string, Bucket>();
+      const groupOf = (product: ProductHit) => {
+        const key = theoDoiCatLeKey(product.group);
+        let bucket = groups.get(key);
+        if (!bucket) {
+          bucket = { maHang: product.group, donVi: product.don_vi, nhap: 0, xuat: 0, trongLuong: 0, thanhTien: 0 };
+          groups.set(key, bucket);
+        } else if (!bucket.donVi && product.don_vi) bucket.donVi = product.don_vi;
+        return bucket;
+      };
+      for (const product of products) groupOf(product);
+
+      const addSlip = (rows: Array<Record<string, unknown>>, field: 'nhap' | 'xuat') => {
+        for (const row of rows) {
+          if (row.treo === true) continue;
+          const slip = theoDoiCatLeSlipIdentity(row);
+          const product = products.find(item => item.ma_amis && theoDoiCatLeSlipMatches(slip, item));
+          if (!product) continue;
+          const qty = Number(row.so_luong) || 0;
+          const kg = Number(row.trong_luong_kg) || 0;
+          const money = Number(row.thanh_tien) || 0;
+          const sign = field === 'nhap' ? 1 : -1;
+          const bucket = groupOf(product);
+          bucket[field] = Math.round((bucket[field] + qty) * 1000) / 1000;
+          bucket.trongLuong = Math.round((bucket.trongLuong + sign * kg) * 1000) / 1000;
+          bucket.thanhTien = Math.round((bucket.thanhTien + sign * money) * 1000) / 1000;
+          if (!bucket.donVi) bucket.donVi = String(row.don_vi ?? '').trim();
+        }
+      };
+      addSlip(nhapResult.rows, 'nhap');
+      addSlip(xuatResult.rows, 'xuat');
+
+      const records = [...groups.values()]
+        .map(row => ({
+          maHang: row.maHang,
+          donVi: row.donVi || 'Tấm',
+          ton: Math.round((row.nhap - row.xuat) * 1000) / 1000,
+          nhap: row.nhap,
+          xuat: row.xuat,
+          trongLuong: row.trongLuong,
+          thanhTien: row.thanhTien
+        }))
+        .sort((a, b) => a.maHang.localeCompare(b.maHang, 'vi'));
+      return res.json({ records });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải theo dõi cắt lẻ.' });
     }
   });
 

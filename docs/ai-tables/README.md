@@ -67,6 +67,8 @@ Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...
 | *(chưa có bảng)* | `/bao-cao-tuan` (card Báo cáo tuần trong `/phieu-bao-cao`) | [bao_cao_tuan.md](./bao_cao_tuan.md) |
 | `bao_cao_thang` | `/bao-cao-thang` (card Báo cáo tháng trong `/phieu-bao-cao`) + `/danh-sach-bao-cao-thang` | [bao_cao_thang.md](./bao_cao_thang.md) |
 | `lenh_cat_le` | `/lenh-cat-le` (card **Lệnh cắt lẻ** trong `/nha-may/kho`) | [lenh_cat_le.md](./lenh_cat_le.md) |
+| `bao_cao_don_cat_le` | `/bao-cao-don-cat-le` (card trong Kho và Sản xuất) | [bao_cao_don_cat_le.md](./bao_cao_don_cat_le.md) |
+| `theo_doi_cat_le` | `/theo-doi-cat-le` (card trong Kho và Sản xuất) | [theo_doi_cat_le.md](./theo_doi_cat_le.md) |
 | `phieu_chuyen_kho` | `/chuyen-kho` (card **Chuyển kho** trong `/nha-may/kho`) | [phieu_chuyen_kho.md](./phieu_chuyen_kho.md) |
 | `phieu_nhap_xuat_tong_hop` | `/phieu-nhap-xuat-tong-hop` và `/danh-sach-phieu-nhap-xuat-tong-hop` | [xuat_nhap_tong_hop.md](./xuat_nhap_tong_hop.md) |
 | *(tổng hợp từ `phieu_nhap_xuat_tong_hop` + `nha_cung_cap`)* | `/tong-hop-ncc` | [tong_hop_ncc.md](./tong_hop_ncc.md) |

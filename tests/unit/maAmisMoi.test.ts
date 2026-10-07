@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMaAmisMoi, mvByMauTem } from '../../src/utils/productProductionName';
+import { abbreviateHangPhe, buildMaAmisMoi, mvByMauTem } from '../../src/utils/productProductionName';
 import { inferKhoChinhTuNhom, variantCodeForCatPiece } from '../../src/features/lenh-cat-le/logic';
 
 describe('mã AMIS mới — buildMaAmisMoi', () => {
@@ -16,7 +16,7 @@ describe('mã AMIS mới — buildMaAmisMoi', () => {
         mauTem: 'Vàng',
         danTem2Dau: true
       }),
-      'STD06-0.8li*1.22m-3m (đm 0.75 li) màng ECO - T1.2-MVKH-2DAU'
+      'STD06-0.75li*1.22m-3m-ECO - TEM1.2li-MVKH-2DAU'
     );
   });
 
@@ -39,6 +39,17 @@ describe('mã AMIS mới — buildMaAmisMoi', () => {
         cutLengthM: 6
       }),
       'ECR02-5li-6m-NP'
+    );
+  });
+
+  it('độ li ĐM thay token li trong mã, không thêm DM', () => {
+    assert.equal(
+      buildMaAmisMoi({
+        baseMaAmis: 'STD06-6li',
+        nhomVthh: 'TP; PX Đặc',
+        doLiDm: '6.7'
+      }),
+      'STD06-6.7li'
     );
   });
 
@@ -74,6 +85,49 @@ describe('mã AMIS mới — buildMaAmisMoi', () => {
     assert.equal(inferKhoChinhTuNhom('Khác'), '');
   });
 
+  it('tên không có tem thì mã mới không gắn TEM', () => {
+    assert.equal(
+      buildMaAmisMoi({
+        baseMaAmis: 'STD02-6.0li*1.56m',
+        nhomVthh: 'TP; PX Đặc',
+        cutLengthM: 10,
+        mang: 'STD'
+      }),
+      'STD02-6.0li*1.56m-10m-STD'
+    );
+  });
+
+  it('tem + màu + dán 2 đầu thành TEM..-MV..-2DAU', () => {
+    assert.equal(
+      buildMaAmisMoi({
+        baseMaAmis: 'STD02-6.0li*1.56m',
+        nhomVthh: 'TP; PX Đặc',
+        cutLengthM: 10,
+        mang: 'STD',
+        tem: '1.5li',
+        mauTem: 'Vàng',
+        danTem2Dau: true
+      }),
+      'STD02-6.0li*1.56m-10m-STD - TEM1.5li-MVKH-2DAU'
+    );
+  });
+
+  it('100% phế trong tên viết tắt 100PHE trên mã mới', () => {
+    assert.equal(
+      buildMaAmisMoi({
+        baseMaAmis: 'STD02-6.0li*1.56m',
+        nhomVthh: 'TP; PX Đặc',
+        cutLengthM: 10,
+        doLiDm: '5.7',
+        mang: 'STD',
+        hangPhe: 'hàng chạy 100% phế'
+      }),
+      'STD02-5.7li*1.56m-10m-100PHE-STD'
+    );
+    assert.equal(abbreviateHangPhe('hàng nguyên phế'), 'NGPHE');
+    assert.equal(abbreviateHangPhe('(GIÁ RẺ)'), 'NP2');
+  });
+
   it('mã biến thể cho SP cắt sau cắt', () => {
     assert.equal(
       variantCodeForCatPiece({
@@ -85,7 +139,7 @@ describe('mã AMIS mới — buildMaAmisMoi', () => {
         pieceLi: '0.8li',
         mang: 'ECO'
       }),
-      'STD06-0.8li*1.22m-3m màng ECO'
+      'STD06-0.8li*1.22m-3m-ECO'
     );
     assert.equal(
       variantCodeForCatPiece({

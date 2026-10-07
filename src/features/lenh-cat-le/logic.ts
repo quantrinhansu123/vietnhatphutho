@@ -2,8 +2,8 @@
  * Lệnh cắt lẻ — logic thuần (không fetch, không JSX).
  * Quy ước đã chốt với nghiệp vụ:
  *  - Tên hiển thị `... 8li ...` là `do_li` — GIỮ NGUYÊN khi cắt.
- *  - Nhát cắt đổi `do_dai_m` (m dài) và/hoặc khổ. Đổi độ li thì `do_day_m` của SP cắt = số li mới (m).
- *    Được hạ một chiều hoặc cả khổ lẫn m dài. Độ li đổi riêng.
+ *  - Nhát cắt đổi `do_dai_m` (m dài) và/hoặc khổ. Hạ độ li đổi token độ li và kg, khổ mét giữ nguyên.
+ *    Được hạ một chiều, hạ cả khổ lẫn m dài, hoặc hạ độ li kèm mét.
  *  - Gốc tính trọng lượng là 3 hệ số 1 SP của dòng nguồn trong `nhap_kho`
  *    (kg1 / a1 / l1): kg2 = kg1 × (w2×l2)/(w1×l1), với w1 = a1/l1.
  *  - Phần thừa (mọi chiều dài, mọi máy) nhập lại Kho cắt lẻ, không nhập Kho tái chế.
@@ -15,7 +15,8 @@ import {
   buildMaAmisMoi,
   calculateDoLiDm,
   composeProductionDisplayName,
-  isValidDoLiToken
+  isValidDoLiToken,
+  normalizeDoLiDm
 } from '../../utils/productProductionName';
 import { parseLocalizedNumber } from '../../utils';
 
@@ -78,6 +79,8 @@ export interface CatLeInput {
   kgCanThucTe?: number | null;
   /** Độ li SP đích. Trống = giữ độ li nguồn. */
   doLiMoi?: string | null;
+  /** Độ li ĐM người dùng nhập, dạng `(đm n li)`. Có thì giữ, không tính lại từ độ li mới. */
+  doLiDmGiu?: string | null;
   /** Số tấm TP cắt ra trên mỗi tấm nguồn (mặc định 1). Vd 1 tấm nguồn 20m = 2 tấm TP 10m. */
   pieces?: number | null;
 }
@@ -159,6 +162,16 @@ export interface CatLeSanPhamLine {
   ghi_chu: string;
   so_con_mot_me: number;
   so_luong_cat_1: number;
+  /** SL thành phẩm người nhập (có thể nhỏ hơn số tấm cắt ra từ cả tấm nguồn). */
+  sl_can?: number;
+  sl_bac?: string;
+  sl_trung?: string;
+  sl_nam?: string;
+  dinh_muc_kg?: string;
+  tong_kg?: string;
+  tem?: string;
+  mau_tem?: string;
+  dan_tem_2_dau?: boolean;
 }
 
 function round3(value: number): number {
@@ -188,6 +201,21 @@ export function formatMeterLabel(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return '';
   const n = Number.isInteger(value) ? String(value) : String(Math.round(value * 1000) / 1000);
   return `${n}m`;
+}
+
+/** Thay lần xuất hiện cuối của `6m` / `6M` trong tên gốc bằng nhãn mét mới. */
+function replaceLastLengthMeter(name: string, fromMeters: number, toLabel: string): string {
+  const source = String(name || '');
+  const label = String(toLabel || '').trim();
+  if (!source || !label || !(fromMeters > 0)) return '';
+  const num = formatPlainNumber(fromMeters).replace('.', '[,.]');
+  if (!num) return '';
+  const re = new RegExp(`(^|[^\\d])(${num})\\s*m\\b`, 'giu');
+  const matches = [...source.matchAll(re)];
+  if (matches.length === 0) return '';
+  const last = matches[matches.length - 1];
+  const at = (last.index ?? 0) + last[1].length;
+  return source.slice(0, at) + label + source.slice(at + last[0].length - last[1].length);
 }
 
 function formatPlainNumber(value: number): string {
@@ -346,11 +374,11 @@ export function computeCatLe(
   const wThua = kieuCat === 'cat_tam' ? w1 : kieuCat === 'xe_kho' ? Math.max(0, w1 - w2 * pieces) : w1 - w2;
   const lThua = kieuCat === 'cat_tam' ? Math.max(0, l1 - l2 * pieces) : l1;
   const nhomVthh = String(options.nhomVthh ?? '').trim();
-  const doLiDmCon = doiDoLi ? calculateDoLiDm(doLiCon, nhomVthh) || mother.doLiDm : mother.doLiDm;
-  // Đổi độ li (độ dày): do_day_m của SP cắt = số li mới, dạng mét (1 → 1m).
-  // Không đổi độ li: do_day_m theo khổ (xẻ khổ hoặc giữ khổ nguồn).
-  const liDay = doiDoLi ? parseLiNumber(doLiCon) : null;
-  const doDayMCon = liDay ? formatMeterLabel(liDay) : formatMeterLabel(w2);
+  const keptDm = String(input.doLiDmGiu || '').trim();
+  const doLiDmCon = keptDm || (doiDoLi ? calculateDoLiDm(doLiCon, nhomVthh) || mother.doLiDm : mother.doLiDm);
+  // Hạ độ li đổi token độ li và kg. Khổ (m) giữ nguyên nếu nguồn có khổ.
+  const widthLabeled = Boolean(String(mother.doDayM || '').trim());
+  const doDayMCon = widthLabeled ? formatMeterLabel(w2) : '';
   const doDaiMCon = formatMeterLabel(l2);
   const baseSpecs: CatLeSpecs = {
     tenGoc: mother.tenGoc,
@@ -368,18 +396,22 @@ export function computeCatLe(
     if (!base || !suffix || base.endsWith(suffix)) return base;
     return `${base} ${suffix}`;
   };
-  const tenSpCon = withMoTaTem(composeProductionDisplayName(
+  const composedCon = composeProductionDisplayName(
     { ...baseSpecs, doLi: doLiCon, doLiDm: doLiDmCon, doDayM: doDayMCon, doDaiM: doDaiMCon },
     nhomVthh
-  ));
+  );
+  // Sóng không có khổ mét: thay đúng token dài trong tên gốc (6M → 2m), không chèn khổ 1m giả.
+  const replacedCon = !widthLabeled && !doiDoLi ? replaceLastLengthMeter(mother.tenSp, l1, doDaiMCon) : '';
+  const tenSpCon = withMoTaTem(replacedCon || composedCon);
   const mDaiThua = kieuCat === 'xe_kho' || kieuCat === 'ca_hai' ? l1 : round3(Math.max(0, l1 - l2 * pieces));
   // Thừa quá vụn (cả 2 chiều ~0, hoặc chỉ đổi độ li) thì không sinh tên thừa.
   // Vừa khít (20m = 2x10m) thì aThua ~0 → không sinh thừa.
   const conThua = wThua > EPS && lThua > EPS && aThua > EPS;
-  const doDayMThua = conThua ? formatMeterLabel(wThua) : '';
+  const doDayMThua = conThua && widthLabeled ? formatMeterLabel(wThua) : '';
   const doDaiMThua = conThua ? formatMeterLabel(mDaiThua) : '';
+  const replacedThua = conThua && !widthLabeled ? replaceLastLengthMeter(mother.tenSp, l1, doDaiMThua) : '';
   const tenSpThua = conThua
-    ? withMoTaTem(composeProductionDisplayName(
+    ? withMoTaTem(replacedThua || composeProductionDisplayName(
         { ...baseSpecs, doDayM: doDayMThua, doDaiM: doDaiMThua },
         nhomVthh
       ))
@@ -438,6 +470,10 @@ export function buildCatLeSanPhamLine(args: {
   kgCanThucTe?: number | null;
   pieces?: number | null;
   ghiChu?: string | null;
+  tem?: string | null;
+  mauTem?: string | null;
+  danTem2Dau?: boolean | null;
+  doLiDm?: string | null;
 }): CatLeSanPhamLine {
   const { mother } = args;
   const computed = computeCatLe(
@@ -448,6 +484,7 @@ export function buildCatLeSanPhamLine(args: {
       qty: args.qty,
       kgCanThucTe: args.kgCanThucTe,
       doLiMoi: args.doLiMoi,
+      doLiDmGiu: normalizeDoLiDm(args.doLiDm || '', 'li') || null,
       pieces: args.pieces ?? 1
     },
     { nhomVthh: args.nhomVthh }
@@ -474,7 +511,12 @@ export function buildCatLeSanPhamLine(args: {
     pieceDaiM: computed.doDaiMCon,
     motherLi: mother.doLi,
     pieceLi: computed.doLiCon,
-    mang: mother.mang
+    mang: mother.mang,
+    hangPhe: mother.hangPhe,
+    doLiDm: args.doLiDm || mother.doLiDm,
+    tem: args.tem,
+    mauTem: args.mauTem,
+    danTem2Dau: args.danTem2Dau
   });
   const moiThua =
     cat2 != null
@@ -485,7 +527,9 @@ export function buildCatLeSanPhamLine(args: {
           pieceDaiM: computed.doDaiMThua,
           motherLi: mother.doLi,
           pieceLi: computed.doLiThua,
-          mang: mother.mang
+          mang: mother.mang,
+          hangPhe: mother.hangPhe,
+          doLiDm: mother.doLiDm
         })
       : '';
   return {
@@ -571,6 +615,12 @@ export function variantCodeForCatPiece(args: {
   motherLi?: string | null;
   pieceLi?: string | null;
   mang?: string | null;
+  hangPhe?: string | null;
+  doLiDm?: string | null;
+  tem?: string | null;
+  mauTem?: string | null;
+  /** `2DAU` trên mã = dán tem 2 đầu. */
+  danTem2Dau?: boolean | null;
 }): string {
   const base = String(args.baseMaAmis || '').trim();
   if (!base) return '';
@@ -585,10 +635,42 @@ export function variantCodeForCatPiece(args: {
     nhomVthh: args.nhomVthh,
     cutLengthM: cutDiffers ? lCon : undefined,
     doLi: liDiffers ? String(args.pieceLi || '') : undefined,
-    mang: args.mang || undefined
+    mang: args.mang || undefined,
+    hangPhe: args.hangPhe,
+    doLiDm: args.doLiDm,
+    tem: args.tem,
+    mauTem: args.mauTem,
+    danTem2Dau: args.danTem2Dau
   });
   const normalizedBase = buildMaAmisMoi({ baseMaAmis: base });
   return moi && moi !== normalizedBase ? moi : '';
+}
+
+function catLeFormFields(row: Record<string, unknown>): Pick<
+  CatLeSanPhamLine,
+  'sl_can' | 'sl_bac' | 'sl_trung' | 'sl_nam' | 'dinh_muc_kg' | 'tong_kg' | 'tem' | 'mau_tem' | 'dan_tem_2_dau'
+> {
+  const slCan = Number(row.sl_can ?? row.slCan);
+  const slBac = catLeText(row.sl_bac ?? row.slBac);
+  const slTrung = catLeText(row.sl_trung ?? row.slTrung);
+  const slNam = catLeText(row.sl_nam ?? row.slNam);
+  const dinhMuc = catLeText(row.dinh_muc_kg ?? row.dinhMucKg);
+  const tongKg = catLeText(row.tong_kg ?? row.tongKg);
+  const tem = catLeText(row.tem);
+  const mauTem = catLeText(row.mau_tem ?? row.mauTem);
+  const danRaw = row.dan_tem_2_dau ?? row.danTem2Dau;
+  const dan = danRaw === true || danRaw === 1 || danRaw === '1' || danRaw === 'true';
+  return {
+    ...(Number.isFinite(slCan) && slCan > 0 ? { sl_can: slCan } : {}),
+    ...(slBac ? { sl_bac: slBac } : {}),
+    ...(slTrung ? { sl_trung: slTrung } : {}),
+    ...(slNam ? { sl_nam: slNam } : {}),
+    ...(dinhMuc ? { dinh_muc_kg: dinhMuc } : {}),
+    ...(tongKg ? { tong_kg: tongKg } : {}),
+    ...(tem ? { tem } : {}),
+    ...(mauTem ? { mau_tem: mauTem } : {}),
+    ...(dan ? { dan_tem_2_dau: true } : {})
+  };
 }
 
 /** Đọc 1 dòng JSON, kể cả bản phẳng cũ (ten_sp_dich / ten_sp_con_lai). */
@@ -631,7 +713,8 @@ export function normalizeCatLeSanPhamLine(raw: unknown): CatLeSanPhamLine | null
       so_luong_cat_1:
         Number.isFinite(savedConQty) && savedConQty > 0
           ? savedConQty
-          : Math.round(qtyMe * pieces * 1000) / 1000
+          : Math.round(qtyMe * pieces * 1000) / 1000,
+      ...catLeFormFields(row)
     };
   }
   const maSp = catLeText(row.ma_sp_nguon);
@@ -691,7 +774,8 @@ export function normalizeCatLeSanPhamLine(raw: unknown): CatLeSanPhamLine | null
     so_luong_cat_1:
       Number.isFinite(savedFlatCon) && savedFlatCon > 0
         ? savedFlatCon
-        : Math.round(qtyFlat * piecesFlat * 1000) / 1000
+        : Math.round(qtyFlat * piecesFlat * 1000) / 1000,
+    ...catLeFormFields(row)
   };
 }
 

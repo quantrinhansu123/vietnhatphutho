@@ -1,4 +1,4 @@
-import { parsePercentInput } from '../../utils';
+import { formatNumber, parseLocalizedNumber, parsePercentInput } from '../../utils';
 
 /** Đơn cắt lẻ + miền nam: chuẩn hóa Định mức KG/tấm (làm tròn 2 số lẻ). Không hợp lệ / <= 0 = null. */
 export function parseSouthDinhMucKg(value: unknown): number | null {
@@ -54,8 +54,27 @@ export function southLengthScaledTotalKg(
   return Math.round(perMeter * length * qty * 100) / 100;
 }
 
-/** Nút + (thêm tương tự): số còn dấu chấm được đổi sang dấu phẩy. Số đã có phẩy giữ nguyên. */
+function orderDecimalFractionDigits(text: string): number {
+  const lastDot = text.lastIndexOf('.');
+  const lastComma = text.lastIndexOf(',');
+  let digits = 0;
+  if (lastDot >= 0 && lastComma >= 0) {
+    digits = (lastComma > lastDot ? text.slice(lastComma + 1) : text.slice(lastDot + 1)).length;
+  } else if (lastComma >= 0) {
+    digits = /^-?\d{1,3}(,\d{3})+$/.test(text) ? 0 : text.slice(lastComma + 1).length;
+  } else if ((text.match(/\./g) || []).length > 1) {
+    digits = 0;
+  } else if (lastDot >= 0) {
+    digits = text.slice(lastDot + 1).length;
+  }
+  return Math.min(digits, 6);
+}
+
+/** Số trên đơn hàng: phần nghìn `,`, thập phân `.` (5,7 -> 5.7; 1.250.000 -> 1,250,000). */
 export function orderDuplicateDecimalText(value: string): string {
-  if (!value.includes('.') || value.includes(',')) return value;
-  return value.replace(/\./g, ',');
+  const text = String(value ?? '').trim().replace(/\s/g, '');
+  if (!text) return '';
+  const parsed = parseLocalizedNumber(text);
+  if (!Number.isFinite(parsed)) return String(value ?? '');
+  return formatNumber(parsed, orderDecimalFractionDigits(text));
 }

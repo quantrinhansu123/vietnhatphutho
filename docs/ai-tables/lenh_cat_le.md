@@ -9,7 +9,7 @@
 ## Vai trò
 
 Một lệnh chọn **nhiều sản phẩm**. Cột lưu: `kho_nguon`, `kho_dich`, `kho_tai_che`, JSON `san_pham`, mã phiếu, người thực hiện/lập, ghi chú.
-Mỗi phần tử JSON: `san_pham_nguon`, `san_pham_cat_1` (nhập thành phẩm), `san_pham_cat_2` (phần còn lại), `di_tai_che`.
+Mỗi phần tử JSON: `san_pham_nguon`, `san_pham_cat_1` (nhập thành phẩm), `san_pham_cat_2` (phần còn lại), `di_tai_che`, cùng ô form `sl_can`, `sl_bac`, `sl_trung`, `sl_nam`, `dinh_muc_kg`, `tong_kg`, `tem`, `mau_tem`, `dan_tem_2_dau` để bấm Sửa đổ lại.
 Không có cột nguồn/cắt, `kho_tp`, hay `di_tai_che` trên bảng — `CREATE TABLE` trong `supabase-lenh-cat-le.sql` đã là schema cuối (chưa chạy trên Supabase, không có `ALTER`).
 
 **Tạo mới / Sửa** chỉ lưu lệnh trạng thái `moi` (chờ duyệt), không ghi kho.
