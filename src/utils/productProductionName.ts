@@ -623,22 +623,63 @@ export interface MaAmisMoiInput {
   cutLengthM?: number | string | null;
   /** Độ li hạ thật (vd `8li`) — thay token li trong mã gốc. */
   doLi?: string | null;
-  /** Định mức thực tế (vd `0.75`, `(đm 0.75 li)`) — thêm segment `(đm n li|kg)`. */
+  /** Định mức thực tế (vd `6.7`, `(đm 6.7 li)`) — thay token li trong mã (`6li` → `6.7li`). */
   doLiDm?: string | null;
-  /** Màng (vd `ECO`) — thêm `màng X`. Mã chuẩn không có màng. */
+  /** Màng (vd `ECO`, `STD`) — viết tắt nối `-ECO`, không ghi chữ "màng". */
   mang?: string | null;
-  /** Tem dán (vd `1.2li`) + màu tem + dán 2 đầu — thêm `- T..-MV..[-2DAU]`. */
+  /** Hàng phế trong tên (vd `hàng chạy 100% phế`) — viết tắt `100PHE`, `NGPHE`, `NSOFF`, `100NS`, `TC`, `NP2`. */
+  hangPhe?: string | null;
+  /** Tem dán (vd `1.5li`) + màu tem + dán 2 đầu — thêm `- TEM1.5li-MVKH-2DAU`. `2DAU` = dán tem 2 đầu. */
   tem?: string | null;
   mauTem?: string | null;
   danTem2Dau?: boolean | null;
 }
 
+/** Hàng phế trong tên → viết tắt trên mã. Không suy ngược từ token NP đã có trong mã gốc. */
+export function abbreviateHangPhe(value: string | null | undefined): string {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (/GIÁ\s*RẺ/iu.test(text)) return 'NP2';
+  if (/NS\s*Off/iu.test(text)) return 'NSOFF';
+  if (/100%\s*NS/iu.test(text)) return '100NS';
+  if (/nguyên\s*phế/iu.test(text)) return 'NGPHE';
+  if (/100%\s*phế/iu.test(text)) return '100PHE';
+  if (/tiêu\s*chuẩn/iu.test(text)) return 'TC';
+  return '';
+}
+
+/** `(đm 6.7 li)` / `6,7` → `6.7li` để thay token li trong mã. Định mức kg không đổi token li. */
+function doLiTokenFromDm(value: string): string {
+  const normalized = normalizeDoLiDm(value, 'li');
+  if (!normalized || /\bkg\b/iu.test(normalized)) return '';
+  const number = extractDoLiDmNumber(normalized);
+  return number ? normalizeDoLiToken(`${number}li`) : '';
+}
+
+function replaceLiToken(base: string, token: string): string {
+  if (!token) return base;
+  const liRe = /\d[\d.,]*\s*l?i\b/iu;
+  if (liRe.test(base)) return base.replace(liRe, token);
+  return `${base}-${token}`;
+}
+
+/** `1.5li` / `1,5` → `TEM1.5li`. */
+function amisTemToken(tem: string): string {
+  const compact = String(tem || '').replace(/\s+/g, '');
+  if (!compact) return '';
+  const match = compact.match(/^([\d.,]+)(?:li)?$/iu);
+  if (!match) return `TEM${compact}`;
+  return `TEM${match[1].replace(',', '.')}li`;
+}
+
 /**
  * Sinh Mã AMIS mới cho biến thể cắt lẻ / đơn miền nam từ mã chuẩn gốc.
- * Thứ tự cố định: `BASE[-mét cắt][ (đm...)][ -NP/NP2][ màng X][ - T..-MV..[-2DAU]]`.
+ * Độ li ĐM thay token li trong mã (`STD06-6li` + đm 6.7 → `STD06-6.7li`), không thêm `DM…`.
+ * Thứ tự còn lại: `BASE[-mét cắt][-NP/NP2][-100PHE][-màng][ - TEM..-MV..[-2DAU]]`.
+ * `2DAU` = dán tem 2 đầu. `100PHE` = 100% phế.
  * Mã gốc giữ nguyên để truy vết qua `ma_amis_cu`.
  * Vd: `STD06-0.8li*1.22m` + cắt 3m + đm 0.75 + ECO + tem 1.2li Vàng 2 đầu
- * → `STD06-0.8li*1.22m-3m (đm 0.75 li) màng ECO - T1.2-MVKH-2DAU`.
+ * → `STD06-0.75li*1.22m-3m-ECO - TEM1.2li-MVKH-2DAU`.
  */
 export function buildMaAmisMoi(input: MaAmisMoiInput): string {
   const raw = String(input.baseMaAmis || '').trim().replace(/\s+/g, ' ');
@@ -659,13 +700,9 @@ export function buildMaAmisMoi(input: MaAmisMoiInput): string {
 
   const group = classifyProductPxGroup(input.nhomVthh || '');
 
-  // Hạ li thật: thay token li đầu tiên trong mã (vd `10li` → `8li`).
-  const doLiNew = normalizeDoLiToken(input.doLi || '');
-  if (doLiNew) {
-    const liRe = /\d[\d.,]*\s*l?i\b/iu;
-    if (liRe.test(base)) base = base.replace(liRe, doLiNew);
-    else base = `${base}-${doLiNew}`;
-  }
+  // Độ li ĐM thay token li (`6li` → `6.7li`). Không có đm thì mới dùng độ li hạ thật.
+  const doLiNew = doLiTokenFromDm(input.doLiDm || '') || normalizeDoLiToken(input.doLi || '');
+  if (doLiNew) base = replaceLiToken(base, doLiNew);
 
   // Mét cắt: Rỗng thay mét dài đã có; Đặc/Sóng thêm `-Nm` (mã chuẩn không chứa mét).
   const cut = Number(String(input.cutLengthM ?? '').replace(',', '.'));
@@ -678,8 +715,9 @@ export function buildMaAmisMoi(input: MaAmisMoiInput): string {
     }
   }
 
-  const dm = normalizeDoLiDm(input.doLiDm, 'li');
-  const mang = String(input.mang || '').trim().toUpperCase();
+  const mang = String(input.mang || '').trim().toUpperCase().replace(/\s+/g, '');
+  const phe = abbreviateHangPhe(input.hangPhe);
+  const pheSuffix = phe && phe !== npSuffix.replace(/^-/, '') ? `-${phe}` : '';
 
   const temText = String(input.tem || '').trim();
   const mauText = String(input.mauTem || '').trim();
@@ -687,12 +725,12 @@ export function buildMaAmisMoi(input: MaAmisMoiInput): string {
   let temSuffix = '';
   if (temText || mauText || haiDau) {
     const mv = mauText ? mvByMauTem(mauText) : '';
-    const temNorm = temText.replace(/\s+/g, '').replace(/\s*l?i\s*$/iu, '');
-    temSuffix = `- ${[temNorm ? `T${temNorm}` : '', mv, haiDau ? '2DAU' : ''].filter(Boolean).join('-')}`;
+    const temNorm = amisTemToken(temText);
+    temSuffix = `- ${[temNorm, mv, haiDau ? '2DAU' : ''].filter(Boolean).join('-')}`;
   }
 
   return (
-    `${base}${dm ? ` ${dm}` : ''}${npSuffix}${mang ? ` màng ${mang}` : ''}${temSuffix ? ` ${temSuffix}` : ''}`
+    `${base}${npSuffix}${pheSuffix}${mang ? `-${mang}` : ''}${temSuffix ? ` ${temSuffix}` : ''}`
       .replace(/\s+/g, ' ')
       .trim()
   );

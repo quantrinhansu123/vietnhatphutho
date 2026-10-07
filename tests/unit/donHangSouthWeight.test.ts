@@ -1,5 +1,5 @@
 /**
- * Đơn miền nam: kg/1m và nút + đổi dấu chấm sang phẩy.
+ * Đơn miền nam: kg/1m và số đơn hàng (phần nghìn `,`, thập phân `.`).
  * npx tsx --test tests/unit/donHangSouthWeight.test.ts
  */
 import { describe, it } from 'node:test';
@@ -11,15 +11,16 @@ import {
   southOrderKgPerMeter
 } from '../../src/features/don-hang/southWeight';
 
-describe('don-hang — thêm tương tự đổi . thành ,', () => {
-  it('đổi mọi dấu chấm khi chuỗi chưa có phẩy', () => {
-    assert.equal(orderDuplicateDecimalText('2.8'), '2,8');
+describe('don-hang — phần nghìn phẩy, thập phân chấm', () => {
+  it('giữ thập phân là dấu chấm và đổi hàng nghìn cũ sang phẩy', () => {
+    assert.equal(orderDuplicateDecimalText('2.8'), '2.8');
+    assert.equal(orderDuplicateDecimalText('5,7'), '5.7');
     assert.equal(orderDuplicateDecimalText('1.250.000'), '1,250,000');
   });
 
-  it('giữ nguyên số đã dùng dấu phẩy', () => {
+  it('đưa số cũ dùng phẩy thập phân về chuẩn mới', () => {
     assert.equal(orderDuplicateDecimalText('1,234.5'), '1,234.5');
-    assert.equal(orderDuplicateDecimalText('12,5'), '12,5');
+    assert.equal(orderDuplicateDecimalText('12,5'), '12.5');
     assert.equal(orderDuplicateDecimalText('10'), '10');
   });
 });

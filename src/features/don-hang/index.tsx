@@ -333,14 +333,23 @@ function reorderList<T>(items: T[], from: number, to: number): T[] {
   return next;
 }
 
-/** Ô số trên đơn hàng: chỉ gõ, không cho con lăn chuột tăng giảm. */
-function OrderNumberInput({ className, onWheel, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+/** Ô số trên đơn hàng: phần nghìn `,`, thập phân `.`. Rời ô thì số cũ kiểu `5,7` về `5.7`. */
+function OrderNumberInput({ className, onWheel, onChange, onBlur, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
       type="text"
       inputMode="decimal"
       autoComplete="off"
+      onChange={onChange}
+      onBlur={event => {
+        const next = orderDuplicateDecimalText(event.currentTarget.value);
+        if (next !== event.currentTarget.value) {
+          event.currentTarget.value = next;
+          onChange?.(event as unknown as React.ChangeEvent<HTMLInputElement>);
+        }
+        onBlur?.(event);
+      }}
       onWheel={event => {
         event.currentTarget.blur();
         onWheel?.(event);
@@ -706,6 +715,7 @@ export function orderProductLinesToPayload(
         (cutDiffersForCode ||
           doLiDiffersForCode ||
           doLiDmValue ||
+          variantSpecs?.hangPhe ||
           temValue ||
           mauTemValue ||
           danTem2DauValue ||
@@ -716,6 +726,7 @@ export function orderProductLinesToPayload(
               cutLengthM: cutDiffersForCode ? cutLengthForCode : undefined,
               doLi: doLiDiffersForCode ? doLiLine : undefined,
               doLiDm: doLiDmValue || undefined,
+              hangPhe: variantSpecs?.hangPhe || undefined,
               mang: variantSpecs?.mang || undefined,
               tem: temValue || undefined,
               mauTem: mauTemValue || undefined,
@@ -954,10 +965,10 @@ export function orderToForm(order: OrderRow): OrderFormState {
     productionName: orderCellToInput(line.productionName || ''),
     tenGhep: line.tenGhep || '',
     unit: orderCellToInput(line.unit),
-    quantity: orderCellToInput(line.quantity),
-    slBac: keepRegionQty ? (line.soLuongBac || '') : '',
-    slTrung: keepRegionQty ? (line.soLuongTrung || '') : '',
-    slNam: keepRegionQty ? (line.soLuongNam || '') : '',
+    quantity: orderDuplicateDecimalText(orderCellToInput(line.quantity)),
+    slBac: keepRegionQty ? orderDuplicateDecimalText(line.soLuongBac || '') : '',
+    slTrung: keepRegionQty ? orderDuplicateDecimalText(line.soLuongTrung || '') : '',
+    slNam: keepRegionQty ? orderDuplicateDecimalText(line.soLuongNam || '') : '',
     daiM: orderDuplicateDecimalText(line.daiM || ''),
     doDaiTamTieuChuan: orderDuplicateDecimalText(line.doDaiTamTieuChuan || ''),
     dinhMucTieuChuanKg: orderDuplicateDecimalText(line.dinhMucTieuChuanKg || ''),
@@ -966,9 +977,9 @@ export function orderToForm(order: OrderRow): OrderFormState {
     tem: orderCellToInput(line.tem || fallbackTem?.tem || ''),
     mauTem: orderCellToInput(line.mauTem || fallbackTem?.mauTem || ''),
     danTem2Dau: Boolean(line.danTem2Dau ?? fallbackTem?.danTem2Dau ?? false),
-    kg1Sp: line.kg1Sp || '',
-    tongKg: line.tongKg || '',
-    dinhMucKg: line.dinhMucKg || '',
+    kg1Sp: orderDuplicateDecimalText(line.kg1Sp || ''),
+    tongKg: orderDuplicateDecimalText(line.tongKg || ''),
+    dinhMucKg: orderDuplicateDecimalText(line.dinhMucKg || ''),
     manualTongKg: line.conversionSource === CUSTOMER_ENTERED_KG_SOURCE,
     conversionSource: line.conversionSource || '',
     note: line.note || '',
@@ -2155,7 +2166,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             value={line.daiM}
                             onChange={e => updateConversionProductLine(line.key, { daiM: e.target.value })}
                             className={orderFieldClass}
-                            placeholder="2,8"
+                            placeholder="2.8"
                           />
                         </div>
                         <div className="col-span-1 min-w-0">
@@ -2163,7 +2174,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             value={line.doLiDm || ''}
                             onChange={e => updateConversionProductLine(line.key, { doLiDm: e.target.value })}
                             className={orderFieldClass}
-                            placeholder="0,75"
+                            placeholder="0.75"
                             title="Độ li định mức thực tế — chỉ nhập số, tự hiểu là (đm n li)"
                           />
                         </div>
@@ -2270,6 +2281,16 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               manualTongKg: e.target.value.trim() !== '',
                               shouldRecalculateConversion: true
                             });
+                            }}
+                            onBlur={e => {
+                              if (isFormSouthOrder) return;
+                              const next = orderDuplicateDecimalText(e.target.value);
+                              if (next === e.target.value) return;
+                              updateProductLine(line.key, {
+                                tongKg: next,
+                                manualTongKg: next.trim() !== '',
+                                shouldRecalculateConversion: true
+                              });
                             }}
                             title={southScaledTotal !== null
                               ? 'Tổng KG = SL (tổng) × KG/1m × Dài (m)'
@@ -2504,6 +2525,15 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             manualTongKg: e.target.value.trim() !== '',
                             shouldRecalculateConversion: true
                           })}
+                          onBlur={e => {
+                            const next = orderDuplicateDecimalText(e.target.value);
+                            if (next === e.target.value) return;
+                            updateProductLine(line.key, {
+                              tongKg: next,
+                              manualTongKg: next.trim() !== '',
+                              shouldRecalculateConversion: true
+                            });
+                          }}
                           title={line.manualTongKg
                             ? `KG do khách hàng nhập${isCuonProduct(effectiveUnit) ? '; dùng để tính TL/cuộn' : isTamProduct(effectiveUnit) ? '; dùng để tính TL/tấm' : ''}`
                             : 'Có thể nhập KG của khách hàng để ưu tiên giá trị thực tế'}

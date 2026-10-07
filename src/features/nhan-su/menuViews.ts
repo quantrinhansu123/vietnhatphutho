@@ -83,7 +83,9 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
       { tab: 'bao-cao-truong-ca-tron', label: 'Báo cáo Trưởng ca + Trộn' },
       { tab: 'so-tron-list', label: 'Danh sách phiếu giao ca' },
       { tab: 'report-forms', label: 'Nhập báo cáo ca' },
-      { tab: 'report-lists', label: 'Lịch sử công việc' }
+      { tab: 'report-lists', label: 'Lịch sử công việc' },
+      { tab: 'bao-cao-don-cat-le', label: 'Báo cáo đơn cắt lẻ' },
+      { tab: 'theo-doi-cat-le', label: 'Theo dõi cắt lẻ' }
     ]
   },
   {
@@ -101,6 +103,8 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
       { tab: 'kiem-kho-chenh-lech', label: 'Xử lý chênh lệch' },
       { tab: 'warehouse-history', label: 'Lịch sử xuất nhập' },
       { tab: 'lenh-cat-le', label: 'Lệnh cắt lẻ' },
+      { tab: 'bao-cao-don-cat-le', label: 'Báo cáo đơn cắt lẻ' },
+      { tab: 'theo-doi-cat-le', label: 'Theo dõi cắt lẻ' },
       { tab: 'chuyen-kho', label: 'Chuyển kho' },
       { tab: 'phieu-nhap-xuat-tong-hop', label: 'Xuất nhập kho NVL' },
       { tab: 'phieu-nhap-xuat-tong-hop-list', label: 'Danh sách xuất nhập kho NVL' },

@@ -1,19 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, ClipboardCheck, Loader2, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
+import { ClipboardCheck, Loader2, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
 import { BackButton } from '../../components/layout/NavButtons';
+import { RepeatableLineRow, RepeatableLinesBlock } from '../../components/RepeatableLinesBlock';
 import { useTabAccess } from '../../app/useTabAccess';
-import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { formatDateVN, VnCalendarPicker } from '../so-che-do-may';
 import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from '../../components/WarehouseSlipPrintModal';
 import { readApiErrorMessage, showAppToast } from '../../lib/appToast';
 import { normalizeOrders } from '../don-hang';
-import { isCutOrderType } from '../_shared/orderHelpers';
+import { isCutOrderType, orderFieldClass, parseSouthTemFromTenGhep } from '../_shared/orderHelpers';
 import type { OrderProductLine, OrderRow } from '../_shared/orderRecordHelpers';
+import { normalizeProducts, type ProductRow } from '../san-pham';
+import { orderDuplicateDecimalText } from '../don-hang/southWeight';
 import { parseLocalizedNumber } from '../../utils';
+import { classifyProductPxGroup, extractDoLiDmNumber, normalizeDoLiDm, parseProductionNameParts, parseSongLengthMeters } from '../../utils/productProductionName';
 import {
   KHO_CAT_LE,
-  KHO_DAC,
-  KHO_SONG,
   KHO_TAI_CHE,
   KHO_THANH_PHAM,
   buildCatLePrintSlips,
@@ -22,7 +23,7 @@ import {
   computeCatLe,
   inferKhoChinhTuNhom,
   normalizeCatLeSanPhamList,
-  motherFromNhapKhoRow,
+  normalizeDoLiLabel,
   parseMeterInput,
   parseMeterLabel,
   suggestCatLePlan,
@@ -52,35 +53,38 @@ export interface CatLeLenh {
   created_at?: string;
 }
 
-interface MotherStockRow {
-  key: string;
-  id: string;
-  ma_sp: string;
-  ten_sp: string;
-  don_vi: string;
-  nhom_vthh: string;
-  /** Kho đang chứa tồn mẹ (Kho Đặc / Kho Sóng / Kho cắt lẻ). */
-  ten_kho: string;
-  ton_sl: number;
-  ton_kg: number;
-  kg1: number;
-  a1: number;
-  l1: number;
-  raw: Record<string, unknown>;
-}
-
 interface CutLine {
   key: string;
   motherKey: string;
   /** Mã đơn cắt lẻ — điền từ Tự điền đơn hàng. */
   orderCode: string;
+  /** Mã AMIS trên đơn. */
+  amisCode: string;
+  productId: string;
+  productionName: string;
+  /** Tên sản phẩm trên đơn / danh mục. */
+  productName: string;
+  tenGhep: string;
+  unit: string;
+  /** Kg 1 tấm chuẩn (tl cuộn / tấm đủ dài). */
+  sheetKg: string;
+  nhomVthh: string;
+  doLiDmText: string;
+  dinhMucKgText: string;
+  slBac: string;
+  slTrung: string;
+  slNam: string;
+  tongKgText: string;
+  tem: string;
+  mauTem: string;
+  danTem2Dau: boolean;
   /** Mã hàng đơn khi chưa khớp được tồn nguồn. */
   missingCode: string;
   /** Hạ li đích. Trống = giữ độ li nguồn. */
   doLiText: string;
   /** Hạ khổ đích (m), từ do_day_m. Trống = giữ nguồn. */
   khoRongText: string;
-  /** M cắt dài đích (m), từ do_dai_m. Trống = giữ nguồn. */
+  /** Dài (m) đặt cắt, từ đơn. */
   mDaiText: string;
   /** SL nguồn xuất — tính ngầm, không hiện ô nhập. */
   qtyText: string;
@@ -92,20 +96,103 @@ interface CutLine {
   ghiChu: string;
 }
 
-const inputClass =
-  'h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
-const cellInputClass =
-  'h-9 w-full rounded-lg border border-zinc-200 bg-white px-2 text-[13px] font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+const inputClass = orderFieldClass;
+const cellInputClass = `${orderFieldClass} px-2 text-right`;
+const CUT_PRODUCT_GRID =
+  'grid-cols-[9.5rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_2.75rem]';
+const CUT_PRODUCT_MIN_WIDTH = 'min-w-[2180px]';
+const AUTOFILL_PRODUCT_GRID =
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)]';
+const AUTOFILL_PRODUCT_MIN_WIDTH = 'min-w-[2100px]';
+const autofillReadClass = `${orderFieldClass} bg-zinc-50`;
+
+function doLiDmSo(value: string): string {
+  const number = extractDoLiDmNumber(value);
+  return number ? orderDuplicateDecimalText(number) : '';
+}
+
+/** Độ li hạ đem vào phép cắt: ô hạ li, hoặc Độ li ĐM khi khác độ li tấm chính. */
+function doLiHaForLine(line: CutLine, motherDoLi: string): string | null {
+  const explicit = normalizeDoLiLabel(line.doLiText);
+  const fromDm = normalizeDoLiLabel(doLiDmSo(line.doLiDmText));
+  const next = explicit || fromDm;
+  if (!next) return null;
+  const nextN = parseLocalizedNumber(next.replace(/\s*l?i\s*$/iu, ''));
+  const sourceN = parseLocalizedNumber(String(motherDoLi || '').replace(/\s*l?i\s*$/iu, ''));
+  if (Number.isFinite(nextN) && Number.isFinite(sourceN) && Math.abs(nextN - sourceN) < 1e-9) return null;
+  if (!Number.isFinite(sourceN) && next.toLocaleLowerCase('vi') === normalizeDoLiLabel(motherDoLi).toLocaleLowerCase('vi')) return null;
+  return next;
+}
+
+function changedAmisCode(sourceCode: string, nextCode: string): string {
+  const next = String(nextCode || '').trim();
+  const source = String(sourceCode || '').trim();
+  if (!next || next.toLocaleLowerCase('vi') === source.toLocaleLowerCase('vi')) return '';
+  return next;
+}
+
+function lookupProductName(line: CutLine, catalog: ProductRow[], tenGoc: string): string {
+  const saved = line.productName.trim();
+  if (saved) return saved;
+  const root = String(tenGoc || '').trim();
+  if (root) return root;
+  const wanted = line.amisCode.trim().toLocaleLowerCase('vi');
+  const product = catalog.find(item => {
+    if (line.productId && item.id === line.productId) return true;
+    return [item.amisCode, item.code, item.newCode, item.amisOldCode].some(
+      value => String(value || '').trim().toLocaleLowerCase('vi') === wanted
+    );
+  });
+  return String(product?.name || '').trim();
+}
+
+const RESULT_GRID = 'grid-cols-[5.5rem_minmax(8rem,0.8fr)_minmax(9rem,1fr)_minmax(12rem,1.4fr)_4rem_4.5rem_4.5rem_6.5rem_5.5rem]';
+
+function CutResultRow({
+  label,
+  tone,
+  code,
+  productName,
+  productionName,
+  qty,
+  doLi,
+  dai,
+  kg,
+  m2
+}: {
+  label: string;
+  tone: 'source' | 'cut' | 'rest' | 'none';
+  code: string;
+  productName: string;
+  productionName: string;
+  qty: number;
+  doLi: string;
+  dai: string;
+  kg: number;
+  m2: number;
+}) {
+  const toneClass = tone === 'source' ? 'text-sky-800' : tone === 'cut' ? 'text-emerald-800' : tone === 'rest' ? 'text-amber-800' : 'text-zinc-400';
+  const cell = 'min-w-0 truncate text-xs font-semibold text-zinc-800';
+  const tongKg = qty > 0 && kg > 0 ? kg * qty : 0;
+  return (
+    <div className={`grid ${RESULT_GRID} items-center gap-2 px-2 py-1.5`}>
+      <span className={`text-[11px] font-black ${toneClass}`}>{label}</span>
+      <span className={cell} title={code || 'Không đổi mã'}>{code || '—'}</span>
+      <span className={cell} title={productName}>{productName || '—'}</span>
+      <span className={cell} title={productionName}>{productionName || '—'}</span>
+      <span className="text-right text-xs font-black tabular-nums text-zinc-900">{qty > 0 ? fmtQty(qty) : '—'}</span>
+      <span className="text-right text-xs font-semibold tabular-nums text-zinc-800">{doLi || '—'}</span>
+      <span className="text-right text-xs font-semibold tabular-nums text-zinc-800">{dai || '—'}</span>
+      <span className="text-right text-xs font-semibold tabular-nums text-zinc-800" title={kg > 0 ? `1 SP: ${fmtQty(kg)} kg` : ''}>{tongKg > 0 ? `${fmtQty(tongKg)} kg` : '—'}</span>
+      <span className="text-right text-xs font-semibold tabular-nums text-zinc-800">{m2 > 0 ? `${fmtQty(m2)} m²` : '—'}</span>
+    </div>
+  );
+}
 
 function todayISO(): string {
   const d = new Date();
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
   return d.toISOString().slice(0, 10);
-}
-
-function toNum(value: unknown): number {
-  const n = Number(String(value ?? '').replace(',', '.'));
-  return Number.isFinite(n) ? n : 0;
 }
 
 function fmtQty(value: number | null | undefined): string {
@@ -149,12 +236,9 @@ function trangThaiLabel(value: string): string {
   return 'Chờ duyệt';
 }
 
-function cutLineFromSaved(item: CatLeSanPhamLine, stock: MotherStockRow[]): CutLine {
+function cutLineFromSaved(item: CatLeSanPhamLine): CutLine {
   const nguon = item.san_pham_nguon;
   const cat1 = item.san_pham_cat_1;
-  const match =
-    stock.find(row => row.ma_sp === nguon.ma_sp && row.ten_sp === nguon.ten_sp) ||
-    stock.find(row => row.id && row.id === nguon.id_san_pham_trong_kho);
   const w = parseMeterLabel(cat1.do_day_m);
   const l = parseMeterLabel(cat1.do_dai_m) || (cat1.m_dai > 0 ? cat1.m_dai : null);
   const doLiChanged = Boolean(cat1.do_li) && cat1.do_li !== nguon.do_li;
@@ -164,17 +248,43 @@ function cutLineFromSaved(item: CatLeSanPhamLine, stock: MotherStockRow[]): CutL
     Math.floor(Number((item as { so_con_mot_me?: unknown }).so_con_mot_me) || 1)
   );
   const finished = Math.round((Number(nguon.so_luong) || 0) * piecesSaved * 1000) / 1000;
+  const slBac = String(item.sl_bac || '').trim();
+  const slTrung = String(item.sl_trung || '').trim();
+  const slNam = String(item.sl_nam || '').trim();
+  const regionSum = [slBac, slTrung, slNam]
+    .map(value => parseLocalizedNumber(value))
+    .filter(value => Number.isFinite(value) && value > 0)
+    .reduce((sum, value) => sum + value, 0);
+  const ordered = regionSum > 0 ? regionSum : Number(item.sl_can) > 0 ? Number(item.sl_can) : finished;
+  const temSaved = parseSouthTemFromTenGhep(cat1.ten_sp || nguon.ten_sp || '');
   return {
     ...base,
-    motherKey: match?.key || '',
+    motherKey: '',
     orderCode: '',
-    missingCode: match ? '' : nguon.ma_sp,
+    amisCode: nguon.ma_amis || nguon.ma_sp || '',
+    productId: nguon.id_san_pham_trong_kho || '',
+    productionName: nguon.ten_sp || '',
+    productName: nguon.ten_goc || '',
+    tenGhep: cat1.ten_sp || '',
+    unit: cat1.don_vi || nguon.don_vi || '',
+    sheetKg: nguon.kg > 0 ? String(nguon.kg) : '',
+    nhomVthh: nguon.nhom_vthh || '',
+    doLiDmText: doLiDmSo(nguon.do_li_dm || cat1.do_li_dm || ''),
+    dinhMucKgText: String(item.dinh_muc_kg || '').trim(),
+    slBac,
+    slTrung,
+    slNam,
+    tongKgText: String(item.tong_kg || '').trim(),
+    tem: String(item.tem || temSaved.tem || '').trim(),
+    mauTem: String(item.mau_tem || temSaved.mauTem || '').trim(),
+    danTem2Dau: Boolean(item.dan_tem_2_dau) || temSaved.danTem2Dau,
+    mDaiText: l ? String(l) : '',
+    missingCode: '',
     doLiText: doLiChanged ? cat1.do_li.replace(/\s*li\s*$/iu, '') : '',
     khoRongText: w ? String(w) : '',
-    mDaiText: l ? String(l) : '',
     qtyText: String(nguon.so_luong || 1),
     soConText: String(piecesSaved),
-    conCanText: finished > 0 ? String(finished) : '',
+    conCanText: ordered > 0 ? String(Math.round(ordered * 1000) / 1000) : '',
     kgCanText: '',
     ghiChu: item.ghi_chu || ''
   };
@@ -187,6 +297,23 @@ const newCutLine = (): CutLine => {
     key: `line-${Date.now()}-${lineSeq}`,
     motherKey: '',
     orderCode: '',
+    amisCode: '',
+    productId: '',
+    productionName: '',
+    productName: '',
+    tenGhep: '',
+    unit: '',
+    sheetKg: '',
+    nhomVthh: '',
+    doLiDmText: '',
+    dinhMucKgText: '',
+    slBac: '',
+    slTrung: '',
+    slNam: '',
+    tongKgText: '',
+    tem: '',
+    mauTem: '',
+    danTem2Dau: false,
     missingCode: '',
     doLiText: '',
     khoRongText: '',
@@ -208,66 +335,139 @@ function orderFinishedQty(line: OrderProductLine): number {
   return Number.isFinite(qty) && qty > 0 ? qty : 0;
 }
 
-function matchMotherStock(stock: MotherStockRow[], code: string, name: string): MotherStockRow | undefined {
-  const sameMa = stock.filter(row => row.ma_sp === code);
-  return (
-    sameMa.find(row => name && row.ten_sp === name) ||
-    sameMa.find(row => row.ten_kho === inferKhoChinhTuNhom(row.nhom_vthh)) ||
-    sameMa[0]
-  );
+function lineIsBlank(line: CutLine): boolean {
+  return !line.motherKey && !line.orderCode && !line.amisCode && !line.conCanText.trim() && !line.mDaiText;
 }
 
-function lineIsBlank(line: CutLine): boolean {
-  return !line.motherKey && !line.orderCode && !line.conCanText.trim() && !line.khoRongText && !line.doLiText && !line.mDaiText;
+/** Tem / màu tem / dán 2 đầu trên dòng hoặc trong tên → hậu tố mã `TEM1.5li-MVKH-2DAU`. */
+function temArgsFromCutLine(line: CutLine | undefined): { tem: string; mauTem: string; danTem2Dau: boolean } {
+  const fromName = parseSouthTemFromTenGhep(line?.tenGhep || line?.productionName || '');
+  return {
+    tem: String(line?.tem || '').trim() || fromName.tem,
+    mauTem: String(line?.mauTem || '').trim() || fromName.mauTem,
+    danTem2Dau: Boolean(line?.danTem2Dau) || fromName.danTem2Dau
+  };
+}
+
+function regionSlTotal(line: CutLine): number {
+  const parts = [line.slBac, line.slTrung, line.slNam]
+    .map(value => parseLocalizedNumber(value))
+    .filter(value => Number.isFinite(value) && value > 0);
+  if (parts.length === 0) return 0;
+  return Math.round(parts.reduce((sum, value) => sum + value, 0) * 1000) / 1000;
 }
 
 /** Một dòng lệnh từ một dòng đơn cắt lẻ. SL trên form là SL thành phẩm. */
-function cutLineFromOrder(order: OrderRow, prodLine: OrderProductLine, stock: MotherStockRow[]): CutLine {
-  const code = String(prodLine.productCode || '').trim();
-  const name = String(prodLine.productName || '').trim();
-  const match = code ? matchMotherStock(stock, code, name) : undefined;
-  const mother = match ? buildMother(match) : null;
-  const defaults = match ? motherCutDefaults(match) : { khoRongText: '', mDaiText: '' };
-  const cutM = String(prodLine.quyCachMDai ?? prodLine.daiM ?? '').trim();
-  const kho = String(prodLine.kho || '').trim();
+function cutLineFromOrder(order: OrderRow, prodLine: OrderProductLine): CutLine {
+  const code = String(prodLine.maAmis || prodLine.productCode || '').trim();
+  const cutM = String(prodLine.daiM || prodLine.quyCachMDai || '').trim();
   const finished = orderFinishedQty(prodLine);
-  const orderLi = String(prodLine.doLi || '').replace(/\s*li\s*$/iu, '').replace(',', '.').trim();
-  const motherLi = String(mother?.doLi || '').replace(/\s*li\s*$/iu, '').replace(',', '.').trim();
   const base = newCutLine();
   return {
     ...base,
     orderCode: order.orderCode,
-    missingCode: match ? '' : code,
-    motherKey: match?.key || '',
-    khoRongText: kho ? kho.replace(/\s*m\s*$/iu, '').replace(',', '.') : defaults.khoRongText,
-    mDaiText: cutM ? cutM.replace(/\s*m\s*$/iu, '').replace(',', '.') : defaults.mDaiText,
-    doLiText: orderLi && orderLi !== motherLi ? orderLi : '',
+    amisCode: code,
+    productId: String(prodLine.productId || '').trim(),
+    productionName: String(prodLine.productionName || '').trim(),
+    productName: String(prodLine.productName || '').trim(),
+    tenGhep: String(prodLine.tenGhep || '').trim(),
+    unit: String(prodLine.unit || 'Tấm').trim(),
+    sheetKg: String(prodLine.tlCuon || '').trim(),
+    doLiDmText: doLiDmSo(String(prodLine.doLiDm || '')),
+    dinhMucKgText: String(prodLine.dinhMucKg || '').trim(),
+    slBac: String(prodLine.soLuongBac || '').trim(),
+    slTrung: String(prodLine.soLuongTrung || '').trim(),
+    slNam: String(prodLine.soLuongNam || '').trim(),
+    tongKgText: String(prodLine.tongKg || '').trim(),
+    tem: String(prodLine.tem || '').trim(),
+    mauTem: String(prodLine.mauTem || '').trim(),
+    danTem2Dau: Boolean(prodLine.danTem2Dau),
+    missingCode: '',
+    motherKey: '',
+    mDaiText: cutM.replace(/\s*m\s*$/iu, '').trim(),
     conCanText: finished > 0 ? String(Math.round(finished * 1000) / 1000) : '',
-    ghiChu: [order.orderCode, prodLine.maAmis, prodLine.tenGhep || prodLine.productionName].filter(Boolean).join(' · ')
+    ghiChu: String(prodLine.note || '').trim()
   };
 };
 
-function buildMother(row: MotherStockRow): CatLeMother | null {
-  return (
-    motherFromNhapKhoRow(
-      {
-        ma_sp: row.ma_sp,
-        ten_sp: row.ten_sp,
-        don_vi: row.don_vi,
-        trong_luong_kg_mot_sp: row.kg1,
-        so_m2_mot_sp: row.a1,
-        so_m_dai_mot_sp: row.l1,
-        ...(row.raw as object)
-      },
-      undefined
-    ) || null
-  );
-}
-
-/** Khổ rộng nguồn (m): ưu tiên a1/l1, fallback specs do_day_m. */
+/** Khổ rộng sản phẩm chính (m). */
 function motherWidth(mother: CatLeMother): number | null {
   if (mother.a1 > 0 && mother.l1 > 0) return mother.a1 / mother.l1;
   return parseMeterLabel(mother.doDayM);
+}
+
+/** Sản phẩm chính trên dòng lệnh — lấy từ danh mục / tên sản xuất, không đối chiếu tồn kho. */
+function motherFromCutLine(line: CutLine, catalog: ProductRow[]): CatLeMother | null {
+  const code = line.amisCode.trim();
+  if (!code) return null;
+  const wanted = code.toLocaleLowerCase('vi');
+  const product = catalog.find(item => {
+    if (line.productId && item.id === line.productId) return true;
+    return [item.amisCode, item.code, item.newCode, item.amisOldCode]
+      .some(value => String(value || '').trim().toLocaleLowerCase('vi') === wanted);
+  });
+  const name = line.productionName.trim() || product?.productionName || product?.name || '';
+  const group = line.nhomVthh.trim() || product?.group || '';
+  const parts = parseProductionNameParts(name, group, code);
+  const doDaiM = String(product?.doDaiM || parts.doDaiM || '').trim();
+  const doDayM = String(product?.doDayM || parts.doDayM || '').trim();
+  const song = classifyProductPxGroup(group) === 'song' || /sóng/iu.test(name) || /^sts/i.test(code);
+  const songLength = song ? parseSongLengthMeters(name) : null;
+  let length = parseMeterLabel(doDaiM) || lengthFromProductName(name, parseMeterLabel(doDayM));
+  let width = parseMeterLabel(doDayM);
+  let widthKnown = width != null;
+  if (song && songLength) {
+    length = songLength;
+    // Khổ sóng chỉ khi tên có mét khác mét dài. Không lấy khổ 1m giả của danh mục.
+    const widthInName = metersInName(name).find(n => Math.abs(n - songLength) > 0.001) ?? null;
+    if (widthInName == null) {
+      width = 1;
+      widthKnown = false;
+    } else {
+      width = widthInName;
+      widthKnown = true;
+    }
+  }
+  if (!width && song && length) {
+    width = 1;
+    widthKnown = false;
+  }
+  if (!length || !width) return null;
+  const cutLen = parseMeterInput(line.mDaiText);
+  const finished = parseLocalizedNumber(line.conCanText);
+  const tongKg = parseLocalizedNumber(line.tongKgText);
+  const sheet = parseLocalizedNumber(line.sheetKg);
+  let kg1 = sheet > 0 ? sheet : 0;
+  if (!(kg1 > 0) && tongKg > 0 && finished > 0 && cutLen && cutLen < length) {
+    kg1 = (tongKg / finished) * (length / cutLen);
+  }
+  if (!(kg1 > 0) && tongKg > 0 && finished > 0) kg1 = tongKg / finished;
+  return {
+    maSp: code,
+    tenSp: name || code,
+    donVi: line.unit.trim() || product?.unit || 'Tấm',
+    kg1,
+    a1: width * length,
+    l1: length,
+    tenGoc: product?.tenGoc || parts.tenGoc,
+    doLi: product?.doLi || parts.doLi,
+    doLiDm: product?.doLiDm || parts.doLiDm,
+    doDayM: widthKnown ? (doDayM || `${width}m`) : '',
+    doDaiM: doDaiM || `${length}m`,
+    mang: product?.mang || parts.mang,
+    hangPhe: product?.hangPhe || parts.hangPhe,
+    maAmis: product?.amisCode || code,
+    moTaTem: ''
+  };
+}
+
+function metersInName(tenSp: string): number[] {
+  const values: number[] = [];
+  for (const match of String(tenSp || '').matchAll(/(\d+(?:[.,]\d+)?)\s*m\b/giu)) {
+    const n = parseMeterLabel(match[1]);
+    if (n) values.push(n);
+  }
+  return values;
 }
 
 /** Mét trong tên SP, bỏ token trùng khổ — mét còn lại là m dài. */
@@ -282,26 +482,8 @@ function lengthFromProductName(tenSp: string, width: number | null): number | nu
   return rest[rest.length - 1];
 }
 
-/** Hạ khổ và m cắt dài ban đầu khi vừa chọn sản phẩm nguồn. */
-function motherCutDefaults(row: MotherStockRow | undefined): { khoRongText: string; mDaiText: string } {
-  const mother = row ? buildMother(row) : null;
-  if (!mother) return { khoRongText: '', mDaiText: '' };
-  const w = parseMeterLabel(mother.doDayM) ?? motherWidth(mother);
-  const fromSpec = parseMeterLabel(mother.doDaiM);
-  const fromPiece = mother.l1 > 0 ? mother.l1 : null;
-  const fromName = lengthFromProductName(mother.tenSp, w);
-  // so_m_dai_mot_sp là mét dài đang có của 1 SP. do_dai_m đôi khi trống hoặc lệch tên.
-  const l = fromPiece ?? fromSpec ?? fromName;
-  return {
-    khoRongText: w ? String(w) : '',
-    mDaiText: l ? String(l) : ''
-  };
-}
-
 export function LenCatLePanel({ onBack }: { onBack: () => void }) {
   const { canCreate, canEdit, canDelete } = useTabAccess('lenh-cat-le');
-  const [stock, setStock] = useState<MotherStockRow[]>([]);
-  const [stockLoading, setStockLoading] = useState(true);
   const [lenhList, setLenhList] = useState<CatLeLenh[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [completingId, setCompletingId] = useState('');
@@ -311,7 +493,8 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [confirmedLines, setConfirmedLines] = useState<CatLeSanPhamLine[] | null>(null);
+  const [confirmedByKey, setConfirmedByKey] = useState<Record<string, CatLeSanPhamLine>>({});
+  const [catalog, setCatalog] = useState<ProductRow[]>([]);
   const [modalError, setModalError] = useState('');
   const [tuNgay, setTuNgay] = useState('');
   const [denNgay, setDenNgay] = useState('');
@@ -335,6 +518,10 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
     setCutOrders([]);
     setShowAutofill(false);
     setCutOrdersLoading(true);
+    fetch('/api/san-pham?format=table')
+      .then(res => res.json().catch(() => ({})))
+      .then(data => setCatalog(normalizeProducts(data)))
+      .catch(() => setCatalog([]));
     fetch('/api/don-hang')
       .then(res => res.json().catch(() => ({})))
       .then(data => {
@@ -391,7 +578,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
   const applyAutofill = () => {
     const picked = autofillProducts
       .filter(item => selectedProductKeys.includes(item.key))
-      .map(item => cutLineFromOrder(item.order, item.line, stock));
+      .map(item => cutLineFromOrder(item.order, item.line));
     if (picked.length === 0) {
       setModalError('Vui lòng chọn ít nhất một sản phẩm trong đơn hàng.');
       return;
@@ -400,72 +587,10 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
       const kept = prev.filter(line => !lineIsBlank(line));
       return kept.length > 0 ? [...kept, ...picked] : picked;
     });
-    setConfirmedLines(null);
+    setConfirmedByKey({});
     setModalError('');
     setShowAutofill(false);
   };
-
-  const loadStock = useCallback(async () => {
-    setStockLoading(true);
-    try {
-      // Mẹ cắt lấy từ kho chính theo nhóm (Đặc → Kho Đặc; Sóng/Rỗng → Kho Sóng),
-      // kèm Kho cắt lẻ cho dữ liệu cũ.
-      const khoNguons = [KHO_DAC, KHO_SONG, KHO_CAT_LE];
-      const results = await Promise.all(
-        khoNguons.map(async tenKho => {
-          const params = new URLSearchParams({
-            from: '2020-01-01',
-            to: todayISO(),
-            tenKho,
-            strictKho: '1'
-          });
-          const res = await fetch(`/api/nhap-kho?${params.toString()}`);
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) return [];
-          const rows: unknown[] = Array.isArray((data as { rows?: unknown }).rows)
-            ? (data as { rows: unknown[] }).rows
-            : [];
-          return rows.map(item => ({ item, tenKho }));
-        })
-      );
-      const mapped: MotherStockRow[] = [];
-      for (const { item, tenKho } of results.flat()) {
-        if (!item || typeof item !== 'object') continue;
-        const row = item as Record<string, unknown>;
-        const ton = (row.ton_cuoi ?? {}) as Record<string, unknown>;
-        const tonSl = toNum(ton.sl);
-        if (!(tonSl > 0)) continue;
-        const ma = String(row.ma_sp ?? '').trim();
-        const ten = String(row.ten_sp ?? '').trim();
-        if (!ma && !ten) continue;
-        const kg1 = toNum(row.trong_luong_kg_mot_sp);
-        const a1 = toNum(row.so_m2_mot_sp);
-        const l1 = toNum(row.so_m_dai_mot_sp);
-        mapped.push({
-          key: `${ma}||${ten}||${kg1}|${a1}|${l1}||${tenKho}`,
-          id: String(row.id ?? '').trim(),
-          ma_sp: ma,
-          ten_sp: ten,
-          don_vi: String(row.don_vi ?? '').trim(),
-          nhom_vthh: String(row.nhom_vthh ?? '').trim(),
-          ten_kho: tenKho,
-          ton_sl: tonSl,
-          ton_kg: toNum(ton.kg),
-          kg1,
-          a1,
-          l1,
-          raw: row
-        });
-      }
-      mapped.sort((a, b) => `${a.ma_sp}${a.ten_sp}`.localeCompare(`${b.ma_sp}${b.ten_sp}`, 'vi'));
-      setStock(mapped);
-    } catch (err: any) {
-      setStock([]);
-      showAppToast(err?.message || 'Không tải được tồn kho nguồn cắt.', 'error');
-    } finally {
-      setStockLoading(false);
-    }
-  }, []);
 
   const loadLenh = useCallback(async () => {
     setListLoading(true);
@@ -486,9 +611,8 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
   }, []);
 
   useEffect(() => {
-    void loadStock();
     void loadLenh();
-  }, [loadStock, loadLenh]);
+  }, [loadLenh]);
 
   const openModal = () => {
     setEditingId(null);
@@ -496,7 +620,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
     setNguoiThucHien('');
     setNguoiLap('');
     setLines([newCutLine()]);
-    setConfirmedLines(null);
+    setConfirmedByKey({});
     setModalError('');
     setShowModal(true);
   };
@@ -508,36 +632,25 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
     setNgayCat(String(row.ngay_cat || '').slice(0, 10) || todayISO());
     setNguoiThucHien(row.nguoi_thuc_hien || '');
     setNguoiLap(row.nguoi_lap || '');
-    setLines(products.length > 0 ? products.map(item => cutLineFromSaved(item, stock)) : [newCutLine()]);
-    setConfirmedLines(null);
-    setModalError(
-      products.some(item => {
-        const match = stock.some(
-          s =>
-            (s.ma_sp === item.san_pham_nguon.ma_sp && s.ten_sp === item.san_pham_nguon.ten_sp) ||
-            (s.id && s.id === item.san_pham_nguon.id_san_pham_trong_kho)
-        );
-        return !match;
-      })
-        ? 'Một số sản phẩm nguồn không còn tồn — hãy chọn lại trước khi lưu.'
-        : ''
-    );
+    setLines(products.length > 0 ? products.map(item => cutLineFromSaved(item)) : [newCutLine()]);
+    setConfirmedByKey({});
+    setModalError('');
     setShowModal(true);
   };
 
   const updateLine = (key: string, patch: Partial<CutLine>) => {
-    setConfirmedLines(null);
+    setConfirmedByKey({});
     setLines(prev => prev.map(line => (line.key === key ? { ...line, ...patch } : line)));
   };
 
   const removeLine = (key: string) => {
-    setConfirmedLines(null);
+    setConfirmedByKey({});
     setLines(prev => (prev.length <= 1 ? prev : prev.filter(line => line.key !== key)));
   };
 
   interface LinePreview {
-    motherRow: MotherStockRow | null;
     mother: CatLeMother | null;
+    nhomVthh: string;
     w2: number | null;
     l2: number | null;
     qty: number;
@@ -547,56 +660,43 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
   }
 
   const previews: LinePreview[] = useMemo(() => {
-    const used = new Map<string, number>();
     return lines.map(line => {
-        const empty: LinePreview = { motherRow: null, mother: null, w2: null, l2: null, qty: 0, pieces: 1, result: null, error: '' };
-        const motherRow = stock.find(row => row.key === line.motherKey) || null;
-        if (!motherRow) {
-          return {
-            ...empty,
-            error: line.missingCode
-              ? `Không tìm thấy tồn kho nguồn cho mã ${line.missingCode}.`
-              : line.motherKey
-                ? 'Cuộn nguồn đã hết tồn.'
-                : ''
-          };
-        }
-        const mother = buildMother(motherRow);
-        if (!mother) return { ...empty, motherRow, error: 'Không đọc được thông số nguồn.' };
-        const w1 = motherWidth(mother);
-        const l1 = mother.l1 > 0 ? mother.l1 : parseMeterLabel(mother.doDaiM);
-        const w2 = parseMeterInput(line.khoRongText) ?? w1;
-        const l2 = parseMeterInput(line.mDaiText) ?? l1;
-        const finished = parseLocalizedNumber(line.conCanText);
-        const doLiMoi = line.doLiText.trim() || null;
-        const base = { ...empty, motherRow, mother, w2, l2, qty: 0, pieces: 1 };
-        if (!w2 || !l2) return { ...base, error: 'Nhập hạ khổ hoặc m cắt dài.' };
-        if (!(finished > 0)) return { ...base, error: 'Nhập SL thành phẩm cần cắt.' };
-        try {
-          const plan = suggestCatLePlan(mother, { w2, l2, desiredConQty: finished, doLiMoi });
-          const qty = plan.mothers;
-          const pieces = plan.pieces;
-          const taken = used.get(line.motherKey) || 0;
-          if (qty + taken > motherRow.ton_sl + 1e-9) {
-            return {
-              ...base,
-              qty,
-              pieces,
-              error: `Cần xuất ${qty} nguồn, tồn chỉ còn ${motherRow.ton_sl}${taken > 0 ? ` (đã chọn ${taken} ở dòng khác)` : ''}.`
-            };
-          }
-          const result = computeCatLe(
-            mother,
-            { w2, l2, qty, doLiMoi, kgCanThucTe: null, pieces },
-            { nhomVthh: motherRow.nhom_vthh }
-          );
-          used.set(line.motherKey, taken + qty);
-          return { ...base, qty, pieces, result };
-        } catch (err: any) {
-          return { ...base, error: err?.message || 'Thông số cắt không hợp lệ.' };
-        }
+      const empty: LinePreview = { mother: null, nhomVthh: '', w2: null, l2: null, qty: 0, pieces: 1, result: null, error: '' };
+      if (!line.amisCode.trim() && !line.mDaiText.trim() && !line.conCanText.trim()) return empty;
+      const mother = motherFromCutLine(line, catalog);
+      if (!mother) {
+        return { ...empty, error: line.amisCode.trim() ? 'Chưa đủ khổ / dài của sản phẩm chính để xem cắt.' : '' };
+      }
+      const wanted = line.amisCode.trim().toLocaleLowerCase('vi');
+      const product = catalog.find(item =>
+        (line.productId && item.id === line.productId) ||
+        [item.amisCode, item.code, item.newCode].some(value => String(value || '').trim().toLocaleLowerCase('vi') === wanted)
+      );
+      const w2 = motherWidth(mother);
+      const l2 = parseMeterInput(line.mDaiText);
+      const finished = parseLocalizedNumber(line.conCanText);
+      const namedGroup = line.nhomVthh.trim() || product?.group || '';
+      const nhomVthh = classifyProductPxGroup(namedGroup) === 'other' && /sóng/iu.test(line.productionName || mother.tenSp || '')
+        ? 'TP; PX Sóng'
+        : namedGroup;
+      const base = { ...empty, mother, nhomVthh, w2, l2, qty: 0, pieces: 1 };
+      if (!w2 || !l2) return { ...base, error: 'Nhập Dài (m).' };
+      if (!(finished > 0)) return { ...base, error: 'Nhập SL (tổng).' };
+      try {
+        const doLiMoi = doLiHaForLine(line, mother.doLi);
+        const doLiDmGiu = normalizeDoLiDm(line.doLiDmText, 'li') || null;
+        const plan = suggestCatLePlan(mother, { w2, l2, desiredConQty: finished, doLiMoi });
+        const result = computeCatLe(
+          mother,
+          { w2, l2, qty: plan.mothers, doLiMoi, doLiDmGiu, kgCanThucTe: null, pieces: plan.pieces },
+          { nhomVthh: base.nhomVthh }
+        );
+        return { ...base, qty: plan.mothers, pieces: plan.pieces, result };
+      } catch (err: any) {
+        return { ...base, error: err?.message || 'Thông số cắt không hợp lệ.' };
+      }
     });
-  }, [lines, stock]);
+  }, [lines, catalog]);
 
   const totals = useMemo(() => {
     let qtyCon = 0;
@@ -612,7 +712,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
     lines.length > 0 &&
     lines.every((_, index) => {
       const preview = previews[index];
-      return preview && preview.motherRow && preview.result && !preview.error;
+      return preview && preview.mother && preview.result && !preview.error;
     });
 
   const filteredLenh = useMemo(() => {
@@ -674,40 +774,63 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
     lines.map((line, index) => {
       const preview = previews[index];
       const mother = preview.mother as CatLeMother;
-      const row = preview.motherRow as MotherStockRow;
       return buildCatLeSanPhamLine({
-        idSanPhamTrongKho: row.id,
+        idSanPhamTrongKho: line.productId,
         mother,
-        nhomVthh: row.nhom_vthh,
+        nhomVthh: preview.nhomVthh,
         qty: preview.qty,
         w2: preview.w2 as number,
         l2: preview.l2 as number,
-        doLiMoi: line.doLiText.trim() || null,
+        doLiMoi: doLiHaForLine(line, mother.doLi),
         kgCanThucTe: null,
         pieces: preview.pieces,
-        ghiChu: line.ghiChu.trim()
+        ghiChu: line.ghiChu.trim(),
+        doLiDm: line.doLiDmText,
+        ...temArgsFromCutLine(line)
       });
     });
 
-  const handleConfirmPreview = () => {
-    if (!canSave) {
-      setModalError('Còn dòng chưa hợp lệ — kiểm tra sản phẩm nguồn, hạ khổ, hạ li và SL thành phẩm.');
-      setConfirmedLines(null);
+  const confirmLine = (key: string, index: number) => {
+    if (confirmedByKey[key]) {
+      setConfirmedByKey(prev => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      return;
+    }
+    const preview = previews[index];
+    if (!preview?.mother || !preview.result || preview.error) {
+      setModalError(preview?.error || 'Chưa đủ Dài (m) và SL (tổng) để xem sản phẩm cắt ra.');
       return;
     }
     try {
-      const built = linesFromForm();
-      setConfirmedLines(built);
+      const built = buildCatLeSanPhamLine({
+        idSanPhamTrongKho: lines[index]?.productId || '',
+        mother: preview.mother,
+        nhomVthh: preview.nhomVthh,
+        qty: preview.qty,
+        w2: preview.w2 as number,
+        l2: preview.l2 as number,
+        doLiMoi: lines[index] ? doLiHaForLine(lines[index], preview.mother.doLi) : null,
+        kgCanThucTe: null,
+        pieces: preview.pieces,
+        ghiChu: lines[index]?.ghiChu.trim() || '',
+        doLiDm: lines[index]?.doLiDmText,
+        ...temArgsFromCutLine(lines[index])
+      });
+      const tenGhep = lines[index]?.tenGhep.trim();
+      if (tenGhep) built.san_pham_cat_1 = { ...built.san_pham_cat_1, ten_sp: tenGhep };
+      setConfirmedByKey(prev => ({ ...prev, [key]: built }));
       setModalError('');
     } catch (err: any) {
-      setConfirmedLines(null);
-      setModalError(err?.message || 'Không xem được kết quả cắt.');
+      setModalError(err?.message || 'Không xem được sản phẩm cắt ra.');
     }
   };
 
   const handleSaveModal = async () => {
     if (!canSave) {
-      setModalError('Còn dòng chưa hợp lệ — kiểm tra sản phẩm nguồn, hạ khổ, hạ li và SL thành phẩm.');
+      setModalError('Còn dòng chưa hợp lệ — kiểm tra Mã AMIS, Dài (m) và SL (tổng).');
       return;
     }
     setSaving(true);
@@ -716,9 +839,8 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
       const sanPham = lines.map((line, index) => {
         const preview = previews[index];
         const mother = preview.mother as CatLeMother;
-        const row = preview.motherRow as MotherStockRow;
         return {
-          idSanPhamTrongKho: row.id,
+          idSanPhamTrongKho: line.productId,
           maSpNguon: mother.maSp,
           tenSpNguon: mother.tenSp,
           donVi: mother.donVi,
@@ -728,17 +850,26 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
           mDaiNguon: mother.l1,
           tenGoc: mother.tenGoc,
           doLi: mother.doLi,
-          doLiDm: mother.doLiDm,
+          doLiDm: normalizeDoLiDm(line.doLiDmText, 'li') || mother.doLiDm,
           doDayM: mother.doDayM,
           doDaiM: mother.doDaiM,
           mang: mother.mang,
           hangPhe: mother.hangPhe,
           maAmis: mother.maAmis,
           moTaTem: mother.moTaTem || '',
-          nhomVthh: row.nhom_vthh,
+          nhomVthh: preview.nhomVthh,
           mDaiCat: preview.l2,
           khoRongM: preview.w2,
-          doLiCat: line.doLiText.trim() || null,
+          doLiCat: doLiHaForLine(line, mother.doLi),
+          tem: line.tem.trim(),
+          mauTem: line.mauTem.trim(),
+          danTem2Dau: line.danTem2Dau,
+          slCan: parseLocalizedNumber(line.conCanText) || regionSlTotal(line) || null,
+          slBac: line.slBac.trim(),
+          slTrung: line.slTrung.trim(),
+          slNam: line.slNam.trim(),
+          dinhMucKg: line.dinhMucKgText.trim(),
+          tongKg: line.tongKgText.trim(),
           soConMotMe: preview.pieces,
           kgCanThucTe: null,
           ghiChu: line.ghiChu.trim()
@@ -748,11 +879,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         ngayCat,
         // Xuất nguồn từ kho chính suy từ nhóm VTHH (Đặc → Kho Đặc; Sóng/Rỗng → Kho Sóng).
         khoNguon:
-          inferKhoChinhTuNhom(
-            String(
-              (previews[0]?.motherRow as MotherStockRow | undefined)?.nhom_vthh || ''
-            )
-          ) || KHO_CAT_LE,
+          inferKhoChinhTuNhom(previews[0]?.nhomVthh || '') || KHO_CAT_LE,
         khoDich: KHO_THANH_PHAM,
         nguoiThucHien: nguoiThucHien.trim(),
         nguoiLap: nguoiLap.trim(),
@@ -801,7 +928,6 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
       );
       if (record) openPrint(record);
       void loadLenh();
-      void loadStock();
     } catch (err: any) {
       showAppToast(err?.message || 'Không duyệt được lệnh cắt.', 'error');
     } finally {
@@ -892,7 +1018,6 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
           <button
             type="button"
             onClick={() => {
-              void loadStock();
               void loadLenh();
             }}
             className="rounded-lg bg-[#ef1b2d] px-4 py-2 text-xs font-black uppercase tracking-wide text-white hover:bg-[#d41424]"
@@ -1074,13 +1199,11 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
       </section>
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="flex h-[94vh] w-[96vw] max-w-[1600px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/50 p-3 backdrop-blur-sm">
+          <div className="flex h-[90dvh] max-h-[90dvh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
             <div className="flex shrink-0 items-center gap-2 border-b bg-white px-4 py-3">
               <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">{editingId ? 'Sửa lệnh cắt lẻ' : 'Thêm lệnh cắt lẻ mới'}</h3>
-              <span className="text-xs font-semibold text-zinc-500">
-                Xuất kho chính (Kho Đặc / Kho Sóng theo SP) → {KHO_THANH_PHAM} (+ thừa nhập lại kho nguồn)
-              </span>
+              <span className="text-xs font-semibold text-zinc-500">Cùng cột với đơn cắt lẻ. Xem sau STT để hiện mã mới, tên, SL, trọng lượng và m².</span>
               <button onClick={() => setShowModal(false)} className="ml-auto rounded border p-2 text-zinc-600">
                 <X size={14} />
               </button>
@@ -1103,291 +1226,326 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                 </label>
               </section>
 
-              <section className="space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-zinc-700">Đơn hàng & mã hàng *</h4>
-                  <button
-                    type="button"
-                    onClick={openAutofill}
-                    disabled={cutOrdersLoading}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/25 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <ClipboardCheck className="h-3.5 w-3.5" />
-                    Tự điền từ đơn hàng
-                  </button>
-                  {canSave && (
-                    <button
-                      type="button"
-                      onClick={handleConfirmPreview}
-                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-xs font-black text-emerald-800"
-                    >
-                      <Check size={14} /> Xác nhận
-                    </button>
-                  )}
-                  {canSave && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        try {
-                          showSlipPreview({
-                            ngay_cat: ngayCat,
-                            kho_nguon:
-                              inferKhoChinhTuNhom(
-                                String(
-                                  (previews[0]?.motherRow as MotherStockRow | undefined)?.nhom_vthh || ''
-                                )
-                              ) || KHO_CAT_LE,
-                            kho_dich: KHO_THANH_PHAM,
-                            kho_tai_che: KHO_TAI_CHE,
-                            nguoi_lap: nguoiLap.trim(),
-                            san_pham: linesFromForm()
-                          });
-                        } catch (err: any) {
-                          setModalError(err?.message || 'Không xem trước được phiếu.');
-                        }
-                      }}
-                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-sky-300 bg-sky-50 px-3 text-xs font-black text-sky-800"
-                    >
-                      <Printer size={14} /> Xem trước phiếu
-                    </button>
-                  )}
-                  <button
-                    onClick={() => {
-                      setConfirmedLines(null);
+              <div className="overflow-x-auto">
+                <div className={CUT_PRODUCT_MIN_WIDTH}>
+                  <RepeatableLinesBlock
+                    title="Sản phẩm"
+                    required
+                    showColumnHeaders
+                    alwaysShowColumnHeaders
+                    linesClassName="flex flex-col gap-2"
+                    gridTemplateClass={CUT_PRODUCT_GRID}
+                    onAdd={() => {
+                      setConfirmedByKey({});
                       setLines(prev => [...prev, newCutLine()]);
                     }}
-                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-extrabold text-emerald-800 hover:bg-emerald-100"
+                    addButtonClassName="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
+                    extraHeaderButtons={
+                      <>
+                        <button
+                          type="button"
+                          onClick={openAutofill}
+                          disabled={cutOrdersLoading}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/25 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <ClipboardCheck className="h-3.5 w-3.5" />
+                          Tự điền từ đơn hàng
+                        </button>
+                        {canSave && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              try {
+                                showSlipPreview({
+                                  ngay_cat: ngayCat,
+                                  kho_nguon: inferKhoChinhTuNhom(previews[0]?.nhomVthh || '') || KHO_CAT_LE,
+                                  kho_dich: KHO_THANH_PHAM,
+                                  kho_tai_che: KHO_TAI_CHE,
+                                  nguoi_lap: nguoiLap.trim(),
+                                  san_pham: linesFromForm()
+                                });
+                              } catch (err: any) {
+                                setModalError(err?.message || 'Không xem trước được phiếu.');
+                              }
+                            }}
+                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-sky-300 bg-sky-50 px-3 text-xs font-black text-sky-800"
+                          >
+                            <Printer size={14} /> Xem trước phiếu
+                          </button>
+                        )}
+                      </>
+                    }
+                    columns={[
+                      { key: 'stt', label: 'STT' },
+                      { key: 'code', label: 'Mã AMIS', required: true },
+                      { key: 'productionName', label: 'Tên sản xuất' },
+                      { key: 'unit', label: 'ĐVT' },
+                      { key: 'daiM', label: 'Dài (m)', required: true },
+                      { key: 'doLi', label: 'Độ li ĐM' },
+                      { key: 'dinhMucKg', label: 'Định mức KG' },
+                      { key: 'bac', label: 'Bắc' },
+                      { key: 'trung', label: 'Trung' },
+                      { key: 'nam', label: 'Nam' },
+                      { key: 'qty', label: 'SL (tổng)', required: true },
+                      { key: 'tongKg', label: 'Tổng KG (nhập)' },
+                      { key: 'tem', label: 'Tem' },
+                      { key: 'mauTem', label: 'Màu tem' },
+                      { key: 'haiDau', label: '2 Đầu' },
+                      { key: 'note', label: 'Ghi chú' },
+                      { key: 'actions', label: '' }
+                    ]}
                   >
-                    <Plus size={14} /> Thêm dòng
-                  </button>
+                    {lines.map((line, index) => {
+                      const preview = previews[index];
+                      const confirmed = confirmedByKey[line.key] || null;
+                      const regionTotal = regionSlTotal(line);
+                      const slTongText = regionTotal > 0 ? String(regionTotal) : line.conCanText;
+                      const slNum = parseLocalizedNumber(slTongText);
+                      const dmNum = parseLocalizedNumber(line.dinhMucKgText);
+                      const tongKgShown = line.tongKgText.trim()
+                        ? line.tongKgText
+                        : dmNum > 0 && slNum > 0
+                          ? String(Math.round(dmNum * slNum * 100) / 100)
+                          : '';
+                      const patchRegion = (patch: Partial<Pick<CutLine, 'slBac' | 'slTrung' | 'slNam'>>) => {
+                        const next = { ...line, ...patch };
+                        const any = [next.slBac, next.slTrung, next.slNam].some(value => String(value).trim());
+                        const total = regionSlTotal(next);
+                        updateLine(line.key, {
+                          ...patch,
+                          ...(any ? { conCanText: total > 0 ? String(total) : '' } : {})
+                        });
+                      };
+                      return (
+                        <div key={line.key} className="space-y-1">
+                          <RepeatableLineRow gridTemplateClass={CUT_PRODUCT_GRID} className="!py-2">
+                            <div className="flex h-11 items-center gap-1.5">
+                              <span className="w-4 shrink-0 text-xs font-black tabular-nums text-zinc-500">{index + 1}</span>
+                              <button
+                                type="button"
+                                onClick={() => confirmLine(line.key, index)}
+                                className={`h-8 min-w-0 flex-1 rounded-lg border px-1.5 text-[10px] font-black whitespace-nowrap ${confirmed ? 'border-emerald-400 bg-emerald-100 text-emerald-900' : 'border-emerald-300 bg-emerald-50 text-emerald-800'}`}
+                              >
+                                {confirmed ? 'Ẩn' : 'Xem'}
+                              </button>
+                            </div>
+                            <input
+                              value={line.amisCode}
+                              onChange={e => updateLine(line.key, { amisCode: e.target.value, productId: '' })}
+                              placeholder="Mã AMIS"
+                              className={orderFieldClass}
+                            />
+                            <input
+                              value={line.productionName}
+                              onChange={e => updateLine(line.key, { productionName: e.target.value })}
+                              placeholder="Tên sản xuất"
+                              className={orderFieldClass}
+                            />
+                            <input
+                              value={line.unit}
+                              onChange={e => updateLine(line.key, { unit: e.target.value })}
+                              placeholder="ĐVT"
+                              className={`${orderFieldClass} text-center`}
+                            />
+                            <input
+                              value={line.mDaiText}
+                              onChange={e => updateLine(line.key, { mDaiText: e.target.value })}
+                              onWheel={e => e.currentTarget.blur()}
+                              inputMode="decimal"
+                              title="Dài (m) đặt cắt"
+                              className={cellInputClass}
+                            />
+                            <input
+                              value={/\(|đm/iu.test(line.doLiDmText) ? doLiDmSo(line.doLiDmText) : line.doLiDmText}
+                              onChange={e => updateLine(line.key, { doLiDmText: e.target.value })}
+                              onWheel={e => e.currentTarget.blur()}
+                              inputMode="decimal"
+                              title="Độ li ĐM — chỉ số"
+                              className={cellInputClass}
+                            />
+                            <input
+                              value={line.dinhMucKgText}
+                              onChange={e => updateLine(line.key, { dinhMucKgText: e.target.value })}
+                              onWheel={e => e.currentTarget.blur()}
+                              inputMode="decimal"
+                              className={cellInputClass}
+                            />
+                            <input
+                              value={line.slBac}
+                              onChange={e => patchRegion({ slBac: e.target.value })}
+                              onWheel={e => e.currentTarget.blur()}
+                              inputMode="decimal"
+                              className={cellInputClass}
+                            />
+                            <input
+                              value={line.slTrung}
+                              onChange={e => patchRegion({ slTrung: e.target.value })}
+                              onWheel={e => e.currentTarget.blur()}
+                              inputMode="decimal"
+                              className={cellInputClass}
+                            />
+                            <input
+                              value={line.slNam}
+                              onChange={e => patchRegion({ slNam: e.target.value })}
+                              onWheel={e => e.currentTarget.blur()}
+                              inputMode="decimal"
+                              className={cellInputClass}
+                            />
+                            <input value={slTongText} readOnly className={`${cellInputClass} bg-zinc-50 font-black`} placeholder="Tự tính" />
+                            <input
+                              value={tongKgShown}
+                              onChange={e => updateLine(line.key, { tongKgText: e.target.value })}
+                              onWheel={e => e.currentTarget.blur()}
+                              inputMode="decimal"
+                              placeholder="Tổng KG"
+                              className={cellInputClass}
+                            />
+                            <input value={line.tem} onChange={e => updateLine(line.key, { tem: e.target.value })} className={orderFieldClass} />
+                            <input value={line.mauTem} onChange={e => updateLine(line.key, { mauTem: e.target.value })} className={orderFieldClass} />
+                            <div className="flex h-11 items-center justify-center">
+                              <input
+                                type="checkbox"
+                                checked={line.danTem2Dau}
+                                onChange={e => updateLine(line.key, { danTem2Dau: e.target.checked })}
+                              />
+                            </div>
+                            <input
+                              value={line.ghiChu}
+                              onChange={e => updateLine(line.key, { ghiChu: e.target.value })}
+                              placeholder="Ghi chú"
+                              className={orderFieldClass}
+                            />
+                            <div className="flex h-11 items-center justify-end">
+                              <button
+                                type="button"
+                                title="Xóa dòng"
+                                onClick={() => removeLine(line.key)}
+                                disabled={lines.length <= 1}
+                                className="rounded-lg border p-2 text-red-600 disabled:opacity-30"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </RepeatableLineRow>
+                          {preview?.error ? (
+                            <p className="px-1 text-[11px] font-bold text-red-600">{preview.error}</p>
+                          ) : null}
+                          {confirmed?.san_pham_cat_1 ? (() => {
+                            const xuatChinh = Number(confirmed.san_pham_nguon.so_luong) || 0;
+                            const slRa = Number(confirmed.so_luong_cat_1) || 0;
+                            const slCan = parseLocalizedNumber(line.conCanText);
+                            const slCat = slCan > 0 && slCan < slRa ? slCan : slRa;
+                            const slDu = Math.max(0, Math.round((slRa - slCat) * 1000) / 1000);
+                            const slThua = confirmed.san_pham_cat_2 ? xuatChinh : 0;
+                            const donVi = line.unit.trim() || 'tấm';
+                            const conLaiText = slDu > 0 && slThua > 0
+                              ? `${fmtQty(slDu)} ${donVi} cắt dư, ${fmtQty(slThua)} ${donVi} thừa`
+                              : `${fmtQty(slDu || slThua)} ${donVi}`;
+                            const tenSp = lookupProductName(line, catalog, confirmed.san_pham_nguon.ten_goc);
+                            const nguon = confirmed.san_pham_nguon;
+                            const cat = confirmed.san_pham_cat_1;
+                            const daiNguon = nguon.do_dai_m || (nguon.m_dai > 0 ? `${fmtQty(nguon.m_dai)}m` : '');
+                            const daiCat = cat.do_dai_m || (cat.m_dai > 0 ? `${fmtQty(cat.m_dai)}m` : '');
+                            const maCat = changedAmisCode(line.amisCode, cat.ma_amis || '') || line.amisCode;
+                            return (
+                            <div className="rounded-lg border border-zinc-200 bg-zinc-50">
+                              <div className="grid grid-cols-3 gap-2 border-b border-zinc-300 bg-white px-3 py-2.5">
+                                <span className="text-sm font-black text-zinc-950">Xuất tấm chính: {fmtQty(xuatChinh)} {donVi}</span>
+                                <span className="text-sm font-black text-emerald-800">Cắt: {fmtQty(slCat)} {donVi}</span>
+                                <span className="text-sm font-black text-amber-800">Còn lại: {conLaiText}</span>
+                              </div>
+                              <div className="overflow-x-auto">
+                              <div className="min-w-[1080px]">
+                                <div className={`grid ${RESULT_GRID} gap-2 border-b border-zinc-200 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-zinc-500`}>
+                                  <span />
+                                  <span>Mã AMIS</span>
+                                  <span>Tên sản phẩm</span>
+                                  <span>Tên sản xuất</span>
+                                  <span className="text-right">SL</span>
+                                  <span className="text-right">Độ li</span>
+                                  <span className="text-right">Dài</span>
+                                  <span className="text-right">Tổng kg</span>
+                                  <span className="text-right">m²</span>
+                                </div>
+                                <CutResultRow
+                                  label="Xuất"
+                                  tone="source"
+                                  code={nguon.ma_amis || line.amisCode}
+                                  productName={tenSp}
+                                  productionName={nguon.ten_sp}
+                                  qty={xuatChinh}
+                                  doLi={nguon.do_li}
+                                  dai={daiNguon}
+                                  kg={Number(nguon.kg) || 0}
+                                  m2={Number(nguon.m2) || 0}
+                                />
+                                <CutResultRow
+                                  label="Cắt"
+                                  tone="cut"
+                                  code={maCat}
+                                  productName={tenSp}
+                                  productionName={cat.ten_sp}
+                                  qty={slCat}
+                                  doLi={cat.do_li}
+                                  dai={daiCat}
+                                  kg={Number(cat.kg) || 0}
+                                  m2={Number(cat.m2) || 0}
+                                />
+                                {slDu > 0 ? (
+                                  <CutResultRow
+                                    label="Còn lại"
+                                    tone="rest"
+                                    code={maCat}
+                                    productName={tenSp}
+                                    productionName={cat.ten_sp}
+                                    qty={slDu}
+                                    doLi={cat.do_li}
+                                    dai={daiCat}
+                                    kg={Number(cat.kg) || 0}
+                                    m2={Number(cat.m2) || 0}
+                                  />
+                                ) : null}
+                                {confirmed.san_pham_cat_2 ? (
+                                  <CutResultRow
+                                    label={slDu > 0 ? 'Thừa' : 'Còn lại'}
+                                    tone="rest"
+                                    code={changedAmisCode(line.amisCode, confirmed.san_pham_cat_2.ma_amis || '') || line.amisCode}
+                                    productName={tenSp}
+                                    productionName={confirmed.san_pham_cat_2.ten_sp}
+                                    qty={slThua}
+                                    doLi={confirmed.san_pham_cat_2.do_li}
+                                    dai={confirmed.san_pham_cat_2.do_dai_m || (confirmed.san_pham_cat_2.m_dai > 0 ? `${fmtQty(confirmed.san_pham_cat_2.m_dai)}m` : '')}
+                                    kg={Number(confirmed.san_pham_cat_2.kg) || 0}
+                                    m2={Number(confirmed.san_pham_cat_2.m2) || 0}
+                                  />
+                                ) : slDu > 0 ? null : (
+                                  <CutResultRow
+                                    label="Còn lại"
+                                    tone="none"
+                                    code=""
+                                    productName=""
+                                    productionName="Không còn"
+                                    qty={0}
+                                    doLi=""
+                                    dai=""
+                                    kg={0}
+                                    m2={0}
+                                  />
+                                )}
+                              </div>
+                              </div>
+                            </div>
+                            );
+                          })() : null}
+                        </div>
+                      );
+                    })}
+                  </RepeatableLinesBlock>
                 </div>
-                <div className="overflow-x-auto rounded-xl border">
-          <table className="w-full min-w-[1080px] text-left text-xs">
-                    <thead className="bg-zinc-900 text-[10px] uppercase text-white">
-                      <tr>
-                        <th className="px-2 py-2 text-center">STT</th>
-                        <th className="px-2 py-2">Mã đơn</th>
-                        <th className="px-2 py-2">Mã hàng *</th>
-                        <th className="px-2 py-2">Tên sản xuất</th>
-                        <th className="px-2 py-2 text-center">ĐVT</th>
-                        <th className="px-2 py-2 text-center">Hạ khổ</th>
-                        <th className="px-2 py-2 text-center">Hạ li</th>
-                        <th className="px-2 py-2 text-center">M cắt dài</th>
-                        <th className="px-2 py-2 text-center">SL thành phẩm *</th>
-                        <th className="px-2 py-2 text-center">Ghi chú</th>
-                        <th className="px-2 py-2" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {lines.map((line, index) => {
-                        const preview = previews[index];
-                        const confirmed = confirmedLines?.[index] || null;
-                        const row = preview?.motherRow || null;
-                        const tenOptions = row ? stock.filter(item => item.ma_sp === row.ma_sp) : stock;
-                        return (
-                          <React.Fragment key={line.key}>
-                            <tr className="border-t align-top">
-                              <td className="px-2 py-2 text-center font-black">{index + 1}</td>
-                              <td className="min-w-[120px] px-2 py-2">
-                                <input
-                                  value={line.orderCode}
-                                  onChange={e => updateLine(line.key, { orderCode: e.target.value })}
-                                  placeholder="Mã đơn"
-                                  className={cellInputClass}
-                                />
-                              </td>
-                              <td className="min-w-[150px] px-2 py-2">
-                                <SearchableSelect
-                                  value={line.motherKey}
-                                  onChange={value => {
-                                    const picked = stock.find(item => item.key === value);
-                                    const defaults = motherCutDefaults(picked);
-                                    updateLine(line.key, {
-                                      motherKey: value,
-                                      missingCode: '',
-                                      khoRongText: line.khoRongText || defaults.khoRongText,
-                                      mDaiText: line.mDaiText || defaults.mDaiText
-                                    });
-                                  }}
-                                  options={stock}
-                                  placeholder={stockLoading ? 'Đang tải...' : 'Mã SP...'}
-                                  isLoading={stockLoading}
-                                  getLabel={(item: unknown) => {
-                                    const r = item as MotherStockRow;
-                                    return `${r.ma_sp} · ${r.ten_kho || ''} — tồn ${r.ton_sl}`;
-                                  }}
-                                  getValue={(item: unknown) => (item as MotherStockRow).key}
-                                />
-                              </td>
-                              <td className="min-w-[260px] px-2 py-2">
-                                <SearchableSelect
-                                  value={line.motherKey}
-                                  onChange={value => {
-                                    const picked = stock.find(item => item.key === value);
-                                    const defaults = motherCutDefaults(picked);
-                                    updateLine(line.key, {
-                                      motherKey: value,
-                                      missingCode: '',
-                                      khoRongText: line.khoRongText || defaults.khoRongText,
-                                      mDaiText: line.mDaiText || defaults.mDaiText
-                                    });
-                                  }}
-                                  options={tenOptions}
-                                  placeholder={stockLoading ? 'Đang tải...' : 'Tên SP...'}
-                                  isLoading={stockLoading}
-                                  getLabel={(item: unknown) => {
-                                    const r = item as MotherStockRow;
-                                    return `${r.ten_sp} · ${r.ten_kho || ''} — tồn ${r.ton_sl}`;
-                                  }}
-                                  getValue={(item: unknown) => (item as MotherStockRow).key}
-                                />
-                              </td>
-                              <td className="px-2 py-2 text-center font-bold">{row?.don_vi || '—'}</td>
-                              <td className="px-2 py-2">
-                                <input
-                                  value={line.khoRongText}
-                                  onChange={e => updateLine(line.key, { khoRongText: e.target.value })}
-                                  inputMode="decimal"
-                                  placeholder={preview?.mother ? `Nguồn ${fmtQty(motherWidth(preview.mother) ?? parseMeterLabel(preview.mother.doDayM))}` : 'vd 1.22'}
-                                  title="Hạ khổ đích (m). Nhỏ hơn khổ nguồn để xẻ khổ. Bỏ trống = giữ khổ nguồn."
-                                  className={cellInputClass}
-                                />
-                              </td>
-                              <td className="px-2 py-2">
-                                <input
-                                  value={line.doLiText}
-                                  onChange={e => updateLine(line.key, { doLiText: e.target.value })}
-                                  inputMode="decimal"
-                                  placeholder={preview?.mother?.doLi ? `Nguồn ${preview.mother.doLi}` : 'vd 0.4'}
-                                  title="Hạ li đích. Bỏ trống = giữ độ li nguồn. SL nguồn xuất được tính từ SL thành phẩm, hạ khổ và hạ li."
-                                  className={cellInputClass}
-                                />
-                              </td>
-                              <td className="px-2 py-2">
-                                <input
-                                  value={line.mDaiText}
-                                  onChange={e => updateLine(line.key, { mDaiText: e.target.value })}
-                                  inputMode="decimal"
-                                  placeholder={
-                                    preview?.mother
-                                      ? `Nguồn ${fmtQty(
-                                          (preview.mother.l1 > 0 ? preview.mother.l1 : null) ??
-                                            parseMeterLabel(preview.mother.doDaiM) ??
-                                            lengthFromProductName(preview.mother.tenSp, motherWidth(preview.mother))
-                                        )}`
-                                      : 'vd 12'
-                                  }
-                                  title="M cắt dài đích (m) — điền từ do_dai_m của sản phẩm nguồn. Sửa ngắn hơn để cắt dài. Bỏ trống = giữ m dài nguồn."
-                                  className={cellInputClass}
-                                />
-                              </td>
-                              <td className="px-2 py-2">
-                                <input
-                                  value={line.conCanText}
-                                  onChange={e => updateLine(line.key, { conCanText: e.target.value })}
-                                  inputMode="decimal"
-                                  title="SL thành phẩm cần cắt. Hệ thống tự tính số lượng nguồn cần xuất từ SL này, hạ khổ và hạ li."
-                                  placeholder="vd 3"
-                                  className={`${cellInputClass} text-right`}
-                                />
-                              </td>
-                              <td className="min-w-[140px] px-2 py-2">
-                                <input
-                                  value={line.ghiChu}
-                                  onChange={e => updateLine(line.key, { ghiChu: e.target.value })}
-                                  placeholder="Ghi chú dòng này"
-                                  className={cellInputClass}
-                                />
-                              </td>
-                              <td className="px-2 py-2 text-center">
-                                <button
-                                  title="Xóa dòng"
-                                  onClick={() => removeLine(line.key)}
-                                  disabled={lines.length <= 1}
-                                  className="rounded border p-2 text-red-600 disabled:opacity-30"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </td>
-                            </tr>
-                            {preview?.error ? (
-                              <tr className="border-t bg-red-50/70">
-                                <td />
-                                <td colSpan={11} className="px-2 py-1.5 text-[11px] font-bold text-red-600">
-                                  {preview.error}
-                                </td>
-                              </tr>
-                            ) : null}
-                            {preview?.result && !preview.error ? (
-                              <tr className="border-t bg-sky-50/70">
-                                <td />
-                                <td colSpan={10} className="px-2 py-1.5 text-[11px] font-bold text-sky-800">
-                                  SL thành phẩm {fmtQty(parseLocalizedNumber(line.conCanText))}
-                                  {` · xuất ${fmtQty(preview.qty)} nguồn`}
-                                  {preview.result.pieces > 1 && ` (${preview.result.pieces} TP/nguồn)`}
-                                  {preview.result.tenSpThua ? ` · có phần thừa ${preview.result.doDayMThua || ''} ${preview.result.doDaiMThua || ''}` : ' · vừa khít'}
-                                </td>
-                              </tr>
-                            ) : null}
-                            {confirmed?.san_pham_cat_1 ? (
-                              <tr className="border-t bg-emerald-50/80">
-                                <td />
-                                <td colSpan={11} className="px-2 py-1.5 text-[12px] font-semibold text-zinc-800">
-                                  <span className="font-black text-emerald-800">Cắt</span>
-                                  {' · '}
-                                  {KHO_THANH_PHAM}
-                                  {' · '}
-                                  <span className="font-mono font-bold">{confirmed.san_pham_nguon.ma_sp}</span>
-                                  {' · '}
-                                  {confirmed.san_pham_cat_1.ten_sp}
-                                  {' · SL '}
-                                  {fmtQty(
-                                    Number(confirmed.so_luong_cat_1) ||
-                                      (Number(confirmed.san_pham_nguon.so_luong) || 0) *
-                                        (Number(confirmed.so_con_mot_me) || 1)
-                                  )}
-                                  {Number(confirmed.so_con_mot_me) > 1 &&
-                                    ` (${fmtQty(confirmed.san_pham_nguon.so_luong)} nguồn × ${confirmed.so_con_mot_me})`}
-                                  {' · '}
-                                  {fmtQuyDoi(confirmed.san_pham_cat_1)}
-                                </td>
-                              </tr>
-                            ) : null}
-                            {confirmed?.san_pham_cat_2 ? (
-                              <tr className="border-t bg-amber-50/80">
-                                <td />
-                                <td colSpan={11} className="px-2 py-1.5 text-[12px] font-semibold text-zinc-800">
-                                  <span className="font-black text-amber-800">Còn lại</span>
-                                  {' · '}
-                                  {KHO_CAT_LE}
-                                  {' · '}
-                                  <span className="font-mono font-bold">{confirmed.san_pham_nguon.ma_sp}</span>
-                                  {' · '}
-                                  {confirmed.san_pham_cat_2.ten_sp}
-                                  {' · SL '}
-                                  {fmtQty(confirmed.san_pham_nguon.so_luong)}
-                                  {' · '}
-                                  {fmtQuyDoi(confirmed.san_pham_cat_2)}
-                                </td>
-                              </tr>
-                            ) : null}
-                          </React.Fragment>
-                        );
-                      })}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t bg-zinc-900 text-white">
-                        <td colSpan={8} className="px-2 py-2 text-right font-black">TỔNG SL THÀNH PHẨM</td>
-                        <td className="px-2 py-2 text-right font-black">{fmtQty(totals.qtyCon)}</td>
-                        <td colSpan={2} />
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-                <p className="text-[11px] font-semibold text-zinc-500">
-                  Trên bảng chỉ nhập SL thành phẩm cần cắt. Số lượng nguồn cần xuất được tính từ SL đó, hạ khổ và hạ li (1 tấm nguồn ra được bao nhiêu thành phẩm thì xuất bấy nhiêu tấm, làm tròn lên). Bỏ trống hạ khổ, hạ li hoặc m cắt dài = giữ số của nguồn. Bấm Tự điền từ đơn hàng để lấy mã đơn, mã hàng và SL thành phẩm từ đơn cắt lẻ.
-                </p>
-              </section>
+              </div>
+              <p className="text-[11px] font-semibold text-zinc-500">
+                Cột giống đơn cắt lẻ. Bấm Xem để tính xuất, cắt, còn từ tấm chính, mét hạ, độ li hạ và SL (tổng). Mỗi dòng hiện mã, tên, độ li, dài, SL, tổng kg và m². SL (tổng) = Bắc + Trung + Nam.
+              </p>
 
               {modalError && <p className="text-xs font-bold text-red-600">{modalError}</p>}
 
@@ -1411,12 +1569,12 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
 
       {showAutofill && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/50 p-2 sm:p-4 backdrop-blur-sm">
-          <div className="flex h-[90dvh] max-h-[90dvh] w-[90vw] max-w-[960px] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
+          <div className="flex h-[90dvh] max-h-[90dvh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
             <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
               <div>
                 <h4 className="text-sm font-black uppercase tracking-wider text-zinc-950">Tự điền từ đơn hàng</h4>
                 <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-                  Chọn đơn cắt lẻ, rồi tick sản phẩm. SL điền vào lệnh là SL thành phẩm cần cắt.
+                  Chọn đơn cắt lẻ, rồi tick sản phẩm. Các cột giống đơn hàng.
                 </p>
               </div>
               <button
@@ -1431,12 +1589,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                 <label className="space-y-1.5 sm:w-48">
                   <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Ngày đơn</span>
-                  <input
-                    type="date"
-                    value={autofillDate}
-                    onChange={e => setAutofillDate(e.target.value)}
-                    className={inputClass}
-                  />
+                  <VnCalendarPicker value={autofillDate} onChange={setAutofillDate} />
                 </label>
                 <label className="min-w-0 flex-1 space-y-1.5">
                   <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Tìm đơn / mã hàng</span>
@@ -1485,44 +1638,82 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                 })}
               </div>
               {autofillProducts.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h5 className="text-xs font-black uppercase text-zinc-700">Sản phẩm</h5>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const keys = autofillProducts.map(item => item.key);
-                        const allOn = keys.every(key => selectedProductKeys.includes(key));
-                        setSelectedProductKeys(prev => (allOn ? prev.filter(key => !keys.includes(key)) : [...new Set([...prev, ...keys])]));
-                      }}
-                      className="text-xs font-bold text-[#ef1b2d]"
+                <div className="overflow-x-auto">
+                  <div className={AUTOFILL_PRODUCT_MIN_WIDTH}>
+                    <RepeatableLinesBlock
+                      title="Sản phẩm"
+                      hideAddButton
+                      showColumnHeaders
+                      alwaysShowColumnHeaders
+                      linesClassName="flex flex-col gap-2"
+                      gridTemplateClass={AUTOFILL_PRODUCT_GRID}
+                      onAdd={() => undefined}
+                      extraHeaderButtons={
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const keys = autofillProducts.map(item => item.key);
+                            const allOn = keys.every(key => selectedProductKeys.includes(key));
+                            setSelectedProductKeys(prev => (allOn ? prev.filter(key => !keys.includes(key)) : [...new Set([...prev, ...keys])]));
+                          }}
+                          className="text-xs font-bold text-[#ef1b2d]"
+                        >
+                          {autofillProducts.every(item => selectedProductKeys.includes(item.key)) ? 'Bỏ chọn' : 'Chọn tất cả'}
+                        </button>
+                      }
+                      columns={[
+                        { key: 'stt', label: 'STT' },
+                        { key: 'code', label: 'Mã AMIS', required: true },
+                        { key: 'productionName', label: 'Tên sản xuất' },
+                        { key: 'unit', label: 'ĐVT' },
+                        { key: 'daiM', label: 'Dài (m)', required: true },
+                        { key: 'doLi', label: 'Độ li ĐM' },
+                        { key: 'dinhMucKg', label: 'Định mức KG' },
+                        { key: 'bac', label: 'Bắc' },
+                        { key: 'trung', label: 'Trung' },
+                        { key: 'nam', label: 'Nam' },
+                        { key: 'qty', label: 'SL (tổng)', required: true },
+                        { key: 'tongKg', label: 'Tổng KG (nhập)' },
+                        { key: 'tem', label: 'Tem' },
+                        { key: 'mauTem', label: 'Màu tem' },
+                        { key: 'haiDau', label: '2 Đầu' },
+                        { key: 'note', label: 'Ghi chú' }
+                      ]}
                     >
-                      {autofillProducts.every(item => selectedProductKeys.includes(item.key)) ? 'Bỏ chọn' : 'Chọn tất cả'}
-                    </button>
-                  </div>
-                  {autofillProducts.map(item => (
-                    <label key={item.key} className="flex cursor-pointer items-start gap-2 rounded-lg border border-zinc-100 px-3 py-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedProductKeys.includes(item.key)}
-                        onChange={() =>
+                      {autofillProducts.map((item, index) => {
+                        const checked = selectedProductKeys.includes(item.key);
+                        const toggle = () =>
                           setSelectedProductKeys(prev =>
                             prev.includes(item.key) ? prev.filter(key => key !== item.key) : [...prev, item.key]
-                          )
-                        }
-                        className="mt-1"
-                      />
-                      <span className="min-w-0 text-sm font-semibold text-zinc-800">
-                        <span className="font-black">{item.order.orderCode}</span>
-                        {' · '}
-                        {item.line.productCode || '—'}
-                        {' · '}
-                        {item.line.tenGhep || item.line.productionName || item.line.productName || '—'}
-                        {' · SL '}
-                        {fmtQty(orderFinishedQty(item.line))}
-                      </span>
-                    </label>
-                  ))}
+                          );
+                        return (
+                          <RepeatableLineRow key={item.key} gridTemplateClass={AUTOFILL_PRODUCT_GRID} className="!py-2">
+                            <label className="flex h-11 cursor-pointer items-center gap-2">
+                              <input type="checkbox" checked={checked} onChange={toggle} />
+                              <span className="text-xs font-black tabular-nums text-zinc-500">{index + 1}</span>
+                            </label>
+                            <input readOnly value={item.line.maAmis || item.line.productCode || ''} className={autofillReadClass} />
+                            <input readOnly value={item.line.productionName || item.line.tenGhep || ''} className={autofillReadClass} />
+                            <input readOnly value={item.line.unit || ''} className={`${autofillReadClass} text-center`} />
+                            <input readOnly value={item.line.daiM || ''} className={`${autofillReadClass} text-right`} />
+                            <input readOnly value={doLiDmSo(item.line.doLiDm || '')} className={`${autofillReadClass} text-right`} />
+                            <input readOnly value={item.line.dinhMucKg || ''} className={`${autofillReadClass} text-right`} />
+                            <input readOnly value={item.line.soLuongBac || ''} className={`${autofillReadClass} text-right`} />
+                            <input readOnly value={item.line.soLuongTrung || ''} className={`${autofillReadClass} text-right`} />
+                            <input readOnly value={item.line.soLuongNam || ''} className={`${autofillReadClass} text-right`} />
+                            <input readOnly value={fmtQty(orderFinishedQty(item.line))} className={`${autofillReadClass} text-right font-black`} />
+                            <input readOnly value={item.line.tongKg || ''} className={`${autofillReadClass} text-right`} />
+                            <input readOnly value={item.line.tem || ''} className={autofillReadClass} />
+                            <input readOnly value={item.line.mauTem || ''} className={autofillReadClass} />
+                            <div className="flex h-11 items-center justify-center">
+                              <input type="checkbox" checked={Boolean(item.line.danTem2Dau)} readOnly />
+                            </div>
+                            <input readOnly value={item.line.note || ''} className={autofillReadClass} />
+                          </RepeatableLineRow>
+                        );
+                      })}
+                    </RepeatableLinesBlock>
+                  </div>
                 </div>
               )}
             </div>

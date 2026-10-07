@@ -23,6 +23,25 @@ const mother20m: CatLeMother = {
   maAmis: ''
 };
 
+describe('lenh-cat-le — sóng chỉ có mét dài', () => {
+  it('cắt 6M xuống 2m thì tên chỉ còn 2m, không chèn khổ 1m', () => {
+    const song: CatLeMother = {
+      ...mother20m,
+      tenSp: 'NHỰA SÓNG TRẮNG - NP2 - 11 SÓNG 5KG - 6M - Giá rẻ',
+      doDayM: '',
+      doDaiM: '6m',
+      doLi: '',
+      doLiDm: '',
+      a1: 6,
+      l1: 6,
+      tenGoc: 'NHỰA SÓNG TRẮNG - NP2 - 11 SÓNG 5KG'
+    };
+    const r = computeCatLe(song, { w2: 1, l2: 2, qty: 1, pieces: 3 });
+    assert.equal(r.tenSpCon, 'NHỰA SÓNG TRẮNG - NP2 - 11 SÓNG 5KG - 2m - Giá rẻ');
+    assert.doesNotMatch(r.tenSpCon, /1m/);
+  });
+});
+
 describe('lenh-cat-le — tấm 20m cắt 12m (chỉ đổi dài)', () => {
   it('TP 12m + thừa 8m, tên giữ do_li, bảo toàn kg', () => {
     const r = computeCatLe(mother20m, { w2: 1.22, l2: 12, qty: 1 });
@@ -119,12 +138,11 @@ describe('lenh-cat-le — validate', () => {
 });
 
 describe('lenh-cat-le — tên theo độ li, khổ rộng, m dài', () => {
-  it('đổi độ li thì tên đích đổi độ li và ghép lại do_day_m, phần còn lại giữ nguồn', () => {
+  it('đổi độ li thì tên đích đổi độ li, giữ khổ, phần còn lại giữ nguồn', () => {
     const r = computeCatLe(mother20m, { w2: 1.22, l2: 12, qty: 1, doLiMoi: '0.4' });
     assert.match(r.tenSpCon, /0\.4li/);
-    assert.equal(r.doDayMCon, '0.4m');
-    assert.match(r.tenSpCon, /0\.4m/);
-    assert.doesNotMatch(r.tenSpCon, /1\.22m/);
+    assert.equal(r.doDayMCon, '1.22m');
+    assert.match(r.tenSpCon, /1\.22m/);
     assert.match(r.tenSpCon, /12m/);
     assert.match(r.tenSpThua, /0\.8li/);
     assert.match(r.tenSpThua, /1\.22m/);

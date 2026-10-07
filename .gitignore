@@ -11,3 +11,4 @@ log.txt
 !.env.example
 .ai/
 test-results/
+.tmp-esbuild/

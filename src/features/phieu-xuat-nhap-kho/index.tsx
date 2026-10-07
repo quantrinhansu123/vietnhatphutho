@@ -765,7 +765,20 @@ export function isFinishedGoodsWarehouseName(value?: string | null) {
   );
 }
 
-/** Suy loại kho từ tên kho trong Quản lý kho. */
+/** Kho NVL / nguyên vật liệu / vật tư / Kho PC — không dùng phiếu sản phẩm. */
+function isNamedNvlWarehouse(value?: string | null) {
+  const key = normalizeWarehouseNameKey(value);
+  if (!key) return false;
+  if (key.includes('nvl') || key.includes('nguyen vat lieu') || key.includes('vat tu')) return true;
+  return /(^|[\s_\-])pc([\s_\-]|$)/.test(key);
+}
+
+/**
+ * Suy loại kho từ tên trong Quản lý kho.
+ * Kho không mang tên NVL, tái chế, hàng hỏng, hàng hóa, công cụ hay gia công
+ * (Kho thành phẩm, Kho Đặc, Kho Sóng, Kho Rỗng, Kho cắt lẻ…) là kho sản phẩm:
+ * phiếu nhập xuất thành phẩm vẫn chọn lệnh SX, máy và sản phẩm.
+ */
 export function inferWarehouseKindFromName(value?: string | null): WarehouseKind {
   if (isFinishedGoodsWarehouseName(value)) return 'san_pham';
   if (isDamagedGoodsWarehouseName(value)) return 'hang_hong';
@@ -773,7 +786,8 @@ export function inferWarehouseKindFromName(value?: string | null): WarehouseKind
   if (isToolsWarehouseName(value)) return 'cong_cu_dung_cu';
   if (isProcessingWarehouseName(value)) return 'gia_cong';
   if (isRecycleWarehouseName(value)) return 'tai_che';
-  return 'nvl';
+  if (isNamedNvlWarehouse(value)) return 'nvl';
+  return 'san_pham';
 }
 
 /**
