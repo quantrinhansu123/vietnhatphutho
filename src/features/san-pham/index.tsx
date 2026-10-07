@@ -150,10 +150,10 @@ function extractKiemKhoPrefix(raw: string) {
   return trimmed;
 }
 
-function productCodeCandidates(product: { code?: string; amisCode?: string; newCode?: string }) {
+function productCodeCandidates(product: { code?: string; amisCode?: string; newCode?: string; amisOldCode?: string }) {
   return [
     ...new Set(
-      [product.code, product.amisCode, product.newCode]
+      [product.code, product.amisCode, product.newCode, product.amisOldCode]
         .map(code => String(code ?? '').trim())
         .filter(Boolean)
     )
@@ -631,7 +631,8 @@ export function findProductByCode(products: ProductRow[], code: string) {
     product =>
       normalizeProductCodeKey(product.code) === key ||
       (product.amisCode && normalizeProductCodeKey(product.amisCode) === key) ||
-      (product.newCode && normalizeProductCodeKey(product.newCode) === key)
+      (product.newCode && normalizeProductCodeKey(product.newCode) === key) ||
+      (product.amisOldCode && normalizeProductCodeKey(product.amisOldCode) === key)
   );
 }
 
@@ -1336,7 +1337,8 @@ export function ProductViewModal({
       const candidateKeys = [
         normalizeProductCodeKey(product.code),
         normalizeProductCodeKey(product.newCode),
-        normalizeProductCodeKey(product.amisCode)
+        normalizeProductCodeKey(product.amisCode),
+        normalizeProductCodeKey(product.amisOldCode)
       ].filter(Boolean);
 
       const bulkRows = await parseBulkProductNplComponentsExcel(file);
@@ -1514,6 +1516,9 @@ export function ProductViewModal({
   const compactInfoRows = ([
     ['Mã SP', product.code || '-'],
     ['Mã AMIS', productAmisDisplayCode(product)],
+    ...(product.amisOldCode
+      ? [['Mã AMIS cũ', product.amisOldCode] as [string, string]]
+      : []),
     ...(product.newCode && product.newCode !== '-' && product.newCode !== product.code
       ? [['Mã mới', product.newCode] as [string, string]]
       : []),
@@ -2486,6 +2491,7 @@ export function normalizeProducts(data: unknown): ProductRow[] {
         code,
         newCode: String(record.ma_sp_moi ?? '').trim(),
         amisCode: String(record.ma_amis ?? '').trim(),
+        amisOldCode: String(record.ma_amis_cu ?? '').trim(),
         name,
         productionName: String(record.ten_san_xuat ?? record.productionName ?? '').trim(),
         tenGoc: String(record.ten_goc ?? '').trim(),
@@ -2534,6 +2540,7 @@ export type ProductFormState = {
   code: string;
   newCode: string;
   amisCode: string;
+  amisOldCode: string;
   name: string;
   productionName: string;
   tenGoc: string;
@@ -2687,6 +2694,7 @@ export function productToForm(product: ProductRow, conversions: ProductConversio
     code: productCellToInput(product.code),
     newCode: productCellToInput(product.newCode),
     amisCode: productCellToInput(product.amisCode),
+    amisOldCode: productCellToInput(product.amisOldCode || ''),
     name: productCellToInput(product.name),
     productionName: productCellToInput(product.productionName),
     tenGoc: productCellToInput(product.tenGoc),
@@ -2723,6 +2731,7 @@ export function emptyProductForm(): ProductFormState {
     code: '',
     newCode: '',
     amisCode: '',
+    amisOldCode: '',
     name: '',
     productionName: '',
     tenGoc: '',
@@ -2763,6 +2772,7 @@ export function productFormToPayload(
     code: includeProduction ? form.amisCode.trim() || form.code.trim() : form.code.trim(),
     newCode: form.newCode.trim(),
     amisCode: form.amisCode.trim(),
+    amisOldCode: form.amisOldCode.trim(),
     name: form.name.trim(),
     nature: form.nature.trim(),
     group: form.group.trim(),
@@ -2969,7 +2979,7 @@ export function ProductEditModal({
   const amisOptions = products.filter(item => item.amisCode.trim());
   const filteredAmisOptions = amisOptions
     .filter(item =>
-      `${item.amisCode} ${item.name} ${item.productionName || ''}`
+      `${item.amisCode} ${item.amisOldCode || ''} ${item.name} ${item.productionName || ''}`
         .toLocaleLowerCase('vi')
         .includes(form.amisCode.trim().toLocaleLowerCase('vi'))
     )
@@ -2987,6 +2997,7 @@ export function ProductEditModal({
   }> = [
     { key: 'code', label: 'Mã SP', required: true },
     { key: 'amisCode', label: 'Mã AMIS' },
+    { key: 'amisOldCode', label: 'Mã AMIS cũ (truy vết)' },
     { key: 'newCode', label: 'Mã mới' },
     { key: 'name', label: 'Tên sản phẩm', required: true },
     { key: 'nature', label: 'Tính chất' },
@@ -3177,6 +3188,15 @@ export function ProductEditModal({
                 <input
                   value={form.description}
                   onChange={event => setForm(prev => ({ ...prev, description: event.target.value }))}
+                  className={productFieldClass}
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã AMIS cũ (truy vết)</span>
+                <input
+                  value={form.amisOldCode}
+                  onChange={event => setForm(prev => ({ ...prev, amisOldCode: event.target.value }))}
+                  placeholder="Mã gốc của biến thể"
                   className={productFieldClass}
                 />
               </label>
@@ -4354,7 +4374,7 @@ export function ProductsPanel({
       const row = product as ProductRow;
       const matchesSearch =
         !normalizedSearch ||
-        `${row.code} ${row.newCode} ${row.amisCode} ${row.name} ${row.productionName || ''} ${row.tenGhep || ''} ${row.nature} ${row.group} ${row.origin} ${formatProductNplSummary(row.nplItems)}`
+        `${row.code} ${row.newCode} ${row.amisCode} ${row.amisOldCode || ''} ${row.name} ${row.productionName || ''} ${row.tenGhep || ''} ${row.nature} ${row.group} ${row.origin} ${formatProductNplSummary(row.nplItems)}`
           .toLowerCase()
           .includes(normalizedSearch);
       return matchesWarehouse && matchesGroup && matchesNature && matchesSearch;
@@ -5016,6 +5036,11 @@ export function ProductsPanel({
                         </td>
                         <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle font-black text-zinc-950">
                           {productAmisDisplayCode(row)}
+                          {row.amisOldCode && row.amisOldCode !== productAmisDisplayCode(row) ? (
+                            <div className="mt-0.5 text-[11px] font-semibold text-zinc-400">
+                              Gốc: {row.amisOldCode}
+                            </div>
+                          ) : null}
                         </td>
                         <td rowSpan={rowSpan} className="px-3 py-3.5 align-middle">
                           {qrImages[row.id] ? (

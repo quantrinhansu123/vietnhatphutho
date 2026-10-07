@@ -200,7 +200,7 @@ export function TongHopViewModal({
               </p>
             </div>
             <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">Người giao</p>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">{isNhap ? 'Người giao' : 'Người nhận hàng'}</p>
               <p className="text-sm text-zinc-950 flex items-center gap-1">
                 <User className="h-3.5 w-3.5 text-zinc-400" />
                 {viewRecord.nguoi_giao || '—'}

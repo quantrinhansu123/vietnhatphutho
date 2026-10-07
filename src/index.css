@@ -964,6 +964,83 @@ input[type="number"] {
   font-style: italic;
 }
 
+.order-print-cut-place {
+  margin: 0 0 2mm;
+  text-align: right;
+  font-style: italic;
+}
+
+.order-print-cut-title {
+  margin: 0 0 3mm;
+  text-align: center;
+  font-size: 16pt;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.order-print-cut-meta {
+  margin: 0;
+  font-size: 12pt;
+}
+
+.order-print-cut-note {
+  margin: 2mm 0 3mm;
+  font-weight: 700;
+}
+
+.order-print-cut-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 2mm;
+  font-size: 11pt;
+}
+
+.order-print-cut-table th,
+.order-print-cut-table td {
+  border: 1px solid #111111;
+  padding: 1.4mm 2mm;
+  vertical-align: middle;
+}
+
+.order-print-cut-table th {
+  font-weight: 700;
+  text-align: center;
+}
+
+.order-print-cut-name {
+  font-weight: 700;
+}
+
+.order-print-cut-confirm {
+  margin-top: 5mm;
+}
+
+.order-print-cut-confirm p {
+  margin: 0;
+}
+
+.order-print-cut-signs {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8mm;
+}
+
+.order-print-cut-signs > div {
+  width: 42%;
+  text-align: center;
+}
+
+.order-print-cut-signs p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.order-print-cut-signs span {
+  display: block;
+  margin-top: 12mm;
+  font-weight: 700;
+}
+
 .production-plan-qr-print-sheet {
   display: none;
 }

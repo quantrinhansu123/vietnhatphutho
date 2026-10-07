@@ -4,11 +4,15 @@
  *  - Tên hiển thị `... 8li ...` là `do_li` — GIỮ NGUYÊN khi cắt.
  *  - Nhát cắt đổi `do_dai_m` (m dài) và/hoặc khổ. Đổi độ li thì `do_day_m` của SP cắt = số li mới (m).
  *    Được hạ một chiều hoặc cả khổ lẫn m dài. Độ li đổi riêng.
- *  - Gốc tính trọng lượng là 3 hệ số 1 SP của dòng mẹ trong `nhap_kho`
+ *  - Gốc tính trọng lượng là 3 hệ số 1 SP của dòng nguồn trong `nhap_kho`
  *    (kg1 / a1 / l1): kg2 = kg1 × (w2×l2)/(w1×l1), với w1 = a1/l1.
  *  - Phần thừa (mọi chiều dài, mọi máy) nhập lại Kho cắt lẻ, không nhập Kho tái chế.
+ *  - Xuất nguồn từ kho chính suy từ nhóm VTHH (Đặc → Kho Đặc; Sóng/Rỗng → Kho Sóng).
+ *  - SP cắt / phần thừa mang Mã AMIS mới (sinh từ mã gốc + mét cắt + màng),
+ *    truy vết về mã gốc qua ma_amis_cu; duyệt lệnh tạo lại SP biến thể trong san_pham.
  */
 import {
+  buildMaAmisMoi,
   calculateDoLiDm,
   composeProductionDisplayName,
   isValidDoLiToken
@@ -18,6 +22,28 @@ import { parseLocalizedNumber } from '../../utils';
 export const KHO_CAT_LE = 'Kho cắt lẻ';
 export const KHO_THANH_PHAM = 'Kho thành phẩm';
 export const KHO_TAI_CHE = 'Kho tái chế';
+/** Kho chính theo nhóm VTHH (plan lệnh cắt lẻ kho). */
+export const KHO_DAC = 'Kho Đặc';
+export const KHO_SONG = 'Kho Sóng';
+
+/**
+ * Suy kho chính từ nhóm VTHH để xuất nguồn khi cắt:
+ * Đặc → Kho Đặc; Sóng/Rỗng → Kho Sóng (rỗng chung kho sóng).
+ * Trả '' khi không suy được (giữ kho đã chọn / Kho cắt lẻ).
+ */
+export function inferKhoChinhTuNhom(nhomVthh?: string | null): string {
+  const key = String(nhomVthh || '').trim().toLocaleLowerCase('vi');
+  if (key.includes('px đặc') || key.includes('px dac')) return KHO_DAC;
+  if (
+    key.includes('px sóng') ||
+    key.includes('px song') ||
+    key.includes('px rỗng') ||
+    key.includes('px rong')
+  ) {
+    return KHO_SONG;
+  }
+  return '';
+}
 
 export interface CatLeSpecs {
   tenGoc: string;
@@ -35,7 +61,7 @@ export interface CatLeMother extends CatLeSpecs {
   maSp: string;
   tenSp: string;
   donVi: string;
-  /** 3 hệ số 1 SP của dòng mẹ (từ nhap_kho). */
+  /** 3 hệ số 1 SP của dòng nguồn (từ nhap_kho). */
   kg1: number;
   a1: number;
   l1: number;
@@ -46,13 +72,13 @@ export interface CatLeInput {
   w2: number;
   /** M dài mới (m). */
   l2: number;
-  /** Số đơn vị mẹ đem cắt. */
+  /** Số đơn vị nguồn đem cắt. */
   qty: number;
-  /** Kg cân thực tế của 1 SP con (khi mẹ thiếu số để auto). */
+  /** Kg cân thực tế của 1 SP cắt (khi nguồn thiếu số để auto). */
   kgCanThucTe?: number | null;
-  /** Độ li SP đích. Trống = giữ độ li mẹ. */
+  /** Độ li SP đích. Trống = giữ độ li nguồn. */
   doLiMoi?: string | null;
-  /** Số tấm con cắt ra trên mỗi tấm mẹ (mặc định 1). Vd 1 tấm 20m = 2 tấm 10m. */
+  /** Số tấm TP cắt ra trên mỗi tấm nguồn (mặc định 1). Vd 1 tấm nguồn 20m = 2 tấm TP 10m. */
   pieces?: number | null;
 }
 
@@ -60,9 +86,9 @@ export type CatLeKieu = 'xe_kho' | 'cat_tam' | 'doi_li' | 'ca_hai';
 
 export interface CatLeResult {
   kieuCat: CatLeKieu;
-  /** Số tấm con trên mỗi tấm mẹ (>= 1). */
+  /** Số tấm TP trên mỗi tấm nguồn (>= 1). */
   pieces: number;
-  /** Số tấm con tối đa vừa khít theo kích thước (để UI gợi ý). */
+  /** Số tấm TP tối đa vừa khít theo kích thước (để UI gợi ý). */
   maxPieces: number;
   tenSpCon: string;
   kgCon: number;
@@ -80,7 +106,7 @@ export interface CatLeResult {
   doDayMThua: string;
   doDaiMThua: string;
   diTaiChe: boolean;
-  /** True = mẹ thiếu số, kg con lấy từ cân tay. */
+  /** True = nguồn thiếu số, kg cắt lấy từ cân tay. */
   tuCanTay: boolean;
 }
 
@@ -94,6 +120,13 @@ export interface CatLePiece {
   do_li_dm: string;
   do_day_m: string;
   do_dai_m: string;
+  /**
+   * Mã hiện tại của piece: nguồn = mã gốc, cắt/thừa = mã MỚI của biến thể
+   * (sinh từ mã gốc + mét cắt + màng, xem variantCodeForCatPiece).
+   */
+  ma_amis?: string;
+  /** Mã gốc để truy vết biến thể (san_pham.ma_amis_cu / nhap_kho.ma_sp_cu). */
+  ma_amis_cu?: string;
 }
 
 /** Sản phẩm nguồn trong JSON `san_pham`. */
@@ -113,9 +146,9 @@ export interface CatLeSanPhamNguon extends CatLePiece {
 /**
  * Một dòng JSON `san_pham`.
  * Nguồn + cắt 1 (nhập thành phẩm) + cắt 2 (phần còn lại, null nếu hết).
- * `so_con_mot_me` (N): số tấm con trên mỗi tấm mẹ. `so_luong_cat_1` = nguồn × N.
+ * `so_con_mot_me` (N): số tấm TP trên mỗi tấm nguồn. `so_luong_cat_1` = nguồn × N.
  * Bản ghi cũ thiếu 2 field → mặc định N = 1 (giữ tương thích).
- * Không nhân bản các trường này ra cột mẹ/con của bảng.
+ * Không nhân bản các trường này ra cột nguồn/cắt của bảng.
  */
 export interface CatLeSanPhamLine {
   san_pham_nguon: CatLeSanPhamNguon;
@@ -217,7 +250,7 @@ export function motherFromNhapKhoRow(
 }
 
 /**
- * Tính 1 nhát cắt trên 1 đơn vị mẹ.
+ * Tính 1 nhát cắt trên 1 đơn vị nguồn.
  * Ném Error với message tiếng Việt khi input không hợp lệ (UI bắt và hiển thị).
  */
 export function computeCatLe(
@@ -243,23 +276,23 @@ export function computeCatLe(
     }
   }
   if (!(a1 > 0) || !(l1 > 0)) {
-    throw new Error('Dòng mẹ thiếu m2 / m dài 1 SP — nhập kg cân thực tế hoặc bổ sung quy đổi.');
+    throw new Error('Dòng nguồn thiếu m2 / m dài 1 SP — nhập kg cân thực tế hoặc bổ sung quy đổi.');
   }
   const w1 = a1 / l1;
-  if (!(w1 > 0)) throw new Error('Không suy được khổ rộng mẹ từ m2 / m dài.');
+  if (!(w1 > 0)) throw new Error('Không suy được khổ rộng nguồn từ m2 / m dài.');
 
   const giuRong = sameMeter(w2, w1);
   const giuDai = sameMeter(l2, l1);
   const doLiCon = normalizeDoLiLabel(input.doLiMoi) || mother.doLi;
   const doiDoLi = Boolean(doLiCon) && !sameLi(doLiCon, mother.doLi);
   if (giuRong && giuDai && !doiDoLi) {
-    throw new Error('Khổ, m dài và độ li mới giống hệt cuộn mẹ — không có gì để cắt.');
+    throw new Error('Khổ, m dài và độ li mới giống hệt cuộn nguồn — không có gì để cắt.');
   }
   const kieuCat: CatLeKieu = giuRong && giuDai ? 'doi_li' : !giuRong && !giuDai ? 'ca_hai' : giuDai ? 'xe_kho' : 'cat_tam';
-  if (w2 > w1 + EPS) throw new Error('Khổ mới lớn hơn khổ mẹ — không cắt được.');
-  if (l2 > l1 + EPS) throw new Error('M dài mới lớn hơn mẹ — không cắt được.');
+  if (w2 > w1 + EPS) throw new Error('Khổ mới lớn hơn khổ nguồn — không cắt được.');
+  if (l2 > l1 + EPS) throw new Error('M dài mới lớn hơn nguồn — không cắt được.');
 
-  // Số tấm con trên mỗi tấm mẹ (N). cat_tam: N*l2 <= l1, xe_kho: N*w2 <= w1.
+  // Số tấm TP trên mỗi tấm nguồn (N). cat_tam: N*l2 <= l1, xe_kho: N*w2 <= w1.
   const maxPieces =
     kieuCat === 'cat_tam'
       ? Math.max(1, Math.floor(l1 / l2 + EPS))
@@ -269,28 +302,28 @@ export function computeCatLe(
   const rawPieces =
     input.pieces === null || input.pieces === undefined || (input.pieces as unknown) === '' ? 1 : Number(input.pieces);
   const pieces = Number.isFinite(rawPieces) ? Math.floor(rawPieces) : NaN;
-  if (!Number.isFinite(pieces) || pieces < 1) throw new Error('Số con/mẹ phải là số nguyên >= 1.');
+  if (!Number.isFinite(pieces) || pieces < 1) throw new Error('Số TP/nguồn phải là số nguyên >= 1.');
   if (pieces > maxPieces) {
-    if (kieuCat === 'cat_tam') throw new Error(`Mẹ dài ${round3(l1)}m chỉ cắt tối đa ${maxPieces} tấm ${round3(l2)}m.`);
-    if (kieuCat === 'xe_kho') throw new Error(`Mẹ rộng ${round3(w1)}m chỉ xẻ tối đa ${maxPieces} tấm ${round3(w2)}m.`);
-    throw new Error('Kiểu cắt này chỉ cho 1 con/mẹ — muốn nhiều con thì cắt 1 chiều (giữ khổ hoặc giữ dài).');
+    if (kieuCat === 'cat_tam') throw new Error(`Nguồn dài ${round3(l1)}m chỉ cắt tối đa ${maxPieces} tấm ${round3(l2)}m.`);
+    if (kieuCat === 'xe_kho') throw new Error(`Nguồn rộng ${round3(w1)}m chỉ xẻ tối đa ${maxPieces} tấm ${round3(w2)}m.`);
+    throw new Error('Kiểu cắt này chỉ cho 1 TP/nguồn — muốn nhiều TP thì cắt 1 chiều (giữ khổ hoặc giữ dài).');
   }
   if ((kieuCat === 'doi_li' || kieuCat === 'ca_hai') && pieces > 1) {
-    throw new Error('Đổi độ li / hạ cả 2 chiều hiện chỉ cho 1 con/mẹ — muốn nhiều con thì giữ nguyên khổ hoặc m dài.');
+    throw new Error('Đổi độ li / hạ cả 2 chiều hiện chỉ cho 1 TP/nguồn — muốn nhiều TP thì giữ nguyên khổ hoặc m dài.');
   }
 
   const kgCan = Number(input.kgCanThucTe);
   const coCanTay = Number.isFinite(kgCan) && kgCan > 0;
   let kg2: number;
   if (!(kg1 > 0) && !coCanTay) {
-    throw new Error('Dòng mẹ thiếu kg 1 SP — nhập kg cân thực tế của SP con.');
+    throw new Error('Dòng nguồn thiếu kg 1 SP — nhập kg cân thực tế của SP cắt.');
   }
   if (coCanTay) {
     if (kg1 > 0 && kgCan >= kg1 + EPS) {
-      throw new Error('Kg cân của con phải nhỏ hơn kg mẹ.');
+      throw new Error('Kg cân của TP phải nhỏ hơn kg nguồn.');
     }
     if (kg1 > 0 && kgCan * pieces > kg1 + EPS) {
-      throw new Error(`Tổng kg ${pieces} con (${round3(kgCan * pieces)}kg) vượt kg mẹ (${round3(kg1)}kg).`);
+      throw new Error(`Tổng kg ${pieces} TP (${round3(kgCan * pieces)}kg) vượt kg nguồn (${round3(kg1)}kg).`);
     }
     kg2 = kgCan;
   } else {
@@ -303,19 +336,19 @@ export function computeCatLe(
   }
   const a2 = w2 * l2;
   const tongConArea = a2 * pieces;
-  if (tongConArea > a1 + EPS) throw new Error(`Tổng diện tích ${pieces} con vượt diện tích mẹ.`);
+  if (tongConArea > a1 + EPS) throw new Error(`Tổng diện tích ${pieces} TP vượt diện tích nguồn.`);
   const aThua = Math.max(0, a1 - tongConArea);
-  // Phần còn lại giữ độ li mẹ nên kg theo diện tích thừa. Kg cân tay thì lấy phần mẹ trừ tổng cân.
+  // Phần còn lại giữ độ li nguồn nên kg theo diện tích thừa. Kg cân tay thì lấy phần nguồn trừ tổng cân.
   const kgThua = coCanTay ? Math.max(0, kg1 - kg2 * pieces) : (kg1 * Math.max(0, a1 - tongConArea)) / a1;
 
-  // Khổ còn lại = khổ mẹ − N*khổ cắt (xẻ khổ) / dài còn lại = dài mẹ − N*dài cắt (cắt tấm).
-  // Hạ cả hai chiều vẫn giữ m dài mẹ (không gộp thành khổ tương đương).
+  // Khổ còn lại = khổ nguồn − N*khổ cắt (xẻ khổ) / dài còn lại = dài nguồn − N*dài cắt (cắt tấm).
+  // Hạ cả hai chiều vẫn giữ m dài nguồn (không gộp thành khổ tương đương).
   const wThua = kieuCat === 'cat_tam' ? w1 : kieuCat === 'xe_kho' ? Math.max(0, w1 - w2 * pieces) : w1 - w2;
   const lThua = kieuCat === 'cat_tam' ? Math.max(0, l1 - l2 * pieces) : l1;
   const nhomVthh = String(options.nhomVthh ?? '').trim();
   const doLiDmCon = doiDoLi ? calculateDoLiDm(doLiCon, nhomVthh) || mother.doLiDm : mother.doLiDm;
   // Đổi độ li (độ dày): do_day_m của SP cắt = số li mới, dạng mét (1 → 1m).
-  // Không đổi độ li: do_day_m theo khổ (xẻ khổ hoặc giữ khổ mẹ).
+  // Không đổi độ li: do_day_m theo khổ (xẻ khổ hoặc giữ khổ nguồn).
   const liDay = doiDoLi ? parseLiNumber(doLiCon) : null;
   const doDayMCon = liDay ? formatMeterLabel(liDay) : formatMeterLabel(w2);
   const doDaiMCon = formatMeterLabel(l2);
@@ -377,14 +410,14 @@ export function computeCatLe(
   };
 }
 
-/** Số con/mẹ từ nhiều nguồn field (tương thích bản cũ). */
+/** Số TP/nguồn từ nhiều nguồn field (tương thích bản cũ). */
 export function parsePiecesValue(raw: unknown): number {
   if (raw === null || raw === undefined || raw === '') return 1;
   const n = Math.floor(parseLocalizedNumber(raw));
   return Number.isFinite(n) && n >= 1 ? n : 1;
 }
 
-/** SL cắt 1 (nhập TP) của 1 dòng = SL mẹ × N. Bản cũ thiếu field → = SL mẹ. */
+/** SL cắt 1 (nhập TP) của 1 dòng = SL nguồn × N. Bản cũ thiếu field → = SL nguồn. */
 export function catLeConQty(line: Pick<CatLeSanPhamLine, 'san_pham_nguon' | 'so_con_mot_me' | 'so_luong_cat_1'>): number {
   const qtyMe = Number(line.san_pham_nguon.so_luong) || 0;
   const saved = Number((line as { so_luong_cat_1?: unknown }).so_luong_cat_1);
@@ -393,7 +426,7 @@ export function catLeConQty(line: Pick<CatLeSanPhamLine, 'san_pham_nguon' | 'so_
   return Math.round(qtyMe * pieces * 1000) / 1000;
 }
 
-/** Ghép 1 dòng JSON `san_pham` từ mẹ + thông số cắt (độ li, m dài, khổ rộng, số con/mẹ). */
+/** Ghép 1 dòng JSON `san_pham` từ nguồn + thông số cắt (độ li, m dài, khổ rộng, số TP/nguồn). */
 export function buildCatLeSanPhamLine(args: {
   idSanPhamTrongKho?: string | null;
   mother: CatLeMother;
@@ -431,6 +464,30 @@ export function buildCatLeSanPhamLine(args: {
         do_dai_m: computed.doDaiMThua
       }
     : null;
+  // Mã AMIS mới cho SP cắt / phần thừa (giữ mã gốc truy vết).
+  const baseAmis = String(mother.maAmis || mother.maSp || '').trim();
+  const groupName = String(args.nhomVthh || '').trim();
+  const moiCon = variantCodeForCatPiece({
+    baseMaAmis: baseAmis,
+    nhomVthh: groupName,
+    motherDaiM: mother.doDaiM,
+    pieceDaiM: computed.doDaiMCon,
+    motherLi: mother.doLi,
+    pieceLi: computed.doLiCon,
+    mang: mother.mang
+  });
+  const moiThua =
+    cat2 != null
+      ? variantCodeForCatPiece({
+          baseMaAmis: baseAmis,
+          nhomVthh: groupName,
+          motherDaiM: mother.doDaiM,
+          pieceDaiM: computed.doDaiMThua,
+          motherLi: mother.doLi,
+          pieceLi: computed.doLiThua,
+          mang: mother.mang
+        })
+      : '';
   return {
     san_pham_nguon: {
       id_san_pham_trong_kho: String(args.idSanPhamTrongKho || '').trim(),
@@ -460,9 +517,16 @@ export function buildCatLeSanPhamLine(args: {
       do_li: computed.doLiCon,
       do_li_dm: computed.doLiDmCon,
       do_day_m: computed.doDayMCon,
-      do_dai_m: computed.doDaiMCon
+      do_dai_m: computed.doDaiMCon,
+      ...(moiCon ? { ma_amis: moiCon, ma_amis_cu: baseAmis } : {})
     },
-    san_pham_cat_2: cat2,
+    san_pham_cat_2:
+      cat2 != null
+        ? {
+            ...cat2,
+            ...(moiThua ? { ma_amis: moiThua, ma_amis_cu: baseAmis } : {})
+          }
+        : null,
     kieu_cat: computed.kieuCat,
     di_tai_che: computed.diTaiChe,
     ghi_chu: String(args.ghiChu || '').trim(),
@@ -489,8 +553,42 @@ function catLePiece(source: Record<string, unknown>): CatLePiece {
     do_li: catLeText(source.do_li),
     do_li_dm: catLeText(source.do_li_dm),
     do_day_m: catLeText(source.do_day_m),
-    do_dai_m: catLeText(source.do_dai_m)
+    do_dai_m: catLeText(source.do_dai_m),
+    ...(catLeText(source.ma_amis) ? { ma_amis: catLeText(source.ma_amis) } : {}),
+    ...(catLeText(source.ma_amis_cu) ? { ma_amis_cu: catLeText(source.ma_amis_cu) } : {})
   };
+}
+
+/**
+ * Mã AMIS mới cho 1 SP cắt sau cắt (giữ mã gốc để truy vết).
+ * Trả '' khi không có mã gốc hoặc mã mới trùng mã gốc (không biến thể).
+ */
+export function variantCodeForCatPiece(args: {
+  baseMaAmis: string;
+  nhomVthh?: string | null;
+  motherDaiM?: string | null;
+  pieceDaiM?: string | null;
+  motherLi?: string | null;
+  pieceLi?: string | null;
+  mang?: string | null;
+}): string {
+  const base = String(args.baseMaAmis || '').trim();
+  if (!base) return '';
+  const lCon = parseMeterLabel(args.pieceDaiM);
+  const lMe = parseMeterLabel(args.motherDaiM);
+  const cutDiffers = lCon != null && (lMe == null || Math.abs(lCon - lMe) > 1e-9);
+  const liMe = String(args.motherLi || '').trim().toLocaleLowerCase('vi');
+  const liCon = String(args.pieceLi || '').trim().toLocaleLowerCase('vi');
+  const liDiffers = Boolean(liCon) && liCon !== liMe;
+  const moi = buildMaAmisMoi({
+    baseMaAmis: base,
+    nhomVthh: args.nhomVthh,
+    cutLengthM: cutDiffers ? lCon : undefined,
+    doLi: liDiffers ? String(args.pieceLi || '') : undefined,
+    mang: args.mang || undefined
+  });
+  const normalizedBase = buildMaAmisMoi({ baseMaAmis: base });
+  return moi && moi !== normalizedBase ? moi : '';
 }
 
 /** Đọc 1 dòng JSON, kể cả bản phẳng cũ (ten_sp_dich / ten_sp_con_lai). */
@@ -612,7 +710,7 @@ export function extractTemSuffix(tenSp: unknown): string {
 }
 
 /**
- * Tên SP cắt để hiển thị: tên đã lưu + mo_ta_tem của mẹ.
+ * Tên SP cắt để hiển thị: tên đã lưu + mo_ta_tem của nguồn.
  * Ưu tiên field mo_ta_tem; bản ghi cũ chưa có field thì tách hậu tố từ tên nguồn.
  * Không nối lặp khi tên đã có hậu tố.
  */
@@ -660,8 +758,8 @@ function slipLineFromProduct(
 }
 
 /** Bộ phiếu in của 1 lệnh.
- * Một phiếu xuất Kho cắt lẻ: SL mẹ đem cắt.
- * Nhập thành phẩm: SL = mẹ × N (số con/mẹ). Nhập mọi phần còn lại về Kho cắt lẻ: SL = SL mẹ.
+ * Một phiếu xuất kho chính: SL nguồn đem cắt.
+ * Nhập thành phẩm: SL = nguồn × N (số TP/nguồn). Nhập mọi phần còn lại về kho nguồn: SL = SL nguồn.
  * Phiếu Kho tái chế chỉ còn khi lệnh cũ đã ghi `ma_phieu_nhap_tai_che`.
  * `preview`: vẫn dựng phiếu khi chưa có số phiếu (bản xem trước, chưa ghi kho).
  */
@@ -789,13 +887,13 @@ export function buildCatLePrintSlips(lenh: {
 }
 
 /**
- * Tự tính phương án xuất tối thiểu cho SL con cần.
- * Trả về N dùng, số mẹ cần, số con thực ra, số dư và câu diễn giải tiếng Việt.
- * Ném Error khi kích thước không cắt được (con to hơn mẹ).
+ * Tự tính phương án xuất tối thiểu cho SL TP cần.
+ * Trả về N dùng, số nguồn cần, số TP thực ra, số dư và câu diễn giải tiếng Việt.
+ * Ném Error khi kích thước không cắt được (TP to hơn nguồn).
  */
 export function suggestCatLePlan(
   mother: CatLeMother,
-  args: { w2: number; l2: number; desiredConQty: number; pieces?: number | null }
+  args: { w2: number; l2: number; desiredConQty: number; pieces?: number | null; doLiMoi?: string | null }
 ): {
   kieuCat: CatLeKieu;
   pieces: number;
@@ -806,24 +904,25 @@ export function suggestCatLePlan(
   hint: string;
 } {
   const desired = Number(args.desiredConQty);
-  if (!Number.isFinite(desired) || desired <= 0) throw new Error('SL con cần phải lớn hơn 0.');
+  if (!Number.isFinite(desired) || desired <= 0) throw new Error('SL TP cần phải lớn hơn 0.');
   const w2 = Number(args.w2);
   const l2 = Number(args.l2);
   if (!Number.isFinite(w2) || w2 <= 0 || !Number.isFinite(l2) || l2 <= 0) {
     throw new Error('Thiếu khổ rộng / m dài đích.');
   }
+  const doLiMoi = args.doLiMoi ?? null;
   // Tận dụng computeCatLe để validate kích thước + lấy Nmax/kiểu cắt (qty dummy = 1).
-  const probe = computeCatLe(mother, { w2, l2, qty: 1, pieces: 1 });
+  const probe = computeCatLe(mother, { w2, l2, qty: 1, pieces: 1, doLiMoi });
   const maxPieces = probe.maxPieces;
   const rawN = args.pieces === null || args.pieces === undefined || (args.pieces as unknown) === '' ? maxPieces : Math.floor(Number(args.pieces));
-  if (!Number.isFinite(rawN) || rawN < 1) throw new Error('Số con/mẹ phải >= 1.');
+  if (!Number.isFinite(rawN) || rawN < 1) throw new Error('Số TP/nguồn phải >= 1.');
   if (rawN > maxPieces) {
-    if (probe.kieuCat === 'cat_tam') throw new Error(`Mẹ dài chỉ cắt tối đa ${maxPieces} tấm/mẹ.`);
-    if (probe.kieuCat === 'xe_kho') throw new Error(`Mẹ rộng chỉ xẻ tối đa ${maxPieces} tấm/mẹ.`);
-    throw new Error('Kiểu cắt này chỉ cho 1 con/mẹ.');
+    if (probe.kieuCat === 'cat_tam') throw new Error(`Nguồn dài chỉ cắt tối đa ${maxPieces} tấm/nguồn.`);
+    if (probe.kieuCat === 'xe_kho') throw new Error(`Nguồn rộng chỉ xẻ tối đa ${maxPieces} tấm/nguồn.`);
+    throw new Error('Kiểu cắt này chỉ cho 1 TP/nguồn.');
   }
   // Validate lại với N thực (bắt lỗi tổng diện tích/kg) + lấy thừa thực tế theo N.
-  const finalCheck = computeCatLe(mother, { w2, l2, qty: 1, pieces: rawN });
+  const finalCheck = computeCatLe(mother, { w2, l2, qty: 1, pieces: rawN, doLiMoi });
   const mothers = Math.ceil(desired / rawN);
   const actualCons = mothers * rawN;
   const surplus = actualCons - Math.ceil(desired);
@@ -835,7 +934,7 @@ export function suggestCatLePlan(
     mothers,
     actualCons,
     surplus,
-    hint: `Xuất ${mothers} mẹ → ${actualCons} con (cần ${Math.ceil(desired)}, dư ${surplus}, ${rawN} con/mẹ${noThua})`
+    hint: `Xuất ${mothers} nguồn → ${actualCons} TP (cần ${Math.ceil(desired)}, dư ${surplus}, ${rawN} TP/nguồn${noThua})`
   };
 }
 

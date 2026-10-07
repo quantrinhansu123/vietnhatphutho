@@ -4,7 +4,7 @@
 |---|---|
 | **Bảng** | `san_pham` |
 | **Tab** | `products` → `/san-pham` |
-| SQL | `supabase-san-pham.sql`, `supabase-san-pham-ma-amis-khong-unique.sql`, `supabase-san-pham-dinh-muc.sql`, `supabase-san-pham-npl-phan-tram.sql`, `supabase-san-pham-nhom-vthh-kinh-doanh.sql`, `supabase-san-pham-nhom-vthh-them-khac.sql`, `supabase-san-pham-ton-dau-ky.sql`, `supabase-san-pham-kiem-kho-dong-bo.sql`, `supabase-san-pham-thong-so-sx.sql` |
+| SQL | `supabase-san-pham.sql`, `supabase-san-pham-ma-amis-khong-unique.sql`, `supabase-san-pham-dinh-muc.sql`, `supabase-san-pham-npl-phan-tram.sql`, `supabase-san-pham-nhom-vthh-kinh-doanh.sql`, `supabase-san-pham-nhom-vthh-them-khac.sql`, `supabase-san-pham-ton-dau-ky.sql`, `supabase-san-pham-kiem-kho-dong-bo.sql`, `supabase-san-pham-thong-so-sx.sql`, `supabase-san-pham-ma-amis-cu.sql` |
 
 ## API (`server.ts`)
 
@@ -32,6 +32,8 @@
 ## Cột quan trọng
 
 `ma_sp`, `ten_sp`, `ten_san_xuat`, `don_vi` (`m`, `m2`, `Tấm`), `nhom_vthh`, `ton_dau_ky`, `npl_phan_tram` (JSON NPL, mỗi dòng lưu thêm `ten_nvl_sx` tương ứng từ Kho NVL).
+
+**Mã AMIS mới (lệnh cắt lẻ kho):** `ma_amis` của dòng biến thể CHÍNH LÀ mã mới (hạ khổ/hạ li/hạ mét/dán tem, sinh bằng `buildMaAmisMoi` trong `src/utils/productProductionName.ts`, mỗi biến thể một dòng SP) + `ma_amis_cu` (mã chuẩn gốc để truy vết/tổng hợp). Migration `supabase-san-pham-ma-amis-cu.sql`. Lookup mã nhận `ma_sp/ma_amis/ma_sp_moi/ma_amis_cu`. Unique giữ bộ `ma_amis + ten_sp + ten_san_xuat`.
 
 Thông số sản xuất (migration `supabase-san-pham-thong-so-sx.sql`): `ten_goc`, `do_li`, `do_li_dm` (extract `(đm n li)` **hoặc `(đm n kg)`** từ `ten_san_xuat`, thiếu thì **tự tính cho Đặc** theo `calculateDoLiDm`), `do_day_m`, `do_dai_m`, `mang`, `hang_phe`.  
 **`do_li`**: chỉ nhận token `…li` tường minh (từ mã AMIS `- Nli` hoặc tên SX, chấp nhận dạng `10i` → chuẩn hóa `10li` qua `normalizeDoLiToken`); chứa KG hay ZEM thì không phải độ li (bỏ, suy tiếp hoặc để trống). Sửa dữ liệu cũ: `supabase-san-pham-xoa-do-li-zem.sql`.

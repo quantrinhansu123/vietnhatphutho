@@ -4,7 +4,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCatLePrintSlips, buildCatLeSanPhamLine, catDisplayName, computeCatLe, extractTemSuffix, type CatLeMother } from '../../src/features/lenh-cat-le/logic';
+import { buildCatLePrintSlips, buildCatLeSanPhamLine, catDisplayName, computeCatLe, extractTemSuffix, suggestCatLePlan, type CatLeMother } from '../../src/features/lenh-cat-le/logic';
 
 const mother20m: CatLeMother = {
   maSp: 'SP-CAT',
@@ -24,7 +24,7 @@ const mother20m: CatLeMother = {
 };
 
 describe('lenh-cat-le — tấm 20m cắt 12m (chỉ đổi dài)', () => {
-  it('con 12m + thừa 8m, tên giữ do_li, bảo toàn kg', () => {
+  it('TP 12m + thừa 8m, tên giữ do_li, bảo toàn kg', () => {
     const r = computeCatLe(mother20m, { w2: 1.22, l2: 12, qty: 1 });
     assert.equal(r.kieuCat, 'cat_tam');
     assert.equal(r.mDaiCon, 12);
@@ -32,7 +32,7 @@ describe('lenh-cat-le — tấm 20m cắt 12m (chỉ đổi dài)', () => {
     assert.equal(r.mDaiThua, 8);
     assert.equal(r.kgThua, 4);
     assert.equal(r.diTaiChe, false);
-    // Tên con đổi m dài, giữ độ li + khổ rộng.
+    // Tên TP đổi m dài, giữ độ li + khổ rộng.
     assert.match(r.tenSpCon, /0\.8li/);
     assert.match(r.tenSpCon, /1\.22m/);
     assert.match(r.tenSpCon, /12m/);
@@ -41,7 +41,7 @@ describe('lenh-cat-le — tấm 20m cắt 12m (chỉ đổi dài)', () => {
 });
 
 describe('lenh-cat-le — chuỗi: 12m cắt tiếp 10m', () => {
-  it('lấy con làm mẹ, thừa 2m đúng ngưỡng (không tái chế)', () => {
+  it('lấy TP làm nguồn, thừa 2m đúng ngưỡng (không tái chế)', () => {
     const first = computeCatLe(mother20m, { w2: 1.22, l2: 12, qty: 1 });
     const mother12m: CatLeMother = {
       ...mother20m,
@@ -94,7 +94,7 @@ describe('lenh-cat-le — xẻ khổ giữ dài', () => {
 });
 
 describe('lenh-cat-le — validate', () => {
-  it('hạ cả khổ lẫn m dài: khổ còn lại = mẹ − khổ cắt, tên có mo_ta_tem', () => {
+  it('hạ cả khổ lẫn m dài: khổ còn lại = nguồn − khổ cắt, tên có mo_ta_tem', () => {
     const mother = { ...mother20m, moTaTem: '(Dán Tem 2.5li) Màu Hồng MVCC Dán Tem 2 Đầu' };
     const r = computeCatLe(mother, { w2: 1, l2: 12, qty: 1 });
     assert.equal(r.kieuCat, 'ca_hai');
@@ -106,11 +106,11 @@ describe('lenh-cat-le — validate', () => {
     assert.match(r.tenSpThua, /0\.22m/);
     assert.match(r.tenSpThua, /Dán Tem 2 Đầu$/);
   });
-  it('thiếu kg mẹ mà không cân tay thì chặn', () => {
+  it('thiếu kg nguồn mà không cân tay thì chặn', () => {
     const noKg: CatLeMother = { ...mother20m, kg1: 0 };
     assert.throws(() => computeCatLe(noKg, { w2: 1.22, l2: 12, qty: 1 }), /cân/);
   });
-  it('cân tay được chấp nhận và thừa = mẹ - cân', () => {
+  it('cân tay được chấp nhận và thừa = nguồn - cân', () => {
     const noKg: CatLeMother = { ...mother20m, kg1: 0 };
     const r = computeCatLe(noKg, { w2: 1.22, l2: 12, qty: 1, kgCanThucTe: 5.5 });
     assert.equal(r.kgCon, 5.5);
@@ -119,7 +119,7 @@ describe('lenh-cat-le — validate', () => {
 });
 
 describe('lenh-cat-le — tên theo độ li, khổ rộng, m dài', () => {
-  it('đổi độ li thì tên đích đổi độ li và ghép lại do_day_m, phần còn lại giữ mẹ', () => {
+  it('đổi độ li thì tên đích đổi độ li và ghép lại do_day_m, phần còn lại giữ nguồn', () => {
     const r = computeCatLe(mother20m, { w2: 1.22, l2: 12, qty: 1, doLiMoi: '0.4' });
     assert.match(r.tenSpCon, /0\.4li/);
     assert.equal(r.doDayMCon, '0.4m');
@@ -185,7 +185,7 @@ describe('lenh-cat-le — tên theo độ li, khổ rộng, m dài', () => {
 
 describe('lenh-cat-le — hiển thị mo_ta_tem ở cột cắt', () => {
   const tem = '(Dán Tem 2.5li) Màu Hồng MVCC Dán Tem 2 Đầu';
-  it('nối mo_ta_tem của mẹ khi tên cắt chưa có', () => {
+  it('nối mo_ta_tem của nguồn khi tên cắt chưa có', () => {
     assert.equal(
       catDisplayName('Tấm nhựa đặc XDT - ECO - 10li - (đm 5 li) - 1m - 3m', tem),
       `Tấm nhựa đặc XDT - ECO - 10li - (đm 5 li) - 1m - 3m ${tem}`
@@ -207,5 +207,29 @@ describe('lenh-cat-le — hiển thị mo_ta_tem ở cột cắt', () => {
     assert.equal(extractTemSuffix('Tấm nhựa đặc - 0.8li - 1.22m - 20m'), '');
     assert.equal(catDisplayName('Tấm nhựa đặc - 1m - 3m', '', 'Tấm nhựa đặc - 2m - 3m'), 'Tấm nhựa đặc - 1m - 3m');
     assert.equal(catDisplayName('', tem), '');
+  });
+});
+
+describe('lenh-cat-le — SL nguồn từ SL thành phẩm, hạ khổ, hạ li', () => {
+  it('hạ khổ một nửa thì 1 nguồn ra 2 TP, cần 3 TP thì xuất 2 nguồn', () => {
+    const plan = suggestCatLePlan(mother20m, { w2: 0.61, l2: 20, desiredConQty: 3 });
+    assert.equal(plan.kieuCat, 'xe_kho');
+    assert.equal(plan.pieces, 2);
+    assert.equal(plan.mothers, 2);
+    assert.equal(plan.actualCons, 4);
+  });
+
+  it('chỉ hạ li thì 1 nguồn ra 1 TP, SL nguồn bằng SL thành phẩm', () => {
+    const plan = suggestCatLePlan(mother20m, { w2: 1.22, l2: 20, desiredConQty: 3, doLiMoi: '0.4' });
+    assert.equal(plan.kieuCat, 'doi_li');
+    assert.equal(plan.pieces, 1);
+    assert.equal(plan.mothers, 3);
+  });
+
+  it('cắt ngắn 10m từ nguồn 20m, cần 3 TP thì xuất 2 nguồn', () => {
+    const plan = suggestCatLePlan(mother20m, { w2: 1.22, l2: 10, desiredConQty: 3 });
+    assert.equal(plan.kieuCat, 'cat_tam');
+    assert.equal(plan.pieces, 2);
+    assert.equal(plan.mothers, 2);
   });
 });

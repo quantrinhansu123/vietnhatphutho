@@ -519,6 +519,8 @@ export type NhapKhoProductSeed = {
   mang?: string;
   hang_phe?: string;
   ma_amis?: string;
+  /** Mã SP chuẩn gốc của biến thể cắt lẻ (nhap_kho.ma_sp_cu) — dùng tổng hợp về sau. */
+  ma_sp_cu?: string;
   mo_ta_tem?: string;
   /** Tên sản xuất của dòng hàng (NVL: tên NVL sản xuất; TP: để trống). */
   ten_san_xuat?: string;
@@ -625,7 +627,7 @@ export function aggregateNhapKhoProducts(
       if (!existing.loai_kho && row.loai_kho) existing.loai_kho = String(row.loai_kho).trim();
       // Cắt lẻ: giữ thông số ghép tên đầu tiên gặp (dòng cũ nhất sau sort).
       // ten_san_xuat: giữ tên SX đầu tiên gặp (dòng NVL).
-      const specKeys = ['ten_goc', 'do_li', 'do_li_dm', 'do_day_m', 'do_dai_m', 'mang', 'hang_phe', 'ma_amis', 'mo_ta_tem', 'ten_san_xuat'] as const;
+      const specKeys = ['ten_goc', 'do_li', 'do_li_dm', 'do_day_m', 'do_dai_m', 'mang', 'hang_phe', 'ma_amis', 'ma_sp_cu', 'mo_ta_tem', 'ten_san_xuat'] as const;
       for (const specKey of specKeys) {
         if (!existing[specKey] && row[specKey]) existing[specKey] = String(row[specKey]).trim();
       }
@@ -648,6 +650,7 @@ export function aggregateNhapKhoProducts(
       mang: String(row.mang || '').trim(),
       hang_phe: String(row.hang_phe || '').trim(),
       ma_amis: String(row.ma_amis || '').trim(),
+      ma_sp_cu: String((row as Record<string, unknown>).ma_sp_cu || '').trim(),
       mo_ta_tem: String(row.mo_ta_tem || '').trim(),
       ten_san_xuat: String(row.ten_san_xuat || '').trim(),
       id: String(row.id || '').trim()

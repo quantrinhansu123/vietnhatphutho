@@ -1,19 +1,26 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, Loader2, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
+import { Check, ClipboardCheck, Loader2, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
 import { BackButton } from '../../components/layout/NavButtons';
 import { useTabAccess } from '../../app/useTabAccess';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { formatDateVN, VnCalendarPicker } from '../so-che-do-may';
 import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from '../../components/WarehouseSlipPrintModal';
 import { readApiErrorMessage, showAppToast } from '../../lib/appToast';
+import { normalizeOrders } from '../don-hang';
+import { isCutOrderType } from '../_shared/orderHelpers';
+import type { OrderProductLine, OrderRow } from '../_shared/orderRecordHelpers';
+import { parseLocalizedNumber } from '../../utils';
 import {
   KHO_CAT_LE,
+  KHO_DAC,
+  KHO_SONG,
   KHO_TAI_CHE,
   KHO_THANH_PHAM,
   buildCatLePrintSlips,
   buildCatLeSanPhamLine,
   catDisplayName,
   computeCatLe,
+  inferKhoChinhTuNhom,
   normalizeCatLeSanPhamList,
   motherFromNhapKhoRow,
   parseMeterInput,
@@ -52,6 +59,8 @@ interface MotherStockRow {
   ten_sp: string;
   don_vi: string;
   nhom_vthh: string;
+  /** Kho đang chứa tồn mẹ (Kho Đặc / Kho Sóng / Kho cắt lẻ). */
+  ten_kho: string;
   ton_sl: number;
   ton_kg: number;
   kg1: number;
@@ -63,16 +72,21 @@ interface MotherStockRow {
 interface CutLine {
   key: string;
   motherKey: string;
-  /** Độ li mẹ — form không sửa. Giữ field để mở lệnh cũ không mất dữ liệu. */
+  /** Mã đơn cắt lẻ — điền từ Tự điền đơn hàng. */
+  orderCode: string;
+  /** Mã hàng đơn khi chưa khớp được tồn nguồn. */
+  missingCode: string;
+  /** Hạ li đích. Trống = giữ độ li nguồn. */
   doLiText: string;
-  /** Hạ khổ đích (m), từ do_day_m. Trống = giữ mẹ. */
+  /** Hạ khổ đích (m), từ do_day_m. Trống = giữ nguồn. */
   khoRongText: string;
-  /** M cắt dài đích (m), từ do_dai_m. Trống = giữ mẹ. */
+  /** M cắt dài đích (m), từ do_dai_m. Trống = giữ nguồn. */
   mDaiText: string;
+  /** SL nguồn xuất — tính ngầm, không hiện ô nhập. */
   qtyText: string;
-  /** Số tấm con trên mỗi tấm mẹ (N). Vd 1 tấm 20m = 2 tấm 10m. */
+  /** Số TP/nguồn — tính ngầm từ hạ khổ / m cắt dài. */
   soConText: string;
-  /** SL con cần (đích) — nhập rồi bấm Tính để tự ra SL mẹ = ceil(con/N). */
+  /** SL thành phẩm cần cắt — ô số lượng duy nhất trên form. */
   conCanText: string;
   kgCanText: string;
   ghiChu: string;
@@ -149,17 +163,18 @@ function cutLineFromSaved(item: CatLeSanPhamLine, stock: MotherStockRow[]): CutL
     1,
     Math.floor(Number((item as { so_con_mot_me?: unknown }).so_con_mot_me) || 1)
   );
+  const finished = Math.round((Number(nguon.so_luong) || 0) * piecesSaved * 1000) / 1000;
   return {
     ...base,
     motherKey: match?.key || '',
+    orderCode: '',
+    missingCode: match ? '' : nguon.ma_sp,
     doLiText: doLiChanged ? cat1.do_li.replace(/\s*li\s*$/iu, '') : '',
     khoRongText: w ? String(w) : '',
     mDaiText: l ? String(l) : '',
     qtyText: String(nguon.so_luong || 1),
     soConText: String(piecesSaved),
-    conCanText: String(
-      Math.round((Number(nguon.so_luong) || 0) * piecesSaved * 1000) / 1000 || ''
-    ),
+    conCanText: finished > 0 ? String(finished) : '',
     kgCanText: '',
     ghiChu: item.ghi_chu || ''
   };
@@ -171,14 +186,64 @@ const newCutLine = (): CutLine => {
   return {
     key: `line-${Date.now()}-${lineSeq}`,
     motherKey: '',
+    orderCode: '',
+    missingCode: '',
     doLiText: '',
     khoRongText: '',
     mDaiText: '',
-    qtyText: '1',
-    soConText: '1',
+    qtyText: '',
+    soConText: '',
     conCanText: '',
     kgCanText: '',
     ghiChu: ''
+  };
+}
+
+function orderFinishedQty(line: OrderProductLine): number {
+  const regions = [line.soLuongBac, line.soLuongTrung, line.soLuongNam]
+    .map(value => parseLocalizedNumber(value))
+    .filter(value => Number.isFinite(value) && value > 0);
+  if (regions.length > 0) return regions.reduce((sum, value) => sum + value, 0);
+  const qty = parseLocalizedNumber(line.quantity);
+  return Number.isFinite(qty) && qty > 0 ? qty : 0;
+}
+
+function matchMotherStock(stock: MotherStockRow[], code: string, name: string): MotherStockRow | undefined {
+  const sameMa = stock.filter(row => row.ma_sp === code);
+  return (
+    sameMa.find(row => name && row.ten_sp === name) ||
+    sameMa.find(row => row.ten_kho === inferKhoChinhTuNhom(row.nhom_vthh)) ||
+    sameMa[0]
+  );
+}
+
+function lineIsBlank(line: CutLine): boolean {
+  return !line.motherKey && !line.orderCode && !line.conCanText.trim() && !line.khoRongText && !line.doLiText && !line.mDaiText;
+}
+
+/** Một dòng lệnh từ một dòng đơn cắt lẻ. SL trên form là SL thành phẩm. */
+function cutLineFromOrder(order: OrderRow, prodLine: OrderProductLine, stock: MotherStockRow[]): CutLine {
+  const code = String(prodLine.productCode || '').trim();
+  const name = String(prodLine.productName || '').trim();
+  const match = code ? matchMotherStock(stock, code, name) : undefined;
+  const mother = match ? buildMother(match) : null;
+  const defaults = match ? motherCutDefaults(match) : { khoRongText: '', mDaiText: '' };
+  const cutM = String(prodLine.quyCachMDai ?? prodLine.daiM ?? '').trim();
+  const kho = String(prodLine.kho || '').trim();
+  const finished = orderFinishedQty(prodLine);
+  const orderLi = String(prodLine.doLi || '').replace(/\s*li\s*$/iu, '').replace(',', '.').trim();
+  const motherLi = String(mother?.doLi || '').replace(/\s*li\s*$/iu, '').replace(',', '.').trim();
+  const base = newCutLine();
+  return {
+    ...base,
+    orderCode: order.orderCode,
+    missingCode: match ? '' : code,
+    motherKey: match?.key || '',
+    khoRongText: kho ? kho.replace(/\s*m\s*$/iu, '').replace(',', '.') : defaults.khoRongText,
+    mDaiText: cutM ? cutM.replace(/\s*m\s*$/iu, '').replace(',', '.') : defaults.mDaiText,
+    doLiText: orderLi && orderLi !== motherLi ? orderLi : '',
+    conCanText: finished > 0 ? String(Math.round(finished * 1000) / 1000) : '',
+    ghiChu: [order.orderCode, prodLine.maAmis, prodLine.tenGhep || prodLine.productionName].filter(Boolean).join(' · ')
   };
 };
 
@@ -199,7 +264,7 @@ function buildMother(row: MotherStockRow): CatLeMother | null {
   );
 }
 
-/** Khổ rộng mẹ (m): ưu tiên a1/l1, fallback specs do_day_m. */
+/** Khổ rộng nguồn (m): ưu tiên a1/l1, fallback specs do_day_m. */
 function motherWidth(mother: CatLeMother): number | null {
   if (mother.a1 > 0 && mother.l1 > 0) return mother.a1 / mother.l1;
   return parseMeterLabel(mother.doDayM);
@@ -251,23 +316,120 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
   const [tuNgay, setTuNgay] = useState('');
   const [denNgay, setDenNgay] = useState('');
   const [timSp, setTimSp] = useState('');
+  const [trangThai, setTrangThai] = useState('all');
   const [ngayCat, setNgayCat] = useState(todayISO());
   const [nguoiThucHien, setNguoiThucHien] = useState('');
   const [nguoiLap, setNguoiLap] = useState('');
   const [lines, setLines] = useState<CutLine[]>([newCutLine()]);
+  // Tạo lệnh từ đơn cắt lẻ (chỉ load Đơn theo quy cách của khách đặt).
+  const [cutOrders, setCutOrders] = useState<OrderRow[]>([]);
+  const [cutOrdersLoading, setCutOrdersLoading] = useState(false);
+  const [showAutofill, setShowAutofill] = useState(false);
+  const [autofillDate, setAutofillDate] = useState('');
+  const [autofillSearch, setAutofillSearch] = useState('');
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [selectedProductKeys, setSelectedProductKeys] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!showModal) return;
+    setCutOrders([]);
+    setShowAutofill(false);
+    setCutOrdersLoading(true);
+    fetch('/api/don-hang')
+      .then(res => res.json().catch(() => ({})))
+      .then(data => {
+        const rows = normalizeOrders(data).filter(
+          order => isCutOrderType(order.orderType) && !order.isDeleted
+        );
+        setCutOrders(rows);
+      })
+      .catch(() => setCutOrders([]))
+      .finally(() => setCutOrdersLoading(false));
+  }, [showModal]);
+
+  const autofillOrders = useMemo(() => {
+    const day = autofillDate.trim();
+    const q = autofillSearch.trim().toLocaleLowerCase('vi');
+    return cutOrders.filter(order => {
+      if (day) {
+        const raw = String(order.orderDate || order.createdAt || '').slice(0, 10);
+        if (raw && raw !== day) return false;
+      }
+      if (!q) return true;
+      const hay = [order.orderCode, order.customer, ...order.products.flatMap(line => [line.productCode, line.productName, line.productionName, line.tenGhep])]
+        .map(value => String(value || '').toLocaleLowerCase('vi'))
+        .join(' ');
+      return hay.includes(q);
+    });
+  }, [autofillDate, autofillSearch, cutOrders]);
+
+  const autofillProducts = useMemo(() => {
+    return autofillOrders
+      .filter(order => selectedOrderIds.includes(order.id))
+      .flatMap(order => order.products.map((line, index) => ({ order, line, index, key: `${order.id}::${index}` })));
+  }, [autofillOrders, selectedOrderIds]);
+
+  const openAutofill = () => {
+    setAutofillDate(ngayCat);
+    setAutofillSearch('');
+    setSelectedOrderIds([]);
+    setSelectedProductKeys([]);
+    setShowAutofill(true);
+  };
+
+  const toggleAutofillOrder = (orderId: string) => {
+    setSelectedOrderIds(prev => {
+      const on = prev.includes(orderId);
+      if (on) {
+        setSelectedProductKeys(keys => keys.filter(key => !key.startsWith(`${orderId}::`)));
+        return prev.filter(id => id !== orderId);
+      }
+      return [...prev, orderId];
+    });
+  };
+
+  const applyAutofill = () => {
+    const picked = autofillProducts
+      .filter(item => selectedProductKeys.includes(item.key))
+      .map(item => cutLineFromOrder(item.order, item.line, stock));
+    if (picked.length === 0) {
+      setModalError('Vui lòng chọn ít nhất một sản phẩm trong đơn hàng.');
+      return;
+    }
+    setLines(prev => {
+      const kept = prev.filter(line => !lineIsBlank(line));
+      return kept.length > 0 ? [...kept, ...picked] : picked;
+    });
+    setConfirmedLines(null);
+    setModalError('');
+    setShowAutofill(false);
+  };
 
   const loadStock = useCallback(async () => {
     setStockLoading(true);
     try {
-      const params = new URLSearchParams({ from: '2020-01-01', to: todayISO(), tenKho: KHO_CAT_LE, strictKho: '1' });
-      const res = await fetch(`/api/nhap-kho?${params.toString()}`);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(readApiErrorMessage(res, data, 'Không tải được tồn kho cắt lẻ.'));
-      const rows: unknown[] = Array.isArray((data as { rows?: unknown }).rows)
-        ? (data as { rows: unknown[] }).rows
-        : [];
+      // Mẹ cắt lấy từ kho chính theo nhóm (Đặc → Kho Đặc; Sóng/Rỗng → Kho Sóng),
+      // kèm Kho cắt lẻ cho dữ liệu cũ.
+      const khoNguons = [KHO_DAC, KHO_SONG, KHO_CAT_LE];
+      const results = await Promise.all(
+        khoNguons.map(async tenKho => {
+          const params = new URLSearchParams({
+            from: '2020-01-01',
+            to: todayISO(),
+            tenKho,
+            strictKho: '1'
+          });
+          const res = await fetch(`/api/nhap-kho?${params.toString()}`);
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) return [];
+          const rows: unknown[] = Array.isArray((data as { rows?: unknown }).rows)
+            ? (data as { rows: unknown[] }).rows
+            : [];
+          return rows.map(item => ({ item, tenKho }));
+        })
+      );
       const mapped: MotherStockRow[] = [];
-      for (const item of rows) {
+      for (const { item, tenKho } of results.flat()) {
         if (!item || typeof item !== 'object') continue;
         const row = item as Record<string, unknown>;
         const ton = (row.ton_cuoi ?? {}) as Record<string, unknown>;
@@ -280,12 +442,13 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         const a1 = toNum(row.so_m2_mot_sp);
         const l1 = toNum(row.so_m_dai_mot_sp);
         mapped.push({
-          key: `${ma}||${ten}||${kg1}|${a1}|${l1}`,
+          key: `${ma}||${ten}||${kg1}|${a1}|${l1}||${tenKho}`,
           id: String(row.id ?? '').trim(),
           ma_sp: ma,
           ten_sp: ten,
           don_vi: String(row.don_vi ?? '').trim(),
           nhom_vthh: String(row.nhom_vthh ?? '').trim(),
+          ten_kho: tenKho,
           ton_sl: tonSl,
           ton_kg: toNum(ton.kg),
           kg1,
@@ -298,7 +461,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
       setStock(mapped);
     } catch (err: any) {
       setStock([]);
-      showAppToast(err?.message || 'Không tải được tồn kho cắt lẻ.', 'error');
+      showAppToast(err?.message || 'Không tải được tồn kho nguồn cắt.', 'error');
     } finally {
       setStockLoading(false);
     }
@@ -388,39 +551,47 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
     return lines.map(line => {
         const empty: LinePreview = { motherRow: null, mother: null, w2: null, l2: null, qty: 0, pieces: 1, result: null, error: '' };
         const motherRow = stock.find(row => row.key === line.motherKey) || null;
-        if (!motherRow) return { ...empty, error: line.motherKey ? 'Cuộn mẹ đã hết tồn.' : '' };
+        if (!motherRow) {
+          return {
+            ...empty,
+            error: line.missingCode
+              ? `Không tìm thấy tồn kho nguồn cho mã ${line.missingCode}.`
+              : line.motherKey
+                ? 'Cuộn nguồn đã hết tồn.'
+                : ''
+          };
+        }
         const mother = buildMother(motherRow);
-        if (!mother) return { ...empty, motherRow, error: 'Không đọc được thông số mẹ.' };
+        if (!mother) return { ...empty, motherRow, error: 'Không đọc được thông số nguồn.' };
         const w1 = motherWidth(mother);
         const l1 = mother.l1 > 0 ? mother.l1 : parseMeterLabel(mother.doDaiM);
         const w2 = parseMeterInput(line.khoRongText) ?? w1;
         const l2 = parseMeterInput(line.mDaiText) ?? l1;
-        const qty = Number(String(line.qtyText || '').replace(',', '.'));
-        const piecesRaw = String(line.soConText || '').trim().replace(',', '.');
-        const pieces = piecesRaw === '' ? 1 : Math.floor(Number(piecesRaw));
-        const base = { ...empty, motherRow, mother, w2, l2, qty, pieces: Number.isFinite(pieces) ? pieces : 0 };
+        const finished = parseLocalizedNumber(line.conCanText);
+        const doLiMoi = line.doLiText.trim() || null;
+        const base = { ...empty, motherRow, mother, w2, l2, qty: 0, pieces: 1 };
         if (!w2 || !l2) return { ...base, error: 'Nhập hạ khổ hoặc m cắt dài.' };
-        if (!(qty > 0)) return { ...base, error: 'Nhập số lượng cắt.' };
-        if (!Number.isFinite(pieces) || pieces < 1) return { ...base, error: 'Số con/mẹ phải >= 1.' };
-        const taken = used.get(line.motherKey) || 0;
-        if (qty + taken > motherRow.ton_sl + 1e-9) {
-          return { ...base, error: `Tồn mẹ chỉ còn ${motherRow.ton_sl}${taken > 0 ? ` (đã chọn ${taken} ở dòng khác)` : ''}.` };
-        }
+        if (!(finished > 0)) return { ...base, error: 'Nhập SL thành phẩm cần cắt.' };
         try {
+          const plan = suggestCatLePlan(mother, { w2, l2, desiredConQty: finished, doLiMoi });
+          const qty = plan.mothers;
+          const pieces = plan.pieces;
+          const taken = used.get(line.motherKey) || 0;
+          if (qty + taken > motherRow.ton_sl + 1e-9) {
+            return {
+              ...base,
+              qty,
+              pieces,
+              error: `Cần xuất ${qty} nguồn, tồn chỉ còn ${motherRow.ton_sl}${taken > 0 ? ` (đã chọn ${taken} ở dòng khác)` : ''}.`
+            };
+          }
           const result = computeCatLe(
             mother,
-            {
-              w2,
-              l2,
-              qty,
-              doLiMoi: null,
-              kgCanThucTe: null,
-              pieces
-            },
+            { w2, l2, qty, doLiMoi, kgCanThucTe: null, pieces },
             { nhomVthh: motherRow.nhom_vthh }
           );
           used.set(line.motherKey, taken + qty);
-          return { ...base, result };
+          return { ...base, qty, pieces, result };
         } catch (err: any) {
           return { ...base, error: err?.message || 'Thông số cắt không hợp lệ.' };
         }
@@ -428,15 +599,13 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
   }, [lines, stock]);
 
   const totals = useMemo(() => {
-    let qty = 0;
     let qtyCon = 0;
     previews.forEach((preview, index) => {
       if (!preview.result) return;
-      const qtyMe = Number(String(lines[index]?.qtyText || '').replace(',', '.')) || 0;
-      qty += qtyMe;
-      qtyCon += qtyMe * preview.result.pieces;
+      const finished = parseLocalizedNumber(lines[index]?.conCanText);
+      qtyCon += Number.isFinite(finished) && finished > 0 ? finished : 0;
     });
-    return { qty, qtyCon };
+    return { qtyCon };
   }, [previews, lines]);
 
   const canSave =
@@ -449,6 +618,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
   const filteredLenh = useMemo(() => {
     const q = timSp.trim().toLocaleLowerCase('vi');
     return lenhList.filter(row => {
+      if (trangThai !== 'all' && String(row.trang_thai || '') !== trangThai) return false;
       const day = String(row.ngay_cat || '').slice(0, 10);
       if (!day) {
         if (tuNgay || denNgay) return false;
@@ -480,7 +650,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
       }
       return true;
     });
-  }, [lenhList, tuNgay, denNgay, timSp]);
+  }, [lenhList, tuNgay, denNgay, timSp, trangThai]);
 
   const openPrint = (row: CatLeLenh) => {
     const slips = buildCatLePrintSlips(row).map(slip => toPrintData(slip));
@@ -512,7 +682,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         qty: preview.qty,
         w2: preview.w2 as number,
         l2: preview.l2 as number,
-        doLiMoi: null,
+        doLiMoi: line.doLiText.trim() || null,
         kgCanThucTe: null,
         pieces: preview.pieces,
         ghiChu: line.ghiChu.trim()
@@ -521,7 +691,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
 
   const handleConfirmPreview = () => {
     if (!canSave) {
-      setModalError('Còn dòng chưa hợp lệ — kiểm tra sản phẩm nguồn, hạ khổ, m cắt dài và số lượng.');
+      setModalError('Còn dòng chưa hợp lệ — kiểm tra sản phẩm nguồn, hạ khổ, hạ li và SL thành phẩm.');
       setConfirmedLines(null);
       return;
     }
@@ -537,7 +707,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
 
   const handleSaveModal = async () => {
     if (!canSave) {
-      setModalError('Còn dòng chưa hợp lệ — kiểm tra sản phẩm nguồn, hạ khổ, m cắt dài và số lượng.');
+      setModalError('Còn dòng chưa hợp lệ — kiểm tra sản phẩm nguồn, hạ khổ, hạ li và SL thành phẩm.');
       return;
     }
     setSaving(true);
@@ -568,6 +738,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
           nhomVthh: row.nhom_vthh,
           mDaiCat: preview.l2,
           khoRongM: preview.w2,
+          doLiCat: line.doLiText.trim() || null,
           soConMotMe: preview.pieces,
           kgCanThucTe: null,
           ghiChu: line.ghiChu.trim()
@@ -575,7 +746,13 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
       });
       const payload = {
         ngayCat,
-        khoNguon: KHO_CAT_LE,
+        // Xuất nguồn từ kho chính suy từ nhóm VTHH (Đặc → Kho Đặc; Sóng/Rỗng → Kho Sóng).
+        khoNguon:
+          inferKhoChinhTuNhom(
+            String(
+              (previews[0]?.motherRow as MotherStockRow | undefined)?.nhom_vthh || ''
+            )
+          ) || KHO_CAT_LE,
         khoDich: KHO_THANH_PHAM,
         nguoiThucHien: nguoiThucHien.trim(),
         nguoiLap: nguoiLap.trim(),
@@ -601,7 +778,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
   const handleComplete = async (id: string) => {
     if (
       !window.confirm(
-        `Duyệt lệnh này? Hệ thống xuất ${KHO_CAT_LE} sản phẩm đang có tồn, nhập ${KHO_THANH_PHAM}. Mọi phần còn lại nhập lại ${KHO_CAT_LE}. Sau khi duyệt không sửa được.`
+        `Duyệt lệnh này? Hệ thống xuất kho chính (Kho Đặc / Kho Sóng theo SP) sản phẩm đang có tồn, nhập kho thành phẩm. Mọi phần còn lại nhập lại kho nguồn. Đồng thời tạo SP biến thể (Mã AMIS mới) trong danh mục. Sau khi duyệt không sửa được.`
       )
     ) {
       return;
@@ -699,6 +876,19 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
               placeholder="Mã / QR / tên / tính chất / nhóm"
             />
           </label>
+          <label className="w-44 space-y-1">
+            <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
+            <select
+              value={trangThai}
+              onChange={e => setTrangThai(e.target.value)}
+              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
+            >
+              <option value="all">Tất cả</option>
+              <option value="moi">Chờ duyệt</option>
+              <option value="hoan_thanh">Đã duyệt</option>
+              <option value="huy">Đã hủy</option>
+            </select>
+          </label>
           <button
             type="button"
             onClick={() => {
@@ -717,13 +907,14 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
           <div className="text-xs font-black uppercase text-zinc-600">
             Danh sách lệnh cắt {listLoading ? '(đang tải...)' : `(${filteredLenh.length})`}
           </div>
-          {(tuNgay || denNgay || timSp.trim()) && (
+          {(tuNgay || denNgay || timSp.trim() || trangThai !== 'all') && (
             <button
               type="button"
               onClick={() => {
                 setTuNgay('');
                 setDenNgay('');
                 setTimSp('');
+                setTrangThai('all');
               }}
               className="ml-auto rounded-lg border px-3 py-2 text-xs font-bold text-zinc-600"
             >
@@ -740,8 +931,9 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                 <th className="px-3 py-2">Sản phẩm nguồn</th>
                 <th className="px-3 py-2">Sản phẩm cắt 1</th>
                 <th className="px-3 py-2">Sản phẩm cắt 2</th>
-                <th className="px-3 py-2 text-right">SL</th>
+                <th className="px-3 py-2 text-right">SL thành phẩm</th>
                 <th className="px-3 py-2">Người TH</th>
+                <th className="px-3 py-2">Người lập</th>
                 <th className="px-3 py-2">Trạng thái</th>
                 <th className="px-3 py-2">Phiếu</th>
                 <th className="px-3 py-2 text-right">Thao tác</th>
@@ -774,7 +966,6 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                   )
                   .filter(Boolean)
                   .join(' · ');
-                const soLuong = products.reduce((sum, item) => sum + (Number(item.san_pham_nguon.so_luong) || 0), 0);
                 const soLuongCon = products.reduce(
                   (sum, item) =>
                     sum +
@@ -797,11 +988,9 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                       <span className="ml-1 font-black text-red-600">(nhập tái chế)</span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right font-bold">
-                    {soLuong}
-                    {soLuongCon !== soLuong && <span className="block text-emerald-700">→ {soLuongCon} con</span>}
-                  </td>
+                  <td className="px-3 py-2 text-right font-bold">{fmtQty(soLuongCon)}</td>
                   <td className="px-3 py-2 font-semibold">{row.nguoi_thuc_hien || '—'}</td>
+                  <td className="px-3 py-2 font-semibold">{row.nguoi_lap || '—'}</td>
                   <td className="px-3 py-2 font-bold">{trangThaiLabel(row.trang_thai)}</td>
                   <td className="px-3 py-2 font-mono text-[11px]">
                     {[row.ma_phieu_xuat, row.ma_phieu_nhap_tp, row.ma_phieu_nhap_thua, row.ma_phieu_chuyen_tai_che]
@@ -874,7 +1063,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
               })}
               {filteredLenh.length === 0 && !listLoading && (
                 <tr>
-                  <td colSpan={10} className="px-3 py-8 text-center font-bold text-zinc-400">
+                  <td colSpan={11} className="px-3 py-8 text-center font-bold text-zinc-400">
                     {tuNgay || denNgay || timSp.trim() ? 'Chưa có lệnh cắt trong khoảng lọc này.' : 'Chưa có lệnh cắt nào.'}
                   </td>
                 </tr>
@@ -888,9 +1077,9 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="flex h-[94vh] w-[96vw] max-w-[1600px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
             <div className="flex shrink-0 items-center gap-2 border-b bg-white px-4 py-3">
-              <h3 className="text-sm font-black text-zinc-900">{editingId ? 'Sửa lệnh cắt lẻ' : 'Lập lệnh cắt lẻ'}</h3>
+              <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">{editingId ? 'Sửa lệnh cắt lẻ' : 'Thêm lệnh cắt lẻ mới'}</h3>
               <span className="text-xs font-semibold text-zinc-500">
-                {KHO_CAT_LE} → {KHO_THANH_PHAM} (+ thừa nhập lại {KHO_CAT_LE})
+                Xuất kho chính (Kho Đặc / Kho Sóng theo SP) → {KHO_THANH_PHAM} (+ thừa nhập lại kho nguồn)
               </span>
               <button onClick={() => setShowModal(false)} className="ml-auto rounded border p-2 text-zinc-600">
                 <X size={14} />
@@ -916,7 +1105,16 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
 
               <section className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h4 className="text-xs font-black uppercase text-zinc-700">Sản phẩm cần cắt</h4>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-zinc-700">Đơn hàng & mã hàng *</h4>
+                  <button
+                    type="button"
+                    onClick={openAutofill}
+                    disabled={cutOrdersLoading}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/25 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <ClipboardCheck className="h-3.5 w-3.5" />
+                    Tự điền từ đơn hàng
+                  </button>
                   {canSave && (
                     <button
                       type="button"
@@ -933,7 +1131,12 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                         try {
                           showSlipPreview({
                             ngay_cat: ngayCat,
-                            kho_nguon: KHO_CAT_LE,
+                            kho_nguon:
+                              inferKhoChinhTuNhom(
+                                String(
+                                  (previews[0]?.motherRow as MotherStockRow | undefined)?.nhom_vthh || ''
+                                )
+                              ) || KHO_CAT_LE,
                             kho_dich: KHO_THANH_PHAM,
                             kho_tai_che: KHO_TAI_CHE,
                             nguoi_lap: nguoiLap.trim(),
@@ -959,19 +1162,18 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                   </button>
                 </div>
                 <div className="overflow-x-auto rounded-xl border">
-                  <table className="w-full min-w-[980px] text-left text-xs">
+          <table className="w-full min-w-[1080px] text-left text-xs">
                     <thead className="bg-zinc-900 text-[10px] uppercase text-white">
                       <tr>
                         <th className="px-2 py-2 text-center">STT</th>
-                        <th className="px-2 py-2">Mã SP *</th>
-                        <th className="px-2 py-2">Tên SP *</th>
+                        <th className="px-2 py-2">Mã đơn</th>
+                        <th className="px-2 py-2">Mã hàng *</th>
+                        <th className="px-2 py-2">Tên sản xuất</th>
                         <th className="px-2 py-2 text-center">ĐVT</th>
-                        <th className="px-2 py-2 text-center">Tồn</th>
-                        <th className="px-2 py-2 text-center">Hạ Khổ</th>
+                        <th className="px-2 py-2 text-center">Hạ khổ</th>
+                        <th className="px-2 py-2 text-center">Hạ li</th>
                         <th className="px-2 py-2 text-center">M cắt dài</th>
-                        <th className="px-2 py-2 text-center">SL mẹ *</th>
-                        <th className="px-2 py-2 text-center">Con/mẹ</th>
-                        <th className="px-2 py-2 text-center">Con cần → Tính</th>
+                        <th className="px-2 py-2 text-center">SL thành phẩm *</th>
                         <th className="px-2 py-2 text-center">Ghi chú</th>
                         <th className="px-2 py-2" />
                       </tr>
@@ -986,19 +1188,33 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                           <React.Fragment key={line.key}>
                             <tr className="border-t align-top">
                               <td className="px-2 py-2 text-center font-black">{index + 1}</td>
+                              <td className="min-w-[120px] px-2 py-2">
+                                <input
+                                  value={line.orderCode}
+                                  onChange={e => updateLine(line.key, { orderCode: e.target.value })}
+                                  placeholder="Mã đơn"
+                                  className={cellInputClass}
+                                />
+                              </td>
                               <td className="min-w-[150px] px-2 py-2">
                                 <SearchableSelect
                                   value={line.motherKey}
                                   onChange={value => {
-                                    const row = stock.find(item => item.key === value);
-                                    updateLine(line.key, { motherKey: value, ...motherCutDefaults(row) });
+                                    const picked = stock.find(item => item.key === value);
+                                    const defaults = motherCutDefaults(picked);
+                                    updateLine(line.key, {
+                                      motherKey: value,
+                                      missingCode: '',
+                                      khoRongText: line.khoRongText || defaults.khoRongText,
+                                      mDaiText: line.mDaiText || defaults.mDaiText
+                                    });
                                   }}
                                   options={stock}
                                   placeholder={stockLoading ? 'Đang tải...' : 'Mã SP...'}
                                   isLoading={stockLoading}
                                   getLabel={(item: unknown) => {
                                     const r = item as MotherStockRow;
-                                    return `${r.ma_sp} — tồn ${r.ton_sl}`;
+                                    return `${r.ma_sp} · ${r.ten_kho || ''} — tồn ${r.ton_sl}`;
                                   }}
                                   getValue={(item: unknown) => (item as MotherStockRow).key}
                                 />
@@ -1007,28 +1223,43 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                                 <SearchableSelect
                                   value={line.motherKey}
                                   onChange={value => {
-                                    const row = stock.find(item => item.key === value);
-                                    updateLine(line.key, { motherKey: value, ...motherCutDefaults(row) });
+                                    const picked = stock.find(item => item.key === value);
+                                    const defaults = motherCutDefaults(picked);
+                                    updateLine(line.key, {
+                                      motherKey: value,
+                                      missingCode: '',
+                                      khoRongText: line.khoRongText || defaults.khoRongText,
+                                      mDaiText: line.mDaiText || defaults.mDaiText
+                                    });
                                   }}
                                   options={tenOptions}
                                   placeholder={stockLoading ? 'Đang tải...' : 'Tên SP...'}
                                   isLoading={stockLoading}
                                   getLabel={(item: unknown) => {
                                     const r = item as MotherStockRow;
-                                    return `${r.ten_sp} — tồn ${r.ton_sl}`;
+                                    return `${r.ten_sp} · ${r.ten_kho || ''} — tồn ${r.ton_sl}`;
                                   }}
                                   getValue={(item: unknown) => (item as MotherStockRow).key}
                                 />
                               </td>
                               <td className="px-2 py-2 text-center font-bold">{row?.don_vi || '—'}</td>
-                              <td className="px-2 py-2 text-center font-bold">{row ? row.ton_sl : '—'}</td>
                               <td className="px-2 py-2">
                                 <input
                                   value={line.khoRongText}
                                   onChange={e => updateLine(line.key, { khoRongText: e.target.value })}
                                   inputMode="decimal"
-                                  placeholder={preview?.mother ? `Mẹ ${fmtQty(motherWidth(preview.mother) ?? parseMeterLabel(preview.mother.doDayM))}` : 'vd 1.22'}
-                                  title="Hạ khổ đích (m) — điền từ do_day_m của sản phẩm nguồn. Sửa nhỏ hơn khổ mẹ để xẻ khổ. Bỏ trống = giữ khổ mẹ."
+                                  placeholder={preview?.mother ? `Nguồn ${fmtQty(motherWidth(preview.mother) ?? parseMeterLabel(preview.mother.doDayM))}` : 'vd 1.22'}
+                                  title="Hạ khổ đích (m). Nhỏ hơn khổ nguồn để xẻ khổ. Bỏ trống = giữ khổ nguồn."
+                                  className={cellInputClass}
+                                />
+                              </td>
+                              <td className="px-2 py-2">
+                                <input
+                                  value={line.doLiText}
+                                  onChange={e => updateLine(line.key, { doLiText: e.target.value })}
+                                  inputMode="decimal"
+                                  placeholder={preview?.mother?.doLi ? `Nguồn ${preview.mother.doLi}` : 'vd 0.4'}
+                                  title="Hạ li đích. Bỏ trống = giữ độ li nguồn. SL nguồn xuất được tính từ SL thành phẩm, hạ khổ và hạ li."
                                   className={cellInputClass}
                                 />
                               </td>
@@ -1039,101 +1270,26 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                                   inputMode="decimal"
                                   placeholder={
                                     preview?.mother
-                                      ? `Mẹ ${fmtQty(
+                                      ? `Nguồn ${fmtQty(
                                           (preview.mother.l1 > 0 ? preview.mother.l1 : null) ??
                                             parseMeterLabel(preview.mother.doDaiM) ??
                                             lengthFromProductName(preview.mother.tenSp, motherWidth(preview.mother))
                                         )}`
                                       : 'vd 12'
                                   }
-                                  title="M cắt dài đích (m) — điền từ do_dai_m của sản phẩm nguồn. Sửa ngắn hơn để cắt dài. Bỏ trống = giữ m dài mẹ."
+                                  title="M cắt dài đích (m) — điền từ do_dai_m của sản phẩm nguồn. Sửa ngắn hơn để cắt dài. Bỏ trống = giữ m dài nguồn."
                                   className={cellInputClass}
                                 />
                               </td>
                               <td className="px-2 py-2">
                                 <input
-                                  value={line.qtyText}
-                                  onChange={e => updateLine(line.key, { qtyText: e.target.value })}
+                                  value={line.conCanText}
+                                  onChange={e => updateLine(line.key, { conCanText: e.target.value })}
                                   inputMode="decimal"
-                                  title="Số tấm mẹ đem cắt (xuất kho cắt lẻ)"
+                                  title="SL thành phẩm cần cắt. Hệ thống tự tính số lượng nguồn cần xuất từ SL này, hạ khổ và hạ li."
+                                  placeholder="vd 3"
                                   className={`${cellInputClass} text-right`}
                                 />
-                              </td>
-                              <td className="px-2 py-2">
-                                <div className="flex items-center gap-1">
-                                  <input
-                                    value={line.soConText}
-                                    onChange={e => updateLine(line.key, { soConText: e.target.value })}
-                                    inputMode="numeric"
-                                    title={
-                                      preview?.result
-                                        ? `Tối đa ${preview.result.maxPieces} con/mẹ — nhập TP = SL mẹ × N`
-                                        : 'Số tấm con trên mỗi tấm mẹ (vd 20m = 2 tấm 10m nhập 2)'
-                                    }
-                                    placeholder={preview?.result ? `≤${preview.result.maxPieces}` : '1'}
-                                    className={`${cellInputClass} text-right`}
-                                  />
-                                  {preview?.result && preview.result.maxPieces > 1 && (
-                                    <button
-                                      type="button"
-                                      title={`Lấy tối đa ${preview.result.maxPieces} con/mẹ`}
-                                      onClick={() => updateLine(line.key, { soConText: String(preview.result?.maxPieces || 1) })}
-                                      className="shrink-0 rounded border border-emerald-300 bg-emerald-50 px-1.5 py-1 text-[10px] font-black text-emerald-800"
-                                    >
-                                      Max
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-2 py-2">
-                                <div className="flex items-center gap-1">
-                                  <input
-                                    value={line.conCanText}
-                                    onChange={e => updateLine(line.key, { conCanText: e.target.value })}
-                                    inputMode="decimal"
-                                    title="Nhập SL con cần rồi bấm Tính để tự ra SL mẹ = ceil(con/N)"
-                                    placeholder="vd 3"
-                                    className={`${cellInputClass} text-right`}
-                                  />
-                                  <button
-                                    type="button"
-                                    title="Tự tính SL mẹ = ceil(con cần / con-mẹ)"
-                                    onClick={() => {
-                                      try {
-                                        if (!preview?.mother || !preview.w2 || !preview.l2) {
-                                          setModalError('Chọn sản phẩm nguồn và khổ/m dài trước khi Tính.');
-                                          return;
-                                        }
-                                        const conCan = Number(String(line.conCanText || '').replace(',', '.'));
-                                        if (!(conCan > 0)) {
-                                          setModalError('Nhập Con cần > 0 rồi bấm Tính.');
-                                          return;
-                                        }
-                                        const piecesRaw = String(line.soConText || '').trim();
-                                        const pieces = piecesRaw === '' ? undefined : Math.floor(Number(piecesRaw.replace(',', '.')));
-                                        const plan = suggestCatLePlan(preview.mother, {
-                                          w2: preview.w2,
-                                          l2: preview.l2,
-                                          desiredConQty: conCan,
-                                          pieces: piecesRaw === '' ? undefined : pieces
-                                        });
-                                        setConfirmedLines(null);
-                                        setModalError('');
-                                        updateLine(line.key, {
-                                          qtyText: String(plan.mothers),
-                                          soConText: String(plan.pieces),
-                                          conCanText: String(Math.ceil(conCan))
-                                        });
-                                        showAppToast(plan.hint, 'success');
-                                      } catch (err: any) {
-                                        setModalError(err?.message || 'Không tính được SL mẹ.');
-                                      }
-                                    }}
-                                    className="shrink-0 rounded border border-sky-300 bg-sky-50 px-1.5 py-1 text-[10px] font-black text-sky-800"
-                                  >
-                                    Tính
-                                  </button>
-                                </div>
                               </td>
                               <td className="min-w-[140px] px-2 py-2">
                                 <input
@@ -1165,13 +1321,11 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                             {preview?.result && !preview.error ? (
                               <tr className="border-t bg-sky-50/70">
                                 <td />
-                                <td colSpan={11} className="px-2 py-1.5 text-[11px] font-bold text-sky-800">
-                                  {preview.qty} mẹ → {preview.qty * preview.result.pieces} con
-                                  {preview.result.pieces > 1 && ` (${preview.result.pieces} con/mẹ)`}
-                                  {preview.result.tenSpThua
-                                    ? ` + ${preview.qty} thừa ${preview.result.doDayMThua || ''} ${preview.result.doDaiMThua || ''}`
-                                    : ' — vừa khít, không thừa'}
-                                  {` — tối đa ${preview.result.maxPieces} con/mẹ`}
+                                <td colSpan={10} className="px-2 py-1.5 text-[11px] font-bold text-sky-800">
+                                  SL thành phẩm {fmtQty(parseLocalizedNumber(line.conCanText))}
+                                  {` · xuất ${fmtQty(preview.qty)} nguồn`}
+                                  {preview.result.pieces > 1 && ` (${preview.result.pieces} TP/nguồn)`}
+                                  {preview.result.tenSpThua ? ` · có phần thừa ${preview.result.doDayMThua || ''} ${preview.result.doDaiMThua || ''}` : ' · vừa khít'}
                                 </td>
                               </tr>
                             ) : null}
@@ -1193,7 +1347,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                                         (Number(confirmed.so_con_mot_me) || 1)
                                   )}
                                   {Number(confirmed.so_con_mot_me) > 1 &&
-                                    ` (${fmtQty(confirmed.san_pham_nguon.so_luong)} mẹ × ${confirmed.so_con_mot_me})`}
+                                    ` (${fmtQty(confirmed.san_pham_nguon.so_luong)} nguồn × ${confirmed.so_con_mot_me})`}
                                   {' · '}
                                   {fmtQuyDoi(confirmed.san_pham_cat_1)}
                                 </td>
@@ -1223,16 +1377,15 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                     </tbody>
                     <tfoot>
                       <tr className="border-t bg-zinc-900 text-white">
-                        <td colSpan={7} className="px-2 py-2 text-right font-black">TỔNG MẸ → CON</td>
-                        <td className="px-2 py-2 text-right font-black">{fmtQty(totals.qty)}</td>
+                        <td colSpan={8} className="px-2 py-2 text-right font-black">TỔNG SL THÀNH PHẨM</td>
                         <td className="px-2 py-2 text-right font-black">{fmtQty(totals.qtyCon)}</td>
-                        <td colSpan={3} />
+                        <td colSpan={2} />
                       </tr>
                     </tfoot>
                   </table>
                 </div>
                 <p className="text-[11px] font-semibold text-zinc-500">
-                  Chọn sản phẩm thì Hạ Khổ và M cắt dài tự điền từ độ khổ (do_day_m) và mét dài ban đầu (do_dai_m). Cột Con/mẹ: vd 1 tấm 20m cắt 2 tấm 10m nhập 2 — nhập TP = SL mẹ × N, vừa khít thì không sinh thừa. Cột Con cần: nhập SL con cần rồi bấm Tính để tự ra SL mẹ = ceil(con/N) (nút Max lấy N tối đa). Có thể hạ một chiều hoặc hạ cả khổ lẫn m dài (cả 2 chiều chỉ 1 con/mẹ). Bỏ trống một ô = giữ số của mẹ. Khi đủ thông tin, bấm Xác nhận ở đầu danh sách để xem sản phẩm cắt và phần còn lại nằm ở kho nào.
+                  Trên bảng chỉ nhập SL thành phẩm cần cắt. Số lượng nguồn cần xuất được tính từ SL đó, hạ khổ và hạ li (1 tấm nguồn ra được bao nhiêu thành phẩm thì xuất bấy nhiêu tấm, làm tròn lên). Bỏ trống hạ khổ, hạ li hoặc m cắt dài = giữ số của nguồn. Bấm Tự điền từ đơn hàng để lấy mã đơn, mã hàng và SL thành phẩm từ đơn cắt lẻ.
                 </p>
               </section>
 
@@ -1240,7 +1393,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
 
               <div className="flex items-center justify-end gap-2 border-t pt-3">
                 <button onClick={() => setShowModal(false)} className="rounded-lg border px-4 py-2 text-sm font-bold text-zinc-600">
-                  Đóng
+                  Hủy
                 </button>
                 <button
                   onClick={handleSaveModal}
@@ -1251,6 +1404,143 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                   {editingId ? 'Lưu sửa' : 'Lưu lệnh'} ({lines.length} SP)
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAutofill && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/50 p-2 sm:p-4 backdrop-blur-sm">
+          <div className="flex h-[90dvh] max-h-[90dvh] w-[90vw] max-w-[960px] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3">
+              <div>
+                <h4 className="text-sm font-black uppercase tracking-wider text-zinc-950">Tự điền từ đơn hàng</h4>
+                <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+                  Chọn đơn cắt lẻ, rồi tick sản phẩm. SL điền vào lệnh là SL thành phẩm cần cắt.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAutofill(false)}
+                className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
+              >
+                Đóng
+              </button>
+            </div>
+            <div className="shrink-0 border-b border-zinc-100 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <label className="space-y-1.5 sm:w-48">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Ngày đơn</span>
+                  <input
+                    type="date"
+                    value={autofillDate}
+                    onChange={e => setAutofillDate(e.target.value)}
+                    className={inputClass}
+                  />
+                </label>
+                <label className="min-w-0 flex-1 space-y-1.5">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Tìm đơn / mã hàng</span>
+                  <input
+                    value={autofillSearch}
+                    onChange={e => setAutofillSearch(e.target.value)}
+                    placeholder="Mã đơn, khách, mã hàng..."
+                    className={inputClass}
+                  />
+                </label>
+                {autofillDate && (
+                  <button
+                    type="button"
+                    onClick={() => setAutofillDate('')}
+                    className="h-10 rounded-lg border px-3 text-xs font-bold text-zinc-600"
+                  >
+                    Tất cả ngày
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+              {cutOrdersLoading && <p className="text-xs font-semibold text-zinc-500">Đang tải đơn cắt lẻ...</p>}
+              {!cutOrdersLoading && autofillOrders.length === 0 && (
+                <p className="text-xs font-semibold text-zinc-500">Không có đơn cắt lẻ trong bộ lọc này.</p>
+              )}
+              <div className="space-y-2">
+                {autofillOrders.map(order => {
+                  const checked = selectedOrderIds.includes(order.id);
+                  return (
+                    <label key={order.id} className="flex cursor-pointer items-start gap-2 rounded-lg border border-zinc-200 px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleAutofillOrder(order.id)}
+                        className="mt-1"
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-black text-zinc-900">{order.orderCode}</span>
+                        <span className="block text-xs font-semibold text-zinc-500">
+                          {order.customer || '—'} · {order.products.length} dòng
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              {autofillProducts.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h5 className="text-xs font-black uppercase text-zinc-700">Sản phẩm</h5>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const keys = autofillProducts.map(item => item.key);
+                        const allOn = keys.every(key => selectedProductKeys.includes(key));
+                        setSelectedProductKeys(prev => (allOn ? prev.filter(key => !keys.includes(key)) : [...new Set([...prev, ...keys])]));
+                      }}
+                      className="text-xs font-bold text-[#ef1b2d]"
+                    >
+                      {autofillProducts.every(item => selectedProductKeys.includes(item.key)) ? 'Bỏ chọn' : 'Chọn tất cả'}
+                    </button>
+                  </div>
+                  {autofillProducts.map(item => (
+                    <label key={item.key} className="flex cursor-pointer items-start gap-2 rounded-lg border border-zinc-100 px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedProductKeys.includes(item.key)}
+                        onChange={() =>
+                          setSelectedProductKeys(prev =>
+                            prev.includes(item.key) ? prev.filter(key => key !== item.key) : [...prev, item.key]
+                          )
+                        }
+                        className="mt-1"
+                      />
+                      <span className="min-w-0 text-sm font-semibold text-zinc-800">
+                        <span className="font-black">{item.order.orderCode}</span>
+                        {' · '}
+                        {item.line.productCode || '—'}
+                        {' · '}
+                        {item.line.tenGhep || item.line.productionName || item.line.productName || '—'}
+                        {' · SL '}
+                        {fmtQty(orderFinishedQty(item.line))}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex shrink-0 justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setShowAutofill(false)}
+                className="h-10 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-600"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={applyAutofill}
+                className="h-10 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white"
+              >
+                Điền vào lệnh
+              </button>
             </div>
           </div>
         </div>

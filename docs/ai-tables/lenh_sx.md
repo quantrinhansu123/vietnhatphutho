@@ -29,6 +29,8 @@
 
 `ke_hoach_san_xuat`, `don_hang`, `san_pham`
 
+**Lệnh SX không nhận đơn cắt lẻ:** `Đơn theo quy cách của khách đặt` bị chặn 400 ở cả `POST /api/lenh-sx/from-don-hang/:id` và `POST /api/lenh-sx` (server đối chiếu `loai_don_hang`); dropdown đơn trong form lệnh SX (`lenh-sx`, `ke-hoach-san-xuat`) lọc bỏ loại này. Đơn cắt lẻ đi qua **Lệnh cắt lẻ** phía kho (`lenh_cat_le.md`).
+
 ### Phân công nhân sự
 
 Form **Thêm / Sửa lệnh SX** không ghi `phan_cong_nhan_su` (JSON trên `lenh_sx`) và không ghi bảng `phan_cong_nhan_su_chi_tiet`.

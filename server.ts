@@ -39,8 +39,8 @@ import {
   resolveAuxiliaryWeightPerUnit,
   stripMixingNormRevisionSuffix
 } from './src/utils/mixingNormAuxiliary';
-import { buildOrderTenGhep, calculateDoLiDm, isDiscontinuedWhiteSuProduct, parseProductionNameParts, replaceCutLengthMeters, replaceDoLiDmInTenGhep, stripTrailingDuplicateCutAfterTem } from './src/utils/productProductionName';
-import { buildCatLeSanPhamLine, KHO_CAT_LE, KHO_TAI_CHE, KHO_THANH_PHAM, normalizeCatLeSanPhamList, type CatLeSanPhamLine } from './src/features/lenh-cat-le/logic';
+import { buildMaAmisMoi, buildOrderTenGhep, calculateDoLiDm, isDiscontinuedWhiteSuProduct, parseProductionNameParts, replaceCutLengthMeters, replaceDoLiDmInTenGhep, stripTrailingDuplicateCutAfterTem } from './src/utils/productProductionName';
+import { buildCatLeSanPhamLine, KHO_CAT_LE, KHO_TAI_CHE, KHO_THANH_PHAM, inferKhoChinhTuNhom, normalizeCatLeSanPhamList, type CatLeSanPhamLine } from './src/features/lenh-cat-le/logic';
 
 dotenv.config();
 
@@ -140,7 +140,7 @@ const SUPABASE_WAREHOUSE_HISTORY_TABLE =
   process.env.SUPABASE_WAREHOUSE_HISTORY_TABLE || 'phieu_xuat_nhap_kho_lich_su';
 const SUPABASE_NHAP_KHO_TABLE = process.env.SUPABASE_NHAP_KHO_TABLE || 'nhap_kho';
 const NHAP_KHO_LOAI_THANH_PHAM = 'thanh_pham';
-/** Lệnh cắt lẻ: cuộn mẹ kho cắt lẻ -> SP con kho TP + thừa nhập lại kho cắt lẻ. */
+/** Lệnh cắt lẻ: cuộn nguồn kho chính -> SP cắt kho TP + thừa nhập lại kho nguồn. */
 const SUPABASE_LENH_CAT_LE_TABLE = process.env.SUPABASE_LENH_CAT_LE_TABLE || 'lenh_cat_le';
 /** Cột thông số ghép tên cắt lẻ trên nhap_kho (nullable với DB chưa migrate). */
 const NHAP_KHO_CAT_LE_SPEC_COLUMNS = [
@@ -151,7 +151,8 @@ const NHAP_KHO_CAT_LE_SPEC_COLUMNS = [
   'do_dai_m',
   'mang',
   'hang_phe',
-  'ma_amis'
+  'ma_amis',
+  'ma_sp_cu'
 ];
 
 /**
@@ -2676,6 +2677,9 @@ function parseProductPatchBody(
   if (hasAmisCode) {
     record.ma_amis = amisCode || null;
   }
+  if (Object.prototype.hasOwnProperty.call(source, 'amisOldCode') || Object.prototype.hasOwnProperty.call(source, 'ma_amis_cu')) {
+    record.ma_amis_cu = parseMaterialText(source.amisOldCode ?? source.ma_amis_cu) || null;
+  }
   if (Object.prototype.hasOwnProperty.call(source, 'totalWeight') || Object.prototype.hasOwnProperty.call(source, 'tong_trong_luong')) {
     record.tong_trong_luong = parseOptionalMaterialDecimalText(source.totalWeight ?? source.tong_trong_luong);
   }
@@ -2817,7 +2821,7 @@ function productWriteErrorMessage(error: { code?: string; message?: string; deta
     return `Bảng ${SUPABASE_PRODUCTS_TABLE} chưa tồn tại trên Supabase.`;
   }
   if (isMissingColumnError(error)) {
-    return `Bảng ${SUPABASE_PRODUCTS_TABLE} đang thiếu cột (${error.message}). Hãy chạy các migration san_pham liên quan, gồm supabase-san-pham-thong-so-sx.sql và supabase-san-pham-ty-le-hao-hut.sql.`;
+    return `Bảng ${SUPABASE_PRODUCTS_TABLE} đang thiếu cột (${error.message}). Hãy chạy các migration san_pham liên quan, gồm supabase-san-pham-thong-so-sx.sql, supabase-san-pham-ty-le-hao-hut.sql và supabase-san-pham-ma-amis-cu.sql.`;
   }
   if (productUniqueViolationColumn(error) === 'ma_amis') {
     return `Bảng ${SUPABASE_PRODUCTS_TABLE} đang chặn trùng mã AMIS. Hãy chạy supabase-san-pham-ma-amis-khong-unique.sql trong Supabase SQL Editor rồi tải Excel lại.`;
@@ -6901,10 +6905,15 @@ function resolveStoredOrderTenGhep(
 
 const SOUTH_ORDER_TYPE_SERVER = 'Đơn miền nam';
 const CUT_ORDER_TYPE_SERVER = 'Đơn theo quy cách của khách đặt';
+const CUT_ORDER_TYPE_NEW_SERVER = 'Đơn cắt lẻ';
 const PRODUCTION_ORDER_TYPE_SERVER = 'Đơn sản xuất';
+function isCutOrderTypeServer(orderType?: string | null) {
+  const value = String(orderType || '').trim();
+  return value === CUT_ORDER_TYPE_SERVER || value === CUT_ORDER_TYPE_NEW_SERVER;
+}
 function isCutLikeOrderTypeServer(orderType?: string | null) {
   const value = String(orderType || '').trim();
-  return value === CUT_ORDER_TYPE_SERVER || value === SOUTH_ORDER_TYPE_SERVER;
+  return isCutOrderTypeServer(value) || value === SOUTH_ORDER_TYPE_SERVER;
 }
 function isRegionQuantityOrderTypeServer(orderType?: string | null) {
   const value = String(orderType || '').trim();
@@ -6983,6 +6992,10 @@ type OrderProductRecord = {
   dan_tem_2_dau?: number | null;
   /** Hậu tố tem đã trim, vd "(Dán Tem 1.5li) Màu Hồng MVCC Dán Tem 2 Đầu". */
   mo_ta_tem?: string | null;
+  /** Mã AMIS mới của biến thể cắt lẻ / đơn miền nam (san_pham.ma_amis của dòng biến thể). */
+  ma_amis?: string | null;
+  /** Mã AMIS gốc để truy vết biến thể (cột san_pham.ma_amis_cu). */
+  ma_amis_cu?: string | null;
   don_vi: string;
   so_luong: number | null;
   stt?: number;
@@ -6995,6 +7008,10 @@ type OrderProductRecord = {
   kg_1_sp?: number | null;
   tong_kg?: number | null;
   dinh_muc_kg?: number | null;
+  /** Đơn miền nam: độ dài tấm tiêu chuẩn (m). */
+  do_dai_tam_tieu_chuan?: number | null;
+  /** Đơn miền nam: định mức tiêu chuẩn (kg). */
+  dinh_muc_tieu_chuan_kg?: number | null;
   trong_luong?: number | null;
   trong_luong_kg?: number | null;
   nguon_quy_doi?: string | null;
@@ -7136,7 +7153,7 @@ function parseOrderProductsInput(
     const ghi_chu = pickRowField(row, ['ghi_chu', 'note']);
     const tem = pickRowField(row, ['tem', 'tem_dan', 'dan_tem']);
     const mau_tem_raw = pickRowField(row, ['mau_tem', 'mauTem', 'mau']);
-    const isSouthOrderInput = String(source.orderType ?? '').trim() === SOUTH_ORDER_TYPE_SERVER;
+    const isCutLikeSpecOrder = isCutLikeOrderTypeServer(String(source.orderType ?? ''));
     const mau_tem = mau_tem_raw || '';
     const dan_tem_2_dau_raw = row.dan_tem_2_dau ?? row.danTem2Dau ?? row.dan_tem_hai_dau;
     const dan_tem_2_dau = dan_tem_2_dau_raw === true || dan_tem_2_dau_raw === 1 || String(dan_tem_2_dau_raw || '').trim() === '1' || /Dán Tem 2 Đầu/u.test(String(ten_ghep_raw || ''))
@@ -7149,11 +7166,11 @@ function parseOrderProductsInput(
       const match = quy_cach.match(/(\d+(?:[.,]\d+)?)/);
       if (match) parsedQuyCachMDai = Number(match[1].replace(',', '.'));
     }
-    // Đơn miền nam: BÓC suffix tem trước khi thay mét cắt — nếu không replaceCutLengthMeters
+    // Đơn cắt lẻ / miền nam: BÓC suffix tem trước khi thay mét cắt — nếu không replaceCutLengthMeters
     // thấy chuỗi kết thúc bằng "2 Đầu" (không phải mét) sẽ nối thêm "- Nm" rồi append suffix nữa,
     // và vì parseOrderBody parse lại lần 2 nên mỗi lần lưu nhân thêm 1 lớp (bug triple suffix).
-    const stripped_ten_ghep = isSouthOrderInput ? stripSouthTemSuffixServer(ten_ghep_raw) : String(ten_ghep_raw || '');
-    const healed_ten_ghep = isSouthOrderInput
+    const stripped_ten_ghep = isCutLikeSpecOrder ? stripSouthTemSuffixServer(ten_ghep_raw) : String(ten_ghep_raw || '');
+    const healed_ten_ghep = isCutLikeSpecOrder
       ? collapseDuplicateTrailingCutMetersServer(stripped_ten_ghep, parsedQuyCachMDai)
       : stripped_ten_ghep;
     let base_ten_ghep = resolveStoredOrderTenGhep(
@@ -7162,19 +7179,21 @@ function parseOrderProductsInput(
       '',
       parsedQuyCachMDai
     );
-    // Đơn miền nam: thay segment (đm n li|kg) theo do_li_dm — không đụng token do_li.
-    if (isSouthOrderInput && do_li_dm) {
+    // Đơn cắt lẻ / miền nam: thay segment (đm n li|kg) theo do_li_dm — không đụng token do_li.
+    if (isCutLikeSpecOrder && do_li_dm) {
       base_ten_ghep = replaceDoLiDmInTenGhep(base_ten_ghep, do_li_dm);
     }
-    const ten_ghep = isSouthOrderInput
+    const ten_ghep = isCutLikeSpecOrder
       ? appendSouthTemToTenGhepServer(base_ten_ghep, tem, mau_tem, dan_tem_2_dau)
       : base_ten_ghep;
-    const mo_ta_tem = isSouthOrderInput
+    const mo_ta_tem = isCutLikeSpecOrder
       ? buildSouthTemSuffixServer(tem, mau_tem, dan_tem_2_dau).trim()
       : '';
     const kg_1_sp = parseOrderQuantity(row.kg_1_sp ?? row.kg1Sp);
     const tong_kg = parseOrderQuantity(row.tong_kg ?? row.tongKg ?? row.trong_luong ?? row.trong_luong_kg);
     const dinh_muc_kg = parseOrderQuantity(row.dinh_muc_kg ?? row.dinhMucKg);
+    const do_dai_tam_tieu_chuan = parseOrderQuantity(row.do_dai_tam_tieu_chuan ?? row.doDaiTamTieuChuan);
+    const dinh_muc_tieu_chuan_kg = parseOrderQuantity(row.dinh_muc_tieu_chuan_kg ?? row.dinhMucTieuChuanKg);
     const nguon_quy_doi = pickRowField(row, ['nguon_quy_doi', 'conversionSource']);
     const tl_cuon = parseOrderQuantity(row.tl_cuon ?? row.tlCuon ?? row.kg_cuon ?? row.trong_luong_kg_cuon);
     const tl_tam = parseOrderQuantity(row.tl_tam ?? row.tlTam ?? row.trong_luong_kg_tam);
@@ -7199,6 +7218,8 @@ function parseOrderProductsInput(
       ...(m_dai !== null && m_dai > 0 ? { m_dai } : {}),
       ...(tong_kg !== null && tong_kg > 0 ? { tong_kg } : {}),
       ...(dinh_muc_kg !== null && dinh_muc_kg > 0 ? { dinh_muc_kg } : {}),
+      ...(do_dai_tam_tieu_chuan !== null && do_dai_tam_tieu_chuan > 0 ? { do_dai_tam_tieu_chuan } : {}),
+      ...(dinh_muc_tieu_chuan_kg !== null && dinh_muc_tieu_chuan_kg > 0 ? { dinh_muc_tieu_chuan_kg } : {}),
       ...(tl_cuon !== null && tl_cuon > 0 ? { tl_cuon } : {}),
       ...(tl_tam !== null && tl_tam > 0 ? { tl_tam } : {}),
       ...(kg_1_sp !== null && kg_1_sp > 0 && kg_1_sp !== tl_tam && kg_1_sp !== tl_cuon ? { kg_1_sp } : {}),
@@ -7316,6 +7337,8 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
         const kg_1_sp = parseOrderQuantity(record.kg_1_sp ?? record.kg1Sp);
         const tong_kg = parseOrderQuantity(record.tong_kg ?? record.tongKg ?? record.trong_luong ?? record.trong_luong_kg);
         const dinh_muc_kg = parseOrderQuantity(record.dinh_muc_kg ?? record.dinhMucKg);
+        const do_dai_tam_tieu_chuan = parseOrderQuantity(record.do_dai_tam_tieu_chuan ?? record.doDaiTamTieuChuan);
+        const dinh_muc_tieu_chuan_kg = parseOrderQuantity(record.dinh_muc_tieu_chuan_kg ?? record.dinhMucTieuChuanKg);
         const tl_cuon = parseOrderQuantity(record.tl_cuon ?? record.tlCuon ?? record.kg_cuon ?? record.trong_luong_kg_cuon);
         const tl_tam = parseOrderQuantity(record.tl_tam ?? record.tlTam ?? record.trong_luong_kg_tam);
         const m2 = parseOrderQuantity(record.m2 ?? record.dien_tich_m2);
@@ -7352,6 +7375,12 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
           ...(pickRowField(record, ['mo_ta_tem', 'moTaTem'])
             ? { mo_ta_tem: pickRowField(record, ['mo_ta_tem', 'moTaTem']) }
             : {}),
+          ...(pickRowField(record, ['ma_amis', 'maAmis', 'amisCode'])
+            ? { ma_amis: pickRowField(record, ['ma_amis', 'maAmis', 'amisCode']) }
+            : {}),
+          ...(pickRowField(record, ['ma_amis_cu', 'maAmisCu', 'amisOldCode'])
+            ? { ma_amis_cu: pickRowField(record, ['ma_amis_cu', 'maAmisCu', 'amisOldCode']) }
+            : {}),
           don_vi: pickRowField(record, ['don_vi', 'unit']),
           so_luong: parseOrderQuantity(record.so_luong ?? record.quantity),
           ...(san_pham_id ? { san_pham_id } : {}),
@@ -7365,6 +7394,8 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
           ...(m_dai !== null ? { m_dai } : {}),
           ...(tong_kg !== null ? { tong_kg } : {}),
           ...(dinh_muc_kg !== null && dinh_muc_kg > 0 ? { dinh_muc_kg } : {}),
+          ...(do_dai_tam_tieu_chuan !== null && do_dai_tam_tieu_chuan > 0 ? { do_dai_tam_tieu_chuan } : {}),
+          ...(dinh_muc_tieu_chuan_kg !== null && dinh_muc_tieu_chuan_kg > 0 ? { dinh_muc_tieu_chuan_kg } : {}),
           ...(tl_cuon !== null ? { tl_cuon } : {}),
           ...(tl_tam !== null ? { tl_tam } : {}),
           ...(so_luong_bac !== null ? { so_luong_bac: Math.max(0, so_luong_bac) } : {}),
@@ -7833,6 +7864,8 @@ function buildProductionOrderRecordFromOrder(
         ...(selectedProduct?.mau_tem ? { mau_tem: selectedProduct.mau_tem } : {}),
         ...(selectedProduct?.dan_tem_2_dau ? { dan_tem_2_dau: selectedProduct.dan_tem_2_dau } : {}),
         ...(selectedProduct?.mo_ta_tem ? { mo_ta_tem: selectedProduct.mo_ta_tem } : {}),
+        ...(selectedProduct?.ma_amis ? { ma_amis: selectedProduct.ma_amis } : {}),
+        ...(selectedProduct?.ma_amis_cu ? { ma_amis_cu: selectedProduct.ma_amis_cu } : {}),
         don_vi: unit,
         so_luong: selectedProduct?.so_luong ?? null,
         ...(selectedProduct?.do_li ? { do_li: selectedProduct.do_li } : {}),
@@ -7920,6 +7953,8 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
     const m_dai = parseOrderQuantity(row.m_dai ?? row.mDai ?? row.met_dai ?? row.chieu_dai_m);
     const tong_kg = parseOrderQuantity(row.tong_kg ?? row.tongKg ?? row.trong_luong ?? row.trong_luong_kg);
     const dinh_muc_kg = parseOrderQuantity(row.dinh_muc_kg ?? row.dinhMucKg);
+    const do_dai_tam_tieu_chuan = parseOrderQuantity(row.do_dai_tam_tieu_chuan ?? row.doDaiTamTieuChuan);
+    const dinh_muc_tieu_chuan_kg = parseOrderQuantity(row.dinh_muc_tieu_chuan_kg ?? row.dinhMucTieuChuanKg);
     const kg_1_sp = parseOrderQuantity(row.kg_1_sp ?? row.kg1Sp);
     const tl_cuon = parseOrderQuantity(row.tl_cuon ?? row.tlCuon ?? row.kg_cuon ?? row.trong_luong_kg_cuon);
     const tl_tam = parseOrderQuantity(row.tl_tam ?? row.tlTam ?? row.trong_luong_kg_tam);
@@ -7955,6 +7990,8 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
       ...(pickRowField(row, ['mau_tem', 'mauTem', 'mau']) ? { mau_tem: pickRowField(row, ['mau_tem', 'mauTem', 'mau']) } : {}),
       ...((row.dan_tem_2_dau === 1 || row.danTem2Dau === true || String(row.dan_tem_2_dau ?? '').trim() === '1') ? { dan_tem_2_dau: 1 } : {}),
       ...(pickRowField(row, ['mo_ta_tem', 'moTaTem']) ? { mo_ta_tem: pickRowField(row, ['mo_ta_tem', 'moTaTem']) } : {}),
+      ...(pickRowField(row, ['ma_amis', 'maAmis', 'amisCode']) ? { ma_amis: pickRowField(row, ['ma_amis', 'maAmis', 'amisCode']) } : {}),
+      ...(pickRowField(row, ['ma_amis_cu', 'maAmisCu', 'amisOldCode']) ? { ma_amis_cu: pickRowField(row, ['ma_amis_cu', 'maAmisCu', 'amisOldCode']) } : {}),
       don_vi,
       so_luong,
       ...(stt ? { stt } : {}),
@@ -7967,6 +8004,8 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
       ...(m_dai !== null && m_dai > 0 ? { m_dai } : {}),
       ...(tong_kg !== null && tong_kg > 0 ? { tong_kg } : {}),
       ...(dinh_muc_kg !== null && dinh_muc_kg > 0 ? { dinh_muc_kg } : {}),
+      ...(do_dai_tam_tieu_chuan !== null && do_dai_tam_tieu_chuan > 0 ? { do_dai_tam_tieu_chuan } : {}),
+      ...(dinh_muc_tieu_chuan_kg !== null && dinh_muc_tieu_chuan_kg > 0 ? { dinh_muc_tieu_chuan_kg } : {}),
       ...(tl_cuon !== null && tl_cuon > 0 ? { tl_cuon } : {}),
       ...(tl_tam !== null && tl_tam > 0 ? { tl_tam } : {}),
       ...(so_luong_bac !== null ? { so_luong_bac: Math.max(0, so_luong_bac) } : {}),
@@ -9253,7 +9292,7 @@ export function createApp() {
       }
 
       const productFieldKeys = [
-        'code', 'ma_sp', 'newCode', 'ma_sp_moi', 'amisCode', 'ma_amis', 'name', 'ten_sp', 'productionName', 'tenSanXuat', 'ten_san_xuat', 'nature', 'tinh_chat', 'group', 'nhom_vthh',
+    'code', 'ma_sp', 'newCode', 'ma_sp_moi', 'amisCode', 'ma_amis', 'amisOldCode', 'ma_amis_cu', 'name', 'ten_sp', 'productionName', 'tenSanXuat', 'ten_san_xuat', 'nature', 'tinh_chat', 'group', 'nhom_vthh',
         'unit', 'don_vi', 'openingStock', 'ton_dau_ky', 'inbound', 'nhap_trong_ky', 'outbound', 'xuat_trong_ky',
         'stock', 'sl_ton', 'minStock', 'so_luong_ton_toi_thieu',
         'origin', 'nguon_goc', 'description', 'mo_ta',
@@ -10782,6 +10821,10 @@ export function createApp() {
       }
 
       const orderCode = pickRowField(orderRow, ['ma_don_hang', 'order_code', 'code']);
+      const orderType = String(orderRow.loai_don_hang ?? (orderRow as Record<string, unknown>).orderType ?? '').trim();
+      if (isCutOrderTypeServer(orderType)) {
+        return res.status(400).json({ error: 'Đơn cắt lẻ (theo quy cách khách đặt) không tạo lệnh SX. Hãy tạo Lệnh cắt lẻ phía kho hàng.' });
+      }
       const orderProducts = parseOrderProductsFromRow(orderRow);
       if (!orderCode) {
         return res.status(400).json({ error: 'Đơn hàng thiếu mã đơn — không thể tạo lệnh SX.' });
@@ -10858,6 +10901,19 @@ export function createApp() {
 
       const orderRef = String(record.ma_don_hang ?? '').trim();
       const orderProducts = parseOrderProductsFromRow(record);
+
+      // Lệnh SX không nhận đơn cắt lẻ — đơn cắt lẻ đi qua Lệnh cắt lẻ phía kho.
+      if (orderRef) {
+        const { data: refOrder } = await supabase
+          .from(SUPABASE_ORDERS_TABLE)
+          .select('loai_don_hang')
+          .eq('ma_don_hang', orderRef)
+          .maybeSingle();
+        const refType = String((refOrder as Record<string, unknown> | null)?.loai_don_hang ?? '').trim();
+        if (isCutOrderTypeServer(refType)) {
+          return res.status(400).json({ error: 'Đơn cắt lẻ (theo quy cách khách đặt) không tạo lệnh SX. Hãy tạo Lệnh cắt lẻ phía kho hàng.' });
+        }
+      }
 
       for (const product of orderProducts) {
         const productCode = product.ma_sp;
@@ -17368,7 +17424,7 @@ async function loadKiemKhoLiveTongHopForDot(
         item.soConMotMe ?? item.so_con_mot_me ?? item.soConTrenMotMe ?? item.pieces ?? item.soLuongConMotMe ?? 1;
       const pieces = Math.floor(Number(String(piecesRaw).replace(',', '.')));
       if (!Number.isFinite(pieces) || pieces < 1) {
-        return { error: `Dòng ${index + 1} (${mother.maSp}): số con/mẹ phải >= 1.` };
+        return { error: `Dòng ${index + 1} (${mother.maSp}): số TP/nguồn phải >= 1.` };
       }
       try {
         lines.push(
@@ -17391,7 +17447,7 @@ async function loadKiemKhoLiveTongHopForDot(
     }
     const khoNguon = String(source.khoNguon ?? source.kho_nguon ?? KHO_CAT_LE).trim() || KHO_CAT_LE;
     const khoDich = String(source.khoDich ?? source.kho_dich ?? source.khoTp ?? source.kho_tp ?? KHO_THANH_PHAM).trim() || KHO_THANH_PHAM;
-    // Sản phẩm chỉ nằm trong JSON san_pham (nguồn / cắt 1 / cắt 2). Không ghi cột mẹ/con.
+    // Sản phẩm chỉ nằm trong JSON san_pham (nguồn / cắt 1 / cắt 2). Không ghi cột nguồn/cắt.
     const draft: Record<string, unknown> = {
       ngay_cat: ngayCat,
       kho_nguon: khoNguon,
@@ -17407,17 +17463,22 @@ async function loadKiemKhoLiveTongHopForDot(
 
   function catLeSlipItem(line: CatLeSanPhamLine, kind: 'nguon' | 'cat_1' | 'cat_2') {
     const piece = kind === 'nguon' ? line.san_pham_nguon : kind === 'cat_1' ? line.san_pham_cat_1 : line.san_pham_cat_2;
+    // SP cắt / phần thừa ghi theo mã mới (ma_amis của piece, truy vết qua ma_amis_cu).
+    const variantCode =
+      kind === 'nguon'
+        ? ''
+        : String((piece as unknown as Record<string, unknown>)?.ma_amis || '').trim();
     const qtyMe = Number(line.san_pham_nguon.so_luong) || 0;
     const savedCon = Number((line as unknown as Record<string, unknown>).so_luong_cat_1);
     const piecesRaw = Number((line as unknown as Record<string, unknown>).so_con_mot_me);
     const pieces = Number.isFinite(piecesRaw) && piecesRaw >= 1 ? Math.floor(piecesRaw) : 1;
-    // Xuất mẹ = SL mẹ; nhập TP = mẹ × N; nhập thừa = SL mẹ (1 khúc thừa/mẹ).
+    // Xuất nguồn = SL nguồn; nhập TP = nguồn × N; nhập thừa = SL nguồn (1 khúc thừa/nguồn).
     const qty = kind === 'cat_1' ? (Number.isFinite(savedCon) && savedCon > 0 ? savedCon : Math.round(qtyMe * pieces * 1000) / 1000) : qtyMe;
     const kg1 = Number(piece?.kg) || 0;
     const a1 = Number(piece?.m2) || 0;
     const l1 = Number(piece?.m_dai) || 0;
     return {
-      code: String(line.san_pham_nguon.ma_sp || ''),
+      code: variantCode || String(line.san_pham_nguon.ma_sp || ''),
       name: String(piece?.ten_sp || ''),
       unit: String(line.san_pham_nguon.don_vi || '').trim() || 'Tấm',
       quantity: qty,
@@ -17437,8 +17498,12 @@ async function loadKiemKhoLiveTongHopForDot(
   function catLeCatalogRow(line: CatLeSanPhamLine, kind: 'cat_1' | 'cat_2', tenKho: string, loaiKho: string) {
     const piece = kind === 'cat_1' ? line.san_pham_cat_1 : line.san_pham_cat_2;
     const nguon = line.san_pham_nguon;
+    // Nhập kho ghi đúng mã mới + mã cũ (ma_sp_cu để tổng hợp về sau).
+    const variantCode = String((piece as unknown as Record<string, unknown>)?.ma_amis || '').trim();
+    const variantCu = String((piece as unknown as Record<string, unknown>)?.ma_amis_cu || '').trim();
     return {
-      ma_sp: String(nguon.ma_sp || ''),
+      ma_sp: variantCode || String(nguon.ma_sp || ''),
+      ma_sp_cu: variantCu || String(nguon.ma_amis || nguon.ma_sp || '') || null,
       ten_sp: piece?.ten_sp || '',
       don_vi: String(nguon.don_vi || '').trim() || 'Tấm',
       trong_luong_kg_mot_sp: piece?.kg ?? null,
@@ -17470,8 +17535,79 @@ async function loadKiemKhoLiveTongHopForDot(
   }
 
   /**
+   * Tạo lại SP biến thể cắt lẻ trong `san_pham` (mỗi mã mới một dòng).
+   * Quy ước: ma_amis = mã MỚI, ma_amis_cu = mã gốc. Tìm theo (ma_amis + ten_sp)
+   * trước để duyệt lại / cắt trùng không nhân dòng.
+   * Cần chạy migration supabase-san-pham-ma-amis-cu.sql; thiếu cột thì bỏ qua kèm warning.
+   */
+  async function ensureCatLeVariantSanPham(args: {
+    baseMaAmis: string;
+    maMoi: string;
+    tenSp: string;
+    nhomVthh: string;
+    donVi: string;
+    specs: { ten_goc: string; do_li: string; do_li_dm: string; do_day_m: string; do_dai_m: string; mang: string; hang_phe: string };
+  }): Promise<{ id?: string; warning?: string }> {
+    const maMoi = String(args.maMoi || '').trim();
+    const tenSp = String(args.tenSp || '').trim();
+    if (!maMoi || !tenSp) return {};
+    const base = String(args.baseMaAmis || '').trim();
+    try {
+      const { data: found, error: findError } = await supabase!
+        .from(SUPABASE_PRODUCTS_TABLE)
+        .select('id')
+        .eq('ma_amis', maMoi)
+        .eq('ten_sp', tenSp)
+        .limit(1);
+      if (!findError && found && found.length > 0) return { id: String((found[0] as { id: string }).id) };
+      if (findError && isMissingColumnError(findError)) {
+        return { warning: 'Bảng san_pham chưa có cột ma_amis_cu — hãy chạy supabase-san-pham-ma-amis-cu.sql.' };
+      }
+      const record: Record<string, unknown> = {
+        ma_sp: maMoi,
+        ma_amis: maMoi,
+        ma_amis_cu: base || null,
+        ten_sp: tenSp,
+        ten_san_xuat: tenSp,
+        ten_ghep: tenSp,
+        nhom_vthh: args.nhomVthh || null,
+        don_vi: args.donVi || 'Tấm',
+        ten_goc: args.specs.ten_goc || null,
+        do_li: args.specs.do_li || null,
+        do_li_dm: args.specs.do_li_dm || null,
+        do_day_m: args.specs.do_day_m || null,
+        do_dai_m: args.specs.do_dai_m || null,
+        mang: args.specs.mang || null,
+        hang_phe: args.specs.hang_phe || null
+      };
+      const { data: created, error } = await supabase!
+        .from(SUPABASE_PRODUCTS_TABLE)
+        .insert(record)
+        .select('id')
+        .single();
+      if (!error && created) return { id: String((created as { id: string }).id) };
+      if (error && (error as { code?: string }).code === '23505') {
+        const { data: byCode } = await supabase!
+          .from(SUPABASE_PRODUCTS_TABLE)
+          .select('id')
+          .eq('ma_sp', maMoi)
+          .limit(1);
+        if (byCode && byCode.length > 0) return { id: String((byCode[0] as { id: string }).id) };
+      }
+      if (error && isMissingColumnError(error)) {
+        return { warning: 'Bảng san_pham chưa có cột ma_amis_cu — hãy chạy supabase-san-pham-ma-amis-cu.sql.' };
+      }
+      return { warning: `Không tạo được SP biến thể ${maMoi}: ${(error as { message?: string })?.message || 'lỗi không rõ'}.` };
+    } catch (err: any) {
+      return { warning: `Không tạo được SP biến thể ${maMoi}: ${err?.message || 'lỗi không rõ'}.` };
+    }
+  }
+
+  /**
    * Ghi kho cho lệnh đã lưu JSON san_pham:
-   * xuất mẹ (kho cắt lẻ) + nhập đích (kho thành phẩm) + nhập mọi phần còn lại lại kho cắt lẻ.
+   * xuất nguồn (kho chính suy từ nhóm VTHH: Kho Đặc / Kho Sóng — thiếu thì kho đã chọn)
+   * + nhập đích (kho thành phẩm) + nhập mọi phần còn lại lại kho nguồn.
+   * Đồng thời tạo lại SP biến thể cắt lẻ trong san_pham (ma_amis mới + ma_amis_cu).
    */
   async function executeLenhCatLe(
     lenh: any,
@@ -17485,6 +17621,67 @@ async function loadKiemKhoLiveTongHopForDot(
     }
     const lines = normalizeCatLeSanPhamList(lenh.san_pham);
     if (lines.length === 0) return { ok: false, status: 400, error: 'Lệnh không có sản phẩm.' };
+    // Tạo lại SP biến thể trong san_pham (mỗi mã mới một dòng, truy vết qua ma_amis_cu).
+    const variantWarnings: string[] = [];
+    for (const line of lines) {
+      const nguon = line.san_pham_nguon;
+      const baseAmis = String(nguon.ma_amis || nguon.ma_sp || '').trim();
+      const variants: Array<{ piece: typeof line.san_pham_cat_1 }> = [{ piece: line.san_pham_cat_1 }];
+      if (line.san_pham_cat_2) variants.push({ piece: line.san_pham_cat_2 });
+      for (const { piece } of variants) {
+        if (!piece) continue;
+        const rec = piece as unknown as Record<string, unknown>;
+        // Quy ước mới: ma_amis của piece = mã MỚI, ma_amis_cu = mã gốc.
+        let maMoi = String(rec.ma_amis || '').trim();
+        if (!maMoi && baseAmis) {
+          // Lệnh cũ chưa có mã mới — sinh bù từ thông số cắt.
+          const numOf = (label: unknown) => {
+            const n = Number(
+              String(label ?? '')
+                .replace(/\s*m\s*$/iu, '')
+                .replace(',', '.')
+            );
+            return Number.isFinite(n) && n > 0 ? n : null;
+          };
+          const lCon = numOf(piece.do_dai_m);
+          const lMe = numOf(nguon.do_dai_m);
+          const liCon = String(piece.do_li || '').trim();
+          const liMe = String(nguon.do_li || '').trim();
+          maMoi = buildMaAmisMoi({
+            baseMaAmis: baseAmis,
+            nhomVthh: nguon.nhom_vthh,
+            cutLengthM: lCon !== null && (lMe === null || Math.abs(lCon - lMe) > 1e-9) ? lCon : undefined,
+            doLi:
+              liCon && liCon.toLocaleLowerCase('vi') !== liMe.toLocaleLowerCase('vi') ? liCon : undefined,
+            mang: nguon.mang || undefined
+          });
+          if (maMoi) {
+            const normalizedBase = buildMaAmisMoi({ baseMaAmis: baseAmis });
+            if (maMoi === normalizedBase) maMoi = '';
+          }
+        }
+        if (!maMoi) continue;
+        rec.ma_amis = maMoi;
+        if (!String(rec.ma_amis_cu || '').trim()) rec.ma_amis_cu = baseAmis;
+        const ensured = await ensureCatLeVariantSanPham({
+          baseMaAmis: baseAmis,
+          maMoi,
+          tenSp: String(piece.ten_sp || ''),
+          nhomVthh: String(nguon.nhom_vthh || ''),
+          donVi: String(nguon.don_vi || 'Tấm'),
+          specs: {
+            ten_goc: String(nguon.ten_goc || ''),
+            do_li: String(piece.do_li || ''),
+            do_li_dm: String(piece.do_li_dm || ''),
+            do_day_m: String(piece.do_day_m || ''),
+            do_dai_m: String(piece.do_dai_m || ''),
+            mang: String(nguon.mang || ''),
+            hang_phe: String(nguon.hang_phe || '')
+          }
+        });
+        if (ensured.warning) variantWarnings.push(ensured.warning);
+      }
+    }
     const need = new Map<string, { ma: string; ten: string; qty: number }>();
     for (const line of lines) {
       const ma = String(line.san_pham_nguon.ma_sp || '').trim();
@@ -17496,7 +17693,12 @@ async function loadKiemKhoLiveTongHopForDot(
       if (prev) prev.qty = Math.round((prev.qty + qty) * 1000) / 1000;
       else need.set(key, { ma, ten, qty });
     }
-    const khoNguon = String(lenh.kho_nguon || KHO_CAT_LE);
+    // Kho nguồn: ưu tiên kho đã chọn trên lệnh; thiếu thì suy kho chính từ nhóm
+    // VTHH dòng đầu (Đặc → Kho Đặc; Sóng/Rỗng → Kho Sóng), cuối cùng về Kho cắt lẻ.
+    const khoNguon =
+      String(lenh.kho_nguon || '').trim() ||
+      inferKhoChinhTuNhom(String(lines[0]?.san_pham_nguon?.nhom_vthh || '')) ||
+      KHO_CAT_LE;
     for (const item of need.values()) {
       const ton = await getSanPhamTonSlTheoKhoVaTen(item.ma, item.ten, khoNguon);
       if (ton !== null && ton < item.qty - 1e-9) {
@@ -17639,7 +17841,13 @@ async function loadKiemKhoLiveTongHopForDot(
         ma_phieu_chuyen_tai_che: null,
         ma_phieu_nhap_tai_che: null,
         di_tai_che: false,
-        ...(catResult.saved ? {} : { warning: catResult.error || 'Không ghi được catalog nhap_kho.' })
+        ...(catResult.saved && variantWarnings.length === 0
+          ? {}
+          : {
+              warning: [catResult.saved ? '' : catResult.error || 'Không ghi được catalog nhap_kho.', ...variantWarnings]
+                .filter(Boolean)
+                .join(' ')
+            })
       }
     };
   }

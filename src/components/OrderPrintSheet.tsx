@@ -1,8 +1,9 @@
 import React from 'react';
 import { formatNumber, parsePercentInput } from '../utils';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
-import { SOUTH_ORDER_TYPE, getAllocatedQtyFromMap, isCutLikeOrderType } from '../features/_shared/orderHelpers';
+import { SOUTH_ORDER_TYPE, getAllocatedQtyFromMap, isCutLikeOrderType, isCutOrderType } from '../features/_shared/orderHelpers';
 import { getOrderProductLines, type OrderRow } from '../features/_shared/orderRecordHelpers';
+import { cutOrderPrintSize, cutOrderPrintTenHang, formatPhuThoDate } from './cutOrderPrint';
 
 function formatOrderCreatedAt(value: string): string {
   const trimmed = String(value || '').trim();
@@ -36,8 +37,88 @@ export default function OrderPrintSheet({ order, allocatedQtyMap }: { order: Ord
       : 0;
   const totalAllocated = productLines.reduce((sum, line) => sum + allocatedOf(line), 0);
   const orderNote = displayCell(order.note);
+  const isRetailCutOrder = isCutOrderType(order.orderType);
   const isCutOrder = isCutLikeOrderType(order.orderType);
   const isSouthOrder = order.orderType === SOUTH_ORDER_TYPE;
+
+  if (isRetailCutOrder) {
+    const placeDate = formatPhuThoDate(order.orderDate || order.createdAt);
+    return (
+      <div className="order-print-sheet">
+        <div className="order-print-doc order-print-cut">
+          <p className="order-print-cut-place">{placeDate}</p>
+          <h1 className="order-print-cut-title">ĐƠN ĐẶT CẮT LẺ</h1>
+          <p className="order-print-cut-meta">Số đơn: {displayCell(order.orderCode) || '—'}</p>
+          <p className="order-print-cut-meta">Loại đơn: {displayCell(order.orderType) || 'Đơn cắt lẻ'}</p>
+          {orderNote ? <p className="order-print-cut-note">{orderNote}</p> : null}
+
+          <table className="order-print-cut-table">
+            <colgroup>
+              <col style={{ width: '6%' }} />
+              <col style={{ width: '36%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '16%' }} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th rowSpan={2}>STT</th>
+                <th rowSpan={2}>Tên hàng</th>
+                <th rowSpan={2}>ĐVT</th>
+                <th colSpan={2}>Kích thước</th>
+                <th rowSpan={2}>Số lượng</th>
+                <th rowSpan={2}>Ghi chú</th>
+              </tr>
+              <tr>
+                <th>Khổ</th>
+                <th>Dài (m)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {productLines.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="order-print-empty-row">Chưa có dòng sản phẩm</td>
+                </tr>
+              ) : (
+                productLines.map((line, idx) => {
+                  const size = cutOrderPrintSize(line);
+                  const qty = parsePercentInput(line.quantity);
+                  return (
+                    <tr key={`${line.productCode}-${idx}`}>
+                      <td className="order-print-center">{line.stt || idx + 1}</td>
+                      <td className="order-print-cut-name">{cutOrderPrintTenHang(line)}</td>
+                      <td className="order-print-center">{displayCell(line.unit)}</td>
+                      <td className="order-print-center">{size.kho}</td>
+                      <td className="order-print-center">{size.dai}</td>
+                      <td className="order-print-center">{Number.isFinite(qty) && qty > 0 ? formatNumber(qty, 3) : ''}</td>
+                      <td>{displayCell(line.note)}</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+
+          <div className="order-print-cut-confirm">
+            <p>Bộ phận sản xuất xác nhận đơn hàng :</p>
+            <p>Ngày đặt: {order.orderDate || order.createdAt ? formatOrderCreatedAt(order.orderDate || order.createdAt) : ''}</p>
+            <p>Ngày giao: {order.deliveryDate ? formatOrderCreatedAt(order.deliveryDate) : ''}</p>
+          </div>
+          <div className="order-print-cut-signs">
+            <div>
+              <p>Điều phối sản xuất.</p>
+            </div>
+            <div>
+              <p>Người lập</p>
+              <span>{displayCell(order.staffName)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const formatLineSpec = (line: ReturnType<typeof getOrderProductLines>[number]) => {
     if (line.quyCach) return line.quyCach;
