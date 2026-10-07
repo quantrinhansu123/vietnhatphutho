@@ -723,3 +723,19 @@ export function allowedOrderUnits(product: Pick<OrderProductOption, 'group' | 'u
   const orderUnit = (preferredUnit || product.unit || '').trim();
   return orderUnit && !units.includes(orderUnit) ? [orderUnit, ...units] : units;
 }
+
+/**
+ * ĐVT dòng đơn cắt/miền nam: mặc định `Tấm`; SP có nhiều ĐVT (Đặc/Sóng →
+ * `Tấm`/`Cuộn`) thì giữ lựa chọn trên form, sai thì về `Tấm`.
+ */
+export function resolveCutOrderLineUnit(
+  product: Pick<OrderProductOption, 'group' | 'unit'> | null,
+  lineUnit: string
+): string {
+  const units = allowedOrderUnits(product);
+  if (units.length > 1) {
+    const picked = lineUnit.trim();
+    return units.includes(picked) ? picked : units[0];
+  }
+  return 'Tấm';
+}
