@@ -600,3 +600,100 @@ export function stripTrailingDuplicateCutAfterTem(tenGhep: string): string {
   }
   return text;
 }
+
+/** Mã MV theo màu tem: Hồng→MVCC, Vàng→MVKH, Trắng→MVPY, Xanh→MVGL; lạ→MVCC. */
+export function mvByMauTem(mauTem?: string | null): string {
+  const value = String(mauTem || '')
+    .trim()
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+  if (value === 'vang') return 'MVKH';
+  if (value === 'trang') return 'MVPY';
+  if (value === 'xanh') return 'MVGL';
+  return 'MVCC';
+}
+
+export interface MaAmisMoiInput {
+  /** Mã chuẩn gốc (vd STD06-0.8li*1.22m, STS06-5.0kg-NP2). */
+  baseMaAmis: string;
+  nhomVthh?: string;
+  /** Mét dài cắt (vd 3). Bỏ qua khi trùng mét đã có trong mã (Rỗng). */
+  cutLengthM?: number | string | null;
+  /** Độ li hạ thật (vd `8li`) — thay token li trong mã gốc. */
+  doLi?: string | null;
+  /** Định mức thực tế (vd `0.75`, `(đm 0.75 li)`) — thêm segment `(đm n li|kg)`. */
+  doLiDm?: string | null;
+  /** Màng (vd `ECO`) — thêm `màng X`. Mã chuẩn không có màng. */
+  mang?: string | null;
+  /** Tem dán (vd `1.2li`) + màu tem + dán 2 đầu — thêm `- T..-MV..[-2DAU]`. */
+  tem?: string | null;
+  mauTem?: string | null;
+  danTem2Dau?: boolean | null;
+}
+
+/**
+ * Sinh Mã AMIS mới cho biến thể cắt lẻ / đơn miền nam từ mã chuẩn gốc.
+ * Thứ tự cố định: `BASE[-mét cắt][ (đm...)][ -NP/NP2][ màng X][ - T..-MV..[-2DAU]]`.
+ * Mã gốc giữ nguyên để truy vết qua `ma_amis_cu`.
+ * Vd: `STD06-0.8li*1.22m` + cắt 3m + đm 0.75 + ECO + tem 1.2li Vàng 2 đầu
+ * → `STD06-0.8li*1.22m-3m (đm 0.75 li) màng ECO - T1.2-MVKH-2DAU`.
+ */
+export function buildMaAmisMoi(input: MaAmisMoiInput): string {
+  const raw = String(input.baseMaAmis || '').trim().replace(/\s+/g, ' ');
+  if (!raw) return '';
+  // Chuẩn hóa mã cũ: bỏ chữ "Giá rẻ" thừa (đã mã hóa bằng NP2), gộp cách quanh `-`.
+  let base = raw
+    .replace(/\s*-+\s*/g, '-')
+    .replace(/\s+Giá\s+rẻ\s*$/iu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // Chuẩn hóa hậu tố NP: `NP2`, `NP`, `NS` (data cũ có ` NS`, ` NP`, ` NP2`).
+  const npMatch = base.match(/-?\s*(NP2|NP|NS)\s*$/iu);
+  let npSuffix = '';
+  if (npMatch) {
+    npSuffix = `-${npMatch[1].toUpperCase()}`;
+    base = base.slice(0, npMatch.index).trim().replace(/-+$/, '');
+  }
+
+  const group = classifyProductPxGroup(input.nhomVthh || '');
+
+  // Hạ li thật: thay token li đầu tiên trong mã (vd `10li` → `8li`).
+  const doLiNew = normalizeDoLiToken(input.doLi || '');
+  if (doLiNew) {
+    const liRe = /\d[\d.,]*\s*l?i\b/iu;
+    if (liRe.test(base)) base = base.replace(liRe, doLiNew);
+    else base = `${base}-${doLiNew}`;
+  }
+
+  // Mét cắt: Rỗng thay mét dài đã có; Đặc/Sóng thêm `-Nm` (mã chuẩn không chứa mét).
+  const cut = Number(String(input.cutLengthM ?? '').replace(',', '.'));
+  if (Number.isFinite(cut) && cut > 0) {
+    const label = formatMetersLabel(cut);
+    if (group === 'rong' && /-\d[\d.,]*\s*m(\s*-\s*(NP2|NP|NS))?\s*$/iu.test(`${base}${npSuffix}`)) {
+      base = base.replace(/-\d[\d.,]*\s*m\s*$/iu, `-${label}`);
+    } else {
+      base = `${base}-${label}`;
+    }
+  }
+
+  const dm = normalizeDoLiDm(input.doLiDm, 'li');
+  const mang = String(input.mang || '').trim().toUpperCase();
+
+  const temText = String(input.tem || '').trim();
+  const mauText = String(input.mauTem || '').trim();
+  const haiDau = Boolean(input.danTem2Dau);
+  let temSuffix = '';
+  if (temText || mauText || haiDau) {
+    const mv = mauText ? mvByMauTem(mauText) : '';
+    const temNorm = temText.replace(/\s+/g, '').replace(/\s*l?i\s*$/iu, '');
+    temSuffix = `- ${[temNorm ? `T${temNorm}` : '', mv, haiDau ? '2DAU' : ''].filter(Boolean).join('-')}`;
+  }
+
+  return (
+    `${base}${dm ? ` ${dm}` : ''}${npSuffix}${mang ? ` màng ${mang}` : ''}${temSuffix ? ` ${temSuffix}` : ''}`
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
+}

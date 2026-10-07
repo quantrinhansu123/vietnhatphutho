@@ -100,6 +100,8 @@ export function parseOrderProductsFromRecord(
         const doLiDm = pickText(row, ['do_li_dm', 'doLiDm'], '');
         const kho = pickText(row, ['kho'], '');
         const daiM = pickText(row, ['dai_m', 'daiM'], '');
+        const doDaiTamTieuChuan = pickText(row, ['do_dai_tam_tieu_chuan', 'doDaiTamTieuChuan'], '');
+        const dinhMucTieuChuanKg = pickText(row, ['dinh_muc_tieu_chuan_kg', 'dinhMucTieuChuanKg'], '');
         const kg1Sp = pickText(row, ['kg_1_sp', 'kg1Sp', 'tl_tam', 'tlTam'], '');
         const tongKg = pickText(row, ['tong_kg', 'tongKg', 'trong_luong', 'trong_luong_kg'], '');
         const dinhMucKg = pickText(row, ['dinh_muc_kg', 'dinhMucKg'], '');
@@ -135,6 +137,8 @@ export function parseOrderProductsFromRecord(
           tem: tem || undefined,
           mauTem: mauTem || undefined,
           danTem2Dau: danTem2Dau || undefined,
+          maAmis: pickText(row, ['ma_amis', 'maAmis', 'amisCode'], '') || undefined,
+          maAmisCu: pickText(row, ['ma_amis_cu', 'maAmisCu', 'amisOldCode'], '') || undefined,
           unit,
           quantity,
           stt: readOrderProductStt(row.stt ?? row.STT, index),
@@ -142,6 +146,8 @@ export function parseOrderProductsFromRecord(
           doLiDm: doLiDm || undefined,
           kho: kho || undefined,
           daiM: daiM || undefined,
+          doDaiTamTieuChuan: doDaiTamTieuChuan || undefined,
+          dinhMucTieuChuanKg: dinhMucTieuChuanKg || undefined,
           kg1Sp: kg1Sp || undefined,
           tongKg: tongKg || undefined,
           dinhMucKg: dinhMucKg || undefined,

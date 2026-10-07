@@ -4,13 +4,20 @@ import { normalizeProducts } from '../san-pham';
 import { availableConvertedUnits, convertProductQuantity, type ProductConvertedUnit } from '../../utils/productUnitConversion';
 import { parsePercentInput } from '../../utils';
 
-export const ORDER_TYPE_OPTIONS = ['Đơn bán', 'Đơn sản xuất', 'Đơn theo quy cách của khách đặt', 'Đơn miền nam'] as const;
+export const ORDER_TYPE_OPTIONS = ['Đơn bán', 'Đơn sản xuất', 'Đơn theo quy cách của khách đặt', 'Đơn cắt lẻ', 'Đơn miền nam'] as const;
 export const CUT_ORDER_TYPE = 'Đơn theo quy cách của khách đặt';
+/** Tên mới của đơn cắt lẻ — cùng hành vi cắt với CUT_ORDER_TYPE (giữ cả 2 để đơn cũ vẫn chạy). */
+export const CUT_ORDER_TYPE_NEW = 'Đơn cắt lẻ';
 export const SOUTH_ORDER_TYPE = 'Đơn miền nam';
+/** Đơn cắt lẻ (= Đơn theo quy cách của khách đặt hoặc Đơn cắt lẻ) — đi qua Lệnh cắt lẻ phía kho, không vào Lệnh SX. */
+export function isCutOrderType(orderType?: string | null) {
+  const value = String(orderType || '').trim();
+  return value === CUT_ORDER_TYPE || value === CUT_ORDER_TYPE_NEW;
+}
 /** Đơn cắt lẻ + Đơn miền nam dùng chung form quy cách (Mã AMIS / Dài m / Bắc-Trung-Nam / KG). */
 export function isCutLikeOrderType(orderType?: string | null) {
   const value = String(orderType || '').trim();
-  return value === CUT_ORDER_TYPE || value === SOUTH_ORDER_TYPE;
+  return isCutOrderType(value) || value === SOUTH_ORDER_TYPE;
 }
 /** 11 loại Tem phân tích từ .ai/sp_mien_nam.xlsx (MVCC + Dán Tem). */
 export const SOUTH_TEM_OPTIONS = [

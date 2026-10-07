@@ -33,10 +33,18 @@ export interface OrderProductLine {
   tem?: string;
   mauTem?: string;
   danTem2Dau?: boolean;
+  /** Mã AMIS mới của biến thể cắt lẻ / đơn miền nam (ma_amis của dòng biến thể). */
+  maAmis?: string;
+  /** Mã AMIS gốc của biến thể cắt lẻ / đơn miền nam. */
+  maAmisCu?: string;
   tlCuon?: string;
   tlTam?: string;
   m2?: string;
   mDai?: string;
+  /** Đơn miền nam: độ dài tấm tiêu chuẩn (m). */
+  doDaiTamTieuChuan?: string;
+  /** Đơn miền nam: định mức tiêu chuẩn, đơn vị kg. */
+  dinhMucTieuChuanKg?: string;
   /** SL theo miền cho loại "Đơn sản xuất" (Bắc/Trung/Nam). SL tổng = B + T + N. */
   soLuongBac?: string;
   soLuongTrung?: string;
