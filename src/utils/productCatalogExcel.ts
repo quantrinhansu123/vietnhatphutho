@@ -11,6 +11,7 @@ import {
 export type ProductCatalogExcelRow = {
   code: string;
   amisCode: string;
+  amisOldCode: string;
   newCode: string;
   name: string;
   productionName: string;
@@ -44,6 +45,7 @@ export type ProductCatalogExcelRow = {
 const HEADER_ALIASES: Record<keyof Omit<ProductCatalogExcelRow, 'rowNumber'>, string[]> = {
   code: ['ma sp', 'ma_sp', 'ma san pham', 'code'],
   amisCode: ['ma amis', 'ma_amis', 'amis'],
+  amisOldCode: ['ma amis cu', 'ma_amis_cu', 'amis cu', 'amis old'],
   newCode: ['ma moi', 'ma_sp_moi', 'ma sp moi'],
   name: ['ten san pham', 'ten_sp', 'ten sp', 'name'],
   productionName: ['ten san xuat', 'ten_san_xuat', 'production name'],
@@ -106,6 +108,7 @@ export const PRODUCT_CATALOG_EXCEL_HEADERS = [
   'Tồn',
   'Tồn tối thiểu',
   'Mã AMIS',
+  'Mã AMIS cũ',
   'Mã mới',
   'Khổ cuộn (m)',
   'Chiều dài mét/cuộn (m)',
@@ -179,6 +182,7 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
   const indices = {
     code: codeIndex,
     amisCode: findColumn(headers, HEADER_ALIASES.amisCode),
+    amisOldCode: findColumn(headers, HEADER_ALIASES.amisOldCode),
     newCode: findColumn(headers, HEADER_ALIASES.newCode),
     name: nameIndex,
     productionName: findColumn(headers, HEADER_ALIASES.productionName),
@@ -230,6 +234,7 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
       return {
         code: get('code'),
         amisCode: get('amisCode'),
+        amisOldCode: get('amisOldCode'),
         newCode: get('newCode'),
         name: get('name'),
         productionName: get('productionName'),
@@ -289,6 +294,7 @@ export function downloadProductCatalogExcelTemplate() {
       '0',
       '10',
       'STD01-2.5li*1.22m',
+      '',
       '',
       '1.22',
       '50',
@@ -384,6 +390,7 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
     code: row.code.trim(),
     newCode: row.newCode.trim(),
     amisCode,
+    amisOldCode: row.amisOldCode.trim(),
     name: row.name.trim(),
     productionName,
     tenGoc,

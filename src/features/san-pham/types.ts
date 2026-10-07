@@ -107,6 +107,8 @@ export interface ProductRow {
   code: string;
   newCode: string;
   amisCode: string;
+  /** Mã AMIS chuẩn gốc của dòng biến thể (cột san_pham.ma_amis_cu; ma_amis của dòng này là mã mới). */
+  amisOldCode?: string;
   name: string;
   /** Tên dùng trong sản xuất (main) — optional để tương thích form kho feature. */
   productionName?: string;

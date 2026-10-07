@@ -4,7 +4,7 @@
 |---|---|
 | **Bảng** | `nhap_kho` |
 | **Tab** | `/kho-hang` → mọi kho (sổ tồn chung SP + NVL, phân biệt `loai_kho` + `ten_kho`); ghi sau phiếu nhập (TP và NVL) |
-| **SQL** | `supabase-nhap-kho.sql` + `supabase-nhap-kho-cat-le.sql` (7 cột thông số) + `supabase-nhap-kho-loai-kho.sql` (backfill `loai_kho`) + `supabase-nhap-kho-mo-ta-tem.sql` (`mo_ta_tem`) + `supabase-nhap-kho-ten-san-xuat.sql` (`ten_san_xuat` = tên NVL SX) + `supabase-nhap-kho-backfill-nvl.sql` (catalog NVL từ phiếu cũ) + `supabase-kho-cat-le-seed.sql` (20 SP Kho cắt lẻ, phiếu `PNK-CL-SEED` / `PXK-CL-SEED`) |
+| **SQL** | `supabase-nhap-kho.sql` + `supabase-nhap-kho-cat-le.sql` (7 cột thông số) + `supabase-nhap-kho-loai-kho.sql` (backfill `loai_kho`) + `supabase-nhap-kho-mo-ta-tem.sql` (`mo_ta_tem`) + `supabase-nhap-kho-ten-san-xuat.sql` (`ten_san_xuat` = tên NVL SX) + `supabase-nhap-kho-backfill-nvl.sql` (catalog NVL từ phiếu cũ) + `supabase-kho-cat-le-seed.sql` (20 SP Kho cắt lẻ, phiếu `PNK-CL-SEED` / `PXK-CL-SEED`) + `supabase-nhap-kho-ma-sp-cu.sql` (`ma_sp_cu`) |
 
 ## Vai trò
 
@@ -15,7 +15,7 @@ Sổ **tồn chung mọi loại hàng** (`ma_sp` = mã hàng — NVL thì `ma_sp
 - Tồn đầu / Nhập / Xuất / Tồn: tính từ phiếu `phieu_xuat_nhap_kho` (`loai_kho=san_pham`)
 - **NVL kho-only (chốt):** phiếu nhập NVL và chuyển kho NVL **không ghi** `nhap_kho` nữa (dòng NVL cũ vẫn nằm đây để tra cứu legacy). Master NVL nằm ở `kho_nvl` (tự ensure theo unique `ma_npl+ten_npl+ten_nvl_sx`), tồn tính từ phiếu qua `GET /api/ton-kho-nvl`.
 
-Cột: `ma_sp`, `ten_sp`, `don_vi`, `trong_luong_kg_mot_sp`, `so_m2_mot_sp`, `so_m_dai_mot_sp` (hệ số **1 SP**), `loai_kho` (không default), `ten_kho`, `ma_may`, `ten_may` (`supabase-nhap-kho-ma-may.sql`: row kho `ma_may` trống, row máy `ma_may` có giá trị và `ten_kho=''`), `mo_ta_tem`. Báo cáo kho bỏ dòng có `ma_may`.
+Cột: `ma_sp`, `ten_sp`, `don_vi`, `trong_luong_kg_mot_sp`, `so_m2_mot_sp`, `so_m_dai_mot_sp` (hệ số **1 SP**), `loai_kho` (không default), `ten_kho`, `ma_may`, `ten_may` (`supabase-nhap-kho-ma-may.sql`: row kho `ma_may` trống, row máy `ma_may` có giá trị và `ten_kho=''`), `mo_ta_tem`, `ma_sp_cu` (mã gốc của biến thể cắt lẻ — `ma_sp` dòng này là mã mới, dùng tổng hợp về sau; migration `supabase-nhap-kho-ma-sp-cu.sql`). Báo cáo kho bỏ dòng có `ma_may`.
 
 SL và tổng kg / m² / mét dài của dòng phiếu nằm ở `phieu_xuat_nhap_kho`. `nhap_kho` không lưu `so_luong`, `trong_luong_kg`, `so_m2`, `so_m_dai`.
 

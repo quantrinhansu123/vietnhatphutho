@@ -1407,8 +1407,8 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
             />
           </label>
           <label className="block space-y-1">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Người giao hàng</span>
-            <input value={nguoiGiao} onChange={viewOnly ? undefined : event => setNguoiGiao(event.target.value)} disabled={viewOnly} className={fieldClass} placeholder="Họ tên người giao hàng" />
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">{mode === 'xuat' ? 'Người nhận hàng' : 'Người giao hàng'}</span>
+            <input value={nguoiGiao} onChange={viewOnly ? undefined : event => setNguoiGiao(event.target.value)} disabled={viewOnly} className={fieldClass} placeholder={mode === 'xuat' ? 'Họ tên người nhận hàng' : 'Họ tên người giao hàng'} />
           </label>
           <label className="block space-y-1">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Địa điểm</span>

@@ -10,6 +10,7 @@ function makeRow(patch: Partial<ProductCatalogExcelRow> = {}): ProductCatalogExc
   return {
     code: '',
     amisCode: '',
+    amisOldCode: '',
     newCode: '',
     name: '',
     productionName: '',

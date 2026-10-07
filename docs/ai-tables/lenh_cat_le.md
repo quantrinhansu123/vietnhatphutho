@@ -10,15 +10,18 @@
 
 Một lệnh chọn **nhiều sản phẩm**. Cột lưu: `kho_nguon`, `kho_dich`, `kho_tai_che`, JSON `san_pham`, mã phiếu, người thực hiện/lập, ghi chú.
 Mỗi phần tử JSON: `san_pham_nguon`, `san_pham_cat_1` (nhập thành phẩm), `san_pham_cat_2` (phần còn lại), `di_tai_che`.
-Không có cột mẹ/con, `kho_tp`, hay `di_tai_che` trên bảng — `CREATE TABLE` trong `supabase-lenh-cat-le.sql` đã là schema cuối (chưa chạy trên Supabase, không có `ALTER`).
+Không có cột nguồn/cắt, `kho_tp`, hay `di_tai_che` trên bảng — `CREATE TABLE` trong `supabase-lenh-cat-le.sql` đã là schema cuối (chưa chạy trên Supabase, không có `ALTER`).
 
 **Tạo mới / Sửa** chỉ lưu lệnh trạng thái `moi` (chờ duyệt), không ghi kho.
 Trong form, khi đủ thông tin sản phẩm có nút **Xác nhận**: xem sản phẩm nguồn cắt thành cắt 1 / cắt 2 (mã, tên, số lượng, kg/m²/m dài và thông số sẽ ghi `nhap_kho`).
-Bấm **Duyệt** (`POST /:id/hoan-thanh`) mới xuất **Kho cắt lẻ**, nhập **Kho thành phẩm**, nhập mọi phần còn lại lại **Kho cắt lẻ** (mọi chiều dài, mọi máy — không nhập Kho tái chế). Sau khi duyệt (`hoan_thanh`) không sửa được.
+Bấm **Duyệt** (`POST /:id/hoan-thanh`) mới xuất **kho chính** (Kho Đặc/Kho Sóng theo SP), nhập **Kho thành phẩm**, nhập mọi phần còn lại lại **kho nguồn** (mọi chiều dài, mọi máy — không nhập Kho tái chế). Sau khi duyệt (`hoan_thanh`) không sửa được.
 
-- Được hạ một chiều (xẻ khổ giữ dài / cắt ngắn giữ rộng) hoặc hạ cả khổ lẫn m dài (`kieu_cat = ca_hai`). Độ li đích đổi riêng được: khi đổi, `do_day_m` của sản phẩm cắt ghép lại theo số li (vd `1` → `1m`) rồi ghi `nhap_kho`; phần còn lại giữ `do_day_m` mẹ. Hạ khổ thì khổ còn lại = khổ mẹ − khổ cắt, m dài phần còn lại giữ của mẹ. Tên SP cắt và phần còn lại nối thêm `mo_ta_tem` của mẹ.
-- Gốc trọng lượng là 3 hệ số 1 SP của mẹ (`kg/m2/m dài`): `kg2 = kg1 × (w2×l2)/(w1×l1)`.
-  Mất số mẹ thì nhập kg cân tay. Chuỗi cắt (20m→12m→10m) lấy con làm mẹ qua `parent` logic.
+- Được hạ một chiều (xẻ khổ giữ dài / cắt ngắn giữ rộng) hoặc hạ cả khổ lẫn m dài (`kieu_cat = ca_hai`). Độ li đích đổi riêng được: khi đổi, `do_day_m` của sản phẩm cắt ghép lại theo số li (vd `1` → `1m`) rồi ghi `nhap_kho`; phần còn lại giữ `do_day_m` nguồn. Hạ khổ thì khổ còn lại = khổ nguồn − khổ cắt, m dài phần còn lại giữ của nguồn. Tên SP cắt và phần còn lại nối thêm `mo_ta_tem` của nguồn.
+- **Kho nguồn suy từ nhóm VTHH** (`inferKhoChinhTuNhom` trong `logic.ts`): Đặc → `Kho Đặc`; Sóng/Rỗng → `Kho Sóng` (rỗng chung kho sóng). Form gửi kho suy luận; server fallback khi lệnh thiếu kho.
+- **Mã mới + mã cũ:** SP cắt / phần thừa mang `ma_amis` = mã MỚI (sinh bằng `buildMaAmisMoi` từ mã gốc + mét cắt + màng) + `ma_amis_cu` = mã gốc — tính lúc lập dòng (`buildCatLeSanPhamLine`), giữ qua `normalizeCatLeSanPhamList`. Duyệt lệnh upsert biến thể vào `san_pham` (tìm theo `ma_amis + ten_sp`, cần migration `supabase-san-pham-ma-amis-cu.sql`); phiếu xuất/nhập và catalog `nhap_kho` ghi `ma_sp` = mã mới + `ma_sp_cu` = mã gốc (migration `supabase-nhap-kho-ma-sp-cu.sql`, để tổng hợp về sau).
+- **Tạo từ đơn cắt lẻ:** modal lập lệnh có picker chỉ load `Đơn theo quy cách của khách đặt` — chọn đơn + dòng SP tự điền nguồn (theo `ma_sp` gốc), m cắt (theo `quy_cach_m_dai`/`dai_m`), SL và ghi chú kèm `ma_amis` mới/`ten_ghep`.
+- Gốc trọng lượng là 3 hệ số 1 SP của nguồn (`kg/m2/m dài`): `kg2 = kg1 × (w2×l2)/(w1×l1)`.
+  Mất số nguồn thì nhập kg cân tay. Chuỗi cắt (20m→12m→10m) lấy TP làm nguồn qua `parent` logic.
 
 ## API (`server.ts`, sau `/api/ton-kho-thanh-pham`)
 
@@ -38,7 +41,7 @@ resilient khi DB chưa migrate) — xem [nhap_kho.md](./nhap_kho.md).
 
 | File | Nội dung |
 |------|----------|
-| `src/features/lenh-cat-le/index.tsx` | Modal lớn. Xác nhận và Xem trước phiếu (bản tạm): 1 phiếu xuất Kho cắt lẻ sản phẩm nguồn, nhập thành phẩm, nhập mọi phần còn lại về Kho cắt lẻ. Duyệt mới ghi kho |
+| `src/features/lenh-cat-le/index.tsx` | Modal lớn + danh sách (lọc Từ ngày/Đến ngày/Tìm SP/**Trạng thái**, cột Người TH + **Người lập**). Nguồn mẹ tải từ **Kho Đặc + Kho Sóng + Kho cắt lẻ** (chọn mẹ hiện tên kho). Xác nhận và Xem trước phiếu (bản tạm): 1 phiếu xuất kho chính sản phẩm nguồn, nhập thành phẩm, nhập mọi phần còn lại về kho nguồn. Duyệt mới ghi kho |
 | `src/features/lenh-cat-le/logic.ts` | Pure: `computeCatLe` (tên + quy đổi; phần thừa luôn về kho cắt lẻ), `motherFromNhapKhoRow`, parse/format mét |
 | `tests/unit/lenhCatLe.test.ts` | Chuỗi 20m→12m→10m, xẻ khổ, validate, cân tay |
 

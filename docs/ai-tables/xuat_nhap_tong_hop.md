@@ -19,7 +19,12 @@
 
 ## Frontend
 
-`src/features/xuat-nhap-tong-hop/index.tsx` — `TongHopPanel` (form). `list.tsx` — `TongHopListPanel` (in, sửa, hủy). Ca nullable, cảnh báo mềm 3 case NVL-máy. In tách theo kho/máy qua `WarehouseSlipPrintModal`.
+`src/features/xuat-nhap-tong-hop/index.tsx` — `TongHopPanel` (form). `list.tsx` — `TongHopListPanel` (in, sửa, hủy + lọc từ–đến ngày, đa chọn máy/kho; tải riêng nhập + xuất rồi gộp, khớp phiếu theo giá trị qua `thong-ke-nvl`: `buildPartyAliasKind`/`collectLineTokens`/`matchTokenFilter`, phiếu khớp khi có ≥1 dòng liên quan). Ca nullable, cảnh báo mềm 3 case NVL-máy. In tách theo kho/máy qua `WarehouseSlipPrintModal`.
+
+## Quy ước phiếu xuất (kho vật tư)
+
+- Ô `Người giao hàng` hiển thị `Người nhận hàng` ở mode xuất (nhập giữ nguyên); xem chi tiết tương tự (`ViewModal` theo `loai`).
+- Lưới dòng xuất bỏ cột `Nhóm VTHH`, ẩn cột `Tồn đầu ca` (logic tồn + cảnh báo vượt tồn giữ nguyên).
 
 ## Quy ước
 

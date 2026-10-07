@@ -14,7 +14,6 @@ import {
   sumKemDraft,
   type ChiPhiKemTheoDraft
 } from './chiPhiKemTheo';
-import { isTapeOrStampMaterial, normalizeNhomVatTuPhuKey, resolveAuxiliaryWeightPerUnit } from '../../utils/mixingNormAuxiliary';
 import { normalizeWarehouseMaterialClass } from '../../utils/warehouseNormMerge';
 import { isWarehouseKgUnit } from '../../utils/warehouseWeight';
 import { formatMoney, formatNumber, parseLocalizedNumber } from '../../utils';
@@ -53,12 +52,10 @@ export type XuatNvlLine = {
   isScanned: boolean;
 };
 
-const VTHH_OPTIONS = ['TP; PX Rỗng', 'TP; PX Đặc', 'TP; PX Sóng'] as const;
-
 const gridCols =
-  'grid-cols-[2.25rem_5.75rem_minmax(12rem,1.1fr)_minmax(6.5rem,0.85fr)_minmax(6.5rem,0.95fr)_minmax(6rem,0.85fr)_3.25rem_5rem_9rem_6.25rem_5.5rem_4.25rem_5.75rem_5rem_4.25rem_5.5rem_2rem]';
-const headerGrid = `mb-1 grid min-w-[124rem] ${gridCols} items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-2 py-2`;
-const lineGrid = `grid min-w-[124rem] ${gridCols} items-center gap-1.5 border-b border-zinc-200/80 py-1.5`;
+  'grid-cols-[2.25rem_5.75rem_minmax(12rem,1.1fr)_minmax(6.5rem,0.85fr)_minmax(6.5rem,0.95fr)_minmax(6rem,0.85fr)_3.25rem_9rem_6.25rem_5.5rem_4.25rem_5.75rem_5rem_4.25rem_5.5rem_2rem]';
+const headerGrid = `mb-1 grid min-w-[114rem] ${gridCols} items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-2 py-2`;
+const lineGrid = `grid min-w-[114rem] ${gridCols} items-center gap-1.5 border-b border-zinc-200/80 py-1.5`;
 const head = 'text-[10px] font-black uppercase tracking-wide text-white';
 const field = 'h-8 w-full min-w-0 rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]';
 
@@ -425,7 +422,6 @@ export function XuatNvlDetail({
           <span className={head}>Tên nguyên vật liệu</span>
           <span className={head}>Tên sản xuất</span>
           <span className={head}>ĐVT</span>
-          <span className={head}>Nhóm VTHH</span>
           <span className={head}>Ngày tồn</span>
           <span className={head}>Ca</span>
           <span className={head}>Tồn đầu ca</span>
@@ -437,8 +433,6 @@ export function XuatNvlDetail({
           <span />
         </div>
         {lines.map((line, index) => {
-          const groupKey = normalizeNhomVatTuPhuKey(line.auxiliaryGroup || line.tenSanXuat || line.tenHang || line.maHang);
-          const tape = isTapeOrStampMaterial(groupKey);
           const showGroup = index === 0 || normalizeWarehouseMaterialClass(line.warehouseClass) !== normalizeWarehouseMaterialClass(lines[index - 1]?.warehouseClass);
           const qty = parseLocalizedNumber(line.soLuong);
           const price = parseLocalizedNumber(line.donGia);
@@ -559,25 +553,6 @@ export function XuatNvlDetail({
                   />
                 </div>
                 <div className="truncate px-1.5 text-[11px] font-semibold text-zinc-700" title={line.donVi}>{line.donVi || '—'}</div>
-                <div>
-                  {tape ? (
-                    <select
-                      value={line.nhomVthh}
-                      onChange={viewOnly ? undefined : event => {
-                        const nhomVthh = event.target.value;
-                        const per = resolveAuxiliaryWeightPerUnit(groupKey, nhomVthh, line.donVi);
-                        patchAt(index, { nhomVthh, ...(per && per > 0 ? { normPerKg: per } : {}) });
-                      }}
-                      disabled={viewOnly}
-                      className={`${field} ${line.nhomVthh ? '' : 'border-amber-300 bg-amber-50'}`}
-                    >
-                      <option value="">-- VTHH --</option>
-                      {VTHH_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
-                    </select>
-                  ) : (
-                    <span className="block text-center text-xs text-zinc-300">—</span>
-                  )}
-                </div>
                 <div className="min-w-0">
                   <VnCalendarPicker
                     compact
