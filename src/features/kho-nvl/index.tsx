@@ -19,7 +19,7 @@ import {
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
-import { pickText, formatCell, filterDuplicateZeroWarehouseRows } from '../_shared/recordHelpers';
+import { pickText, formatCell, filterDuplicateZeroWarehouseRows, parsePeriodQuantityValue } from '../_shared/recordHelpers';
 import {
   downloadBulkMaterialTotalWeightTemplate,
   parseBulkMaterialTotalWeightExcel,
@@ -132,9 +132,10 @@ export type MaterialIssuedQrCode = {
 
 export function parseInventoryNumber(value: string): number | null {
   if (!value || value === '-') return null;
-  const normalized = String(value).trim().replace(',', '.');
-  const num = Number(normalized);
-  return Number.isFinite(num) ? num : null;
+  // Dùng chung parser với view gộp tồn kỳ: chịu được `1,234.5` lẫn `1.234,5`.
+  // Trước đây chỉ `.replace(',', '.')` 1 lần nên `1,234.5` thành `1.234.5` → NaN,
+  // Tồn cuối hiển thị `-` sai dù server trả số đúng.
+  return parsePeriodQuantityValue(value);
 }
 
 export function computeClosingStock(opening: string, inbound: string, outbound: string): string {
