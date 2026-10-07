@@ -8,6 +8,7 @@ import {
   allowedOrderUnits,
   calculateOrderConversion,
   classifyProductGroupKind,
+  resolveCutOrderLineUnit,
   type OrderProductConversion
 } from '../../src/features/_shared/orderHelpers';
 
@@ -59,6 +60,16 @@ describe('don-hang — ĐVT SP Đặc', () => {
   it('giữ ĐVT lạ đang dùng lên đầu danh sách', () => {
     assert.deepEqual(allowedOrderUnits({ group: 'Đặc', unit: 'm' }), ['m', 'Tấm', 'Cuộn']);
     assert.deepEqual(allowedOrderUnits({ group: 'Đặc', unit: 'Cuộn' }), ['Tấm', 'Cuộn']);
+  });
+
+  it('đơn cắt/miền nam: SP Đặc giữ Cuộn, còn lại về Tấm', () => {
+    assert.equal(resolveCutOrderLineUnit({ group: 'TP; PX Đặc', unit: '' }, 'Cuộn'), 'Cuộn');
+    assert.equal(resolveCutOrderLineUnit({ group: 'TP; PX Đặc', unit: '' }, ''), 'Tấm');
+    assert.equal(resolveCutOrderLineUnit({ group: 'TP; PX Đặc', unit: '' }, 'kg'), 'Tấm');
+    assert.equal(resolveCutOrderLineUnit({ group: 'TP; PX Sóng', unit: '' }, 'Cuộn'), 'Cuộn');
+    assert.equal(resolveCutOrderLineUnit({ group: 'TP; PX Rỗng', unit: '' }, 'Cuộn'), 'Tấm');
+    assert.equal(resolveCutOrderLineUnit({ group: 'TP; PX Thường', unit: '' }, 'Cuộn'), 'Tấm');
+    assert.equal(resolveCutOrderLineUnit(null, 'Cuộn'), 'Tấm');
   });
 
   it('quy đổi nhóm Đặc ra kg/m2/m dài', () => {

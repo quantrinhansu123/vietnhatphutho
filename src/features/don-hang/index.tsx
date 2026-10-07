@@ -35,6 +35,7 @@ import {
   extractProductWidth,
   conversionSupportsUnit,
   allowedOrderUnits,
+  resolveCutOrderLineUnit,
   isCuonProduct,
   isTamProduct,
   listProductionNamesByCode,
@@ -590,8 +591,9 @@ export function orderProductLinesToPayload(
       const productCode = line.productCode.trim();
       const productName = selectedProduct?.name || resolved.productName || line.productName.trim();
       const allowedUnits = selectedProduct ? allowedOrderUnits(selectedProduct) : [];
+      // Đơn cắt/miền nam: mặc định Tấm; SP Đặc/Sóng giữ lựa chọn Tấm/Cuộn trên form.
       const unit = isCutLikeOrder
-        ? 'Tấm'
+        ? resolveCutOrderLineUnit(selectedProduct, line.unit)
         : selectedProduct
           ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
           : line.unit.trim() || resolved.unit;
@@ -1936,8 +1938,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       // Có miền > 0 thì SL tổng = Bắc + Trung + Nam. Không nhập miền thì hiện SL tổng đã lưu/gõ.
                       const cutRegionTotal = positiveRegionTotal(line.slBac, line.slTrung, line.slNam);
                       const cutEffectiveQty = cutRegionTotal !== null ? String(cutRegionTotal) : '0';
+                      const cutAllowedUnits = allowedOrderUnits(matchedLineProduct);
+                      const cutEffectiveUnit = resolveCutOrderLineUnit(matchedLineProduct, line.unit);
                       const cutWeight = line.shouldRecalculateConversion
-                        ? calculateCutOrderWeight(line.daiM, cutEffectiveQty, matchedConversion, 'Tấm', line.productCode, matchedLineProduct?.name || line.productName)
+                        ? calculateCutOrderWeight(line.daiM, cutEffectiveQty, matchedConversion, cutEffectiveUnit, line.productCode, matchedLineProduct?.name || line.productName)
                         : null;
                       const southDinhMucTotal = isFormSouthOrder
                         ? southDinhMucKgTotal(line.dinhMucKg, cutEffectiveQty)
@@ -1983,11 +1987,22 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           {renderProductionNameSelect(line)}
                         </div>
                         <div className="col-span-1 min-w-0">
-                          <input
-                            value="Tấm"
-                            readOnly
-                            className={`${orderFieldClass} bg-zinc-100 text-center font-bold text-zinc-600`}
-                          />
+                          {matchedLineProduct && cutAllowedUnits.length > 1 ? (
+                            <select
+                              value={cutEffectiveUnit}
+                              onChange={e => updateConversionProductLine(line.key, { unit: e.target.value })}
+                              className={orderFieldClass}
+                              title="ĐVT — SP Đặc/Sóng chọn được Tấm hoặc Cuộn"
+                            >
+                              {cutAllowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+                            </select>
+                          ) : (
+                            <input
+                              value="Tấm"
+                              readOnly
+                              className={`${orderFieldClass} bg-zinc-100 text-center font-bold text-zinc-600`}
+                            />
+                          )}
                         </div>
                         <div className="col-span-1 min-w-0">
                           <input
