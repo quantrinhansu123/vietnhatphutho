@@ -70,6 +70,7 @@ Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...
 | `phieu_chuyen_kho` | `/chuyen-kho` (card **Chuyển kho** trong `/nha-may/kho`) | [phieu_chuyen_kho.md](./phieu_chuyen_kho.md) |
 | `phieu_nhap_xuat_tong_hop` | `/phieu-nhap-xuat-tong-hop` và `/danh-sach-phieu-nhap-xuat-tong-hop` | [xuat_nhap_tong_hop.md](./xuat_nhap_tong_hop.md) |
 | *(tổng hợp từ `phieu_nhap_xuat_tong_hop` + `nha_cung_cap`)* | `/tong-hop-ncc` | [tong_hop_ncc.md](./tong_hop_ncc.md) |
+| *(tổng hợp từ `phieu_nhap_xuat_tong_hop`, lọc đa máy/kho)* | `/thong-ke-nvl` | [thong_ke_nvl.md](./thong_ke_nvl.md) |
 | *(tổng hợp)* | `/bang-dieu-khien` | [control_board.md](./control_board.md) |
 
 ## File dùng chung (chỉ khi cần)

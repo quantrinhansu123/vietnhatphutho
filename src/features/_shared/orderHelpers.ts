@@ -603,15 +603,29 @@ export function resolveConversionUnit(value: string): ConversionUnit {
   return 'unsupported';
 }
 
+/**
+ * Phân loại nhóm VTHH Đặc/Sóng/Rỗng theo chứa từ khóa (không so tuyệt đối) để
+ * các biến thể nhóm (thiếu dấu cách, hoa/thường, không dấu, hậu tố cũ) vẫn ra
+ * đúng ĐVT — vd `TP;PX Đặc`, `Đặc`, `TP; PX ĐẶC (cũ)` đều là Đặc.
+ */
+export function classifyProductGroupKind(group?: string | null): 'dac' | 'song' | 'rong' | '' {
+  const norm = normalizeLookupText(String(group || '').replace(/\s+/g, ''));
+  if (!norm) return '';
+  if (norm.includes('dac')) return 'dac';
+  if (norm.includes('song')) return 'song';
+  if (norm.includes('rong')) return 'rong';
+  return '';
+}
+
 export function calculateOrderConversion(quantityText: string, inputUnitText: string, conversion: OrderProductConversion, group = '') {
   const quantity = parsePercentInput(quantityText);
   if (!Number.isFinite(quantity) || quantity <= 0) return [] as Array<[string, number, string]>;
-  const normalizedGroup = group.replace(/\s+/g, '').toLocaleLowerCase('vi');
-  const targetUnits: ProductConvertedUnit[] = normalizedGroup === 'tp;pxđặc'
+  const groupKind = classifyProductGroupKind(group);
+  const targetUnits: ProductConvertedUnit[] = groupKind === 'dac'
     ? ['kg', 'm2', 'm']
-    : normalizedGroup === 'tp;pxsóng'
+    : groupKind === 'song'
       ? ['m', 'kg']
-      : normalizedGroup === 'tp;pxrỗng'
+      : groupKind === 'rong'
         ? ['kg']
         : availableConvertedUnits(inputUnitText, conversion);
   return targetUnits.flatMap(unit => {
@@ -699,11 +713,11 @@ export function calculateCutOrderWeight(
 
 export function allowedOrderUnits(product: Pick<OrderProductOption, 'group' | 'unit'> | null, preferredUnit = '') {
   if (!product) return [];
-  const group = product.group.replace(/\s+/g, '').toLocaleLowerCase('vi');
+  const groupKind = classifyProductGroupKind(product.group);
   const units =
-    group === 'tp;pxđặc' || group === 'tp;pxsóng'
+    groupKind === 'dac' || groupKind === 'song'
       ? ['Tấm', 'Cuộn']
-      : group === 'tp;pxrỗng'
+      : groupKind === 'rong'
         ? ['Tấm']
         : ['kg'];
   const orderUnit = (preferredUnit || product.unit || '').trim();

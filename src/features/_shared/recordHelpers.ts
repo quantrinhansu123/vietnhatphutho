@@ -29,12 +29,52 @@ export type PeriodActivityRow = {
   outbound: string;
 };
 
-function periodActivityValue(value: unknown): number | null {
+/**
+ * Parse số lượng tồn kho NVL (Tồn đầu / Nhập / Xuất) — chịu được phân tách
+ * nghìn kiểu EN (`1,234.5`) lẫn VN (`1.234,5`), thập phân `,` hoặc `.`.
+ * Dấu phân tách cuối cùng là thập phân, các dấu trước là nghìn.
+ */
+export function parsePeriodQuantityValue(value: unknown): number | null {
   if (value === null || value === undefined) return null;
-  const text = String(value).trim().replace(',', '.');
-  if (!text || text === '-' || text === '—') return null;
+  let text = String(value).trim().replace(/[\s\u00A0\u202F]/g, '');
+  if (!text || text === '-' || text === '—' || text === '--') return null;
+  if (/[^0-9,.\-]/.test(text)) return null;
+  const hasComma = text.includes(',');
+  const hasDot = text.includes('.');
+  if (hasComma && hasDot) {
+    const lastComma = text.lastIndexOf(',');
+    const lastDot = text.lastIndexOf('.');
+    if (lastComma > lastDot) {
+      text = text.replace(/\./g, '').replace(',', '.');
+    } else {
+      text = text.replace(/,/g, '');
+    }
+  } else if (hasComma) {
+    if (/^-?\d{1,3}(,\d{3})+$/.test(text)) {
+      text = text.replace(/,/g, '');
+    } else {
+      const parts = text.split(',');
+      if (parts.length > 2) {
+        const dec = parts.pop() ?? '';
+        text = `${parts.join('')}.${dec}`;
+      } else {
+        text = text.replace(',', '.');
+      }
+    }
+  } else if (hasDot) {
+    const dotCount = (text.match(/\./g) ?? []).length;
+    if (dotCount > 1) {
+      if (/^-?\d{1,3}(\.\d{3})+$/.test(text)) text = text.replace(/\./g, '');
+      else return null;
+    }
+  }
+  if (text === '' || text === '-' || text === '.' || text === '-.') return null;
   const num = Number(text);
   return Number.isFinite(num) ? num : null;
+}
+
+function periodActivityValue(value: unknown): number | null {
+  return parsePeriodQuantityValue(value);
 }
 
 function periodCodeKey(code: string) {

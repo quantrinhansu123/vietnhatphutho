@@ -759,7 +759,7 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
   },
   {
     title: 'Lệnh cắt lẻ',
-    desc: 'Cắt cuộn/tấm ở kho cắt lẻ: SP con về kho thành phẩm, phần thừa nhập lại kho cắt lẻ.',
+    desc: 'Cắt cuộn/tấm ở kho chính: SP cắt về kho thành phẩm, phần thừa nhập lại kho nguồn.',
     icon: Scissors,
     icon3d: warehouseSlip3d,
     tab: 'lenh-cat-le'
@@ -791,6 +791,13 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     icon: BarChart3,
     icon3d: chartIncreasing3d,
     tab: 'tong-hop-ncc'
+  },
+  {
+    title: 'Thống kê NVL',
+    desc: 'Nhập – xuất NVL theo kỳ, lọc nhiều máy và nhiều kho, bảng giống tổng hợp NCC.',
+    icon: BarChart3,
+    icon3d: chartIncreasing3d,
+    tab: 'thong-ke-nvl'
   },
   {
     title: 'Lịch sử xuất nhập',
@@ -1100,6 +1107,7 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Xuất nhập kho NVL', tab: 'phieu-nhap-xuat-tong-hop' },
       { label: 'Danh sách xuất nhập kho NVL', tab: 'phieu-nhap-xuat-tong-hop-list' },
       { label: 'Tổng hợp NVL từ nhà cung cấp', tab: 'tong-hop-ncc' },
+      { label: 'Thống kê NVL', tab: 'thong-ke-nvl' },
       { label: 'Tồn kho', tab: 'ton-kho' },
       { label: 'Chuẩn bị xuất hàng', tab: 'factory-kho', disabled: true }
     ]
@@ -1177,6 +1185,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'phieu-nhap-xuat-tong-hop': { group: 'Kho', sub: 'Xuất nhập kho NVL' },
   'phieu-nhap-xuat-tong-hop-list': { group: 'Kho', sub: 'Danh sách xuất nhập kho NVL' },
   'tong-hop-ncc': { group: 'Kho', sub: 'Tổng hợp NVL từ nhà cung cấp' },
+  'thong-ke-nvl': { group: 'Kho', sub: 'Thống kê NVL' },
   'warehouse-history-detail': { group: 'Kho', sub: 'Chi tiết phiếu' },
   'damaged-goods-warehouse': { group: 'Kho', sub: 'Kho hàng hỏng' },
   'ton-kho': { group: 'Kho', sub: 'Tồn kho' },
