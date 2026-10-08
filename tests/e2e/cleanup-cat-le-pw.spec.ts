@@ -40,22 +40,22 @@ test('xóa dữ liệu seed PW-CATLE', async ({ playwright }) => {
   // Đếm trước xóa.
   const before: Record<string, number> = {
     san_pham: await count(T_PRODUCTS, 'or=(ma_sp.like.PW-*,ma_amis.like.PW-*)'),
-    phieu_nhap: await count('phieu_nhap_kho', 'or=(ghi_chu.ilike.*PW-CATLE*,ly_do.ilike.*PW-CATLE*,ma_sp.like.PW-*)'),
-    phieu_xuat: await count('phieu_xuat_kho', 'or=(ghi_chu.ilike.*PW-CATLE*,ly_do.ilike.*PW-CATLE*,ma_sp.like.PW-*)'),
+    phieu_nhap: await count('phieu_nhap_kho', 'or=(ghi_chu.ilike.*PW-CATLE*,ly_do.ilike.*PW-CATLE*,ghi_chu.ilike.*PW-CASE*,ly_do.ilike.*PW-CASE*,ma_sp.like.PW-*)'),
+    phieu_xuat: await count('phieu_xuat_kho', 'or=(ghi_chu.ilike.*PW-CATLE*,ly_do.ilike.*PW-CATLE*,ghi_chu.ilike.*PW-CASE*,ly_do.ilike.*PW-CASE*,ma_sp.like.PW-*)'),
     nhap_kho: await count('nhap_kho', 'ma_sp=like.PW-*')
   };
   log.push(`trước xóa: ${JSON.stringify(before)}`);
 
   // 1. Phiếu (cả bảng tách + bảng cũ fallback).
   for (const t of ['phieu_nhap_kho', 'phieu_xuat_kho', 'phieu_xuat_nhap_kho']) {
-    const r = await req('DELETE', t, 'or=(ghi_chu.ilike.*PW-CATLE*,ly_do.ilike.*PW-CATLE*,ma_sp.like.PW-*)');
+    const r = await req('DELETE', t, 'or=(ghi_chu.ilike.*PW-CATLE*,ly_do.ilike.*PW-CATLE*,ghi_chu.ilike.*PW-CASE*,ly_do.ilike.*PW-CASE*,ma_sp.like.PW-*)');
     log.push(`del ${t}: HTTP ${r.status}${r.status >= 400 ? ` ${r.body.slice(0, 120)}` : ''}`);
   }
   // 2. Báo cáo (lines cascade theo FK), lệnh, đơn.
   for (const [t, q] of [
-    ['bao_cao_don_cat_le', 'ghi_chu=eq.PW-CATLE'],
-    ['lenh_cat_le', 'ma_lenh=like.PW-CATLE-*'],
-    [T_ORDERS, 'ma_don_hang=eq.PW-CATLE-DH01']
+    ['bao_cao_don_cat_le', 'or=(ghi_chu.eq.PW-CATLE,ghi_chu.eq.PW-CASE)'],
+    ['lenh_cat_le', 'or=(ma_lenh.like.PW-CATLE-*,ma_lenh.like.PW-CASE-*)'],
+    [T_ORDERS, 'or=(ma_don_hang.eq.PW-CATLE-DH01,ma_don_hang.eq.PW-CASE-DH01)']
   ] as Array<[string, string]>) {
     const r = await req('DELETE', t, q);
     log.push(`del ${t}: HTTP ${r.status}${r.status >= 400 ? ` ${r.body.slice(0, 120)}` : ''}`);
@@ -85,11 +85,11 @@ test('xóa dữ liệu seed PW-CATLE', async ({ playwright }) => {
   // Đếm sau xóa.
   const after: Record<string, number> = {
     san_pham: await count(T_PRODUCTS, 'or=(ma_sp.like.PW-*,ma_amis.like.PW-*)'),
-    phieu_nhap: await count('phieu_nhap_kho', 'or=(ghi_chu.ilike.*PW-CATLE*,ly_do.ilike.*PW-CATLE*,ma_sp.like.PW-*)'),
-    phieu_xuat: await count('phieu_xuat_kho', 'or=(ghi_chu.ilike.*PW-CATLE*,ly_do.ilike.*PW-CATLE*,ma_sp.like.PW-*)'),
+    phieu_nhap: await count('phieu_nhap_kho', 'or=(ghi_chu.ilike.*PW-CATLE*,ly_do.ilike.*PW-CATLE*,ghi_chu.ilike.*PW-CASE*,ly_do.ilike.*PW-CASE*,ma_sp.like.PW-*)'),
+    phieu_xuat: await count('phieu_xuat_kho', 'or=(ghi_chu.ilike.*PW-CATLE*,ly_do.ilike.*PW-CATLE*,ghi_chu.ilike.*PW-CASE*,ly_do.ilike.*PW-CASE*,ma_sp.like.PW-*)'),
     nhap_kho: await count('nhap_kho', 'ma_sp=like.PW-*'),
-    lenh: await count('lenh_cat_le', 'ma_lenh=like.PW-CATLE-*'),
-    bao_cao: await count('bao_cao_don_cat_le', 'ghi_chu=eq.PW-CATLE')
+    lenh: await count('lenh_cat_le', 'or=(ma_lenh.like.PW-CATLE-*,ma_lenh.like.PW-CASE-*)'),
+    bao_cao: await count('bao_cao_don_cat_le', 'or=(ghi_chu.eq.PW-CATLE,ghi_chu.eq.PW-CASE)')
   };
   log.push(`sau xóa: ${JSON.stringify(after)}`);
   console.log(log.join('\n'));
