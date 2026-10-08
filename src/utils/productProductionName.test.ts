@@ -18,7 +18,9 @@ import {
   normalizeDoLiDm,
   extractDoLiDmNumber,
   stripDuplicateLiFromTenGoc,
-  parseDoDaiMLength
+  parseDoDaiMLength,
+  buildCutAmisCodeFull,
+  abbreviateProductionNameFacts
 } from './productProductionName.ts';
 
 test('extractDoLiDm bắt (đm n li) và (đm n kg)', () => {
@@ -520,4 +522,82 @@ test('buildOrderTenGhep: ghi đè do_li_dm, không đổi do_li', () => {
   assert.match(name, /\(đm 0\.9 li\)/);
   assert.match(name, /15m/);
   assert.doesNotMatch(name, /\(đm 0\.75 li\)/);
+});
+
+test('buildCutAmisCodeFull: mẫu đủ info TC-màng-dài cuối', () => {
+  assert.equal(
+    buildCutAmisCodeFull({ baseMaAmis: 'STD06-0.8li*1.22m', cutLengthM: 30, mang: 'ECO', doLiDm: '0.75' }),
+    'STD06-0.75li*1.22m-TC-ECO-30m'
+  );
+});
+
+test('buildCutAmisCodeFull: giữ NP, không thêm TC', () => {
+  assert.equal(
+    buildCutAmisCodeFull({ baseMaAmis: 'STD06-0.8li*1.22m-NP', cutLengthM: 12 }),
+    'STD06-0.8li*1.22m-NP-12m'
+  );
+});
+
+test('buildCutAmisCodeFull: rỗng thay mét cuối + tem', () => {
+  assert.equal(
+    buildCutAmisCodeFull({
+      baseMaAmis: 'X-30m',
+      nhomVthh: 'TP; PX Rỗng',
+      cutLengthM: 12,
+      tem: '1.2li',
+      mauTem: 'Vàng',
+      danTem2Dau: true
+    }),
+    'X-TC-12m - TEM1.2li-MVKH-2DAU'
+  );
+});
+
+test('buildCutAmisCodeFull: tên sản xuất rút thành viết tắt trong mã cắt lẻ', () => {
+  assert.deepEqual(
+    abbreviateProductionNameFacts('Tấm nhựa đặc màu TRẮNG 8ZEM - hàng tiêu chuẩn - STD - 0.8li - 1.22m - 30m'),
+    ['TR', '8ZEM']
+  );
+  assert.deepEqual(
+    abbreviateProductionNameFacts('NHỰA 11 SÓNG XANH 6ZEM'),
+    ['XA', '11s', '6ZEM']
+  );
+  assert.deepEqual(
+    abbreviateProductionNameFacts('NHỰA SÓNG TRẮNG - NP - 11 SÓNG 5KG - 6M'),
+    ['TR', '11s', '5kg']
+  );
+  assert.equal(
+    buildCutAmisCodeFull({
+      baseMaAmis: 'STD06-0.8li*1.22m',
+      cutLengthM: 30,
+      mang: 'STD',
+      doLiDm: '0.75',
+      hangPhe: 'hàng tiêu chuẩn',
+      tenSanXuat: 'Tấm nhựa đặc màu TRẮNG 8ZEM - hàng tiêu chuẩn - STD - 0.8li - 1.22m - 30m'
+    }),
+    'STD06-TR-8ZEM-0.75li*1.22m-TC-STD-30m'
+  );
+  assert.equal(
+    buildCutAmisCodeFull({
+      baseMaAmis: 'STS02-11s-6zem',
+      tenSanXuat: 'NHỰA 11 SÓNG XANH 6ZEM'
+    }),
+    'STS02-XA-11s-6zem-TC'
+  );
+  assert.equal(
+    buildCutAmisCodeFull({
+      baseMaAmis: 'STS06-5.0kg-NP2',
+      cutLengthM: 6,
+      cutWidthM: 1.2,
+      tenSanXuat: 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG 5KG - 6M'
+    }),
+    'STS06-TR-11s-5.0kg*1.2m-NP2-6m'
+  );
+});
+
+test('buildCutAmisCodeFull: không đổi thì ra mã chuẩn hóa (để caller bỏ qua)', () => {
+  assert.equal(buildCutAmisCodeFull({ baseMaAmis: 'STD06' }), 'STD06-TC');
+  assert.equal(
+    buildCutAmisCodeFull({ baseMaAmis: 'STD06-0.75li*1.22m-TC-ECO-30m', cutLengthM: 12, mang: 'ECO', doLiDm: '0.75' }),
+    'STD06-0.75li*1.22m-TC-ECO-12m'
+  );
 });

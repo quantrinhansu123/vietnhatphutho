@@ -829,6 +829,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         doLiDm: line.doLiDmText,
         originMaCu: originCuForLine(line, mother),
         allowIdentical: Boolean(line.orderCode.trim()),
+        tenSanXuat: line.tenGhep.trim() || line.productionName.trim(),
         ...temArgsFromCutLine(line)
       });
       // Giữ tên ghép của đơn khi quy cách chưa bị sửa (như lúc Xác nhận).
@@ -866,6 +867,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         doLiDm: lines[index]?.doLiDmText,
         originMaCu: lines[index] ? originCuForLine(lines[index], preview.mother) : '',
         allowIdentical: Boolean(lines[index]?.orderCode?.trim()),
+        tenSanXuat: lines[index]?.tenGhep.trim() || lines[index]?.productionName.trim() || '',
         ...temArgsFromCutLine(lines[index])
       });
       const tenGhep = lines[index]?.tenGhep.trim();
