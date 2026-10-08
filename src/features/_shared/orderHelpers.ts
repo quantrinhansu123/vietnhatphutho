@@ -404,6 +404,10 @@ export interface OrderProductOption {
   mang?: string;
   /** Trọng lượng tiêu chuẩn trên danh mục SP. */
   totalWeight?: string;
+  /** Tem mặc định của sản phẩm — đơn miền nam / cắt lẻ auto-fill. */
+  tem?: string;
+  /** Màu tem mặc định của sản phẩm — đơn miền nam / cắt lẻ auto-fill. */
+  mauTem?: string;
 }
 
 export function normalizeLookupText(value: string) {
@@ -500,7 +504,9 @@ export function normalizeOrderProducts(data: unknown): OrderProductOption[] {
     doDayM: product.doDayM || '',
     doLiDm: product.doLiDm || '',
     mang: product.mang || '',
-    totalWeight: product.totalWeight || ''
+    totalWeight: product.totalWeight || '',
+    tem: product.tem || undefined,
+    mauTem: product.mauTem || undefined
   })).filter(product => product.code);
 }
 
