@@ -4,7 +4,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCatLePrintSlips, buildCatLeSanPhamLine, catDisplayName, computeCatLe, extractTemSuffix, suggestCatLePlan, type CatLeMother } from '../../src/features/lenh-cat-le/logic';
+import { buildCatLePrintSlips, buildCatLeSanPhamLine, catDisplayName, computeCatLe, extractTemSuffix, resolveOriginMaCu, suggestCatLePlan, type CatLeMother } from '../../src/features/lenh-cat-le/logic';
 
 const mother20m: CatLeMother = {
   maSp: 'SP-CAT',
@@ -249,5 +249,116 @@ describe('lenh-cat-le — SL nguồn từ SL thành phẩm, hạ khổ, hạ li'
     assert.equal(plan.kieuCat, 'cat_tam');
     assert.equal(plan.pieces, 2);
     assert.equal(plan.mothers, 2);
+  });
+});
+
+describe('lenh-cat-le — dòng từ đơn fill thẳng (không bắt hạ)', () => {
+  it('quy cách giữ nguyên thì chặn khi không có cờ', () => {
+    assert.throws(() => computeCatLe(mother20m, { w2: 1.22, l2: 20, qty: 1 }), /không có gì để cắt/);
+    assert.throws(
+      () => suggestCatLePlan(mother20m, { w2: 1.22, l2: 20, desiredConQty: 2 }),
+      /không có gì để cắt/
+    );
+  });
+  it('có cờ allowIdentical thì cho qua, cắt = nguồn, không thừa', () => {
+    const r = computeCatLe(mother20m, { w2: 1.22, l2: 20, qty: 2 }, { allowIdentical: true });
+    assert.equal(r.tenSpCon, mother20m.tenSp);
+    assert.equal(r.mDaiCon, 20);
+    assert.equal(r.kgCon, 10);
+    assert.equal(r.m2Con, 24.4);
+    assert.equal(r.tenSpThua, '');
+    assert.equal(r.pieces, 1);
+  });
+  it('builder với allowIdentical không sinh mã mới khi không đổi', () => {
+    const line = buildCatLeSanPhamLine({
+      mother: { ...mother20m, maSp: 'PW-X', maAmis: 'PW-X' },
+      qty: 2,
+      w2: 1.22,
+      l2: 20,
+      allowIdentical: true
+    });
+    assert.equal(line.san_pham_cat_1.ten_sp, mother20m.tenSp);
+    assert.equal(String(line.san_pham_cat_1.ma_amis || ''), '');
+    assert.equal(line.san_pham_cat_2, null);
+  });
+});
+
+describe('lenh-cat-le — ma_amis_cu quy về mã gốc đã lưu', () => {
+  it('ưu tiên mã cũ đã lưu, không có thì lấy mã nguồn', () => {
+    assert.equal(resolveOriginMaCu('PW-DAC-01', 'PW-DAC-01-1.2li-12m'), 'PW-DAC-01');
+    assert.equal(resolveOriginMaCu('', 'PW-DAC-01'), 'PW-DAC-01');
+    assert.equal(resolveOriginMaCu(null, 'PW-DAC-01'), 'PW-DAC-01');
+  });
+
+  it('cắt chuỗi từ biến thể vẫn gán mã cũ về gốc', () => {
+    const chainMother: CatLeMother = {
+      ...mother20m,
+      maSp: 'PW-DAC-01-1.2li-12m',
+      maAmis: 'PW-DAC-01-1.2li-12m',
+      doDaiM: '12m',
+      a1: 14.64,
+      l1: 12,
+      kg1: 6
+    };
+    const line = buildCatLeSanPhamLine({
+      mother: chainMother,
+      qty: 1,
+      w2: 1.22,
+      l2: 10,
+      originMaCu: 'PW-DAC-01'
+    });
+    assert.equal(line.san_pham_cat_1.ma_amis_cu, 'PW-DAC-01');
+    assert.equal(line.san_pham_cat_2?.ma_amis_cu, 'PW-DAC-01');
+    assert.notEqual(line.san_pham_cat_1.ma_amis, 'PW-DAC-01-1.2li-12m');
+  });
+
+  it('không truyền origin thì mã cũ là mã nguồn (như cũ)', () => {
+    const line = buildCatLeSanPhamLine({ mother: { ...mother20m, maSp: 'PW-DAC-01', maAmis: 'PW-DAC-01' }, qty: 1, w2: 1.22, l2: 10 });
+    assert.equal(line.san_pham_cat_1.ma_amis_cu, 'PW-DAC-01');
+  });
+
+  it('hạ li thật thì mã mới theo li mới, ĐM thừa kế không đè', () => {
+    const rong: CatLeMother = {
+      maSp: 'PW-CASE-RONG01',
+      maAmis: 'PW-CASE-RONG01',
+      tenSp: 'Tấm nhựa rỗng chuẩn 4li khổ 1.22m dài 30m (PW)',
+      tenGoc: 'Tấm nhựa rỗng chuẩn',
+      donVi: 'Cuộn',
+      doLi: '4li',
+      doLiDm: '(đm 4 li)',
+      doDayM: '1.22m',
+      doDaiM: '30m',
+      mang: '',
+      hangPhe: '',
+      kg1: 165.432,
+      a1: 36.6,
+      l1: 30
+    };
+    const line = buildCatLeSanPhamLine({ mother: rong, qty: 5, w2: 1.22, l2: 30, doLiMoi: '3li', nhomVthh: 'TP; PX Rỗng' });
+    const code = String(line.san_pham_cat_1.ma_amis || '');
+    assert.match(code, /3li/);
+    assert.doesNotMatch(code, /4li/);
+    assert.equal(line.san_pham_cat_1.ma_amis_cu, 'PW-CASE-RONG01');
+  });
+
+  it('không hạ li thì ĐM thừa kế vẫn lên mã (như cũ)', () => {
+    const dac: CatLeMother = {
+      maSp: 'PW-DAC-01',
+      maAmis: 'PW-DAC-01',
+      tenSp: 'Tấm nhựa đặc đặc 1.2li khổ 1.22m dài 30m (PW)',
+      tenGoc: 'Tấm nhựa đặc đặc',
+      donVi: 'Cuộn',
+      doLi: '1.2li',
+      doLiDm: '(đm 1.2 li)',
+      doDayM: '1.22m',
+      doDaiM: '30m',
+      mang: '',
+      hangPhe: '',
+      kg1: 49.6,
+      a1: 36.6,
+      l1: 30
+    };
+    const line = buildCatLeSanPhamLine({ mother: dac, qty: 5, w2: 1.22, l2: 12, nhomVthh: 'TP; PX Đặc' });
+    assert.equal(line.san_pham_cat_1.ma_amis, 'PW-DAC-01-1.2li-12m');
   });
 });

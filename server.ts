@@ -17445,7 +17445,9 @@ async function loadKiemKhoLiveTongHopForDot(
             tem: String(item.tem ?? '').trim(),
             mauTem: String(item.mauTem ?? item.mau_tem ?? '').trim(),
             danTem2Dau: item.danTem2Dau === true || item.dan_tem_2_dau === true || String(item.danTem2Dau ?? item.dan_tem_2_dau ?? '') === '1',
-            doLiDm: mother.doLiDm
+            doLiDm: mother.doLiDm,
+            // Dòng fill từ đơn hàng: cho qua khi quy cách giữ nguyên (không bắt hạ).
+            allowIdentical: Boolean(String(item.orderCode ?? item.order_code ?? '').trim())
           })
         );
         const saved = lines[lines.length - 1];
@@ -17640,6 +17642,47 @@ async function loadKiemKhoLiveTongHopForDot(
    * + nhập đích (kho thành phẩm) + nhập mọi phần còn lại lại kho nguồn.
    * Đồng thời tạo lại SP biến thể cắt lẻ trong san_pham (ma_amis mới + ma_amis_cu).
    */
+  /**
+   * Mã cũ chốt cho miếng cắt: ưu tiên mã cũ đã lưu trong `san_pham`
+   * (chuỗi cắt nhiều nhát quy về mã gốc); chưa có thì dùng mã dự phòng.
+   */
+  async function resolveCatLeOriginCu(sourceCode: string, fallbackCu: string): Promise<string> {
+    const code = String(sourceCode || '').trim();
+    const fallback = String(fallbackCu || '').trim();
+    if (!code || !supabase) return fallback;
+    try {
+      const byAmis = await supabase.from(SUPABASE_PRODUCTS_TABLE).select('ma_amis_cu').eq('ma_amis', code).limit(1);
+      const storedAmis = String(((byAmis.data || [])[0] as { ma_amis_cu?: string } | undefined)?.ma_amis_cu || '').trim();
+      if (storedAmis) return storedAmis;
+      const bySp = await supabase.from(SUPABASE_PRODUCTS_TABLE).select('ma_amis_cu').eq('ma_sp', code).limit(1);
+      return String(((bySp.data || [])[0] as { ma_amis_cu?: string } | undefined)?.ma_amis_cu || '').trim() || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  /** Chốt ma_amis_cu cho mọi miếng cắt trong lệnh (ưu tiên mã cũ đã lưu). */
+  async function applyCatLeOriginCu(lines: CatLeSanPhamLine[]): Promise<void> {
+    const cache = new Map<string, string>();
+    for (const line of lines) {
+      const nguon = (line.san_pham_nguon || {}) as unknown as Record<string, unknown>;
+      const sourceCode = String(nguon.ma_amis || nguon.ma_sp || '').trim();
+      if (!sourceCode) continue;
+      const key = sourceCode.toLocaleLowerCase('vi');
+      let origin = cache.get(key);
+      if (origin === undefined) {
+        origin = await resolveCatLeOriginCu(sourceCode, '');
+        cache.set(key, origin);
+      }
+      for (const piece of [line.san_pham_cat_1, line.san_pham_cat_2]) {
+        if (!piece) continue;
+        const rec = piece as unknown as Record<string, unknown>;
+        const current = String(rec.ma_amis_cu || '').trim();
+        rec.ma_amis_cu = origin || current || sourceCode;
+      }
+    }
+  }
+
   async function executeLenhCatLe(
     lenh: any,
     nguoiLapBody: string | null
@@ -17652,6 +17695,8 @@ async function loadKiemKhoLiveTongHopForDot(
     }
     const lines = normalizeCatLeSanPhamList(lenh.san_pham);
     if (lines.length === 0) return { ok: false, status: 400, error: 'Lệnh không có sản phẩm.' };
+    // Chốt mã cũ về mã gốc đã lưu trước khi ghi biến thể / kho.
+    await applyCatLeOriginCu(lines);
     // Tạo lại SP biến thể trong san_pham (mỗi mã mới một dòng, truy vết qua ma_amis_cu).
     const variantWarnings: string[] = [];
     for (const line of lines) {
@@ -17678,13 +17723,14 @@ async function loadKiemKhoLiveTongHopForDot(
           const lMe = numOf(nguon.do_dai_m);
           const liCon = String(piece.do_li || '').trim();
           const liMe = String(nguon.do_li || '').trim();
+          const liChanged = Boolean(liCon) && liCon.toLocaleLowerCase('vi') !== liMe.toLocaleLowerCase('vi');
           maMoi = buildMaAmisMoi({
             baseMaAmis: baseAmis,
             nhomVthh: nguon.nhom_vthh,
             cutLengthM: lCon !== null && (lMe === null || Math.abs(lCon - lMe) > 1e-9) ? lCon : undefined,
             doLi:
               liCon && liCon.toLocaleLowerCase('vi') !== liMe.toLocaleLowerCase('vi') ? liCon : undefined,
-            doLiDm: piece.do_li_dm || nguon.do_li_dm || undefined,
+            doLiDm: liChanged ? undefined : piece.do_li_dm || nguon.do_li_dm || undefined,
             hangPhe: nguon.hang_phe || undefined,
             mang: nguon.mang || undefined
           });
@@ -17697,7 +17743,7 @@ async function loadKiemKhoLiveTongHopForDot(
         rec.ma_amis = maMoi;
         if (!String(rec.ma_amis_cu || '').trim()) rec.ma_amis_cu = baseAmis;
         const ensured = await ensureCatLeVariantSanPham({
-          baseMaAmis: baseAmis,
+          baseMaAmis: String(rec.ma_amis_cu || baseAmis),
           maMoi,
           tenSp: String(piece.ten_sp || ''),
           nhomVthh: String(nguon.nhom_vthh || ''),
@@ -17915,6 +17961,8 @@ async function loadKiemKhoLiveTongHopForDot(
       if (Array.isArray(multi)) {
         const parsedMulti = buildMultiCatLeFromBody(source);
         if ('error' in parsedMulti) return res.status(400).json({ error: parsedMulti.error });
+        // Chốt mã cũ về mã gốc đã lưu ngay khi tạo lệnh.
+        await applyCatLeOriginCu((parsedMulti.draft.san_pham || []) as CatLeSanPhamLine[]);
         const maLenh =
           String(source.maLenh ?? source.ma_lenh ?? '').trim() || (await generateMaLenhCatLe());
         const { data: dup } = await supabase
@@ -17964,6 +18012,7 @@ async function loadKiemKhoLiveTongHopForDot(
       }
       const parsed = buildMultiCatLeFromBody({ ...(req.body as object), ngayCat: (req.body as any)?.ngayCat ?? current.ngay_cat });
       if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+      await applyCatLeOriginCu((parsed.draft.san_pham || []) as CatLeSanPhamLine[]);
       const { data, error } = await saveLenhCatLe('update', parsed.draft as Record<string, unknown>, id);
       if (error) return res.status(500).json({ error: `Không thể cập nhật lệnh cắt. ${error.message}` });
       return res.json({ success: true, record: (data || [])[0] || null });

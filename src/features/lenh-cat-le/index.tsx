@@ -25,6 +25,7 @@ import {
   normalizeDoLiLabel,
   parseMeterInput,
   parseMeterLabel,
+  resolveOriginMaCu,
   suggestCatLePlan,
   type CatLeMother,
   type CatLePrintSlip,
@@ -165,7 +166,7 @@ function CutResultRow({
   m2: number;
 }) {
   const toneClass = tone === 'source' ? 'text-sky-800' : tone === 'cut' ? 'text-emerald-800' : tone === 'rest' ? 'text-amber-800' : 'text-zinc-400';
-  const cell = 'min-w-0 truncate text-xs font-semibold text-zinc-800';
+  const cell = 'min-w-0 break-words whitespace-normal text-xs font-semibold text-zinc-800';
   const tongKg = qty > 0 && kg > 0 ? kg * qty : 0;
   return (
     <div className={`grid ${RESULT_GRID} items-center gap-2 px-2 py-1.5`}>
@@ -365,7 +366,8 @@ function cutLineFromOrder(order: OrderRow, prodLine: OrderProductLine): CutLine 
     productName: String(prodLine.productName || '').trim(),
     tenGhep: String(prodLine.tenGhep || '').trim(),
     unit: String(prodLine.unit || 'Tấm').trim(),
-    sheetKg: String(prodLine.tlCuon || '').trim(),
+    // Mang trọng lượng đơn qua: ưu tiên TL/tấm (kg 1 SP), rồi mới tới TL cuộn.
+    sheetKg: String(prodLine.kg1Sp || prodLine.tlTam || prodLine.tlCuon || '').trim(),
     doLiDmText: doLiDmSo(String(prodLine.doLiDm || '')),
     dinhMucKgText: String(prodLine.dinhMucKg || '').trim(),
     slBac: String(prodLine.soLuongBac || '').trim(),
@@ -511,6 +513,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
   const [listLoading, setListLoading] = useState(true);
   const [completingId, setCompletingId] = useState('');
   const [printSlips, setPrintSlips] = useState<WarehouseSlipPrintData[] | null>(null);
+  const [viewLenh, setViewLenh] = useState<CatLeLenh | null>(null);
 
   // Modal lập lệnh
   const [showModal, setShowModal] = useState(false);
@@ -716,11 +719,11 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
       try {
         const doLiMoi = doLiHaForLine(line, mother.doLi);
         const doLiDmGiu = normalizeDoLiDm(line.doLiDmText, 'li') || null;
-        const plan = suggestCatLePlan(mother, { w2, l2, desiredConQty: finished, doLiMoi });
+        const plan = suggestCatLePlan(mother, { w2, l2, desiredConQty: finished, doLiMoi, allowIdentical: Boolean(line.orderCode.trim()) });
         const result = computeCatLe(
           mother,
           { w2, l2, qty: plan.mothers, doLiMoi, doLiDmGiu, kgCanThucTe: null, pieces: plan.pieces, labelCutWidth },
-          { nhomVthh: base.nhomVthh }
+          { nhomVthh: base.nhomVthh, allowIdentical: Boolean(line.orderCode.trim()) }
         );
         return { ...base, qty: plan.mothers, pieces: plan.pieces, result };
       } catch (err: any) {
@@ -801,6 +804,13 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
     setPrintSlips(slips);
   };
 
+  /** Mã cũ chốt cho dòng: ưu tiên mã cũ đã lưu trong danh mục (quy về gốc). */
+  const originCuForLine = (line: CutLine, mother: CatLeMother): string => {
+    const baseAmis = mother.maAmis || mother.maSp;
+    const srcRow = findBaseProduct(catalog, line.productId, line.amisCode.trim());
+    return resolveOriginMaCu(srcRow?.amisOldCode, baseAmis);
+  };
+
   const linesFromForm = (): CatLeSanPhamLine[] =>
     lines.map((line, index) => {
       const preview = previews[index];
@@ -817,6 +827,8 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         pieces: preview.pieces,
         ghiChu: line.ghiChu.trim(),
         doLiDm: line.doLiDmText,
+        originMaCu: originCuForLine(line, mother),
+        allowIdentical: Boolean(line.orderCode.trim()),
         ...temArgsFromCutLine(line)
       });
       // Giữ tên ghép của đơn khi quy cách chưa bị sửa (như lúc Xác nhận).
@@ -852,6 +864,8 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         pieces: preview.pieces,
         ghiChu: lines[index]?.ghiChu.trim() || '',
         doLiDm: lines[index]?.doLiDmText,
+        originMaCu: lines[index] ? originCuForLine(lines[index], preview.mother) : '',
+        allowIdentical: Boolean(lines[index]?.orderCode?.trim()),
         ...temArgsFromCutLine(lines[index])
       });
       const tenGhep = lines[index]?.tenGhep.trim();
@@ -876,6 +890,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         const mother = preview.mother as CatLeMother;
         return {
           idSanPhamTrongKho: line.productId,
+          orderCode: line.orderCode,
           maSpNguon: mother.maSp,
           tenSpNguon: mother.tenSp,
           donVi: mother.donVi,
@@ -1059,7 +1074,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
             }}
             className="rounded-lg bg-[#ef1b2d] px-4 py-2 text-xs font-black uppercase tracking-wide text-white hover:bg-[#d41424]"
           >
-            Tải lại
+            Xem
           </button>
         </div>
       </div>
@@ -1180,6 +1195,13 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex justify-end gap-1">
+                      <button
+                        title="Xem chi tiết: sản phẩm chính, xuất, cắt, còn lại"
+                        onClick={() => setViewLenh(row)}
+                        className="rounded border border-zinc-300 px-2 py-1 text-[11px] font-black text-zinc-700"
+                      >
+                        Xem
+                      </button>
                       {row.trang_thai === 'moi' && (
                         <button
                           title="Xem trước phiếu nhập / xuất — chưa ghi kho"
@@ -1804,6 +1826,126 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
           </div>
         </div>
       )}
+
+      {viewLenh ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/50 p-3 backdrop-blur-sm">
+          <div className="flex h-[90dvh] max-h-[90dvh] w-[92vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-3">
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
+                  Lệnh {viewLenh.ma_lenh}
+                </h3>
+                <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+                  {formatDateVN(viewLenh.ngay_cat)} · {trangThaiLabel(viewLenh.trang_thai)}
+                  {viewLenh.kho_nguon ? ` · Xuất ${viewLenh.kho_nguon}` : ''}
+                  {viewLenh.kho_dich ? ` → nhập ${viewLenh.kho_dich}` : ''} · Lập: {viewLenh.nguoi_lap || '—'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewLenh(null)}
+                className="ml-auto rounded-lg border px-4 py-2 text-sm font-bold text-zinc-600"
+              >
+                Đóng
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
+              {normalizeCatLeSanPhamList(viewLenh.san_pham).map((item, index) => {
+                const nguon = item.san_pham_nguon;
+                const cat = item.san_pham_cat_1;
+                const thua = item.san_pham_cat_2;
+                const nguonCode = String(nguon.ma_amis || nguon.ma_sp || '').trim();
+                const slCat = Number(item.so_luong_cat_1) || 0;
+                return (
+                  <section key={index} className="space-y-2 rounded-xl border border-zinc-200 p-3">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-zinc-700">
+                      SP {index + 1} — Sản phẩm chính
+                    </h4>
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
+                      <div><dt className="font-bold text-zinc-500">Mã AMIS</dt><dd className="font-black">{nguonCode || '—'}</dd></div>
+                      <div className="col-span-2 sm:col-span-3"><dt className="font-bold text-zinc-500">Tên sản phẩm</dt><dd className="font-semibold">{nguon.ten_sp || '—'}</dd></div>
+                      <div><dt className="font-bold text-zinc-500">ĐVT</dt><dd className="font-semibold">{nguon.don_vi || '—'}</dd></div>
+                      <div><dt className="font-bold text-zinc-500">SL nguồn</dt><dd className="font-black tabular-nums">{fmtQty(Number(nguon.so_luong) || 0)}</dd></div>
+                      <div><dt className="font-bold text-zinc-500">Độ li</dt><dd className="font-semibold">{nguon.do_li || '—'}</dd></div>
+                      <div><dt className="font-bold text-zinc-500">Khổ / Dài</dt><dd className="font-semibold">{[nguon.do_day_m, nguon.do_dai_m].filter(Boolean).join(' × ') || '—'}</dd></div>
+                      <div className="col-span-2 sm:col-span-4"><dt className="font-bold text-zinc-500">Quy đổi 1 SP</dt><dd className="font-semibold">{fmtQuyDoi({ kg: Number(nguon.kg) || 0, m2: Number(nguon.m2) || 0, m_dai: Number(nguon.m_dai) || 0 })}</dd></div>
+                    </dl>
+                    <div className="overflow-x-auto rounded-lg border border-zinc-200">
+                      <div className="min-w-[900px]">
+                        <div className={`grid ${RESULT_GRID} gap-2 border-b border-zinc-200 bg-zinc-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-zinc-500`}>
+                          <span />
+                          <span>Mã AMIS</span>
+                          <span>Tên sản phẩm</span>
+                          <span>Tên sản xuất</span>
+                          <span className="text-right">SL</span>
+                          <span className="text-right">Độ li</span>
+                          <span className="text-right">Dài</span>
+                          <span className="text-right">Tổng kg</span>
+                          <span className="text-right">m²</span>
+                        </div>
+                        <CutResultRow
+                          label="Xuất"
+                          tone="source"
+                          code={nguonCode}
+                          productName={String(nguon.ten_goc || '')}
+                          productionName={String(nguon.ten_sp || '')}
+                          qty={Number(nguon.so_luong) || 0}
+                          doLi={String(nguon.do_li || '')}
+                          dai={String(nguon.do_dai_m || '') || (Number(nguon.m_dai) > 0 ? `${fmtQty(Number(nguon.m_dai))}m` : '')}
+                          kg={Number(nguon.kg) || 0}
+                          m2={Number(nguon.m2) || 0}
+                        />
+                        <CutResultRow
+                          label="Cắt"
+                          tone="cut"
+                          code={String(cat.ma_amis || '') || nguonCode}
+                          productName={String(nguon.ten_goc || '')}
+                          productionName={String(cat.ten_sp || '')}
+                          qty={slCat}
+                          doLi={String(cat.do_li || '')}
+                          dai={String(cat.do_dai_m || '') || (Number(cat.m_dai) > 0 ? `${fmtQty(Number(cat.m_dai))}m` : '')}
+                          kg={Number(cat.kg) || 0}
+                          m2={Number(cat.m2) || 0}
+                        />
+                        {thua ? (
+                          <CutResultRow
+                            label={item.di_tai_che ? 'Thừa (tái chế)' : 'Còn lại'}
+                            tone="rest"
+                            code={String(thua.ma_amis || '') || nguonCode}
+                            productName={String(nguon.ten_goc || '')}
+                            productionName={String(thua.ten_sp || '')}
+                            qty={Number(nguon.so_luong) || 0}
+                            doLi={String(thua.do_li || '')}
+                            dai={String(thua.do_dai_m || '') || (Number(thua.m_dai) > 0 ? `${fmtQty(Number(thua.m_dai))}m` : '')}
+                            kg={Number(thua.kg) || 0}
+                            m2={Number(thua.m2) || 0}
+                          />
+                        ) : (
+                          <CutResultRow
+                            label="Còn lại"
+                            tone="none"
+                            code=""
+                            productName=""
+                            productionName="Không còn"
+                            qty={0}
+                            doLi=""
+                            dai=""
+                            kg={0}
+                            m2={0}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                );
+              })}
+              {normalizeCatLeSanPhamList(viewLenh.san_pham).length === 0 ? (
+                <p className="py-8 text-center text-xs font-bold text-zinc-400">Lệnh chưa có sản phẩm.</p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <WarehouseSlipPrintModal open={Boolean(printSlips?.length)} slips={printSlips} onClose={() => setPrintSlips(null)} />
     </div>
