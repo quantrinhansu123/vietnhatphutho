@@ -42,3 +42,113 @@ describe('don-hang miền nam — kg/1m × dài × SL', () => {
     assert.equal(southOrderKgPerMeter('', '', 0.57, ''), 0.57);
   });
 });
+
+describe('don-hang miền nam — cột Màng và trích xuất màng', () => {
+  it('extractMang trích xuất đúng màng từ tên sản xuất', async () => {
+    const { extractMang } = await import('../../src/utils/productProductionName');
+    assert.equal(extractMang('Nhựa Đặc Trắng 1.1li (1.22x30m) Màng SUNPC (Dán Tem 1.5li) Màu Hồng MVCC'), 'SUN PC');
+    assert.equal(extractMang('Tấm nhựa đặc màu XDT 8ZEM - 1.22m - 30m hàng nguyên phế - SUN PC'), 'SUN PC');
+    assert.equal(extractMang('Nhựa Đặc 1.1li Trắng (1.22x30m) Màng STANDA (Dán Tem 1.2li) MVCC'), 'STD');
+    assert.equal(extractMang('Nhựa Đặc 1.1li Trắng (1.22x30m) ECO'), 'ECO');
+    assert.equal(extractMang('Nhựa Đặc 1.1li Trắng (1.22x30m)'), '');
+  });
+
+  it('normalizeOrderProducts map đúng cột mang và totalWeight từ danh mục', async () => {
+    const { normalizeOrderProducts } = await import('../../src/features/_shared/orderHelpers');
+    const mockProducts = [
+      {
+        id: 'sp1',
+        ma_amis: 'STD06-0.8li*1.22m',
+        ten_san_pham: 'Tấm nhựa đặc',
+        ten_san_xuat: 'Tấm nhựa đặc - SUN PC',
+        mang: 'SUN PC',
+        tong_trong_luong: '5.7',
+        don_vi: 'Tấm',
+        nhom_vthh: 'TP; PX Đặc'
+      }
+    ];
+    const normalized = normalizeOrderProducts(mockProducts);
+    assert.equal(normalized.length, 1);
+    assert.equal(normalized[0].mang, 'SUN PC');
+    assert.equal(normalized[0].totalWeight, '5.7');
+  });
+
+  it('buildMaAmisMoi sinh mã đúng với màng', async () => {
+    const { buildMaAmisMoi } = await import('../../src/utils/productProductionName');
+    const code = buildMaAmisMoi({
+      baseMaAmis: 'STD06-0.8li*1.22m',
+      nhomVthh: 'TP; PX Đặc',
+      mang: 'SUN PC'
+    });
+    assert.ok(code.includes('SUNPC'));
+  });
+
+  it('replaceMangInName thay thế hoặc xóa màng chính xác trong tên sản xuất và tên ghép', async () => {
+    const { replaceMangInName } = await import('../../src/utils/productProductionName');
+
+    // Dạng segment "- SUN PC" -> đổi sang màng khác
+    assert.equal(
+      replaceMangInName('TRẮNG 8ZEM - 30m - SUN PC', 'STD'),
+      'TRẮNG 8ZEM - 30m - STD'
+    );
+    assert.equal(
+      replaceMangInName('TẤM LẤY SÁNG ĐẶC 1.22M - 30M - SUN PC (đm 0.75 li)', 'ECO'),
+      'TẤM LẤY SÁNG ĐẶC 1.22M - 30M - ECO (đm 0.75 li)'
+    );
+
+    // Dạng "Màng SUNPC" -> đổi sang màng khác
+    assert.equal(
+      replaceMangInName('Nhựa Đặc Trắng 1.1li (1.22x30m) Màng SUNPC (Dán Tem 1.5li) Màu Hồng MVCC', 'STD'),
+      'Nhựa Đặc Trắng 1.1li (1.22x30m) Màng STD (Dán Tem 1.5li) Màu Hồng MVCC'
+    );
+
+    // Xóa màng khi newMang rỗng
+    assert.equal(
+      replaceMangInName('TRẮNG 8ZEM - 30m - SUN PC', ''),
+      'TRẮNG 8ZEM - 30m'
+    );
+    assert.equal(
+      replaceMangInName('TẤM LẤY SÁNG ĐẶC 1.22M - 30M - SUN PC (đm 0.75 li)', ''),
+      'TẤM LẤY SÁNG ĐẶC 1.22M - 30M (đm 0.75 li)'
+    );
+    assert.equal(
+      replaceMangInName('Nhựa Đặc Trắng 1.1li (1.22x30m) Màng SUNPC (Dán Tem 1.5li) Màu Hồng MVCC', ''),
+      'Nhựa Đặc Trắng 1.1li (1.22x30m) (Dán Tem 1.5li) Màu Hồng MVCC'
+    );
+
+    // Tên ban đầu chưa có màng -> thêm màng
+    assert.equal(
+      replaceMangInName('TẤM NHỰA THÔNG MINH - 6M', 'SUN PC'),
+      'TẤM NHỰA THÔNG MINH - 6M - SUN PC'
+    );
+    assert.equal(
+      replaceMangInName('TẤM LẤY SÁNG ĐẶC 1.22M - 30M (đm 0.75 li)', 'SUN PC'),
+      'TẤM LẤY SÁNG ĐẶC 1.22M - 30M - SUN PC (đm 0.75 li)'
+    );
+
+    // Màng tùy ý theo oldMangHint
+    assert.equal(
+      replaceMangInName('TẤM NHỰA THÔNG MINH - 6M - PE', 'HA', 'PE'),
+      'TẤM NHỰA THÔNG MINH - 6M - HA'
+    );
+  });
+
+  it('buildOrderTenGhep hỗ trợ override màng mới và xóa màng', async () => {
+    const { buildOrderTenGhep } = await import('../../src/utils/productProductionName');
+    const base = 'TRẮNG 8ZEM - 30m - SUN PC';
+    const updated = buildOrderTenGhep(base, {
+      nhomVthh: 'TP; PX Đặc',
+      mang: 'ECO'
+    });
+    assert.ok(updated.includes('ECO'));
+    assert.ok(!updated.includes('SUN PC'));
+
+    const cleared = buildOrderTenGhep(base, {
+      nhomVthh: 'TP; PX Đặc',
+      mang: ''
+    });
+    assert.ok(!cleared.includes('SUN PC'));
+  });
+});
+
+

@@ -12,7 +12,7 @@ import type { OrderProductLine, OrderRow } from '../_shared/orderRecordHelpers';
 import { normalizeProducts, type ProductRow } from '../san-pham';
 import { orderDuplicateDecimalText } from '../don-hang/southWeight';
 import { parseLocalizedNumber } from '../../utils';
-import { classifyProductPxGroup, extractDoLiDmNumber, normalizeDoLiDm, parseProductionNameParts, parseSongLengthMeters } from '../../utils/productProductionName';
+import { DEFAULT_RONG_WIDTH_M, buildOrderTenGhep, classifyProductPxGroup, extractDoLiDmNumber, normalizeDoLiDm, parseProductionNameParts, parseSongLengthMeters, replaceCutWidthMeters } from '../../utils/productProductionName';
 import {
   KHO_CAT_LE,
   KHO_TAI_CHE,
@@ -260,7 +260,7 @@ function cutLineFromSaved(item: CatLeSanPhamLine): CutLine {
     productionName: nguon.ten_sp || '',
     productName: nguon.ten_goc || '',
     tenGhep: cat1.ten_sp || '',
-    unit: cat1.don_vi || nguon.don_vi || '',
+    unit: (cat1 as unknown as { don_vi?: string }).don_vi || nguon.don_vi || '',
     sheetKg: nguon.kg > 0 ? String(nguon.kg) : '',
     nhomVthh: nguon.nhom_vthh || '',
     doLiDmText: doLiDmSo(nguon.do_li_dm || cat1.do_li_dm || ''),
@@ -327,6 +327,64 @@ function orderFinishedQty(line: OrderProductLine): number {
   if (regions.length > 0) return regions.reduce((sum, value) => sum + value, 0);
   const qty = parseLocalizedNumber(line.quantity);
   return Number.isFinite(qty) && qty > 0 ? qty : 0;
+}
+
+/** Nhóm để ghép tên khi dòng chưa có nhóm VTHH. */
+function groupForTenGhep(group: string, name: string, code: string): string {
+  if (classifyProductPxGroup(group) !== 'other') return group;
+  if (/rỗng/iu.test(name) || /^ecr/i.test(code)) return 'TP; PX Rỗng';
+  if (/sóng/iu.test(name) || /^sts/i.test(code)) return 'TP; PX Sóng';
+  if (/đặc/iu.test(name) || /^std/i.test(code)) return 'TP; PX Đặc';
+  return group;
+}
+
+/**
+ * Một quy định tên sản xuất: ten gốc - hàng phế - màng - độ li - đm - khổ - mét dài.
+ * Rỗng bỏ khổ 2.1m mặc định. Khổ/dài/đm trên dòng thì ghi vào đúng vị trí đó.
+ */
+function canonicalTenSanXuat(input: {
+  rawName: string;
+  code?: string;
+  group?: string;
+  lengthText?: string;
+  widthText?: string;
+  doLiDm?: string;
+}): string {
+  const raw = String(input.rawName || '').trim();
+  if (!raw) return '';
+  const code = String(input.code || '').trim();
+  const group = groupForTenGhep(String(input.group || '').trim(), raw, code);
+  const length = parseMeterInput(input.lengthText || '');
+  const width = parseMeterInput(input.widthText || '');
+  const parts = parseProductionNameParts(raw, group, code);
+  const sourceWidth = parseMeterLabel(parts.doDayM);
+  let name = buildOrderTenGhep(raw, {
+    nhomVthh: group,
+    maAmis: code,
+    cutLengthM: length && length > 0 ? length : undefined,
+    doLiDm: input.doLiDm || undefined
+  });
+  const rongMacDinh = classifyProductPxGroup(group) === 'rong' && width != null && Math.abs(width - DEFAULT_RONG_WIDTH_M) < 1e-9;
+  if (width && width > 0 && !rongMacDinh && (sourceWidth == null || Math.abs(sourceWidth - width) > 1e-9)) {
+    name = replaceCutWidthMeters(name, width, sourceWidth, length || undefined);
+  }
+  return name.replace(/[ \t]{2,}/g, ' ').trim();
+}
+
+function withCanonicalName(line: CutLine, catalog: ProductRow[]): CutLine {
+  const product = findBaseProduct(catalog, line.productId, line.amisCode);
+  const raw = line.tenGhep.trim() || line.productionName.trim() || product?.tenGhep || product?.productionName || '';
+  const group = line.nhomVthh.trim() || product?.group || '';
+  const name = canonicalTenSanXuat({
+    rawName: raw,
+    code: line.amisCode,
+    group,
+    lengthText: line.mDaiText,
+    widthText: line.khoRongText,
+    doLiDm: line.doLiDmText
+  });
+  if (!name) return line;
+  return { ...line, productionName: name, tenGhep: name, nhomVthh: group || line.nhomVthh };
 }
 
 function lineIsBlank(line: CutLine): boolean {
@@ -467,9 +525,18 @@ function motherFromCutLine(line: CutLine, catalog: ProductRow[]): CatLeMother | 
     kg1 = (tongKg / finished) * (length / cutLen);
   }
   if (!(kg1 > 0) && tongKg > 0 && finished > 0) kg1 = tongKg / finished;
+  const sourceGroup = groupForTenGhep(group, name, code);
+  const sourceTenGhep = canonicalTenSanXuat({
+    rawName: name,
+    code,
+    group: sourceGroup,
+    lengthText: String(length || ''),
+    widthText: widthKnown ? String(width || '') : '',
+    doLiDm: product?.doLiDm || parts.doLiDm
+  });
   return {
     maSp: code,
-    tenSp: name || code,
+    tenSp: sourceTenGhep || name || code,
     donVi: line.unit.trim() || product?.unit || 'Tấm',
     kg1,
     a1: width * length,
@@ -604,7 +671,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
   const applyAutofill = () => {
     const picked = autofillProducts
       .filter(item => selectedProductKeys.includes(item.key))
-      .map(item => cutLineFromOrder(item.order, item.line));
+      .map(item => withCanonicalName(cutLineFromOrder(item.order, item.line), catalog));
     if (picked.length === 0) {
       setModalError('Vui lòng chọn ít nhất một sản phẩm trong đơn hàng.');
       return;
@@ -658,7 +725,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
     setNgayCat(String(row.ngay_cat || '').slice(0, 10) || todayISO());
     setNguoiThucHien(row.nguoi_thuc_hien || '');
     setNguoiLap(row.nguoi_lap || '');
-    setLines(products.length > 0 ? products.map(item => cutLineFromSaved(item)) : [newCutLine()]);
+    setLines(products.length > 0 ? products.map(item => withCanonicalName(cutLineFromSaved(item), catalog)) : [newCutLine()]);
     setConfirmedByKey({});
     setModalError('');
     setShowModal(true);
@@ -775,7 +842,8 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
             item.san_pham_nguon?.ma_sp,
             item.san_pham_nguon?.ten_sp,
             item.san_pham_cat_1?.ten_sp,
-            item.san_pham_cat_2?.ten_sp
+            item.san_pham_cat_2?.ten_sp,
+            item.san_pham_cat_3?.ten_sp
           ])
         ]
           .map(v => String(v ?? '').toLocaleLowerCase('vi'))
@@ -832,9 +900,6 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         tenSanXuat: line.tenGhep.trim() || line.productionName.trim(),
         ...temArgsFromCutLine(line)
       });
-      // Giữ tên ghép của đơn khi quy cách chưa bị sửa (như lúc Xác nhận).
-      const tenGhep = line.tenGhep.trim();
-      if (tenGhep) built.san_pham_cat_1 = { ...built.san_pham_cat_1, ten_sp: tenGhep };
       return built;
     });
 
@@ -870,8 +935,6 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         tenSanXuat: lines[index]?.tenGhep.trim() || lines[index]?.productionName.trim() || '',
         ...temArgsFromCutLine(lines[index])
       });
-      const tenGhep = lines[index]?.tenGhep.trim();
-      if (tenGhep) built.san_pham_cat_1 = { ...built.san_pham_cat_1, ten_sp: tenGhep };
       setConfirmedByKey(prev => ({ ...prev, [key]: built }));
       setModalError('');
     } catch (err: any) {
@@ -1134,13 +1197,22 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                   )
                   .filter(Boolean);
                 const cat2List = products
-                  .map(item =>
-                    catDisplayName(
-                      item.san_pham_cat_2?.ten_sp || '',
-                      item.san_pham_nguon.mo_ta_tem,
-                      item.san_pham_nguon.ten_sp
-                    )
-                  )
+                  .flatMap(item => [
+                    item.san_pham_cat_2
+                      ? catDisplayName(
+                          item.san_pham_cat_2.ten_sp || '',
+                          item.san_pham_nguon.mo_ta_tem,
+                          item.san_pham_nguon.ten_sp
+                        )
+                      : null,
+                    item.san_pham_cat_3
+                      ? catDisplayName(
+                          item.san_pham_cat_3.ten_sp || '',
+                          item.san_pham_nguon.mo_ta_tem,
+                          item.san_pham_nguon.ten_sp
+                        )
+                      : null
+                  ])
                   .filter(Boolean);
                 const soLuongCon = products.reduce(
                   (sum, item) =>
@@ -1430,7 +1502,10 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                             />
                             <input
                               value={line.mDaiText}
-                              onChange={e => updateLine(line.key, { mDaiText: e.target.value, tenGhep: '' })}
+                              onChange={e => {
+                                const next = withCanonicalName({ ...line, mDaiText: e.target.value }, catalog);
+                                updateLine(line.key, { mDaiText: e.target.value, productionName: next.productionName, tenGhep: next.tenGhep });
+                              }}
                               onWheel={e => e.currentTarget.blur()}
                               inputMode="decimal"
                               title="Dài (m) đặt cắt"
@@ -1438,7 +1513,10 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                             />
                             <input
                               value={line.khoRongText}
-                              onChange={e => updateLine(line.key, { khoRongText: e.target.value, tenGhep: '' })}
+                              onChange={e => {
+                                const next = withCanonicalName({ ...line, khoRongText: e.target.value }, catalog);
+                                updateLine(line.key, { khoRongText: e.target.value, productionName: next.productionName, tenGhep: next.tenGhep });
+                              }}
                               onWheel={e => e.currentTarget.blur()}
                               inputMode="decimal"
                               title="Hạ khổ rộng (m). Trống = giữ khổ tấm chính. Khổ mới ghi vào mã AMIS."
@@ -1447,7 +1525,10 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                             />
                             <input
                               value={/\(|đm/iu.test(line.doLiDmText) ? doLiDmSo(line.doLiDmText) : line.doLiDmText}
-                              onChange={e => updateLine(line.key, { doLiDmText: e.target.value, tenGhep: '' })}
+                              onChange={e => {
+                                const next = withCanonicalName({ ...line, doLiDmText: e.target.value }, catalog);
+                                updateLine(line.key, { doLiDmText: e.target.value, productionName: next.productionName, tenGhep: next.tenGhep });
+                              }}
                               onWheel={e => e.currentTarget.blur()}
                               inputMode="decimal"
                               title="Độ li ĐM — chỉ số"
@@ -1527,10 +1608,14 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                             const slCat = slCan > 0 && slCan < slRa ? slCan : slRa;
                             const slDu = Math.max(0, Math.round((slRa - slCat) * 1000) / 1000);
                             const slThua = confirmed.san_pham_cat_2 ? xuatChinh : 0;
+                            const slThua2 = confirmed.san_pham_cat_3 ? xuatChinh : 0;
+                            const countThua = (confirmed.san_pham_cat_2 ? 1 : 0) + (confirmed.san_pham_cat_3 ? 1 : 0);
                             const donVi = line.unit.trim() || 'tấm';
-                            const conLaiText = slDu > 0 && slThua > 0
-                              ? `${fmtQty(slDu)} ${donVi} cắt dư, ${fmtQty(slThua)} ${donVi} thừa`
-                              : `${fmtQty(slDu || slThua)} ${donVi}`;
+                            const conLaiText = slDu > 0 && countThua > 0
+                              ? `${fmtQty(slDu)} ${donVi} cắt dư, ${fmtQty(xuatChinh * countThua)} ${donVi} thừa`
+                              : countThua > 1
+                                ? `${fmtQty(xuatChinh * countThua)} ${donVi} (${countThua} quy cách)`
+                                : `${fmtQty(slDu || slThua)} ${donVi}`;
                             const tenSp = lookupProductName(line, catalog, confirmed.san_pham_nguon.ten_goc);
                             const nguon = confirmed.san_pham_nguon;
                             const cat = confirmed.san_pham_cat_1;
@@ -1597,7 +1682,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                                 ) : null}
                                 {confirmed.san_pham_cat_2 ? (
                                   <CutResultRow
-                                    label={slDu > 0 ? 'Thừa' : 'Còn lại'}
+                                    label={slDu > 0 ? 'Thừa 1' : countThua > 1 ? 'Còn lại 1' : 'Còn lại'}
                                     tone="rest"
                                     code={changedAmisCode(line.amisCode, confirmed.san_pham_cat_2.ma_amis || '') || line.amisCode}
                                     productName={tenSp}
@@ -1608,7 +1693,22 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                                     kg={Number(confirmed.san_pham_cat_2.kg) || 0}
                                     m2={Number(confirmed.san_pham_cat_2.m2) || 0}
                                   />
-                                ) : slDu > 0 ? null : (
+                                ) : null}
+                                {confirmed.san_pham_cat_3 ? (
+                                  <CutResultRow
+                                    label={slDu > 0 ? 'Thừa 2' : 'Còn lại 2'}
+                                    tone="rest"
+                                    code={changedAmisCode(line.amisCode, confirmed.san_pham_cat_3.ma_amis || '') || line.amisCode}
+                                    productName={tenSp}
+                                    productionName={confirmed.san_pham_cat_3.ten_sp}
+                                    qty={slThua2}
+                                    doLi={confirmed.san_pham_cat_3.do_li}
+                                    dai={confirmed.san_pham_cat_3.do_dai_m || (confirmed.san_pham_cat_3.m_dai > 0 ? `${fmtQty(confirmed.san_pham_cat_3.m_dai)}m` : '')}
+                                    kg={Number(confirmed.san_pham_cat_3.kg) || 0}
+                                    m2={Number(confirmed.san_pham_cat_3.m2) || 0}
+                                  />
+                                ) : null}
+                                {!confirmed.san_pham_cat_2 && !confirmed.san_pham_cat_3 && slDu <= 0 ? (
                                   <CutResultRow
                                     label="Còn lại"
                                     tone="none"
@@ -1621,7 +1721,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                                     kg={0}
                                     m2={0}
                                   />
-                                )}
+                                ) : null}
                               </div>
                               </div>
                             </div>
@@ -1784,7 +1884,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                               <span className="text-xs font-black tabular-nums text-zinc-500">{index + 1}</span>
                             </label>
                             <input readOnly value={item.line.maAmis || item.line.productCode || ''} className={autofillReadClass} />
-                            <input readOnly value={item.line.tenGhep || item.line.productionName || ''} className={autofillReadClass} />
+                            <input readOnly value={canonicalTenSanXuat({ rawName: item.line.tenGhep || item.line.productionName || '', code: item.line.maAmis || item.line.productCode || '', lengthText: item.line.daiM, widthText: item.line.kho, doLiDm: item.line.doLiDm })} className={autofillReadClass} />
                             <input readOnly value={item.line.unit || ''} className={`${autofillReadClass} text-center`} />
                             <input readOnly value={item.line.daiM || ''} className={`${autofillReadClass} text-right`} />
                             <input readOnly value={item.line.kho || ''} className={`${autofillReadClass} text-right`} />
@@ -1911,7 +2011,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                         />
                         {thua ? (
                           <CutResultRow
-                            label={item.di_tai_che ? 'Thừa (tái chế)' : 'Còn lại'}
+                            label={item.di_tai_che ? 'Thừa (tái chế)' : item.san_pham_cat_3 ? 'Còn lại 1' : 'Còn lại'}
                             tone="rest"
                             code={String(thua.ma_amis || '') || nguonCode}
                             productName={String(nguon.ten_goc || '')}
@@ -1922,7 +2022,22 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                             kg={Number(thua.kg) || 0}
                             m2={Number(thua.m2) || 0}
                           />
-                        ) : (
+                        ) : null}
+                        {item.san_pham_cat_3 ? (
+                          <CutResultRow
+                            label={item.di_tai_che ? 'Thừa (tái chế)' : 'Còn lại 2'}
+                            tone="rest"
+                            code={String(item.san_pham_cat_3.ma_amis || '') || nguonCode}
+                            productName={String(nguon.ten_goc || '')}
+                            productionName={String(item.san_pham_cat_3.ten_sp || '')}
+                            qty={Number(nguon.so_luong) || 0}
+                            doLi={String(item.san_pham_cat_3.do_li || '')}
+                            dai={String(item.san_pham_cat_3.do_dai_m || '') || (Number(item.san_pham_cat_3.m_dai) > 0 ? `${fmtQty(Number(item.san_pham_cat_3.m_dai))}m` : '')}
+                            kg={Number(item.san_pham_cat_3.kg) || 0}
+                            m2={Number(item.san_pham_cat_3.m2) || 0}
+                          />
+                        ) : null}
+                        {!thua && !item.san_pham_cat_3 ? (
                           <CutResultRow
                             label="Còn lại"
                             tone="none"
@@ -1935,7 +2050,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                             kg={0}
                             m2={0}
                           />
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   </section>

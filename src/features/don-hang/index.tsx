@@ -47,7 +47,7 @@ import {
   type StaffOption,
   type CustomerOption
 } from '../_shared/orderHelpers';
-import { extractDoLiDmNumber, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, normalizeDoLiDm, seedProductionSpecs } from '../../utils/productProductionName';
+import { extractDoLiDm, extractDoLiDmNumber, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, replaceMangInName, normalizeDoLiDm, seedProductionSpecs } from '../../utils/productProductionName';
 import {
   orderDuplicateDecimalText,
   parseSouthDinhMucKg,
@@ -97,7 +97,7 @@ interface OrderRowExt extends OrderRow {
 const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1340px]';
 const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1580px]';
 const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2360px]';
-const ORDER_MIEN_NAM_TABLE_MIN_WIDTH = 'min-w-[2640px]';
+const ORDER_MIEN_NAM_TABLE_MIN_WIDTH = 'min-w-[2740px]';
 export const PRODUCTION_ORDER_TYPE = 'Đơn sản xuất';
 const orderProductGridClass =
   'grid-cols-[7rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(12rem,1.35fr)_minmax(7rem,0.9fr)_5rem_5.5rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
@@ -106,7 +106,7 @@ const orderProductionProductGridClass =
 const orderSouthProductGridClass =
   'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_6rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const orderMienNamProductGridClass =
-  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_6rem_8.5rem_6.5rem_7rem_5.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_6rem_8.5rem_6.5rem_7rem_5.5rem_4.5rem_5rem_6rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
 const CUSTOMER_ENTERED_KG_SOURCE = 'khach_hang_nhap_kg';
 /** Ô Tìm Mã AMIS: hiện tối đa 400 kết quả đã lọc. Các Select khác vẫn mặc định 50. */
@@ -229,6 +229,8 @@ export type OrderProductFormLine = {
   doLiDm?: string;
   kho?: string;
   daiM: string;
+  /** Màng: default SUN PC cho đơn miền nam (có thể sửa/xóa). */
+  mang?: string;
   /** Đơn cắt lẻ + miền nam: loại tem + màu tem + 2 Đầu. */
   tem?: string;
   mauTem?: string;
@@ -293,6 +295,7 @@ export function newOrderProductFormLine(): OrderProductFormLine {
     slTrung: '',
     slNam: '',
     daiM: '',
+    mang: 'SUN PC',
     manualTongKg: false,
     shouldRecalculateConversion: false,
     note: ''
@@ -660,6 +663,7 @@ export function orderProductLinesToPayload(
             mo_ta_tem: moTaTem || undefined,
             ...(isSouthOrder
               ? {
+                  mang: line.mang !== undefined ? line.mang.trim() : 'SUN PC',
                   do_dai_tam_tieu_chuan: parsePercentInput(String(line.doDaiTamTieuChuan ?? '')) || undefined,
                   dinh_muc_tieu_chuan_kg: parsePercentInput(String(line.dinhMucTieuChuanKg ?? '')) || undefined
                 }
@@ -715,6 +719,9 @@ export function orderProductLinesToPayload(
       const doLiDiffersForCode =
         Boolean(doLiLine && variantSpecs?.doLi) &&
         normalizeDoLiToken(doLiLine) !== normalizeDoLiToken(variantSpecs?.doLi || '');
+      const lineMang = isSouthOrder
+        ? (line.mang !== undefined ? line.mang.trim() : 'SUN PC')
+        : (line.mang?.trim() || variantSpecs?.mang || undefined);
       const maAmisMoiValue =
         isCutLikeOrder &&
         (selectedProduct?.code || productCode) &&
@@ -726,6 +733,7 @@ export function orderProductLinesToPayload(
           temValue ||
           mauTemValue ||
           danTem2DauValue ||
+          lineMang ||
           variantSpecs?.mang)
           ? (isSouthOrder ? buildMaAmisMoi : buildCutAmisCodeFull)({
               baseMaAmis: selectedProduct?.code || productCode,
@@ -735,7 +743,7 @@ export function orderProductLinesToPayload(
               doLi: doLiDiffersForCode ? doLiLine : undefined,
               doLiDm: doLiDmValue || undefined,
               hangPhe: variantSpecs?.hangPhe || undefined,
-              mang: variantSpecs?.mang || undefined,
+              mang: lineMang || variantSpecs?.mang || undefined,
               tem: temValue || undefined,
               mauTem: mauTemValue || undefined,
               danTem2Dau: danTem2DauValue || undefined,
@@ -753,7 +761,12 @@ export function orderProductLinesToPayload(
         // Đơn cắt lẻ / miền nam: thay đúng token m dài chính thành mét cắt
         // (tránh "...6m - 8m" khi m dài không đứng cuối).
         // Đơn cắt lẻ / miền nam: thay segment (đm n li|kg) theo định mức thực tế, giữ nguyên token do_li.
-        if (catalogTenGhep && (!tenSanXuat || tenSanXuat === catalogProductionName)) {
+        const isMatchingCatalog = catalogTenGhep && (
+          !tenSanXuat ||
+          tenSanXuat === catalogProductionName ||
+          (isSouthOrder && replaceMangInName(tenSanXuat, '') === replaceMangInName(catalogProductionName, ''))
+        );
+        if (isMatchingCatalog) {
           let base = cutLength != null
             ? replaceCutLengthMeters(catalogTenGhep, cutLength, mainForCut)
             : catalogTenGhep;
@@ -768,13 +781,17 @@ export function orderProductLinesToPayload(
           if (doLiDmValue) {
             base = replaceDoLiDmInTenGhep(base, doLiDmValue, 'li');
           }
+          if (isSouthOrder && lineMang !== undefined) {
+            base = replaceMangInName(base, lineMang, variantSpecs?.mang);
+          }
           return isCutLikeOrder ? appendSouthTemToTenGhep(base, temValue, mauTemValue, danTem2DauValue) : base;
         }
         let tenGhep = buildOrderTenGhep(tenSanXuat, {
           nhomVthh: selectedProduct?.group,
           maAmis: selectedProduct?.newCode,
           cutLengthM: cutLength,
-          doLiDm: doLiDmValue || undefined
+          doLiDm: doLiDmValue || undefined,
+          mang: isSouthOrder ? lineMang : undefined
         });
         if (tenGhep && widthDiffersForCode) {
           tenGhep = replaceCutWidthMeters(
@@ -792,7 +809,10 @@ export function orderProductLinesToPayload(
         const storedConversionResults = line.conversionResults
           ?.filter(result => result.unit && Number.isFinite(result.value))
           .map(result => ({ don_vi: result.unit, gia_tri: result.value }));
-        const tenSanXuat = line.productionName.trim() || '';
+        const rawTenSanXuat = line.productionName.trim() || '';
+        const tenSanXuat = isSouthOrder && lineMang !== undefined
+          ? replaceMangInName(rawTenSanXuat, lineMang, variantSpecs?.mang)
+          : rawTenSanXuat;
         const quyCachMDaiStored = Number.isFinite(daiM) && daiM > 0
           ? daiM
           : Number.isFinite(Number(line.quyCachMDai)) && Number(line.quyCachMDai) > 0
@@ -921,8 +941,11 @@ export function orderProductLinesToPayload(
         cutResults.push({ don_vi: 'm dài', gia_tri: cutMDai });
       }
 
-      const tenSanXuat =
+      const rawTenSanXuat =
         line.productionName.trim() || selectedProduct?.productionName || resolved.productionName || '';
+      const tenSanXuat = isSouthOrder && lineMang !== undefined
+        ? replaceMangInName(rawTenSanXuat, lineMang, variantSpecs?.mang)
+        : rawTenSanXuat;
       const tenGhep = resolveTenGhep(tenSanXuat, quyCachMDai);
 
       return {
@@ -1000,6 +1023,7 @@ export function orderToForm(order: OrderRow): OrderFormState {
     slNam: keepRegionQty ? orderDuplicateDecimalText(line.soLuongNam || '') : '',
     daiM: orderDuplicateDecimalText(line.daiM || ''),
     kho: orderDuplicateDecimalText(line.kho || ''),
+    mang: line.mang !== undefined ? orderCellToInput(line.mang) : (orderType === SOUTH_ORDER_TYPE ? 'SUN PC' : ''),
     doDaiTamTieuChuan: orderDuplicateDecimalText(line.doDaiTamTieuChuan || ''),
     dinhMucTieuChuanKg: orderDuplicateDecimalText(line.dinhMucTieuChuanKg || ''),
     doLi: orderDuplicateDecimalText(line.doLi || ''),
@@ -1256,53 +1280,107 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   }, [orders, productOptions]);
 
   /** Mọi tên sản xuất của đúng mã AMIS (không lọc thêm theo Tên SP để không sót variant). */
-  const getProductionNameOptions = (productCode: string, productionName = '') =>
-    listProductionNamesByCode(productOptions, productCode, productionName);
+  const getProductionNameOptions = (productCode: string, productionName = '') => {
+    const list = listProductionNamesByCode(productOptions, productCode, productionName);
+    const trimmed = productionName.trim();
+    if (trimmed && !list.includes(trimmed)) {
+      return [trimmed, ...list];
+    }
+    return list;
+  };
 
   const pickProductionName = (key: string, productionName: string) => {
-    setOrderForm(prev => ({
-      ...prev,
-      productLines: prev.productLines.map(line => {
-        if (line.key !== key) return line;
-        const nextLine = { ...line, productionName, shouldRecalculateConversion: true };
-        const picked = productionName.trim();
-        if (!picked) {
-          // Re-resolve from the visible identity. Do not fall back to the old ID:
-          // clearing/changing the production name must also clear stale conversion data.
-          const match = resolveOrderLineProduct(productOptions, { ...nextLine, productId: '' });
-          return match
-            ? {
-                ...nextLine,
-                productId: match.id,
-                // Production name is optional. Clearing it must not replace the
-                // AMIS code/name already visible on the order line.
-                productCode: nextLine.productCode,
-                productName: nextLine.productName || match.name,
-                productionName: ''
-              }
-            : { ...nextLine, productId: '' };
-        }
-        // Tìm đúng dòng danh mục theo (mã + tên sản xuất) để lưu đúng sản phẩm,
-        // kể cả khi tên SX thuộc variant Tên SP khác với dòng đang hiển thị.
-        const match: OrderProductOption | null = matchOrderProductByCodeAndProductionName(
-          productOptions,
-          line.productCode,
-          productionName,
-          line.productId,
-          line.productName
-        );
-        return match
-          ? {
-              ...nextLine,
-              productId: match.id,
-              // Lấy mã chuẩn của đúng dòng danh mục (chữa luôn mã cũ đã đổi trên dòng đơn).
-              productCode: match.code || nextLine.productCode,
-              productName: match.name || nextLine.productName,
-              productionName: match.productionName
-            }
-          : { ...nextLine, productId: '' };
-      })
-    }));
+    setOrderForm(prev => {
+      const isSouthOrder = prev.orderType === SOUTH_ORDER_TYPE;
+      return {
+        ...prev,
+        productLines: prev.productLines.map(line => {
+          if (line.key !== key) return line;
+          const nextLine = { ...line, productionName, shouldRecalculateConversion: true };
+          const picked = productionName.trim();
+          if (!picked) {
+            // Re-resolve from the visible identity. Do not fall back to the old ID:
+            // clearing/changing the production name must also clear stale conversion data.
+            const match = resolveOrderLineProduct(productOptions, { ...nextLine, productId: '' });
+            return match
+              ? {
+                  ...nextLine,
+                  productId: match.id,
+                  // Production name is optional. Clearing it must not replace the
+                  // AMIS code/name already visible on the order line.
+                  productCode: nextLine.productCode,
+                  productName: nextLine.productName || match.name,
+                  productionName: ''
+                }
+              : { ...nextLine, productId: '' };
+          }
+          // Tìm đúng dòng danh mục theo (mã + tên sản xuất) để lưu đúng sản phẩm,
+          // kể cả khi tên SX thuộc variant Tên SP khác với dòng đang hiển thị.
+          const match: OrderProductOption | null = matchOrderProductByCodeAndProductionName(
+            productOptions,
+            line.productCode,
+            productionName,
+            line.productId,
+            line.productName
+          );
+          if (!match) {
+            return { ...nextLine, productId: '' };
+          }
+
+          const baseUpdated: OrderProductFormLine = {
+            ...nextLine,
+            productId: match.id,
+            // Lấy mã chuẩn của đúng dòng danh mục (chữa luôn mã cũ đã đổi trên dòng đơn).
+            productCode: match.code || nextLine.productCode,
+            productName: match.name || nextLine.productName,
+            productionName: match.productionName
+          };
+
+          if (!isSouthOrder) {
+            return baseUpdated;
+          }
+
+          // Đối với đơn hàng miền nam, tự động fill các cột phía sau nếu có:
+          const conversion = productConversions.find(item => item.sanPhamId === match.id);
+          const parsedTem = parseSouthTemFromTenGhep(match.tenGhep || match.productionName);
+          const extractedMang = match.mang || extractMang(match.productionName);
+
+          const autoMang = extractedMang || line.mang || 'SUN PC';
+          const autoUnit = match.unit || line.unit || 'Tấm';
+
+          const rawDaiM = match.doDaiM ? String(match.doDaiM).replace(/m\s*$/iu, '').trim() : '';
+          const autoDaiM = rawDaiM || (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '') || line.daiM;
+
+          const rawKho = match.doDayM ? String(match.doDayM).replace(/m\s*$/iu, '').trim() : '';
+          const autoKho = rawKho || (conversion?.khoTamRongM ? String(conversion.khoTamRongM) : '') || line.kho;
+
+          const rawDoLiDm = extractDoLiDmNumber(match.doLiDm || '') || extractDoLiDmNumber(extractDoLiDm(match.productionName) || '');
+          const autoDoLiDm = rawDoLiDm || line.doLiDm;
+
+          const autoDoDaiTamTieuChuan = (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '')
+            || rawDaiM
+            || line.doDaiTamTieuChuan;
+
+          const autoDinhMucTieuChuanKg = (conversion?.trongLuongKgTam ? String(conversion.trongLuongKgTam) : '')
+            || (match.totalWeight ? String(match.totalWeight) : '')
+            || line.dinhMucTieuChuanKg;
+
+          return {
+            ...baseUpdated,
+            mang: autoMang,
+            unit: autoUnit,
+            daiM: orderDuplicateDecimalText(autoDaiM || ''),
+            kho: orderDuplicateDecimalText(autoKho || ''),
+            doLiDm: orderDuplicateDecimalText(autoDoLiDm || ''),
+            doDaiTamTieuChuan: orderDuplicateDecimalText(autoDoDaiTamTieuChuan || ''),
+            dinhMucTieuChuanKg: orderDuplicateDecimalText(autoDinhMucTieuChuanKg || ''),
+            tem: parsedTem.tem || line.tem || '',
+            mauTem: parsedTem.mauTem || line.mauTem || SOUTH_TEM_COLOR_DEFAULT,
+            danTem2Dau: parsedTem.tem ? parsedTem.danTem2Dau : (line.danTem2Dau ?? false)
+          };
+        })
+      };
+    });
   };
 
   /** Ô Tên sản xuất: dropdown mở ngược lên trên, mục đang chọn viền vàng/chữ vàng đậm trên nền vàng. */
@@ -1398,6 +1476,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       slTrung: comma(source.slTrung),
       slNam: comma(source.slNam),
       daiM: comma(source.daiM),
+      mang: source.mang !== undefined ? String(source.mang) : 'SUN PC',
       doLi: comma(source.doLi),
       doLiDm: comma(source.doLiDm),
       dinhMucKg: comma(source.dinhMucKg),
@@ -1460,17 +1539,42 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
   const pickCutOrderProduct = (key: string, productId: string) => {
     const match = findOrderProductById(productOptions, productId);
+    const isSouthOrder = orderForm.orderType === SOUTH_ORDER_TYPE;
+    const conversion = productId ? productConversions.find(item => item.sanPhamId === productId) : undefined;
+    const parsedTem = isSouthOrder && match ? parseSouthTemFromTenGhep(match.tenGhep || match.productionName) : null;
+    const extractedMang = isSouthOrder && match ? (match.mang || extractMang(match.productionName)) : '';
+
+    const rawDaiM = match?.doDaiM ? String(match.doDaiM).replace(/m\s*$/iu, '').trim() : '';
+    const autoDaiM = rawDaiM || (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '');
+
+    const rawKho = String(match?.doDayM || '').replace(/m\s*$/iu, '').trim();
+    const autoKho = rawKho || (conversion?.khoTamRongM ? String(conversion.khoTamRongM) : '');
+
+    const rawDoLiDm = extractDoLiDmNumber(match?.doLiDm || '') || (match?.productionName ? extractDoLiDmNumber(extractDoLiDm(match.productionName) || '') : '');
+
+    const autoDoDaiTamTieuChuan = (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '') || rawDaiM;
+    const autoDinhMucTieuChuanKg = (conversion?.trongLuongKgTam ? String(conversion.trongLuongKgTam) : '') || (match?.totalWeight ? String(match.totalWeight) : '');
+
     updateConversionProductLine(key, {
       productId,
       productCode: match?.code || '',
       productName: match?.name || '',
       productionName: match?.productionName || '',
       unit: 'Tấm',
-      kho: orderDuplicateDecimalText(String(match?.doDayM || '').replace(/m\s*$/iu, '')),
-      doLiDm: orderDuplicateDecimalText(extractDoLiDmNumber(match?.doLiDm || '')),
+      kho: orderDuplicateDecimalText(autoKho || ''),
+      doLiDm: orderDuplicateDecimalText(rawDoLiDm || ''),
       tongKg: '',
       dinhMucKg: '',
-      manualTongKg: false
+      manualTongKg: false,
+      ...(isSouthOrder ? {
+        mang: extractedMang || 'SUN PC',
+        daiM: orderDuplicateDecimalText(autoDaiM || ''),
+        doDaiTamTieuChuan: orderDuplicateDecimalText(autoDoDaiTamTieuChuan || ''),
+        dinhMucTieuChuanKg: orderDuplicateDecimalText(autoDinhMucTieuChuanKg || ''),
+        tem: parsedTem?.tem || '',
+        mauTem: parsedTem?.mauTem || SOUTH_TEM_COLOR_DEFAULT,
+        danTem2Dau: Boolean(parsedTem?.danTem2Dau)
+      } : {})
     });
   };
 
@@ -2041,6 +2145,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'nam', label: 'Nam' },
                         { key: 'qty', label: 'SL (tổng)', required: true },
                         { key: 'tongKg', label: 'Tổng KG' },
+                        { key: 'mang', label: 'Màng' },
                         { key: 'tem', label: 'Tem' },
                         { key: 'mauTem', label: 'Màu tem' },
                         { key: 'haiDau', label: '2 Đầu' },
@@ -2345,6 +2450,28 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             placeholder={isFormSouthOrder ? 'Tự tính' : 'Nhập KG'}
                           />
                         </div>
+                        {isFormSouthOrder ? (
+                          <div className="col-span-1 min-w-0">
+                            <input
+                              type="text"
+                              value={line.mang ?? 'SUN PC'}
+                              onChange={e => {
+                                const nextMang = e.target.value;
+                                const currentMang = line.mang ?? 'SUN PC';
+                                const nextProductionName = line.productionName
+                                  ? replaceMangInName(line.productionName, nextMang, currentMang)
+                                  : line.productionName;
+                                updateConversionProductLine(line.key, {
+                                  mang: nextMang,
+                                  productionName: nextProductionName
+                                });
+                              }}
+                              className={orderFieldClass}
+                              placeholder="SUN PC"
+                              title="Màng (mặc định SUN PC, có thể xóa hoặc sửa)"
+                            />
+                          </div>
+                        ) : null}
                         <div className="min-w-0">
                           <SearchableSelect
                             value={line.tem || ''}

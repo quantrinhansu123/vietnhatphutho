@@ -110,6 +110,14 @@ export interface CatLeResult {
   doLiThua: string;
   doDayMThua: string;
   doDaiMThua: string;
+  /** Phần thừa thứ 2 (khi hạ cả 2 chiều: mẩu dôi ra theo chiều dài của dải TP). */
+  tenSpThua2?: string;
+  kgThua2?: number;
+  m2Thua2?: number;
+  mDaiThua2?: number;
+  doLiThua2?: string;
+  doDayMThua2?: string;
+  doDaiMThua2?: string;
   diTaiChe: boolean;
   /** True = nguồn thiếu số, kg cắt lấy từ cân tay. */
   tuCanTay: boolean;
@@ -161,6 +169,8 @@ export interface CatLeSanPhamLine {
   san_pham_nguon: CatLeSanPhamNguon;
   san_pham_cat_1: CatLePiece;
   san_pham_cat_2: CatLePiece | null;
+  /** Sản phẩm cắt thừa thứ 2 khi hạ cả 2 chiều (khổ cắt × (dài nguồn − dài cắt)). */
+  san_pham_cat_3?: CatLePiece | null;
   kieu_cat: CatLeKieu;
   di_tai_che: boolean;
   ghi_chu: string;
@@ -395,14 +405,24 @@ export function computeCatLe(
   const a2 = w2 * l2;
   const tongConArea = a2 * pieces;
   if (tongConArea > a1 + EPS) throw new Error(`Tổng diện tích ${pieces} TP vượt diện tích nguồn.`);
+  const isCaHai = kieuCat === 'ca_hai';
   const aThua = Math.max(0, a1 - tongConArea);
   // Phần còn lại giữ độ li nguồn nên kg theo diện tích thừa. Kg cân tay thì lấy phần nguồn trừ tổng cân.
-  const kgThua = coCanTay ? Math.max(0, kg1 - kg2 * pieces) : (kg1 * Math.max(0, a1 - tongConArea)) / a1;
+  const totalKgThua = coCanTay ? Math.max(0, kg1 - kg2 * pieces) : (kg1 * aThua) / a1;
 
   // Khổ còn lại = khổ nguồn − N*khổ cắt (xẻ khổ) / dài còn lại = dài nguồn − N*dài cắt (cắt tấm).
-  // Hạ cả hai chiều vẫn giữ m dài nguồn (không gộp thành khổ tương đương).
-  const wThua = kieuCat === 'cat_tam' ? w1 : kieuCat === 'xe_kho' ? Math.max(0, w1 - w2 * pieces) : w1 - w2;
+  // Hạ cả hai chiều:
+  // - Phần thừa 1 (dải dọc): khổ (w1 - w2) x m dài nguồn l1.
+  // - Phần thừa 2 (phần đuôi dôi ra của dải TP): khổ w2 x (l1 - l2).
+  const wThua = kieuCat === 'cat_tam' ? w1 : kieuCat === 'xe_kho' ? Math.max(0, w1 - w2 * pieces) : Math.max(0, w1 - w2);
   const lThua = kieuCat === 'cat_tam' ? Math.max(0, l1 - l2 * pieces) : l1;
+  const mDaiThua = isCaHai || kieuCat === 'xe_kho' ? l1 : round3(Math.max(0, l1 - l2 * pieces));
+  const aThua1 = isCaHai ? wThua * mDaiThua : aThua;
+
+  const wThua2 = isCaHai ? w2 : 0;
+  const mDaiThua2 = isCaHai ? round3(Math.max(0, l1 - l2)) : 0;
+  const aThua2 = isCaHai ? wThua2 * mDaiThua2 : 0;
+
   const nhomVthh = String(options.nhomVthh ?? '').trim();
   const keptDm = String(input.doLiDmGiu || '').trim();
   const doLiDmCon = keptDm || (doiDoLi ? calculateDoLiDm(doLiCon, nhomVthh) || mother.doLiDm : mother.doLiDm);
@@ -433,10 +453,10 @@ export function computeCatLe(
   // Sóng không có khổ mét: thay đúng token dài trong tên gốc (6M → 2m), không chèn khổ 1m giả.
   const replacedCon = !widthLabeled && !doiDoLi ? replaceLastLengthMeter(mother.tenSp, l1, doDaiMCon) : '';
   const tenSpCon = withMoTaTem(replacedCon || composedCon);
-  const mDaiThua = kieuCat === 'xe_kho' || kieuCat === 'ca_hai' ? l1 : round3(Math.max(0, l1 - l2 * pieces));
+
   // Thừa quá vụn (cả 2 chiều ~0, hoặc chỉ đổi độ li) thì không sinh tên thừa.
   // Vừa khít (20m = 2x10m) thì aThua ~0 → không sinh thừa.
-  const conThua = wThua > EPS && lThua > EPS && aThua > EPS;
+  const conThua = wThua > EPS && lThua > EPS && aThua1 > EPS;
   const doDayMThua = conThua && widthLabeled ? formatMeterLabel(wThua) : '';
   const doDaiMThua = conThua ? formatMeterLabel(mDaiThua) : '';
   const replacedThua = conThua && !widthLabeled ? replaceLastLengthMeter(mother.tenSp, l1, doDaiMThua) : '';
@@ -446,6 +466,24 @@ export function computeCatLe(
         nhomVthh
       ))
     : '';
+
+  const conThua2 = isCaHai && wThua2 > EPS && mDaiThua2 > EPS && aThua2 > EPS;
+  const doDayMThua2 = conThua2 && widthLabeled ? formatMeterLabel(wThua2) : '';
+  const doDaiMThua2 = conThua2 ? formatMeterLabel(mDaiThua2) : '';
+  const replacedThua2 = conThua2 && !widthLabeled ? replaceLastLengthMeter(mother.tenSp, l1, doDaiMThua2) : '';
+  const tenSpThua2 = conThua2
+    ? withMoTaTem(replacedThua2 || composeProductionDisplayName(
+        { ...baseSpecs, doDayM: doDayMThua2, doDaiM: doDaiMThua2 },
+        nhomVthh
+      ))
+    : '';
+
+  const kgThua1 = conThua
+    ? round3(isCaHai ? (coCanTay && aThua > EPS ? (totalKgThua * aThua1) / aThua : (kg1 * aThua1) / a1) : totalKgThua)
+    : 0;
+  const kgThua2 = conThua2
+    ? round3(coCanTay && aThua > EPS ? (totalKgThua * aThua2) / aThua : (kg1 * aThua2) / a1)
+    : 0;
   const diTaiChe = false;
 
   return {
@@ -461,12 +499,19 @@ export function computeCatLe(
     doDaiMCon,
     doLiDmCon,
     tenSpThua,
-    kgThua: conThua ? round3(kieuCat === 'ca_hai' && !coCanTay ? (kg1 * wThua * lThua) / a1 : kgThua) : 0,
-    m2Thua: conThua ? round3(kieuCat === 'ca_hai' ? wThua * lThua : aThua) : 0,
+    kgThua: kgThua1,
+    m2Thua: conThua ? round3(aThua1) : 0,
     mDaiThua: conThua ? round3(mDaiThua) : 0,
     doLiThua: conThua ? mother.doLi : '',
     doDayMThua,
     doDaiMThua,
+    tenSpThua2: conThua2 ? tenSpThua2 : undefined,
+    kgThua2: conThua2 ? kgThua2 : undefined,
+    m2Thua2: conThua2 ? round3(aThua2) : undefined,
+    mDaiThua2: conThua2 ? round3(mDaiThua2) : undefined,
+    doLiThua2: conThua2 ? mother.doLi : undefined,
+    doDayMThua2: conThua2 ? doDayMThua2 : undefined,
+    doDaiMThua2: conThua2 ? doDaiMThua2 : undefined,
     diTaiChe,
     tuCanTay: coCanTay
   };
@@ -558,6 +603,18 @@ export function buildCatLeSanPhamLine(args: {
         do_dai_m: computed.doDaiMThua
       }
     : null;
+  const cat3: CatLePiece | null = computed.tenSpThua2
+    ? {
+        ten_sp: computed.tenSpThua2,
+        kg: computed.kgThua2 ?? 0,
+        m2: computed.m2Thua2 ?? 0,
+        m_dai: computed.mDaiThua2 ?? 0,
+        do_li: computed.doLiThua2 ?? '',
+        do_li_dm: mother.doLiDm,
+        do_day_m: computed.doDayMThua2 ?? '',
+        do_dai_m: computed.doDaiMThua2 ?? ''
+      }
+    : null;
   // Mã AMIS mới cho SP cắt / phần thừa (giữ mã gốc truy vết).
   const baseAmis = String(mother.maAmis || mother.maSp || '').trim();
   const originCu = resolveOriginMaCu(args.originMaCu, baseAmis);
@@ -602,6 +659,23 @@ export function buildCatLeSanPhamLine(args: {
           tenSanXuat: computed.tenSpThua
         })
       : '';
+  const moiThua2 =
+    cat3 != null
+      ? variantCodeForCatPiece({
+          baseMaAmis: baseAmis,
+          nhomVthh: groupName,
+          motherDaiM: mother.doDaiM,
+          pieceDaiM: computed.doDaiMThua2,
+          motherWidthM: sourceWidth,
+          pieceWidthM: parseMeterLabel(computed.doDayMThua2),
+          motherLi: mother.doLi,
+          pieceLi: computed.doLiThua2,
+          mang: mother.mang,
+          hangPhe: mother.hangPhe,
+          doLiDm: mother.doLiDm,
+          tenSanXuat: computed.tenSpThua2
+        })
+      : '';
   return {
     san_pham_nguon: {
       id_san_pham_trong_kho: String(args.idSanPhamTrongKho || '').trim(),
@@ -639,6 +713,13 @@ export function buildCatLeSanPhamLine(args: {
         ? {
             ...cat2,
             ...(moiThua ? { ma_amis: moiThua, ma_amis_cu: originCu } : {})
+          }
+        : null,
+    san_pham_cat_3:
+      cat3 != null
+        ? {
+            ...cat3,
+            ...(moiThua2 ? { ma_amis: moiThua2, ma_amis_cu: originCu } : {})
           }
         : null,
     kieu_cat: computed.kieuCat,
@@ -776,6 +857,8 @@ export function normalizeCatLeSanPhamLine(raw: unknown): CatLeSanPhamLine | null
     ) as Record<string, unknown>;
     const cat2raw = row.san_pham_cat_2;
     const cat2 = cat2raw && typeof cat2raw === 'object' ? catLePiece(cat2raw as Record<string, unknown>) : null;
+    const cat3raw = row.san_pham_cat_3;
+    const cat3 = cat3raw && typeof cat3raw === 'object' ? catLePiece(cat3raw as Record<string, unknown>) : null;
     const piece = catLePiece(nguon);
     const qtyMe = catLeNum(nguon.so_luong);
     const pieces = parsePiecesValue(
@@ -798,6 +881,7 @@ export function normalizeCatLeSanPhamLine(raw: unknown): CatLeSanPhamLine | null
       },
       san_pham_cat_1: catLePiece(cat1),
       san_pham_cat_2: cat2 && cat2.ten_sp ? cat2 : null,
+      san_pham_cat_3: cat3 && cat3.ten_sp ? cat3 : null,
       kieu_cat: (catLeText(row.kieu_cat) || 'cat_tam') as CatLeKieu,
       di_tai_che: Boolean(row.di_tai_che),
       ghi_chu: catLeText(row.ghi_chu),
@@ -859,6 +943,7 @@ export function normalizeCatLeSanPhamLine(raw: unknown): CatLeSanPhamLine | null
           do_dai_m: catLeText(row.do_dai_m_con_lai)
         }
       : null,
+    san_pham_cat_3: null,
     kieu_cat: (catLeText(row.kieu_cat) || 'cat_tam') as CatLeKieu,
     di_tai_che: Boolean(row.di_tai_che),
     ghi_chu: catLeText(row.ghi_chu),
@@ -987,8 +1072,8 @@ export function buildCatLePrintSlips(lenh: {
       line.san_pham_cat_1.kg
     )
   );
-  const conLai = lines.filter(line => line.san_pham_cat_2 && !line.di_tai_che);
-  const taiChe = lines.filter(line => line.san_pham_cat_2 && line.di_tai_che);
+  const conLai = lines.filter(line => (line.san_pham_cat_2 || line.san_pham_cat_3) && !line.di_tai_che);
+  const taiChe = lines.filter(line => (line.san_pham_cat_2 || line.san_pham_cat_3) && line.di_tai_che);
   const maXuat = slipCode(lenh.ma_phieu_xuat);
   if (maXuat && xuatLines.length > 0) {
     slips.push({
@@ -1025,27 +1110,61 @@ export function buildCatLePrintSlips(lenh: {
       note: `Nhập ${khoNguon} — sản phẩm còn lại`,
       warehouseName: khoNguon,
       createdBy: nguoi,
-      lines: conLai.map(line =>
-        slipLineFromProduct(
-          line.san_pham_nguon.ma_sp,
-          line.san_pham_cat_2?.ten_sp || '',
-          line.san_pham_nguon.don_vi,
-          line.san_pham_nguon.so_luong,
-          line.san_pham_cat_2?.kg || 0
-        )
-      )
+      lines: conLai.flatMap(line => {
+        const out: CatLePrintLine[] = [];
+        if (line.san_pham_cat_2) {
+          out.push(
+            slipLineFromProduct(
+              line.san_pham_nguon.ma_sp,
+              line.san_pham_cat_2.ten_sp || '',
+              line.san_pham_nguon.don_vi,
+              line.san_pham_nguon.so_luong,
+              line.san_pham_cat_2.kg || 0
+            )
+          );
+        }
+        if (line.san_pham_cat_3) {
+          out.push(
+            slipLineFromProduct(
+              line.san_pham_nguon.ma_sp,
+              line.san_pham_cat_3.ten_sp || '',
+              line.san_pham_nguon.don_vi,
+              line.san_pham_nguon.so_luong,
+              line.san_pham_cat_3.kg || 0
+            )
+          );
+        }
+        return out;
+      })
     });
   }
   if (taiChe.length > 0 && (preview || lenh.ma_phieu_nhap_tai_che)) {
-    const ckLines = taiChe.map(line =>
-      slipLineFromProduct(
-        line.san_pham_nguon.ma_sp,
-        line.san_pham_cat_2?.ten_sp || '',
-        line.san_pham_nguon.don_vi,
-        line.san_pham_nguon.so_luong,
-        line.san_pham_cat_2?.kg || 0
-      )
-    );
+    const ckLines = taiChe.flatMap(line => {
+      const out: CatLePrintLine[] = [];
+      if (line.san_pham_cat_2) {
+        out.push(
+          slipLineFromProduct(
+            line.san_pham_nguon.ma_sp,
+            line.san_pham_cat_2.ten_sp || '',
+            line.san_pham_nguon.don_vi,
+            line.san_pham_nguon.so_luong,
+            line.san_pham_cat_2.kg || 0
+          )
+        );
+      }
+      if (line.san_pham_cat_3) {
+        out.push(
+          slipLineFromProduct(
+            line.san_pham_nguon.ma_sp,
+            line.san_pham_cat_3.ten_sp || '',
+            line.san_pham_nguon.don_vi,
+            line.san_pham_nguon.so_luong,
+            line.san_pham_cat_3.kg || 0
+          )
+        );
+      }
+      return out;
+    });
     const maNhapCk = slipCode(lenh.ma_phieu_nhap_tai_che);
     if (maNhapCk) {
       slips.push({

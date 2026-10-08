@@ -139,7 +139,7 @@ function splitFirstDash(text: string): { before: string; after: string } {
   return { before: text.slice(0, idx).trim(), after: text.slice(idx + 1).trim() };
 }
 
-function extractMang(tenSanXuat: string): string {
+export function extractMang(tenSanXuat: string): string {
   const match = String(tenSanXuat || '').match(NAME_MANG_RE);
   if (!match) return '';
   const raw = match[1].replace(/\s+/g, ' ').trim().toUpperCase();
@@ -245,6 +245,124 @@ export function replaceDoLiDmInTenGhep(
     return `${text.slice(0, meterMatch.index)} - ${normalized}${text.slice(meterMatch.index)}`.trim();
   }
   return `${text} - ${normalized}`;
+}
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function cleanupNameHyphens(str: string): string {
+  return str
+    .replace(/\s*[-–—]\s*[-–—]\s*/g, ' - ')
+    .replace(/\s*[-–—]\s*(\()/g, ' $1')
+    .replace(/\s*[-–—]\s*$/g, '')
+    .replace(/^\s*[-–—]\s*/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+/**
+ * Đơn miền nam: thay màng trong tên sản xuất hoặc tên ghép.
+ * Nhận diện cả dạng `- SUN PC`, `Màng SUNPC`, hoặc màng tự do theo oldMangHint.
+ * Nếu newMang rỗng -> xóa màng và dọn dẹp các dấu gạch ngang/khoảng trắng thừa.
+ * Nếu trong tên chưa có màng -> chèn trước `(` nếu có, hoặc nối vào cuối `- newMang`.
+ */
+export function replaceMangInName(
+  name: string,
+  newMang?: string | null,
+  oldMangHint?: string | null
+): string {
+  const text = String(name || '').trim();
+  if (!text) return '';
+  const next = String(newMang ?? '').trim();
+  const hint = String(oldMangHint ?? '').trim();
+
+  const candidates: string[] = [];
+  if (hint) {
+    candidates.push(hint);
+    if (/^SUN\s*PC$/i.test(hint)) {
+      candidates.push('SUN PC', 'SUNPC');
+    }
+  }
+  candidates.push('SUN PC', 'SUNPC', 'STANDA', 'STD', 'ECO', 'HA', 'LUX');
+  const uniqueCandidates: string[] = [];
+  for (const c of candidates) {
+    if (!uniqueCandidates.some(u => u.toLowerCase() === c.toLowerCase())) {
+      uniqueCandidates.push(c);
+    }
+  }
+
+  const candidatePattern = uniqueCandidates
+    .map(c => escapeRegex(c).replace(/\\ /g, '\\s*'))
+    .join('|');
+
+  // 1. Khớp có tiền tố "màng": vd "Màng SUNPC", "màng ECO"
+  const withMangPrefixRe = new RegExp(`(\\b(?:màng)\\s+)(${candidatePattern})\\b`, 'iu');
+  const matchPrefix = text.match(withMangPrefixRe);
+  if (matchPrefix && matchPrefix.index != null) {
+    if (next) {
+      const prefix = matchPrefix[1];
+      return (
+        text.slice(0, matchPrefix.index) +
+        `${prefix}${next}` +
+        text.slice(matchPrefix.index + matchPrefix[0].length)
+      ).trim();
+    } else {
+      const before = text.slice(0, matchPrefix.index).trimEnd();
+      const after = text.slice(matchPrefix.index + matchPrefix[0].length).trimStart();
+      return cleanupNameHyphens(`${before} ${after}`);
+    }
+  }
+
+  // 2. Khớp dạng segment sau dấu gạch ngang: vd "- SUN PC", "- ECO"
+  const dashSegmentRe = new RegExp(`(-\\s*)(${candidatePattern})(?=\\s*(?:[-–—(]|$))`, 'iu');
+  const matchDash = text.match(dashSegmentRe);
+  if (matchDash && matchDash.index != null) {
+    if (next) {
+      const dash = matchDash[1];
+      return (
+        text.slice(0, matchDash.index) +
+        `${dash}${next}` +
+        text.slice(matchDash.index + matchDash[0].length)
+      ).trim();
+    } else {
+      const before = text.slice(0, matchDash.index).trimEnd();
+      const after = text.slice(matchDash.index + matchDash[0].length).trimStart();
+      return cleanupNameHyphens(`${before} ${after}`);
+    }
+  }
+
+  // 3. Khớp dạng từ đứng lẻ (bare token): vd "SUN PC", "ECO"
+  const bareTokenRe = new RegExp(`\\b(${candidatePattern})\\b`, 'iu');
+  const matchBare = text.match(bareTokenRe);
+  if (matchBare && matchBare.index != null) {
+    if (next) {
+      return (
+        text.slice(0, matchBare.index) +
+        next +
+        text.slice(matchBare.index + matchBare[0].length)
+      ).trim();
+    } else {
+      const before = text.slice(0, matchBare.index).trimEnd();
+      const after = text.slice(matchBare.index + matchBare[0].length).trimStart();
+      return cleanupNameHyphens(`${before} ${after}`);
+    }
+  }
+
+  // 4. Nếu chưa có màng trong tên:
+  if (!next) {
+    return text;
+  }
+
+  const parenIdx = text.indexOf('(');
+  if (parenIdx >= 0) {
+    const before = text.slice(0, parenIdx).trim().replace(/\s*[-–—]\s*$/, '');
+    const after = text.slice(parenIdx).trim();
+    return `${before} - ${next} ${after}`.trim();
+  }
+
+  const cleanBase = text.replace(/\s*[-–—]\s*$/, '').trim();
+  return `${cleanBase} - ${next}`.trim();
 }
 
 /** Token độ li hợp lệ: …li hoặc …i (vd `10i`) — không phải KG, không phải ZEM. */
@@ -512,6 +630,8 @@ export function buildOrderTenGhep(
     cutLengthM?: number | string | null;
     /** Định mức thực tế `do_li_dm` (đơn miền nam) — ghi đè segment `(đm n li|kg)`, không đổi `do_li`. */
     doLiDm?: string | null;
+    /** Màng (đơn miền nam) — ghi đè segment màng nếu có. */
+    mang?: string | null;
   }
 ): string {
   const nhomVthh = String(options?.nhomVthh || '').trim();
@@ -527,6 +647,9 @@ export function buildOrderTenGhep(
   }
   const doLiDmOverride = normalizeDoLiDm(options?.doLiDm);
   if (doLiDmOverride) overrides.doLiDm = doLiDmOverride;
+  if (options?.mang !== undefined) {
+    overrides.mang = String(options.mang ?? '').trim();
+  }
   if (Object.keys(overrides).length > 0) {
     return composeProductionDisplayName({ ...seeded, ...overrides }, nhomVthh);
   }

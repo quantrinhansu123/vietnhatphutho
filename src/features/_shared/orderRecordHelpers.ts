@@ -94,6 +94,7 @@ export function parseOrderProductsFromRecord(
         const mauTem = pickText(row, ['mau_tem', 'mauTem', 'mau'], '');
         const danTem2DauRaw = row.dan_tem_2_dau ?? row.danTem2Dau ?? row.dan_tem_hai_dau;
         const danTem2Dau = danTem2DauRaw === true || String(danTem2DauRaw || '').trim() === '1' || /2\s*đầu/ui.test(String(danTem2DauRaw || '')) || /Dán Tem 2 Đầu/u.test(tenGhep);
+        const mang = pickText(row, ['mang'], '');
         const unit = formatCell(row.don_vi ?? row.unit);
         const quantity = formatCell(row.so_luong ?? row.quantity);
         const doLi = pickText(row, ['do_li', 'doLi'], '');
@@ -137,6 +138,7 @@ export function parseOrderProductsFromRecord(
           tem: tem || undefined,
           mauTem: mauTem || undefined,
           danTem2Dau: danTem2Dau || undefined,
+          mang: mang || undefined,
           maAmis: pickText(row, ['ma_amis', 'maAmis', 'amisCode'], '') || undefined,
           maAmisCu: pickText(row, ['ma_amis_cu', 'maAmisCu', 'amisOldCode'], '') || undefined,
           unit,
