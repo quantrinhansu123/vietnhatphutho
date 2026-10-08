@@ -79,6 +79,7 @@ test('tạo đơn cắt lẻ 10 SP chính, ghi chú IT test', async ({ playwrigh
   // 2. Tạo đơn (bỏ qua nếu đã có).
   const orderData = await readJson(await api.get(`${APP}/api/don-hang`));
   const orders = (Array.isArray(orderData.orders) ? orderData.orders : []) as Array<Record<string, unknown>>;
+  let savedCode = '';
   if (!orders.some(o => text(o.ma_don_hang) === ORDER_CODE)) {
     const saved = await readJson(
       await api.post(`${APP}/api/don-hang`, {
@@ -105,17 +106,19 @@ test('tạo đơn cắt lẻ 10 SP chính, ghi chú IT test', async ({ playwrigh
       })
     );
     const order = (saved.order || {}) as Record<string, unknown>;
-    log.push(`don-hang: tạo ${text(order.ma_don_hang) || ORDER_CODE} (${picked.length} dòng, ghi chú "${NOTE}")`);
+    savedCode = text(saved.savedOrderCode) || text(order.ma_don_hang) || ORDER_CODE;
+    log.push(`don-hang: tạo ${savedCode} (${picked.length} dòng, ghi chú "${NOTE}")`);
   } else {
+    savedCode = ORDER_CODE;
     log.push(`don-hang: ${ORDER_CODE} đã có, bỏ qua`);
   }
 
-  // 3. Verify.
+  // 3. Verify theo đúng mã server đã lưu (server có thể đánh lại mã khi trùng).
   const verify = await readJson(await api.get(`${APP}/api/don-hang`));
   const found = ((Array.isArray(verify.orders) ? verify.orders : []) as Array<Record<string, unknown>>).find(
-    o => text(o.ma_don_hang) === ORDER_CODE
+    o => text(o.ma_don_hang) === savedCode
   );
-  expect(found, `Phải thấy đơn ${ORDER_CODE}`).toBeTruthy();
+  expect(found, `Phải thấy đơn ${savedCode}`).toBeTruthy();
   const lines = (found!.san_pham || []) as Array<Record<string, unknown>>;
   expect(lines.length, 'Đơn phải có 10 dòng').toBe(10);
   expect(text(found!.ghi_chu), 'Ghi chú đơn phải là IT test').toBe(NOTE);

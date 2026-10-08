@@ -47,7 +47,7 @@ import {
   type StaffOption,
   type CustomerOption
 } from '../_shared/orderHelpers';
-import { extractDoLiDmNumber, buildMaAmisMoi, buildOrderTenGhep, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, normalizeDoLiDm, seedProductionSpecs } from '../../utils/productProductionName';
+import { extractDoLiDmNumber, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, normalizeDoLiDm, seedProductionSpecs } from '../../utils/productProductionName';
 import {
   orderDuplicateDecimalText,
   parseSouthDinhMucKg,
@@ -695,8 +695,8 @@ export function orderProductLinesToPayload(
         catalogMainLength > 0
           ? catalogMainLength
           : undefined;
-      // Mã AMIS mới cho biến thể cắt lẻ / miền nam — sinh từ mã chuẩn gốc +
-      // mét cắt + đm + màng + tem, lưu DB để truy vết về mã gốc (ma_amis_cu).
+      // Mã AMIS mới: miền nam dùng buildMaAmisMoi. Cắt lẻ dùng buildCutAmisCodeFull
+      // (viết tắt từ tên sản xuất + khổ + mét cắt + đm + màng + tem). ma_amis_cu = mã gốc.
       const cutLengthForCode = Number.isFinite(daiM) && daiM > 0 ? daiM : undefined;
       const cutDiffersForCode =
         cutLengthForCode != null &&
@@ -727,7 +727,7 @@ export function orderProductLinesToPayload(
           mauTemValue ||
           danTem2DauValue ||
           variantSpecs?.mang)
-          ? buildMaAmisMoi({
+          ? (isSouthOrder ? buildMaAmisMoi : buildCutAmisCodeFull)({
               baseMaAmis: selectedProduct?.code || productCode,
               nhomVthh: selectedProduct?.group,
               cutLengthM: cutDiffersForCode ? cutLengthForCode : undefined,
@@ -738,7 +738,8 @@ export function orderProductLinesToPayload(
               mang: variantSpecs?.mang || undefined,
               tem: temValue || undefined,
               mauTem: mauTemValue || undefined,
-              danTem2Dau: danTem2DauValue || undefined
+              danTem2Dau: danTem2DauValue || undefined,
+              tenSanXuat: isSouthOrder ? undefined : line.productionName.trim() || catalogProductionName
             })
           : '';
       const variantExtraFields = maAmisMoiValue

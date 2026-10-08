@@ -281,6 +281,30 @@ describe('lenh-cat-le — dòng từ đơn fill thẳng (không bắt hạ)', ()
     assert.equal(String(line.san_pham_cat_1.ma_amis || ''), '');
     assert.equal(line.san_pham_cat_2, null);
   });
+  it('giữ nguyên quy cách vẫn hiện mã đủ viết tắt từ tên sản xuất', () => {
+    const line = buildCatLeSanPhamLine({
+      mother: {
+        ...mother20m,
+        maSp: 'STD06-0.8li*1.22m',
+        maAmis: 'STD06-0.8li*1.22m',
+        tenSp: 'Tấm nhựa đặc màu TRẮNG 8ZEM - 1.22m',
+        doLiDm: '',
+        doDaiM: '30m',
+        l1: 30,
+        a1: 36.6,
+        mang: 'ECO',
+        hangPhe: 'hàng tiêu chuẩn'
+      },
+      qty: 5,
+      w2: 1.22,
+      l2: 30,
+      allowIdentical: true,
+      nhomVthh: 'TP; PX Đặc',
+      tenSanXuat: 'Tấm nhựa đặc màu TRẮNG 8ZEM - 1.22m - 30m hàng tiêu chuẩn - ECO'
+    });
+    assert.equal(line.san_pham_cat_1.ma_amis, 'STD06-TR-8ZEM-0.8li*1.22m-TC-ECO-30m');
+    assert.equal(line.san_pham_cat_1.ma_amis_cu, 'STD06-0.8li*1.22m');
+  });
 });
 
 describe('lenh-cat-le — ma_amis_cu quy về mã gốc đã lưu', () => {
@@ -359,6 +383,6 @@ describe('lenh-cat-le — ma_amis_cu quy về mã gốc đã lưu', () => {
       l1: 30
     };
     const line = buildCatLeSanPhamLine({ mother: dac, qty: 5, w2: 1.22, l2: 12, nhomVthh: 'TP; PX Đặc' });
-    assert.equal(line.san_pham_cat_1.ma_amis, 'PW-DAC-01-1.2li-12m');
+    assert.equal(line.san_pham_cat_1.ma_amis, 'PW-DAC-01-1.2li*1.22m-TC-12m');
   });
 });

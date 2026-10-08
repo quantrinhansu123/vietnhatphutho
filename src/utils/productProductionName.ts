@@ -698,6 +698,11 @@ export interface MaAmisMoiInput {
   tem?: string | null;
   mauTem?: string | null;
   danTem2Dau?: boolean | null;
+  /**
+   * Tên sản xuất (hoặc tên ghép đã hạ khổ/dài). Cắt lẻ rút màu, ZEM, số sóng, kg
+   * thành viết tắt rồi ghép vào mã để mã mang đủ thông tin của tên.
+   */
+  tenSanXuat?: string | null;
 }
 
 /** Hàng phế trong tên → viết tắt trên mã. Không suy ngược từ token NP đã có trong mã gốc. */
@@ -726,6 +731,84 @@ function replaceLiToken(base: string, token: string): string {
   const liRe = /\d[\d.,]*\s*l?i\b/iu;
   if (liRe.test(base)) return base.replace(liRe, token);
   return `${base}-${token}`;
+}
+
+/**
+ * Viết tắt phần chữ của tên sản xuất để nhét vào mã AMIS.
+ * TRẮNG→TR, XANH→XA, ĐEN→DEN, VÀNG→VA, ĐỎ→DO, HỒNG→HO, XÁM→XM, TRÀ→TRA, XDT→XDT,
+ * trắng sứ→TSU, `11 SÓNG`→`11s`, `8ZEM`→`8ZEM`, `5KG`→`5kg`.
+ * Li, khổ, mét dài, màng, hàng phế do chỗ khác ghép — không rút ở đây.
+ */
+export function abbreviateProductionNameFacts(tenSanXuat: string | null | undefined): string[] {
+  const text = String(tenSanXuat || '');
+  if (!text.trim()) return [];
+  const facts: string[] = [];
+  const word = (token: string) => new RegExp(`(^|[^\\p{L}\\p{N}])${token}([^\\p{L}\\p{N}]|$)`, 'iu');
+  const color: Array<[RegExp, string]> = [
+    [word('trắng\\s*sứ'), 'TSU'],
+    [word('trắng'), 'TR'],
+    [word('xanh'), 'XA'],
+    [word('đen'), 'DEN'],
+    [word('vàng'), 'VA'],
+    [word('đỏ'), 'DO'],
+    [word('hồng'), 'HO'],
+    [word('xám'), 'XM'],
+    [word('trà'), 'TRA'],
+    [word('XDT'), 'XDT']
+  ];
+  let colorHit: { index: number; code: string } | null = null;
+  for (const [re, code] of color) {
+    const match = text.match(re);
+    if (!match || match.index == null) continue;
+    if (!colorHit || match.index < colorHit.index) colorHit = { index: match.index, code };
+  }
+  if (colorHit) facts.push(colorHit.code);
+  const song = text.match(/(\d+)\s*sóng/iu);
+  if (song) facts.push(`${song[1]}s`);
+  const zem = text.match(/(\d+)\s*zem/iu);
+  if (zem) facts.push(`${zem[1]}ZEM`);
+  const kgRe = /([\d.,]+)\s*kg\b/giu;
+  let kgMatch: RegExpExecArray | null;
+  const seenKg = new Set<string>();
+  while ((kgMatch = kgRe.exec(text)) !== null) {
+    const num = normalizeDecimalToken(kgMatch[1]);
+    if (!num || seenKg.has(num)) continue;
+    seenKg.add(num);
+    facts.push(`${num}kg`);
+  }
+  return facts;
+}
+
+function factAlreadyInCode(base: string, fact: string): boolean {
+  const song = fact.match(/^(\d+)s$/iu);
+  if (song) return new RegExp(`(^|-)\\s*${song[1]}\\s*s\\b`, 'iu').test(base);
+  const zem = fact.match(/^(\d+)ZEM$/iu);
+  if (zem) return new RegExp(`(^|-)\\s*${zem[1]}\\s*zem\\b`, 'iu').test(base);
+  const kg = fact.match(/^([\d.]+)kg$/iu);
+  if (kg) {
+    const target = Number(kg[1]);
+    const re = /([\d.,]+)\s*kg\b/giu;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(base)) !== null) {
+      const value = Number(match[1].replace(',', '.'));
+      if (Number.isFinite(value) && Math.abs(value - target) < 1e-6) return true;
+    }
+    return false;
+  }
+  return new RegExp(`(^|-)${fact}(-|$)`, 'iu').test(base);
+}
+
+/** Chèn viết tắt của tên ngay sau mã dòng (`STD06`, `STS02`), bỏ token đã có trong mã. */
+function insertProductionNameFacts(base: string, tenSanXuat: string | null | undefined): string {
+  const facts = abbreviateProductionNameFacts(tenSanXuat).filter(fact => !factAlreadyInCode(base, fact));
+  if (facts.length === 0) return base;
+  const block = facts.join('-');
+  const head = base.match(/^[A-Za-z]+\d+/);
+  if (head) {
+    const rest = base.slice(head[0].length).replace(/^-+/, '');
+    return rest ? `${head[0]}-${block}-${rest}` : `${head[0]}-${block}`;
+  }
+  return `${block}-${base}`.replace(/-+/g, '-');
 }
 
 /** `1.5li` / `1,5` → `TEM1.5li`. */
@@ -799,6 +882,83 @@ export function buildMaAmisMoi(input: MaAmisMoiInput): string {
 
   return (
     `${base}${npSuffix}${pheSuffix}${mang ? `-${mang}` : ''}${temSuffix ? ` ${temSuffix}` : ''}`
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
+}
+
+/**
+ * Mã biến thể cắt lẻ ĐỦ THÔNG TIN (mẫu: `STD06-0.75li*1.22m-TC-ECO-30m - TEM1.2li-MVKH-2DAU`):
+ * `{gốc}-{TC|phế}-{MÀNG}-{dài}m`, mét dài luôn cuối (trước hậu tố tem).
+ * `-TC-` cho hàng chuẩn (không phế); giữ `-NP-…` cho hàng phế.
+ * Chỉ dùng cho luồng cắt lẻ (mới). Đơn miền nam giữ `buildMaAmisMoi` cũ.
+ */
+export function buildCutAmisCodeFull(input: MaAmisMoiInput & { ensureWidthM?: number | string | null }): string {
+  const raw = String(input.baseMaAmis || '').trim().replace(/\s+/g, ' ');
+  if (!raw) return '';
+  let base = raw
+    .replace(/\s*-+\s*/g, '-')
+    .replace(/\s+Giá\s+rẻ\s*$/iu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const npMatch = base.match(/-?\s*(NP2|NP|NS)\s*$/iu);
+  let npSuffix = '';
+  if (npMatch) {
+    npSuffix = `-${npMatch[1].toUpperCase()}`;
+    base = base.slice(0, npMatch.index).trim().replace(/-+$/, '');
+  }
+
+  // Độ li ĐM thay token li; không có đm thì dùng độ li hạ thật.
+  const doLiNew = doLiTokenFromDm(input.doLiDm || '') || normalizeDoLiToken(input.doLi || '');
+  if (doLiNew) base = replaceLiToken(base, doLiNew);
+
+  const width = Number(String(input.cutWidthM ?? '').replace(',', '.'));
+  if (Number.isFinite(width) && width > 0) base = applyCutWidthToAmis(base, width);
+  base = insertProductionNameFacts(base, input.tenSanXuat);
+  const nameMang = extractMang(input.tenSanXuat || '');
+  const namePhe = extractHangPhe(input.tenSanXuat || '');
+  // Bóc mét dài cuối (dạng `-Nm`, không đụng khổ `*Nm`) để ráp lại cuối cùng.
+  let strippedLen: number | null = null;
+  const trail = base.match(/-(\d[\d.,]*)\s*m\s*$/iu);
+  if (trail) {
+    strippedLen = Number(trail[1].replace(',', '.'));
+    if (Number.isFinite(strippedLen)) base = base.slice(0, trail.index).replace(/-+$/, '');
+    else strippedLen = null;
+  }
+  // Bảo đảm có khổ `*Nm` khi biết rộng (đủ thông tin).
+  const ensureW = Number(String(input.ensureWidthM ?? '').replace(',', '.'));
+  if (Number.isFinite(ensureW) && ensureW > 0 && !/\*\s*\d[\d.,]*\s*m\b/iu.test(base)) {
+    base = `${base}*${formatMetersLabel(ensureW)}`;
+  }
+
+  const cut = Number(String(input.cutLengthM ?? '').replace(',', '.'));
+  const len = Number.isFinite(cut) && cut > 0 ? cut : strippedLen;
+  const lenPart = len != null && Number.isFinite(len) && len > 0 ? `-${formatMetersLabel(len)}` : '';
+
+  const mang = String(input.mang || nameMang || '').trim().toUpperCase().replace(/\s+/g, '');
+  const mangPart = mang && !new RegExp(`(^|-)${mang}(-|$)`, 'iu').test(base) ? `-${mang}` : '';
+  const phe = abbreviateHangPhe(input.hangPhe || namePhe);
+  const phePart = phe && phe !== npSuffix.replace(/^-/, '') ? `-${phe}` : '';
+  // -TC- cho hàng chuẩn, trừ khi đã có TC/NP hoặc hàng phế.
+  const midBlock =
+    `${npSuffix}${phePart}` ||
+    (/(^|-)TC(-|$)/iu.test(base) || /-(NP2|NP|NS)(-|$)/iu.test(base) ? '' : '-TC');
+
+  const temText = String(input.tem || '').trim();
+  const mauText = String(input.mauTem || '').trim();
+  const haiDau = Boolean(input.danTem2Dau);
+  let temSuffix = '';
+  if (temText || mauText || haiDau) {
+    const mv = mauText ? mvByMauTem(mauText) : '';
+    const temNorm = amisTemToken(temText);
+    temSuffix = `- ${[temNorm, mv, haiDau ? '2DAU' : ''].filter(Boolean).join('-')}`;
+  }
+  // Cắt tiếp mã đã có hậu tố tem giống hệt thì không nối lặp.
+  const flat = (s: string) => String(s || '').replace(/[\s-]+/g, '').toLocaleLowerCase('vi');
+  if (temSuffix && flat(base).endsWith(flat(temSuffix))) temSuffix = '';
+
+  return (
+    `${base}${midBlock}${mangPart}${lenPart}${temSuffix ? ` ${temSuffix}` : ''}`
       .replace(/\s+/g, ' ')
       .trim()
   );

@@ -168,7 +168,20 @@ describe('mã AMIS mới — buildMaAmisMoi', () => {
         pieceLi: '0.8li',
         mang: 'ECO'
       }),
-      'STD06-0.8li*1.22m-3m-ECO'
+      'STD06-0.8li*1.22m-TC-ECO-3m'
+    );
+    assert.equal(
+      variantCodeForCatPiece({
+        baseMaAmis: 'STD06-0.8li*1.22m',
+        nhomVthh: 'TP; PX Đặc',
+        motherDaiM: '30m',
+        pieceDaiM: '3m',
+        motherLi: '0.8li',
+        pieceLi: '0.8li',
+        mang: 'STD',
+        tenSanXuat: 'Tấm nhựa đặc màu TRẮNG 8ZEM - hàng tiêu chuẩn - STD - 0.8li - 1.22m - 30m'
+      }),
+      'STD06-TR-8ZEM-0.8li*1.22m-TC-STD-3m'
     );
     assert.equal(
       variantCodeForCatPiece({

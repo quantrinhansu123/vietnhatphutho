@@ -12,7 +12,7 @@
  *    truy vết về mã gốc qua ma_amis_cu; duyệt lệnh tạo lại SP biến thể trong san_pham.
  */
 import {
-  buildMaAmisMoi,
+  buildCutAmisCodeFull,
   calculateDoLiDm,
   composeProductionDisplayName,
   isValidDoLiToken,
@@ -522,6 +522,8 @@ export function buildCatLeSanPhamLine(args: {
   originMaCu?: string | null;
   /** Dòng fill từ đơn hàng: cho qua khi quy cách giữ nguyên (không bắt hạ). */
   allowIdentical?: boolean | null;
+  /** Tên sản xuất đang hiện trên dòng (tên ghép đơn). Mã cắt rút viết tắt từ tên này. */
+  tenSanXuat?: string | null;
 }): CatLeSanPhamLine {
   const { mother } = args;
   const sourceWidth = parseMeterLabel(mother.doDayM);
@@ -566,24 +568,23 @@ export function buildCatLeSanPhamLine(args: {
     Boolean(String(computed.doLiCon || '').trim()) &&
     normalizeDoLiLabel(computed.doLiCon).toLocaleLowerCase('vi') !==
       normalizeDoLiLabel(mother.doLi).toLocaleLowerCase('vi');
-  const moiCon = computed.keptIdentical
-    ? ''
-    : variantCodeForCatPiece({
-      baseMaAmis: baseAmis,
-      nhomVthh: groupName,
-      motherDaiM: mother.doDaiM,
-      pieceDaiM: computed.doDaiMCon,
-      motherWidthM: sourceWidth,
-      pieceWidthM: parseMeterLabel(computed.doDayMCon),
-      motherLi: mother.doLi,
-      pieceLi: computed.doLiCon,
-      mang: mother.mang,
-      hangPhe: mother.hangPhe,
-      doLiDm: args.doLiDm || (!liChangedCon ? mother.doLiDm : undefined),
-      tem: args.tem,
-      mauTem: args.mauTem,
-      danTem2Dau: args.danTem2Dau
-    });
+  const moiCon = variantCodeForCatPiece({
+    baseMaAmis: baseAmis,
+    nhomVthh: groupName,
+    motherDaiM: mother.doDaiM,
+    pieceDaiM: computed.doDaiMCon,
+    motherWidthM: sourceWidth,
+    pieceWidthM: parseMeterLabel(computed.doDayMCon),
+    motherLi: mother.doLi,
+    pieceLi: computed.doLiCon,
+    mang: mother.mang,
+    hangPhe: mother.hangPhe,
+    doLiDm: args.doLiDm || (!liChangedCon ? mother.doLiDm : undefined),
+    tem: args.tem,
+    mauTem: args.mauTem,
+    danTem2Dau: args.danTem2Dau,
+    tenSanXuat: String(args.tenSanXuat || '').trim() || computed.tenSpCon
+  });
   const moiThua =
     cat2 != null
       ? variantCodeForCatPiece({
@@ -597,7 +598,8 @@ export function buildCatLeSanPhamLine(args: {
           pieceLi: computed.doLiThua,
           mang: mother.mang,
           hangPhe: mother.hangPhe,
-          doLiDm: mother.doLiDm
+          doLiDm: mother.doLiDm,
+          tenSanXuat: computed.tenSpThua
         })
       : '';
   return {
@@ -691,6 +693,8 @@ export function variantCodeForCatPiece(args: {
   mauTem?: string | null;
   /** `2DAU` trên mã = dán tem 2 đầu. */
   danTem2Dau?: boolean | null;
+  /** Tên sản xuất của tấm cắt — rút màu / ZEM / số sóng / kg vào mã. */
+  tenSanXuat?: string | null;
 }): string {
   const base = String(args.baseMaAmis || '').trim();
   if (!base) return '';
@@ -703,10 +707,13 @@ export function variantCodeForCatPiece(args: {
   const liMe = String(args.motherLi || '').trim().toLocaleLowerCase('vi');
   const liCon = String(args.pieceLi || '').trim().toLocaleLowerCase('vi');
   const liDiffers = Boolean(liCon) && liCon !== liMe;
-  const moi = buildMaAmisMoi({
+  // Mã đủ info (mẫu TC/length-cuối/tem). Pass 1 phát hiện thay đổi (chưa ép khổ
+  // để quy cách giữ nguyên không sinh mã giả); pass 2 bổ sung khổ khi có đổi.
+  const widthArg = wCon != null && wCon > 0 ? { ensureWidthM: wCon } : {};
+  const shared = {
     baseMaAmis: base,
     nhomVthh: args.nhomVthh,
-    cutLengthM: cutDiffers ? lCon : undefined,
+    cutLengthM: lCon != null && lCon > 0 ? lCon : undefined,
     cutWidthM: widthDiffers ? wCon : undefined,
     doLi: liDiffers ? String(args.pieceLi || '') : undefined,
     mang: args.mang || undefined,
@@ -714,10 +721,21 @@ export function variantCodeForCatPiece(args: {
     doLiDm: args.doLiDm,
     tem: args.tem,
     mauTem: args.mauTem,
-    danTem2Dau: args.danTem2Dau
-  });
-  const normalizedBase = buildMaAmisMoi({ baseMaAmis: base });
-  return moi && moi !== normalizedBase ? moi : '';
+    danTem2Dau: args.danTem2Dau,
+    ...widthArg
+  };
+  const plain = buildCutAmisCodeFull(shared);
+  const named = buildCutAmisCodeFull({ ...shared, tenSanXuat: args.tenSanXuat });
+  const specsChanged = cutDiffers || widthDiffers || liDiffers || Boolean(String(args.tem || '').trim() || String(args.mauTem || '').trim() || args.danTem2Dau);
+  // Giữ nguyên khổ/dài/li: chỉ hiện mã mới khi tên sản xuất bổ sung viết tắt chưa có trong mã gốc.
+  if (!specsChanged) {
+    if (!String(args.tenSanXuat || '').trim() || !named || named === plain) return '';
+    if (named.toLocaleLowerCase('vi') === base.toLocaleLowerCase('vi')) return '';
+    return named;
+  }
+  const normalizedBase = buildCutAmisCodeFull({ baseMaAmis: base, tenSanXuat: args.tenSanXuat });
+  if (!named || named === normalizedBase) return '';
+  return named;
 }
 
 function catLeFormFields(row: Record<string, unknown>): Pick<

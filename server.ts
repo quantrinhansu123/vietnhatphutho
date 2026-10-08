@@ -39,7 +39,7 @@ import {
   resolveAuxiliaryWeightPerUnit,
   stripMixingNormRevisionSuffix
 } from './src/utils/mixingNormAuxiliary';
-import { buildMaAmisMoi, buildOrderTenGhep, calculateDoLiDm, isDiscontinuedWhiteSuProduct, parseProductionNameParts, replaceCutLengthMeters, replaceDoLiDmInTenGhep, stripTrailingDuplicateCutAfterTem } from './src/utils/productProductionName';
+import { buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, calculateDoLiDm, isDiscontinuedWhiteSuProduct, parseProductionNameParts, replaceCutLengthMeters, replaceDoLiDmInTenGhep, stripTrailingDuplicateCutAfterTem } from './src/utils/productProductionName';
 import { buildCatLeSanPhamLine, KHO_CAT_LE, KHO_TAI_CHE, KHO_THANH_PHAM, inferKhoChinhTuNhom, normalizeCatLeSanPhamList, type CatLeSanPhamLine } from './src/features/lenh-cat-le/logic';
 
 dotenv.config();
@@ -17724,18 +17724,26 @@ async function loadKiemKhoLiveTongHopForDot(
           const liCon = String(piece.do_li || '').trim();
           const liMe = String(nguon.do_li || '').trim();
           const liChanged = Boolean(liCon) && liCon.toLocaleLowerCase('vi') !== liMe.toLocaleLowerCase('vi');
-          maMoi = buildMaAmisMoi({
+          const dmPiece = String(piece.do_li_dm || '').trim();
+          const dmNguon = String(nguon.do_li_dm || '').trim();
+          // ĐM gõ tay (khác ĐM nguồn) thì giữ; ĐM thừa kế bỏ khi đã hạ li.
+          const dmExplicit = dmPiece && dmPiece !== dmNguon ? piece.do_li_dm : undefined;
+          maMoi = buildCutAmisCodeFull({
             baseMaAmis: baseAmis,
             nhomVthh: nguon.nhom_vthh,
+            tenSanXuat: String(piece.ten_sp || nguon.ten_sp || ''),
             cutLengthM: lCon !== null && (lMe === null || Math.abs(lCon - lMe) > 1e-9) ? lCon : undefined,
             doLi:
               liCon && liCon.toLocaleLowerCase('vi') !== liMe.toLocaleLowerCase('vi') ? liCon : undefined,
-            doLiDm: liChanged ? undefined : piece.do_li_dm || nguon.do_li_dm || undefined,
+            doLiDm: dmExplicit ?? (!liChanged ? piece.do_li_dm || nguon.do_li_dm || undefined : undefined),
             hangPhe: nguon.hang_phe || undefined,
             mang: nguon.mang || undefined
           });
           if (maMoi) {
-            const normalizedBase = buildMaAmisMoi({ baseMaAmis: baseAmis });
+            const normalizedBase = buildCutAmisCodeFull({
+              baseMaAmis: baseAmis,
+              tenSanXuat: String(piece.ten_sp || nguon.ten_sp || '')
+            });
             if (maMoi === normalizedBase) maMoi = '';
           }
         }
