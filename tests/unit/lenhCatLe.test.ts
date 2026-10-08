@@ -121,9 +121,65 @@ describe('lenh-cat-le — validate', () => {
     assert.equal(r.doDayMThua, '0.22m');
     assert.equal(r.mDaiThua, 20);
     assert.equal(r.m2Thua, 4.4);
+    assert.equal(r.doDayMThua2, '1m');
+    assert.equal(r.mDaiThua2, 8);
+    assert.equal(r.m2Thua2, 8);
     assert.match(r.tenSpCon, /Dán Tem 2 Đầu$/);
     assert.match(r.tenSpThua, /0\.22m/);
     assert.match(r.tenSpThua, /Dán Tem 2 Đầu$/);
+    assert.match(r.tenSpThua2 || '', /1m/);
+    assert.match(r.tenSpThua2 || '', /8m/);
+  });
+  it('hạ cả 2 chiều: tấm 2.1m x 5.8m cắt 1.1m x 4.8m sinh đủ thừa 1m x 5.8m VÀ 1.1m x 1m', () => {
+    const motherRong: CatLeMother = {
+      maSp: 'ECR05-10li-5.8m',
+      tenSp: 'Tấm nhựa rỗng Economic màu trà 10li x 2.1m x 5.8m',
+      donVi: 'Tấm',
+      kg1: 15,
+      a1: 12.18, // 2.1 x 5.8
+      l1: 5.8,
+      tenGoc: 'Tấm nhựa rỗng màu trà - ECO',
+      doLi: '10li',
+      doLiDm: '',
+      doDayM: '2.1m',
+      doDaiM: '5.8m',
+      mang: '',
+      hangPhe: '',
+      maAmis: 'ECR05-10li-5.8m'
+    };
+    const r = computeCatLe(motherRong, { w2: 1.1, l2: 4.8, qty: 5 });
+    assert.equal(r.kieuCat, 'ca_hai');
+    // Thành phẩm: 1.1m x 4.8m
+    assert.equal(r.doDayMCon, '1.1m');
+    assert.equal(r.doDaiMCon, '4.8m');
+    assert.equal(r.m2Con, 5.28);
+    // Thừa 1: 1m x 5.8m (dải dọc)
+    assert.equal(r.doDayMThua, '1m');
+    assert.equal(r.doDaiMThua, '5.8m');
+    assert.equal(r.m2Thua, 5.8);
+    // Thừa 2: 1.1m x 1m (phần đuôi chiều dài của dải 1.1m)
+    assert.equal(r.doDayMThua2, '1.1m');
+    assert.equal(r.doDaiMThua2, '1m');
+    assert.equal(r.m2Thua2, 1.1);
+    // Bảo toàn diện tích: 5.28 + 5.8 + 1.1 = 12.18
+    assert.equal(Math.round((r.m2Con + r.m2Thua + (r.m2Thua2 || 0)) * 100) / 100, 12.18);
+    // Bảo toàn kg:
+    assert.equal(Math.round((r.kgCon + r.kgThua + (r.kgThua2 || 0)) * 100) / 100, 15);
+
+    // Kiểm tra buildCatLeSanPhamLine sinh san_pham_cat_3
+    const line = buildCatLeSanPhamLine({
+      mother: motherRong,
+      qty: 5,
+      w2: 1.1,
+      l2: 4.8
+    });
+    assert.ok(line.san_pham_cat_2, 'Có thừa 1');
+    assert.ok(line.san_pham_cat_3, 'Có thừa 2');
+    assert.equal(line.san_pham_cat_2?.do_day_m, '1m');
+    assert.equal(line.san_pham_cat_2?.do_dai_m, '5.8m');
+    assert.equal(line.san_pham_cat_3?.do_day_m, '1.1m');
+    assert.equal(line.san_pham_cat_3?.do_dai_m, '1m');
+    assert.match(line.san_pham_cat_3?.ma_amis || '', /1m/);
   });
   it('thiếu kg nguồn mà không cân tay thì chặn', () => {
     const noKg: CatLeMother = { ...mother20m, kg1: 0 };

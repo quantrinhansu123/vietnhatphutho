@@ -400,6 +400,10 @@ export interface OrderProductOption {
   doDayM: string;
   /** Định mức thực tế trên danh mục SP (`do_li_dm`) — đơn miền nam prefills ô Độ li ĐM. */
   doLiDm: string;
+  /** Màng: ECO / STD / SUN PC / HA... */
+  mang?: string;
+  /** Trọng lượng tiêu chuẩn trên danh mục SP. */
+  totalWeight?: string;
 }
 
 export function normalizeLookupText(value: string) {
@@ -494,7 +498,9 @@ export function normalizeOrderProducts(data: unknown): OrderProductOption[] {
     tenGhep: product.tenGhep || '',
     doDaiM: product.doDaiM || '',
     doDayM: product.doDayM || '',
-    doLiDm: product.doLiDm || ''
+    doLiDm: product.doLiDm || '',
+    mang: product.mang || '',
+    totalWeight: product.totalWeight || ''
   })).filter(product => product.code);
 }
 

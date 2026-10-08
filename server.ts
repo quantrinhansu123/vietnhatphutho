@@ -39,7 +39,7 @@ import {
   resolveAuxiliaryWeightPerUnit,
   stripMixingNormRevisionSuffix
 } from './src/utils/mixingNormAuxiliary';
-import { buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, calculateDoLiDm, isDiscontinuedWhiteSuProduct, parseProductionNameParts, replaceCutLengthMeters, replaceDoLiDmInTenGhep, stripTrailingDuplicateCutAfterTem } from './src/utils/productProductionName';
+import { buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, calculateDoLiDm, isDiscontinuedWhiteSuProduct, parseProductionNameParts, replaceCutLengthMeters, replaceDoLiDmInTenGhep, replaceMangInName, stripTrailingDuplicateCutAfterTem } from './src/utils/productProductionName';
 import { buildCatLeSanPhamLine, KHO_CAT_LE, KHO_TAI_CHE, KHO_THANH_PHAM, inferKhoChinhTuNhom, normalizeCatLeSanPhamList, type CatLeSanPhamLine } from './src/features/lenh-cat-le/logic';
 
 dotenv.config();
@@ -6993,6 +6993,8 @@ type OrderProductRecord = {
   tem?: string | null;
   mau_tem?: string | null;
   dan_tem_2_dau?: number | null;
+  /** Màng: SUN PC / STD / ECO / ... */
+  mang?: string | null;
   /** Hậu tố tem đã trim, vd "(Dán Tem 1.5li) Màu Hồng MVCC Dán Tem 2 Đầu". */
   mo_ta_tem?: string | null;
   /** Mã AMIS mới của biến thể cắt lẻ / đơn miền nam (san_pham.ma_amis của dòng biến thể). */
@@ -7132,7 +7134,7 @@ function parseOrderProductsInput(
     const san_pham_id = pickRowField(row, ['san_pham_id', 'productId', 'product_id']);
     const ma_sp = pickRowField(row, ['ma_sp', 'ma_hang', 'productCode', 'code']);
     const ten_sp = pickRowField(row, ['ten_sp', 'ten_hang', 'productName', 'name']);
-    const ten_san_xuat = pickRowField(row, ['ten_san_xuat', 'productionName']);
+    let ten_san_xuat = pickRowField(row, ['ten_san_xuat', 'productionName']);
     const ten_ghep_raw = pickRowField(row, ['ten_ghep', 'tenGhep']);
     const don_vi = pickRowField(row, ['don_vi', 'unit']);
     const so_luong_bac = parseOrderQuantity(row.so_luong_bac ?? row.sl_bac ?? row.slsx_bac ?? row.bac ?? row.slBac);
@@ -7182,6 +7184,13 @@ function parseOrderProductsInput(
       '',
       parsedQuyCachMDai
     );
+    const lineMang = pickRowField(row, ['mang']);
+    if (isCutLikeSpecOrder && lineMang !== undefined) {
+      if (ten_san_xuat) {
+        ten_san_xuat = replaceMangInName(ten_san_xuat, lineMang);
+      }
+      base_ten_ghep = replaceMangInName(base_ten_ghep, lineMang);
+    }
     // Đơn cắt lẻ / miền nam: thay segment (đm n li|kg) theo do_li_dm — không đụng token do_li.
     if (isCutLikeSpecOrder && do_li_dm) {
       base_ten_ghep = replaceDoLiDmInTenGhep(base_ten_ghep, do_li_dm);
@@ -7215,6 +7224,7 @@ function parseOrderProductsInput(
       ...(tem ? { tem } : {}),
       ...(mau_tem ? { mau_tem } : {}),
       ...(dan_tem_2_dau ? { dan_tem_2_dau } : {}),
+      ...(pickRowField(row, ['mang']) ? { mang: pickRowField(row, ['mang']) } : {}),
       ...(mo_ta_tem ? { mo_ta_tem } : {}),
       ...(parsedQuyCachMDai !== null && parsedQuyCachMDai > 0 ? { quy_cach_m_dai: parsedQuyCachMDai } : {}),
       ...(m2 !== null && m2 > 0 ? { m2 } : {}),
@@ -7374,6 +7384,9 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
             : {}),
           ...((record.dan_tem_2_dau === 1 || record.danTem2Dau === true || String(record.dan_tem_2_dau ?? '').trim() === '1' || /Dán Tem 2 Đầu/u.test(String(record.ten_ghep ?? record.tenGhep ?? '')))
             ? { dan_tem_2_dau: 1 }
+            : {}),
+          ...(pickRowField(record, ['mang'])
+            ? { mang: pickRowField(record, ['mang']) }
             : {}),
           ...(pickRowField(record, ['mo_ta_tem', 'moTaTem'])
             ? { mo_ta_tem: pickRowField(record, ['mo_ta_tem', 'moTaTem']) }
@@ -17494,8 +17507,15 @@ async function loadKiemKhoLiveTongHopForDot(
     return { draft };
   }
 
-  function catLeSlipItem(line: CatLeSanPhamLine, kind: 'nguon' | 'cat_1' | 'cat_2') {
-    const piece = kind === 'nguon' ? line.san_pham_nguon : kind === 'cat_1' ? line.san_pham_cat_1 : line.san_pham_cat_2;
+  function catLeSlipItem(line: CatLeSanPhamLine, kind: 'nguon' | 'cat_1' | 'cat_2' | 'cat_3') {
+    const piece =
+      kind === 'nguon'
+        ? line.san_pham_nguon
+        : kind === 'cat_1'
+          ? line.san_pham_cat_1
+          : kind === 'cat_2'
+            ? line.san_pham_cat_2
+            : line.san_pham_cat_3;
     // SP cắt / phần thừa ghi theo mã mới (ma_amis của piece, truy vết qua ma_amis_cu).
     const variantCode =
       kind === 'nguon'
@@ -17528,8 +17548,13 @@ async function loadKiemKhoLiveTongHopForDot(
     };
   }
 
-  function catLeCatalogRow(line: CatLeSanPhamLine, kind: 'cat_1' | 'cat_2', tenKho: string, loaiKho: string) {
-    const piece = kind === 'cat_1' ? line.san_pham_cat_1 : line.san_pham_cat_2;
+  function catLeCatalogRow(line: CatLeSanPhamLine, kind: 'cat_1' | 'cat_2' | 'cat_3', tenKho: string, loaiKho: string) {
+    const piece =
+      kind === 'cat_1'
+        ? line.san_pham_cat_1
+        : kind === 'cat_2'
+          ? line.san_pham_cat_2
+          : line.san_pham_cat_3;
     const nguon = line.san_pham_nguon;
     // Nhập kho ghi đúng mã mới + mã cũ (ma_sp_cu để tổng hợp về sau).
     const variantCode = String((piece as unknown as Record<string, unknown>)?.ma_amis || '').trim();
@@ -17674,7 +17699,7 @@ async function loadKiemKhoLiveTongHopForDot(
         origin = await resolveCatLeOriginCu(sourceCode, '');
         cache.set(key, origin);
       }
-      for (const piece of [line.san_pham_cat_1, line.san_pham_cat_2]) {
+      for (const piece of [line.san_pham_cat_1, line.san_pham_cat_2, line.san_pham_cat_3]) {
         if (!piece) continue;
         const rec = piece as unknown as Record<string, unknown>;
         const current = String(rec.ma_amis_cu || '').trim();
@@ -17704,6 +17729,7 @@ async function loadKiemKhoLiveTongHopForDot(
       const baseAmis = String(nguon.ma_amis || nguon.ma_sp || '').trim();
       const variants: Array<{ piece: typeof line.san_pham_cat_1 }> = [{ piece: line.san_pham_cat_1 }];
       if (line.san_pham_cat_2) variants.push({ piece: line.san_pham_cat_2 });
+      if (line.san_pham_cat_3) variants.push({ piece: line.san_pham_cat_3 });
       for (const { piece } of variants) {
         if (!piece) continue;
         const rec = piece as unknown as Record<string, unknown>;
@@ -17807,7 +17833,7 @@ async function loadKiemKhoLiveTongHopForDot(
     const usedCodes = new Set<string>();
     const maXuat = takeSlipCode('xuat', usedCodes);
     const maNhapTp = takeSlipCode('nhap', usedCodes);
-    const conLaiOLai = lines.filter(line => line.san_pham_cat_2);
+    const conLaiOLai = lines.filter(line => line.san_pham_cat_2 || line.san_pham_cat_3);
     const sanPhamVeKhoCatLe = lines.map(line => ({ ...line, di_tai_che: false }));
     const maNhapThua = conLaiOLai.length > 0 ? takeSlipCode('nhap', usedCodes) : '';
     const written: string[] = [];
@@ -17872,10 +17898,15 @@ async function loadKiemKhoLiveTongHopForDot(
           loaiKho: 'san_pham',
           maKho: maKhoNguonCat,
           lyDo,
-          ghiChu: `Lệnh cắt ${maLenh} — sản phẩm cắt 2`,
+          ghiChu: `Lệnh cắt ${maLenh} — sản phẩm còn lại`,
           tenKho: khoNguon,
           loaiNhapKho: 'Cắt lẻ',
-          items: conLaiOLai.map(line => catLeSlipItem(line, 'cat_2'))
+          items: conLaiOLai.flatMap(line => {
+            const items = [];
+            if (line.san_pham_cat_2) items.push(catLeSlipItem(line, 'cat_2'));
+            if (line.san_pham_cat_3) items.push(catLeSlipItem(line, 'cat_3'));
+            return items;
+          })
         },
         maNhapThua
       );
@@ -17888,7 +17919,12 @@ async function loadKiemKhoLiveTongHopForDot(
     }
     const catResult = await insertNhapKhoCatalogRows([
       ...lines.map(line => catLeCatalogRow(line, 'cat_1', khoDich, maKhoDichCat)),
-      ...conLaiOLai.map(line => catLeCatalogRow(line, 'cat_2', khoNguon, maKhoNguonCat))
+      ...conLaiOLai.flatMap(line => {
+        const rows = [];
+        if (line.san_pham_cat_2) rows.push(catLeCatalogRow(line, 'cat_2', khoNguon, maKhoNguonCat));
+        if (line.san_pham_cat_3) rows.push(catLeCatalogRow(line, 'cat_3', khoNguon, maKhoNguonCat));
+        return rows;
+      })
     ]);
     const { data: updated, error: updateError } = await saveLenhCatLe(
       'update',
@@ -18490,6 +18526,8 @@ async function loadKiemKhoLiveTongHopForDot(
       push(cat1.ma_amis, cat1.ma_amis_cu || baseCode, cat1.ten_sp);
       const cat2 = (line.san_pham_cat_2 || null) as unknown as Record<string, unknown> | null;
       if (cat2) push(cat2.ma_amis, cat2.ma_amis_cu || baseCode, cat2.ten_sp);
+      const cat3 = (line.san_pham_cat_3 || null) as unknown as Record<string, unknown> | null;
+      if (cat3) push(cat3.ma_amis, cat3.ma_amis_cu || baseCode, cat3.ten_sp);
     }
     return out;
   }

@@ -33,6 +33,8 @@ export interface OrderProductLine {
   tem?: string;
   mauTem?: string;
   danTem2Dau?: boolean;
+  /** Chỉ dùng cho "Đơn miền nam": Màng (SUN PC / STD / ECO / ...). */
+  mang?: string;
   /** Mã AMIS mới của biến thể cắt lẻ / đơn miền nam (ma_amis của dòng biến thể). */
   maAmis?: string;
   /** Mã AMIS gốc của biến thể cắt lẻ / đơn miền nam. */

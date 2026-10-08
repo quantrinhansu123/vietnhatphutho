@@ -16,6 +16,7 @@ function option(partial: Partial<OrderProductOption> & { id: string }): OrderPro
     newCode: '',
     tenGhep: '',
     doDaiM: '',
+    doDayM: '',
     doLiDm: '',
     ...partial
   };
