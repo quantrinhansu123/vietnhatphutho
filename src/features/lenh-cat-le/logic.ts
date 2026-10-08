@@ -83,6 +83,8 @@ export interface CatLeInput {
   doLiDmGiu?: string | null;
   /** Số tấm TP cắt ra trên mỗi tấm nguồn (mặc định 1). Vd 1 tấm nguồn 20m = 2 tấm TP 10m. */
   pieces?: number | null;
+  /** Nguồn không ghi khổ, nhưng người dùng nhập hạ khổ — ghi khổ vào tên và mã. */
+  labelCutWidth?: boolean | null;
 }
 
 export type CatLeKieu = 'xe_kho' | 'cat_tam' | 'doi_li' | 'ca_hai';
@@ -377,7 +379,7 @@ export function computeCatLe(
   const keptDm = String(input.doLiDmGiu || '').trim();
   const doLiDmCon = keptDm || (doiDoLi ? calculateDoLiDm(doLiCon, nhomVthh) || mother.doLiDm : mother.doLiDm);
   // Hạ độ li đổi token độ li và kg. Khổ (m) giữ nguyên nếu nguồn có khổ.
-  const widthLabeled = Boolean(String(mother.doDayM || '').trim());
+  const widthLabeled = Boolean(String(mother.doDayM || '').trim()) || Boolean(input.labelCutWidth);
   const doDayMCon = widthLabeled ? formatMeterLabel(w2) : '';
   const doDaiMCon = formatMeterLabel(l2);
   const baseSpecs: CatLeSpecs = {
@@ -476,6 +478,12 @@ export function buildCatLeSanPhamLine(args: {
   doLiDm?: string | null;
 }): CatLeSanPhamLine {
   const { mother } = args;
+  const sourceWidth = parseMeterLabel(mother.doDayM);
+  const inferredWidth = mother.a1 > 0 && mother.l1 > 0 ? mother.a1 / mother.l1 : null;
+  const labelCutWidth =
+    sourceWidth == null &&
+    inferredWidth != null &&
+    Math.abs(args.w2 - inferredWidth) > 1e-9;
   const computed = computeCatLe(
     mother,
     {
@@ -485,7 +493,8 @@ export function buildCatLeSanPhamLine(args: {
       kgCanThucTe: args.kgCanThucTe,
       doLiMoi: args.doLiMoi,
       doLiDmGiu: normalizeDoLiDm(args.doLiDm || '', 'li') || null,
-      pieces: args.pieces ?? 1
+      pieces: args.pieces ?? 1,
+      labelCutWidth
     },
     { nhomVthh: args.nhomVthh }
   );
@@ -509,6 +518,8 @@ export function buildCatLeSanPhamLine(args: {
     nhomVthh: groupName,
     motherDaiM: mother.doDaiM,
     pieceDaiM: computed.doDaiMCon,
+    motherWidthM: sourceWidth,
+    pieceWidthM: parseMeterLabel(computed.doDayMCon),
     motherLi: mother.doLi,
     pieceLi: computed.doLiCon,
     mang: mother.mang,
@@ -525,6 +536,8 @@ export function buildCatLeSanPhamLine(args: {
           nhomVthh: groupName,
           motherDaiM: mother.doDaiM,
           pieceDaiM: computed.doDaiMThua,
+          motherWidthM: sourceWidth,
+          pieceWidthM: parseMeterLabel(computed.doDayMThua),
           motherLi: mother.doLi,
           pieceLi: computed.doLiThua,
           mang: mother.mang,
@@ -612,6 +625,8 @@ export function variantCodeForCatPiece(args: {
   nhomVthh?: string | null;
   motherDaiM?: string | null;
   pieceDaiM?: string | null;
+  motherWidthM?: number | null;
+  pieceWidthM?: number | null;
   motherLi?: string | null;
   pieceLi?: string | null;
   mang?: string | null;
@@ -627,6 +642,9 @@ export function variantCodeForCatPiece(args: {
   const lCon = parseMeterLabel(args.pieceDaiM);
   const lMe = parseMeterLabel(args.motherDaiM);
   const cutDiffers = lCon != null && (lMe == null || Math.abs(lCon - lMe) > 1e-9);
+  const wCon = args.pieceWidthM != null && Number.isFinite(args.pieceWidthM) ? args.pieceWidthM : null;
+  const wMe = args.motherWidthM != null && Number.isFinite(args.motherWidthM) ? args.motherWidthM : null;
+  const widthDiffers = wCon != null && wCon > 0 && (wMe == null || Math.abs(wCon - wMe) > 1e-9);
   const liMe = String(args.motherLi || '').trim().toLocaleLowerCase('vi');
   const liCon = String(args.pieceLi || '').trim().toLocaleLowerCase('vi');
   const liDiffers = Boolean(liCon) && liCon !== liMe;
@@ -634,6 +652,7 @@ export function variantCodeForCatPiece(args: {
     baseMaAmis: base,
     nhomVthh: args.nhomVthh,
     cutLengthM: cutDiffers ? lCon : undefined,
+    cutWidthM: widthDiffers ? wCon : undefined,
     doLi: liDiffers ? String(args.pieceLi || '') : undefined,
     mang: args.mang || undefined,
     hangPhe: args.hangPhe,

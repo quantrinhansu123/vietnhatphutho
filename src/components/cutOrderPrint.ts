@@ -27,10 +27,10 @@ function sameMeter(a: string | number | null | undefined, b: string | number | n
 
 /**
  * Khổ / Dài in trên đơn cắt lẻ.
- * Khổ lấy từ tên sản xuất gốc — form không có ô khổ nên giữ nguyên.
+ * Khổ: ô Khổ rộng / Hạ khổ rộng khi có; không nhập thì lấy từ tên sản xuất gốc.
  * Dài (m): ô form khác mét dài danh mục thì in số mới, không đổi thì giữ số gốc.
  */
-export function cutOrderPrintSize(line: Pick<OrderProductLine, 'productionName' | 'productCode' | 'maAmisCu' | 'daiM' | 'quyCachMDai'>) {
+export function cutOrderPrintSize(line: Pick<OrderProductLine, 'productionName' | 'productCode' | 'maAmisCu' | 'daiM' | 'quyCachMDai' | 'kho'>) {
   const specs = seedProductionSpecs({
     tenSanXuat: line.productionName || '',
     maAmis: line.maAmisCu || line.productCode || '',
@@ -40,7 +40,7 @@ export function cutOrderPrintSize(line: Pick<OrderProductLine, 'productionName' 
   const enteredDai = formatMeter(line.daiM || line.quyCachMDai || '');
   const dai = enteredDai && !sameMeter(enteredDai, catalogDai) ? enteredDai : catalogDai || enteredDai;
   return {
-    kho: formatMeter(specs.doDayM),
+    kho: formatMeter(line.kho) || formatMeter(specs.doDayM),
     dai
   };
 }

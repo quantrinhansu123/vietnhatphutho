@@ -99,11 +99,11 @@ interface CutLine {
 const inputClass = orderFieldClass;
 const cellInputClass = `${orderFieldClass} px-2 text-right`;
 const CUT_PRODUCT_GRID =
-  'grid-cols-[9.5rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_2.75rem]';
-const CUT_PRODUCT_MIN_WIDTH = 'min-w-[2180px]';
+  'grid-cols-[9.5rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_6rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_2.75rem]';
+const CUT_PRODUCT_MIN_WIDTH = 'min-w-[2300px]';
 const AUTOFILL_PRODUCT_GRID =
-  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)]';
-const AUTOFILL_PRODUCT_MIN_WIDTH = 'min-w-[2100px]';
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_6rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)]';
+const AUTOFILL_PRODUCT_MIN_WIDTH = 'min-w-[2220px]';
 const autofillReadClass = `${orderFieldClass} bg-zinc-50`;
 
 function doLiDmSo(value: string): string {
@@ -384,6 +384,7 @@ function cutLineFromOrder(order: OrderRow, prodLine: OrderProductLine): CutLine 
     danTem2Dau: Boolean(prodLine.danTem2Dau),
     missingCode: '',
     motherKey: '',
+    khoRongText: String(prodLine.kho || '').replace(/\s*m\s*$/iu, '').trim(),
     mDaiText: cutM.replace(/\s*m\s*$/iu, '').trim(),
     conCanText: finished > 0 ? String(Math.round(finished * 1000) / 1000) : '',
     ghiChu: String(prodLine.note || '').trim()
@@ -672,7 +673,15 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         (line.productId && item.id === line.productId) ||
         [item.amisCode, item.code, item.newCode].some(value => String(value || '').trim().toLocaleLowerCase('vi') === wanted)
       );
-      const w2 = motherWidth(mother);
+      const typedWidth = parseMeterInput(line.khoRongText);
+      const w2 = typedWidth && typedWidth > 0 ? typedWidth : motherWidth(mother);
+      const sourceWidth = parseMeterLabel(mother.doDayM);
+      const inferredWidth = mother.a1 > 0 && mother.l1 > 0 ? mother.a1 / mother.l1 : null;
+      const labelCutWidth =
+        sourceWidth == null &&
+        inferredWidth != null &&
+        w2 != null &&
+        Math.abs(w2 - inferredWidth) > 1e-9;
       const l2 = parseMeterInput(line.mDaiText);
       const finished = parseLocalizedNumber(line.conCanText);
       const namedGroup = line.nhomVthh.trim() || product?.group || '';
@@ -688,7 +697,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         const plan = suggestCatLePlan(mother, { w2, l2, desiredConQty: finished, doLiMoi });
         const result = computeCatLe(
           mother,
-          { w2, l2, qty: plan.mothers, doLiMoi, doLiDmGiu, kgCanThucTe: null, pieces: plan.pieces },
+          { w2, l2, qty: plan.mothers, doLiMoi, doLiDmGiu, kgCanThucTe: null, pieces: plan.pieces, labelCutWidth },
           { nhomVthh: base.nhomVthh }
         );
         return { ...base, qty: plan.mothers, pieces: plan.pieces, result };
@@ -1281,6 +1290,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                       { key: 'productionName', label: 'Tên sản xuất' },
                       { key: 'unit', label: 'ĐVT' },
                       { key: 'daiM', label: 'Dài (m)', required: true },
+                      { key: 'khoRong', label: 'Hạ khổ rộng (m)' },
                       { key: 'doLi', label: 'Độ li ĐM' },
                       { key: 'dinhMucKg', label: 'Định mức KG' },
                       { key: 'bac', label: 'Bắc' },
@@ -1353,6 +1363,15 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                               onWheel={e => e.currentTarget.blur()}
                               inputMode="decimal"
                               title="Dài (m) đặt cắt"
+                              className={cellInputClass}
+                            />
+                            <input
+                              value={line.khoRongText}
+                              onChange={e => updateLine(line.key, { khoRongText: e.target.value })}
+                              onWheel={e => e.currentTarget.blur()}
+                              inputMode="decimal"
+                              title="Hạ khổ rộng (m). Trống = giữ khổ tấm chính. Khổ mới ghi vào mã AMIS."
+                              placeholder="Khổ"
                               className={cellInputClass}
                             />
                             <input
@@ -1667,6 +1686,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                         { key: 'productionName', label: 'Tên sản xuất' },
                         { key: 'unit', label: 'ĐVT' },
                         { key: 'daiM', label: 'Dài (m)', required: true },
+                        { key: 'khoRong', label: 'Hạ khổ rộng (m)' },
                         { key: 'doLi', label: 'Độ li ĐM' },
                         { key: 'dinhMucKg', label: 'Định mức KG' },
                         { key: 'bac', label: 'Bắc' },
@@ -1696,6 +1716,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                             <input readOnly value={item.line.productionName || item.line.tenGhep || ''} className={autofillReadClass} />
                             <input readOnly value={item.line.unit || ''} className={`${autofillReadClass} text-center`} />
                             <input readOnly value={item.line.daiM || ''} className={`${autofillReadClass} text-right`} />
+                            <input readOnly value={item.line.kho || ''} className={`${autofillReadClass} text-right`} />
                             <input readOnly value={doLiDmSo(item.line.doLiDm || '')} className={`${autofillReadClass} text-right`} />
                             <input readOnly value={item.line.dinhMucKg || ''} className={`${autofillReadClass} text-right`} />
                             <input readOnly value={item.line.soLuongBac || ''} className={`${autofillReadClass} text-right`} />

@@ -18362,7 +18362,7 @@ async function loadKiemKhoLiveTongHopForDot(
   async function fetchTheoDoiCatLeTable(table: string, columns: string) {
     const pageSize = 1000;
     const rows: Array<Record<string, unknown>> = [];
-    for (let from = 0; from < 20000; from += pageSize) {
+    for (let from = 0; from < 30000; from += pageSize) {
       const { data, error } = await supabase!.from(table).select(columns).range(from, from + pageSize - 1);
       if (error) return { error, rows };
       const batch = (data || []) as unknown as Array<Record<string, unknown>>;
@@ -18372,20 +18372,96 @@ async function loadKiemKhoLiveTongHopForDot(
     return { error: null, rows };
   }
 
-  app.get('/api/theo-doi-cat-le', async (_req, res) => {
+  function catLeRound3(value: number): number {
+    if (!Number.isFinite(value)) return 0;
+    return Math.round(value * 1000) / 1000;
+  }
+
+  /** Nhóm VTHH cho lọc cắt lẻ: Đặc / Sóng / Rỗng / Khác. */
+  function catLeVthhGroup(value: unknown): 'dac' | 'song' | 'rong' | 'khac' {
+    const key = String(value ?? '').toLocaleLowerCase('vi');
+    if (key.includes('đặc') || key.includes('dac')) return 'dac';
+    if (key.includes('sóng') || key.includes('song')) return 'song';
+    if (key.includes('rỗng') || key.includes('rong')) return 'rong';
+    return 'khac';
+  }
+
+  type CatLePieceHit = {
+    code: string;
+    maCu: string;
+    tenGoc: string;
+    tenSx: string;
+    donVi: string;
+    nhom: string;
+    nhomVthh: 'dac' | 'song' | 'rong' | 'khac';
+    ngayCat: string;
+    maLenh: string;
+  };
+
+  /** Bóc các miếng (nguồn / cắt 1 / cắt 2) từ 1 lệnh cắt lẻ. Mã mới + ngày cắt. */
+  function catLeLenhPieces(lenh: Record<string, unknown>): CatLePieceHit[] {
+    const out: CatLePieceHit[] = [];
+    const ngayCat = String(lenh.ngay_cat ?? '').slice(0, 10);
+    const maLenh = String(lenh.ma_lenh ?? '').trim();
+    const lines = normalizeCatLeSanPhamList((lenh as { san_pham?: unknown }).san_pham);
+    for (const line of lines) {
+      const nguon = (line.san_pham_nguon || {}) as Record<string, unknown>;
+      const baseCode = String(nguon.ma_amis || nguon.ma_sp || '').trim();
+      if (!baseCode) continue;
+      const tenGoc = String(nguon.ten_goc || '').trim();
+      const donVi = String(nguon.don_vi || '').trim();
+      const nhom = String(nguon.nhom_vthh || '').trim();
+      const push = (codeRaw: unknown, maCuRaw: unknown, tenSxRaw: unknown) => {
+        const code = String(codeRaw || '').trim() || baseCode;
+        if (!code) return;
+        out.push({
+          code,
+          maCu: String(maCuRaw || '').trim(),
+          tenGoc,
+          tenSx: String(tenSxRaw || '').trim(),
+          donVi,
+          nhom,
+          nhomVthh: catLeVthhGroup(nhom),
+          ngayCat,
+          maLenh
+        });
+      };
+      push(baseCode, '', nguon.ten_sp);
+      const cat1 = (line.san_pham_cat_1 || {}) as unknown as Record<string, unknown>;
+      push(cat1.ma_amis, cat1.ma_amis_cu || baseCode, cat1.ten_sp);
+      const cat2 = (line.san_pham_cat_2 || null) as unknown as Record<string, unknown> | null;
+      if (cat2) push(cat2.ma_amis, cat2.ma_amis_cu || baseCode, cat2.ten_sp);
+    }
+    return out;
+  }
+
+  /* ================= Theo dõi cắt lẻ =================
+   * Nguồn: lệnh cắt lẻ (mã mới + ngày cắt). Gộp theo mã AMIS cũ
+   * (không có mã cũ thì dùng mã nguồn). Tồn tính từ phiếu nhập/xuất
+   * theo kỳ từ ngày → đến ngày. UI chỉ hiện 2 cột: Mã hàng, Tồn cuối.
+   */
+  app.get('/api/theo-doi-cat-le', async (req, res) => {
     if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
     try {
-      const productsResult = await fetchTheoDoiCatLeTable(
-        SUPABASE_BAO_CAO_DON_CAT_LE_SAN_PHAM_TABLE,
-        'ma_amis, ma_amis_cu, ten_san_pham, ten_san_xuat, chi_tiet'
+      const query = (req.query || {}) as Record<string, unknown>;
+      const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+      const fromRaw = String(query.from ?? '').trim().slice(0, 10);
+      const toRaw = String(query.to ?? '').trim().slice(0, 10);
+      const from = dateRe.test(fromRaw) ? fromRaw : '';
+      const to = dateRe.test(toRaw) ? toRaw : '';
+      const nhomFilter = String(query.nhom ?? '').trim().toLocaleLowerCase('vi');
+
+      const lenhResult = await fetchTheoDoiCatLeTable(
+        SUPABASE_LENH_CAT_LE_TABLE,
+        'id, ma_lenh, ngay_cat, trang_thai, san_pham'
       );
-      if (productsResult.error) {
-        if (isMissingTableError(productsResult.error)) {
-          return res.status(503).json({ error: 'Chưa có bảng bao_cao_don_cat_le_san_pham. Chạy file supabase-bao-cao-don-cat-le.sql.' });
+      if (lenhResult.error) {
+        if (isMissingTableError(lenhResult.error)) {
+          return res.status(503).json({ error: 'Chưa có bảng lenh_cat_le. Chạy file supabase-lenh-cat-le.sql.' });
         }
-        return res.status(500).json({ error: `Không thể tải sản phẩm cắt lẻ. ${productsResult.error.message}` });
+        return res.status(500).json({ error: `Không thể tải lệnh cắt lẻ. ${lenhResult.error.message}` });
       }
-      const slipColumns = 'ma_sp, ten_sp, ma_npl, ten_npl, ten_nvl_sx, don_vi, so_luong, trong_luong_kg, thanh_tien, treo';
+      const slipColumns = 'ma_sp, ten_sp, ma_npl, ten_npl, ten_nvl_sx, don_vi, so_luong, so_m2, trong_luong_kg, thanh_tien, ngay_phieu, treo';
       const [nhapResult, xuatResult] = await Promise.all([
         fetchTheoDoiCatLeTable(SUPABASE_WAREHOUSE_NHAP_TABLE, slipColumns),
         fetchTheoDoiCatLeTable(SUPABASE_WAREHOUSE_XUAT_TABLE, slipColumns)
@@ -18393,69 +18469,292 @@ async function loadKiemKhoLiveTongHopForDot(
       if (nhapResult.error) return res.status(500).json({ error: `Không thể tải phiếu nhập. ${nhapResult.error.message}` });
       if (xuatResult.error) return res.status(500).json({ error: `Không thể tải phiếu xuất. ${xuatResult.error.message}` });
 
-      type ProductHit = { ma_amis: string; ten_san_pham: string; ten_san_xuat: string; don_vi: string; group: string };
-      const products: ProductHit[] = [];
-      for (const row of productsResult.rows) {
-        const maAmis = String(row.ma_amis ?? '').trim();
-        const maCu = String(row.ma_amis_cu ?? '').trim();
-        if (!maAmis && !maCu) continue;
-        const chi = row.chi_tiet && typeof row.chi_tiet === 'object' ? (row.chi_tiet as Record<string, unknown>) : {};
-        products.push({
-          ma_amis: maAmis,
-          ten_san_pham: String(row.ten_san_pham ?? '').trim(),
-          ten_san_xuat: String(row.ten_san_xuat ?? '').trim(),
-          don_vi: String(chi.don_vi ?? '').trim(),
-          group: maCu || maAmis
-        });
+      const pieces: CatLePieceHit[] = [];
+      for (const row of lenhResult.rows) {
+        if (String(row.trang_thai || '') === 'huy') continue;
+        pieces.push(...catLeLenhPieces(row));
+      }
+      const byCode = new Map<string, CatLePieceHit[]>();
+      for (const piece of pieces) {
+        const key = theoDoiCatLeKey(piece.code);
+        const list = byCode.get(key) || [];
+        list.push(piece);
+        byCode.set(key, list);
       }
 
-      type Bucket = { maHang: string; donVi: string; nhap: number; xuat: number; trongLuong: number; thanhTien: number };
+      type Qty = { sl: number; kg: number; m2: number; tien: number };
+      const emptyQty = (): Qty => ({ sl: 0, kg: 0, m2: 0, tien: 0 });
+      type Bucket = {
+        maHang: string; tenHang: string; donVi: string; maMoi: Set<string>;
+        nhomVthh: 'dac' | 'song' | 'rong' | 'khac'; ngayCat: string;
+        tonDau: Qty; nhap: Qty; xuat: Qty;
+      };
       const groups = new Map<string, Bucket>();
-      const groupOf = (product: ProductHit) => {
-        const key = theoDoiCatLeKey(product.group);
+      const groupOf = (piece: CatLePieceHit) => {
+        const groupCode = piece.maCu || piece.code;
+        const key = theoDoiCatLeKey(groupCode);
         let bucket = groups.get(key);
         if (!bucket) {
-          bucket = { maHang: product.group, donVi: product.don_vi, nhap: 0, xuat: 0, trongLuong: 0, thanhTien: 0 };
+          bucket = {
+            maHang: groupCode, tenHang: piece.tenGoc, donVi: piece.donVi, maMoi: new Set<string>(),
+            nhomVthh: piece.nhomVthh, ngayCat: piece.ngayCat,
+            tonDau: emptyQty(), nhap: emptyQty(), xuat: emptyQty()
+          };
           groups.set(key, bucket);
-        } else if (!bucket.donVi && product.don_vi) bucket.donVi = product.don_vi;
+        }
+        if (!bucket.tenHang && piece.tenGoc) bucket.tenHang = piece.tenGoc;
+        if (!bucket.donVi && piece.donVi) bucket.donVi = piece.donVi;
+        if (piece.code !== bucket.maHang) bucket.maMoi.add(piece.code);
+        if (piece.ngayCat && (!bucket.ngayCat || piece.ngayCat > bucket.ngayCat)) bucket.ngayCat = piece.ngayCat;
         return bucket;
       };
-      for (const product of products) groupOf(product);
+      for (const piece of pieces) groupOf(piece);
 
-      const addSlip = (rows: Array<Record<string, unknown>>, field: 'nhap' | 'xuat') => {
+      const matchPiece = (slip: { code: string; tenSanPham: string; tenSanXuat: string }): CatLePieceHit | null => {
+        if (!slip.code) return null;
+        const candidates = byCode.get(theoDoiCatLeKey(slip.code));
+        if (!candidates) return null;
+        for (const item of candidates) {
+          if (theoDoiCatLeSlipMatches(slip, { ma_amis: item.code, ten_san_pham: item.tenGoc, ten_san_xuat: item.tenSx })) return item;
+        }
+        return null;
+      };
+
+      const ingest = (rows: Array<Record<string, unknown>>, field: 'nhap' | 'xuat') => {
         for (const row of rows) {
           if (row.treo === true) continue;
           const slip = theoDoiCatLeSlipIdentity(row);
-          const product = products.find(item => item.ma_amis && theoDoiCatLeSlipMatches(slip, item));
-          if (!product) continue;
+          const piece = matchPiece(slip);
+          if (!piece) continue;
+          const bucket = groupOf(piece);
+          if (!bucket.donVi) bucket.donVi = String(row.don_vi ?? '').trim();
+          const day = String(row.ngay_phieu ?? '').slice(0, 10);
           const qty = Number(row.so_luong) || 0;
           const kg = Number(row.trong_luong_kg) || 0;
-          const money = Number(row.thanh_tien) || 0;
-          const sign = field === 'nhap' ? 1 : -1;
-          const bucket = groupOf(product);
-          bucket[field] = Math.round((bucket[field] + qty) * 1000) / 1000;
-          bucket.trongLuong = Math.round((bucket.trongLuong + sign * kg) * 1000) / 1000;
-          bucket.thanhTien = Math.round((bucket.thanhTien + sign * money) * 1000) / 1000;
-          if (!bucket.donVi) bucket.donVi = String(row.don_vi ?? '').trim();
+          const m2 = Number(row.so_m2) || 0;
+          const tien = Number(row.thanh_tien) || 0;
+          const target = from && day && day < from ? bucket.tonDau : bucket[field];
+          if (from && day && day < from) {
+            const sign = field === 'nhap' ? 1 : -1;
+            target.sl = catLeRound3(target.sl + sign * qty);
+            target.kg = catLeRound3(target.kg + sign * kg);
+            target.m2 = catLeRound3(target.m2 + sign * m2);
+            target.tien = catLeRound3(target.tien + sign * tien);
+            continue;
+          }
+          if (to && day && day > to) continue;
+          target.sl = catLeRound3(target.sl + qty);
+          target.kg = catLeRound3(target.kg + kg);
+          target.m2 = catLeRound3(target.m2 + m2);
+          target.tien = catLeRound3(target.tien + tien);
         }
       };
-      addSlip(nhapResult.rows, 'nhap');
-      addSlip(xuatResult.rows, 'xuat');
+      ingest(nhapResult.rows, 'nhap');
+      ingest(xuatResult.rows, 'xuat');
 
       const records = [...groups.values()]
-        .map(row => ({
-          maHang: row.maHang,
-          donVi: row.donVi || 'Tấm',
-          ton: Math.round((row.nhap - row.xuat) * 1000) / 1000,
-          nhap: row.nhap,
-          xuat: row.xuat,
-          trongLuong: row.trongLuong,
-          thanhTien: row.thanhTien
-        }))
+        .filter(row => !nhomFilter || nhomFilter === 'all' || row.nhomVthh === nhomFilter)
+        .map(row => {
+          const tonCuoiSl = catLeRound3(row.tonDau.sl + row.nhap.sl - row.xuat.sl);
+          const tonCuoiKg = catLeRound3(row.tonDau.kg + row.nhap.kg - row.xuat.kg);
+          const tonCuoiM2 = catLeRound3(row.tonDau.m2 + row.nhap.m2 - row.xuat.m2);
+          const tonCuoiTien = catLeRound3(row.tonDau.tien + row.nhap.tien - row.xuat.tien);
+          return {
+            maHang: row.maHang,
+            tenHang: row.tenHang,
+            maMoi: [...row.maMoi].sort((a, b) => a.localeCompare(b, 'vi')),
+            donVi: row.donVi || 'Tấm',
+            nhomVthh: row.nhomVthh,
+            ngayCat: row.ngayCat,
+            tonDau: row.tonDau.sl, tonDauKg: row.tonDau.kg, tonDauM2: row.tonDau.m2,
+            nhap: row.nhap.sl, nhapKg: row.nhap.kg, nhapM2: row.nhap.m2,
+            xuat: row.xuat.sl, xuatKg: row.xuat.kg, xuatM2: row.xuat.m2,
+            tonCuoi: tonCuoiSl, tonCuoiKg, tonCuoiM2, tonCuoiTien,
+            // Tương thích UI cũ.
+            donViLegacy: row.donVi || 'Tấm',
+            ton: tonCuoiSl,
+            trongLuong: tonCuoiKg,
+            thanhTien: tonCuoiTien
+          };
+        })
         .sort((a, b) => a.maHang.localeCompare(b.maHang, 'vi'));
-      return res.json({ records });
+      return res.json({ records, from: from || null, to: to || null });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi tải theo dõi cắt lẻ.' });
+    }
+  });
+
+  /* ================= Báo cáo cắt lẻ tổng hợp (kiểu Tổng hợp tồn kho) ===
+   * Hàng = mã AMIS cũ gộp các mã AMIS có trong sổ nhap_kho.
+   * Số liệu cộng từ phieu_nhap_kho / phieu_xuat_kho theo kỳ:
+   * SL = so_luong, SL theo ĐVC (m2) = so_m2, Giá trị = thanh_tien.
+   */
+  app.get('/api/bao-cao-cat-le-tong-hop', async (req, res) => {
+    if (!supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+    try {
+      const query = (req.query || {}) as Record<string, unknown>;
+      const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+      const fromRaw = String(query.from ?? '').trim().slice(0, 10);
+      const toRaw = String(query.to ?? '').trim().slice(0, 10);
+      const from = dateRe.test(fromRaw) ? fromRaw : '';
+      const to = dateRe.test(toRaw) ? toRaw : '';
+      const nhomFilter = String(query.nhom ?? '').trim().toLocaleLowerCase('vi');
+
+      const catalogFull = 'ma_sp, ma_sp_cu, ma_amis, ten_sp, don_vi, ten_kho, loai_kho';
+      let catalogRows: Array<Record<string, unknown>> = [];
+      {
+        const full = await fetchTheoDoiCatLeTable(SUPABASE_NHAP_KHO_TABLE, catalogFull);
+        if (full.error && /column|does not exist|schema cache/i.test(full.error.message || '')) {
+          const minimal = await fetchTheoDoiCatLeTable(SUPABASE_NHAP_KHO_TABLE, 'ma_sp, ten_sp, don_vi');
+          if (minimal.error) return res.status(500).json({ error: `Không thể tải sổ nhập kho. ${minimal.error.message}` });
+          catalogRows = minimal.rows;
+        } else if (full.error) {
+          return res.status(500).json({ error: `Không thể tải sổ nhập kho. ${full.error.message}` });
+        } else {
+          catalogRows = full.rows;
+        }
+      }
+      // Tên mặt hàng + nhóm VTHH từ danh mục sản phẩm (best-effort).
+      // Tên hàng = Tên sản phẩm (ten_sp) của dòng GỐC (ma_sp/ma_amis trùng mã cũ,
+      // ma_amis_cu rỗng) — không lấy tên sản xuất, không lấy tên của biến thể.
+      const spByCode = new Map<string, Record<string, unknown>>();
+      const facingByOldCode = new Map<string, string>();
+      {
+        const tryCols = [
+          'ma_sp, ma_amis, ma_amis_cu, ten_sp, nhom_vthh, don_vi',
+          'ma_sp, ma_amis, ten_sp, nhom_vthh, don_vi'
+        ];
+        let spRows: Array<Record<string, unknown>> = [];
+        for (const cols of tryCols) {
+          const sp = await fetchTheoDoiCatLeTable(SUPABASE_PRODUCTS_TABLE, cols);
+          if (!sp.error) {
+            spRows = sp.rows;
+            break;
+          }
+          if (!/column|does not exist|schema cache/i.test(sp.error.message || '')) break;
+        }
+        for (const row of spRows) {
+          const code = String(row.ma_sp ?? '').trim();
+          if (code && !spByCode.has(theoDoiCatLeKey(code))) spByCode.set(theoDoiCatLeKey(code), row);
+          const amis = String(row.ma_amis ?? '').trim();
+          if (amis && !spByCode.has(theoDoiCatLeKey(amis))) spByCode.set(theoDoiCatLeKey(amis), row);
+          const maCu = String(row.ma_amis_cu ?? '').trim();
+          const tenSp = String(row.ten_sp ?? '').trim();
+          if (!tenSp) continue;
+          // Dòng gốc: chính mã của nó là mã cũ (ma_sp hoặc ma_amis trùng mã nhóm).
+          for (const self of [code, amis]) {
+            if (!self) continue;
+            const key = theoDoiCatLeKey(self);
+            if (maCu && theoDoiCatLeKey(maCu) !== key) continue;
+            if (!facingByOldCode.has(key)) facingByOldCode.set(key, tenSp);
+          }
+        }
+      }
+      const slipColumns = 'ma_sp, ma_npl, don_vi, so_luong, so_m2, thanh_tien, ngay_phieu, treo';
+      const [nhapResult, xuatResult] = await Promise.all([
+        fetchTheoDoiCatLeTable(SUPABASE_WAREHOUSE_NHAP_TABLE, slipColumns),
+        fetchTheoDoiCatLeTable(SUPABASE_WAREHOUSE_XUAT_TABLE, slipColumns)
+      ]);
+      if (nhapResult.error) return res.status(500).json({ error: `Không thể tải phiếu nhập. ${nhapResult.error.message}` });
+      if (xuatResult.error) return res.status(500).json({ error: `Không thể tải phiếu xuất. ${xuatResult.error.message}` });
+
+      type Group = {
+        maCu: string; tenHang: string; dvt: string; maMoi: Set<string>; members: Set<string>;
+        nhomVthh: 'dac' | 'song' | 'rong' | 'khac';
+        dau: { sl: number; dvc: number; tien: number };
+        nhap: { sl: number; dvc: number; tien: number };
+        xuat: { sl: number; dvc: number; tien: number };
+      };
+      const groups = new Map<string, Group>();
+      for (const row of catalogRows) {
+        const maSp = String(row.ma_sp ?? '').trim();
+        if (!maSp) continue;
+        const maCu = String(row.ma_sp_cu ?? '').trim() || String(row.ma_amis ?? '').trim() || maSp;
+        const key = theoDoiCatLeKey(maCu);
+        let g = groups.get(key);
+        if (!g) {
+          g = {
+            maCu, tenHang: '', dvt: '', maMoi: new Set<string>(), members: new Set<string>(),
+            nhomVthh: 'khac',
+            dau: { sl: 0, dvc: 0, tien: 0 }, nhap: { sl: 0, dvc: 0, tien: 0 }, xuat: { sl: 0, dvc: 0, tien: 0 }
+          };
+          groups.set(key, g);
+        }
+        g.members.add(theoDoiCatLeKey(maSp));
+        const maAmis = String(row.ma_amis ?? '').trim();
+        if (maAmis) g.members.add(theoDoiCatLeKey(maAmis));
+        if (maSp !== maCu) g.maMoi.add(maSp);
+        else if (maAmis && maAmis !== maCu) g.maMoi.add(maAmis);
+        const tenSp = String(row.ten_sp ?? '').trim();
+        if (!g.tenHang) g.tenHang = tenSp;
+        else if (maSp === maCu && tenSp) g.tenHang = tenSp;
+        const dvt = String(row.don_vi ?? '').trim();
+        if (!g.dvt && dvt) g.dvt = dvt;
+        const sp = spByCode.get(theoDoiCatLeKey(maSp)) || (maAmis ? spByCode.get(theoDoiCatLeKey(maAmis)) : undefined);
+        if (sp) {
+          const nhom = catLeVthhGroup(sp.nhom_vthh);
+          if (g.nhomVthh === 'khac' && nhom !== 'khac') g.nhomVthh = nhom;
+          const spDvt = String(sp.don_vi ?? '').trim();
+          if (!g.dvt && spDvt) g.dvt = spDvt;
+        }
+      }
+      const memberToGroup = new Map<string, Group>();
+      for (const g of groups.values()) {
+        for (const m of g.members) {
+          if (!memberToGroup.has(m)) memberToGroup.set(m, g);
+        }
+      }
+      const ingest = (rows: Array<Record<string, unknown>>, field: 'nhap' | 'xuat') => {
+        for (const row of rows) {
+          if (row.treo === true) continue;
+          const code = String(row.ma_sp ?? row.ma_npl ?? '').trim();
+          if (!code) continue;
+          const g = memberToGroup.get(theoDoiCatLeKey(code));
+          if (!g) continue;
+          if (!g.dvt) g.dvt = String(row.don_vi ?? '').trim();
+          const day = String(row.ngay_phieu ?? '').slice(0, 10);
+          const sl = Number(row.so_luong) || 0;
+          const dvc = Number(row.so_m2) || 0;
+          const tien = Number(row.thanh_tien) || 0;
+          if (from && day && day < from) {
+            const sign = field === 'nhap' ? 1 : -1;
+            g.dau.sl = catLeRound3(g.dau.sl + sign * sl);
+            g.dau.dvc = catLeRound3(g.dau.dvc + sign * dvc);
+            g.dau.tien = catLeRound3(g.dau.tien + sign * tien);
+            continue;
+          }
+          if (to && day && day > to) continue;
+          const target = field === 'nhap' ? g.nhap : g.xuat;
+          target.sl = catLeRound3(target.sl + sl);
+          target.dvc = catLeRound3(target.dvc + dvc);
+          target.tien = catLeRound3(target.tien + tien);
+        }
+      };
+      ingest(nhapResult.rows, 'nhap');
+      ingest(xuatResult.rows, 'xuat');
+
+      const records = [...groups.values()]
+        .filter(g => !nhomFilter || nhomFilter === 'all' || g.nhomVthh === nhomFilter)
+        .map(g => ({
+          maHang: g.maCu,
+          // Tên hàng = Tên sản phẩm (tên mặt hàng) của dòng gốc trong danh mục;
+          // thiếu mới dùng tên trong sổ nhập kho. Không dùng tên sản xuất.
+          tenHang: facingByOldCode.get(theoDoiCatLeKey(g.maCu)) || g.tenHang,
+          dvt: g.dvt || 'Tấm',
+          dvc: 'm2',
+          maMoi: [...g.maMoi].sort((a, b) => a.localeCompare(b, 'vi')),
+          nhomVthh: g.nhomVthh,
+          dauSl: g.dau.sl, dauDvc: g.dau.dvc, dauTien: g.dau.tien,
+          nhapSl: g.nhap.sl, nhapDvc: g.nhap.dvc, nhapTien: g.nhap.tien,
+          xuatSl: g.xuat.sl, xuatDvc: g.xuat.dvc, xuatTien: g.xuat.tien,
+          cuoiSl: catLeRound3(g.dau.sl + g.nhap.sl - g.xuat.sl),
+          cuoiDvc: catLeRound3(g.dau.dvc + g.nhap.dvc - g.xuat.dvc),
+          cuoiTien: catLeRound3(g.dau.tien + g.nhap.tien - g.xuat.tien)
+        }))
+        .sort((a, b) => a.maHang.localeCompare(b.maHang, 'vi'));
+      return res.json({ records, from: from || null, to: to || null });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải báo cáo cắt lẻ.' });
     }
   });
 

@@ -47,7 +47,7 @@ import {
   type StaffOption,
   type CustomerOption
 } from '../_shared/orderHelpers';
-import { extractDoLiDmNumber, buildMaAmisMoi, buildOrderTenGhep, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceDoLiDmInTenGhep, normalizeDoLiDm, seedProductionSpecs } from '../../utils/productProductionName';
+import { extractDoLiDmNumber, buildMaAmisMoi, buildOrderTenGhep, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, normalizeDoLiDm, seedProductionSpecs } from '../../utils/productProductionName';
 import {
   orderDuplicateDecimalText,
   parseSouthDinhMucKg,
@@ -96,17 +96,17 @@ interface OrderRowExt extends OrderRow {
 
 const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1340px]';
 const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1580px]';
-const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2240px]';
-const ORDER_MIEN_NAM_TABLE_MIN_WIDTH = 'min-w-[2520px]';
+const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2360px]';
+const ORDER_MIEN_NAM_TABLE_MIN_WIDTH = 'min-w-[2640px]';
 export const PRODUCTION_ORDER_TYPE = 'Đơn sản xuất';
 const orderProductGridClass =
   'grid-cols-[7rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(12rem,1.35fr)_minmax(7rem,0.9fr)_5rem_5.5rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
 const orderProductionProductGridClass =
   'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(11rem,1.25fr)_minmax(6.5rem,0.85fr)_5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_5rem_5rem_5rem_6.5rem]';
 const orderSouthProductGridClass =
-  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_6rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const orderMienNamProductGridClass =
-  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_8.5rem_6.5rem_7rem_5.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_6rem_8.5rem_6.5rem_7rem_5.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
 const CUSTOMER_ENTERED_KG_SOURCE = 'khach_hang_nhap_kg';
 /** Ô Tìm Mã AMIS: hiện tối đa 400 kết quả đã lọc. Các Select khác vẫn mặc định 50. */
@@ -679,7 +679,13 @@ export function orderProductLinesToPayload(
 
       const catalogTenGhep = String(selectedProduct?.tenGhep || '').trim();
       const catalogProductionName = String(selectedProduct?.productionName || '').trim();
-      const catalogMainLength = Number(String(selectedProduct?.doDaiM ?? '').replace(',', '.'));
+      const catalogMainLength = Number(String(selectedProduct?.doDaiM ?? '').replace(/m\s*$/iu, '').replace(',', '.'));
+      const catalogWidth = Number(String(selectedProduct?.doDayM ?? '').replace(/m\s*$/iu, '').replace(',', '.'));
+      const enteredWidth = parsePercentInput(line.kho || '');
+      const widthDiffersForCode =
+        Number.isFinite(enteredWidth) &&
+        enteredWidth > 0 &&
+        (!Number.isFinite(catalogWidth) || catalogWidth <= 0 || Math.abs(enteredWidth - catalogWidth) > 1e-9);
       // Chỉ nhóm Đặc/Sóng mới thay đúng token m dài chính (kể cả khi không đứng cuối);
       // các nhóm VTHH khác giữ luật cũ (thay mét cuối / thêm - Nm).
       const pxGroup = classifyProductPxGroup(selectedProduct?.group || '');
@@ -713,6 +719,7 @@ export function orderProductLinesToPayload(
         isCutLikeOrder &&
         (selectedProduct?.code || productCode) &&
         (cutDiffersForCode ||
+          widthDiffersForCode ||
           doLiDiffersForCode ||
           doLiDmValue ||
           variantSpecs?.hangPhe ||
@@ -724,6 +731,7 @@ export function orderProductLinesToPayload(
               baseMaAmis: selectedProduct?.code || productCode,
               nhomVthh: selectedProduct?.group,
               cutLengthM: cutDiffersForCode ? cutLengthForCode : undefined,
+              cutWidthM: widthDiffersForCode ? enteredWidth : undefined,
               doLi: doLiDiffersForCode ? doLiLine : undefined,
               doLiDm: doLiDmValue || undefined,
               hangPhe: variantSpecs?.hangPhe || undefined,
@@ -748,17 +756,33 @@ export function orderProductLinesToPayload(
           let base = cutLength != null
             ? replaceCutLengthMeters(catalogTenGhep, cutLength, mainForCut)
             : catalogTenGhep;
+          if (widthDiffersForCode) {
+            base = replaceCutWidthMeters(
+              base,
+              enteredWidth,
+              Number.isFinite(catalogWidth) && catalogWidth > 0 ? catalogWidth : undefined,
+              cutLength
+            );
+          }
           if (doLiDmValue) {
             base = replaceDoLiDmInTenGhep(base, doLiDmValue, 'li');
           }
           return isCutLikeOrder ? appendSouthTemToTenGhep(base, temValue, mauTemValue, danTem2DauValue) : base;
         }
-        const tenGhep = buildOrderTenGhep(tenSanXuat, {
+        let tenGhep = buildOrderTenGhep(tenSanXuat, {
           nhomVthh: selectedProduct?.group,
           maAmis: selectedProduct?.newCode,
           cutLengthM: cutLength,
           doLiDm: doLiDmValue || undefined
         });
+        if (tenGhep && widthDiffersForCode) {
+          tenGhep = replaceCutWidthMeters(
+            tenGhep,
+            enteredWidth,
+            Number.isFinite(catalogWidth) && catalogWidth > 0 ? catalogWidth : undefined,
+            cutLength
+          );
+        }
         if (!tenGhep) return undefined;
         return isCutLikeOrder ? appendSouthTemToTenGhep(tenGhep, temValue, mauTemValue, danTem2DauValue) : tenGhep;
       };
@@ -801,6 +825,7 @@ export function orderProductLinesToPayload(
             ? { ket_qua_quy_doi: storedConversionResults }
             : {}),
           ...(isCutLikeOrder && Number.isFinite(daiM) && daiM > 0 ? { dai_m: daiM } : {}),
+          ...(isCutLikeOrder && Number.isFinite(enteredWidth) && enteredWidth > 0 ? { kho: enteredWidth } : {}),
           ...(isCutLikeOrder && line.quyCachMDai ? { quy_cach_m_dai: parsePercentInput(String(line.quyCachMDai)) } : {})
         };
       }
@@ -845,7 +870,9 @@ export function orderProductLinesToPayload(
       if (isCutLikeOrder) {
         if (Number.isFinite(daiM) && daiM > 0 && Number.isFinite(quantity) && quantity > 0) {
           cutMDai = roundConversionValue(daiM * quantity);
-          const width = extractProductWidth(productCode, productName, conversion);
+          const width = Number.isFinite(enteredWidth) && enteredWidth > 0
+            ? enteredWidth
+            : extractProductWidth(productCode, productName, conversion);
           if (width && width > 0) {
             cutM2 = roundConversionValue(daiM * width * quantity);
           }
@@ -915,6 +942,7 @@ export function orderProductLinesToPayload(
           ? {
               ...(quyCachMDai !== undefined ? { quy_cach_m_dai: quyCachMDai } : {}),
               dai_m: Number.isFinite(daiM) && daiM > 0 ? daiM : undefined,
+              ...(Number.isFinite(enteredWidth) && enteredWidth > 0 ? { kho: enteredWidth } : {}),
               ...(cutM2 !== undefined && cutM2 > 0 ? { m2: cutM2 } : {}),
               ...(cutMDai !== undefined && cutMDai > 0 ? { m_dai: cutMDai } : {}),
               ...(cutTlCuon !== undefined && cutTlCuon > 0 ? { tl_cuon: cutTlCuon } : {}),
@@ -970,6 +998,7 @@ export function orderToForm(order: OrderRow): OrderFormState {
     slTrung: keepRegionQty ? orderDuplicateDecimalText(line.soLuongTrung || '') : '',
     slNam: keepRegionQty ? orderDuplicateDecimalText(line.soLuongNam || '') : '',
     daiM: orderDuplicateDecimalText(line.daiM || ''),
+    kho: orderDuplicateDecimalText(line.kho || ''),
     doDaiTamTieuChuan: orderDuplicateDecimalText(line.doDaiTamTieuChuan || ''),
     dinhMucTieuChuanKg: orderDuplicateDecimalText(line.dinhMucTieuChuanKg || ''),
     doLi: orderDuplicateDecimalText(line.doLi || ''),
@@ -1436,6 +1465,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       productName: match?.name || '',
       productionName: match?.productionName || '',
       unit: 'Tấm',
+      kho: orderDuplicateDecimalText(String(match?.doDayM || '').replace(/m\s*$/iu, '')),
       doLiDm: orderDuplicateDecimalText(extractDoLiDmNumber(match?.doLiDm || '')),
       tongKg: '',
       dinhMucKg: '',
@@ -2002,6 +2032,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'productionName', label: 'Tên sản xuất' },
                         { key: 'unit', label: 'ĐVT' },
                         { key: 'daiM', label: 'Dài (m)', required: true },
+                        { key: 'khoRong', label: 'Khổ rộng (m)' },
                         { key: 'doLi', label: 'Độ li ĐM' },
                         { key: 'daiTc', label: 'Độ dài tấm tiêu chuẩn' },
                         { key: 'daiDm', label: 'Định mức tiêu chuẩn (kg)' },
@@ -2023,6 +2054,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'productionName', label: 'Tên sản xuất' },
                         { key: 'unit', label: 'ĐVT' },
                         { key: 'daiM', label: 'Dài (m)', required: true },
+                        { key: 'khoRong', label: 'Hạ khổ rộng (m)' },
                         { key: 'doLi', label: 'Độ li ĐM' },
                         { key: 'dinhMucKg', label: 'Định mức KG' },
                         { key: 'bac', label: 'Bắc' },
@@ -2167,6 +2199,15 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             onChange={e => updateConversionProductLine(line.key, { daiM: e.target.value })}
                             className={orderFieldClass}
                             placeholder="2.8"
+                          />
+                        </div>
+                        <div className="col-span-1 min-w-0">
+                          <OrderNumberInput
+                            value={line.kho || ''}
+                            onChange={e => updateConversionProductLine(line.key, { kho: e.target.value })}
+                            className={orderFieldClass}
+                            placeholder="1.22"
+                            title={isFormSouthOrder ? 'Khổ rộng (m) — ghi vào mã AMIS mới khi khác khổ danh mục' : 'Hạ khổ rộng (m) — ghi vào mã AMIS mới khi khác khổ tấm chính'}
                           />
                         </div>
                         <div className="col-span-1 min-w-0">
