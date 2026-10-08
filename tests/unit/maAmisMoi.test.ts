@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { abbreviateHangPhe, buildMaAmisMoi, mvByMauTem } from '../../src/utils/productProductionName';
+import { abbreviateHangPhe, buildMaAmisMoi, mvByMauTem, replaceCutWidthMeters } from '../../src/utils/productProductionName';
 import { inferKhoChinhTuNhom, variantCodeForCatPiece } from '../../src/features/lenh-cat-le/logic';
 
 describe('mã AMIS mới — buildMaAmisMoi', () => {
@@ -126,6 +126,35 @@ describe('mã AMIS mới — buildMaAmisMoi', () => {
     );
     assert.equal(abbreviateHangPhe('hàng nguyên phế'), 'NGPHE');
     assert.equal(abbreviateHangPhe('(GIÁ RẺ)'), 'NP2');
+  });
+
+  it('hạ khổ rộng thay token *m và nằm trong mã mới', () => {
+    assert.equal(
+      buildMaAmisMoi({
+        baseMaAmis: 'STD06-0.8li*1.22m',
+        nhomVthh: 'TP; PX Đặc',
+        cutLengthM: 3,
+        cutWidthM: 1
+      }),
+      'STD06-0.8li*1m-3m'
+    );
+    assert.equal(
+      buildMaAmisMoi({
+        baseMaAmis: 'STS06-5.0kg-NP2',
+        nhomVthh: 'TP; PX Sóng',
+        cutLengthM: 6,
+        cutWidthM: 1.2
+      }),
+      'STS06-5.0kg*1.2m-6m-NP2'
+    );
+    assert.equal(
+      replaceCutWidthMeters('Tấm - 1.22m - 8m', 1, 1.22, 8),
+      'Tấm - 1m - 8m'
+    );
+    assert.equal(
+      replaceCutWidthMeters('NHỰA SÓNG - 6m', 1.2, undefined, 6),
+      'NHỰA SÓNG - 1.2m - 6m'
+    );
   });
 
   it('mã biến thể cho SP cắt sau cắt', () => {

@@ -586,6 +586,69 @@ export function replaceCutLengthMeters(
   return `${coreText} - ${label}${suffix}`;
 }
 
+function meterTokenAt(text: string, target: number): { index: number; length: number } | null {
+  const tokenRe = /(\d[\d.,]*)\s*m\b/giu;
+  let match: RegExpExecArray | null;
+  let found: { index: number; length: number } | null = null;
+  while ((match = tokenRe.exec(text)) !== null) {
+    const prev = match.index > 0 ? text[match.index - 1] : '';
+    if (prev && /[\d.,]/.test(prev)) continue;
+    const value = Number(match[1].replace(',', '.'));
+    if (Number.isFinite(value) && Math.abs(value - target) < 1e-9) {
+      found = { index: match.index, length: match[0].length };
+    }
+  }
+  return found;
+}
+
+/**
+ * Hạ khổ rộng trên tên ghép: thay đúng token khổ nguồn (vd 1.22m), không đụng mét dài.
+ * Không thấy token khổ thì chèn trước mét dài đang giữ.
+ */
+export function replaceCutWidthMeters(
+  tenGhep: string,
+  widthM: number | string | null | undefined,
+  sourceWidthM?: number | string | null,
+  keepLengthM?: number | string | null
+): string {
+  const text = String(tenGhep || '').trim();
+  const width = Number(String(widthM ?? '').replace(',', '.'));
+  if (!text || !Number.isFinite(width) || width <= 0) return text;
+  const label = formatMetersLabel(width);
+  const source = Number(String(sourceWidthM ?? '').replace(/m\s*$/iu, '').replace(',', '.'));
+  const keep = Number(String(keepLengthM ?? '').replace(/m\s*$/iu, '').replace(',', '.'));
+  if (Number.isFinite(source) && source > 0 && Math.abs(source - width) > 1e-9) {
+    const hit = meterTokenAt(text, source);
+    const keepHit = Number.isFinite(keep) && keep > 0 ? meterTokenAt(text, keep) : null;
+    if (hit && (!keepHit || hit.index !== keepHit.index)) {
+      return `${text.slice(0, hit.index)}${label}${text.slice(hit.index + hit.length)}`.trim();
+    }
+  }
+  const already = meterTokenAt(text, width);
+  if (already && !(Number.isFinite(keep) && Math.abs(keep - width) < 1e-9)) return text;
+  const anchor = Number.isFinite(keep) && keep > 0 ? meterTokenAt(text, keep) : null;
+  if (anchor) {
+    const before = text.slice(0, anchor.index).replace(/[\s-]+$/, '');
+    const after = text.slice(anchor.index);
+    return `${before} - ${label} - ${after}`.replace(/\s+-\s+-\s+/g, ' - ').trim();
+  }
+  return `${text} - ${label}`;
+}
+
+/** Khổ rộng trên mã AMIS dùng dấu `*` (`*1.22m`). Không có thì chèn trước mét dài cuối. */
+export function applyCutWidthToAmis(base: string, widthM: number): string {
+  const label = formatMetersLabel(widthM);
+  if (!label) return base;
+  if (/\*\s*\d[\d.,]*\s*m\b/iu.test(base)) {
+    return base.replace(/\*\s*\d[\d.,]*\s*m\b/iu, `*${label}`);
+  }
+  const trail = base.match(/-\d[\d.,]*\s*m\s*$/iu);
+  if (trail && trail.index != null) {
+    return `${base.slice(0, trail.index)}*${label}${base.slice(trail.index)}`;
+  }
+  return `${base}*${label}`;
+}
+
 /** Bỏ mét cắt bị nối sau hậu tố tem khi mét đó đã đứng ngay trước "(Dán Tem". */
 export function stripTrailingDuplicateCutAfterTem(tenGhep: string): string {
   let text = String(tenGhep || '').trim();
@@ -621,6 +684,8 @@ export interface MaAmisMoiInput {
   nhomVthh?: string;
   /** Mét dài cắt (vd 3). Bỏ qua khi trùng mét đã có trong mã (Rỗng). */
   cutLengthM?: number | string | null;
+  /** Khổ rộng hạ (m). Thay token `*1.22m`, không có thì chèn `*Nm`. */
+  cutWidthM?: number | string | null;
   /** Độ li hạ thật (vd `8li`) — thay token li trong mã gốc. */
   doLi?: string | null;
   /** Định mức thực tế (vd `6.7`, `(đm 6.7 li)`) — thay token li trong mã (`6li` → `6.7li`). */
@@ -675,7 +740,7 @@ function amisTemToken(tem: string): string {
 /**
  * Sinh Mã AMIS mới cho biến thể cắt lẻ / đơn miền nam từ mã chuẩn gốc.
  * Độ li ĐM thay token li trong mã (`STD06-6li` + đm 6.7 → `STD06-6.7li`), không thêm `DM…`.
- * Thứ tự còn lại: `BASE[-mét cắt][-NP/NP2][-100PHE][-màng][ - TEM..-MV..[-2DAU]]`.
+ * Thứ tự còn lại: `BASE[*khổ rộng][-mét cắt][-NP/NP2][-100PHE][-màng][ - TEM..-MV..[-2DAU]]`.
  * `2DAU` = dán tem 2 đầu. `100PHE` = 100% phế.
  * Mã gốc giữ nguyên để truy vết qua `ma_amis_cu`.
  * Vd: `STD06-0.8li*1.22m` + cắt 3m + đm 0.75 + ECO + tem 1.2li Vàng 2 đầu
@@ -703,6 +768,9 @@ export function buildMaAmisMoi(input: MaAmisMoiInput): string {
   // Độ li ĐM thay token li (`6li` → `6.7li`). Không có đm thì mới dùng độ li hạ thật.
   const doLiNew = doLiTokenFromDm(input.doLiDm || '') || normalizeDoLiToken(input.doLi || '');
   if (doLiNew) base = replaceLiToken(base, doLiNew);
+
+  const width = Number(String(input.cutWidthM ?? '').replace(',', '.'));
+  if (Number.isFinite(width) && width > 0) base = applyCutWidthToAmis(base, width);
 
   // Mét cắt: Rỗng thay mét dài đã có; Đặc/Sóng thêm `-Nm` (mã chuẩn không chứa mét).
   const cut = Number(String(input.cutLengthM ?? '').replace(',', '.'));

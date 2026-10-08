@@ -1526,6 +1526,7 @@ export function ProductViewModal({
     ['Tính chất', product.nature],
     ['Kho', product.warehouse],
     ['Tồn TT', product.minStock],
+    ['Khổ rộng (m)', product.doDayM],
     ['Nguồn gốc', product.origin]
   ] as [string, string][]).filter(([, value]) => value && value !== '-');
 
@@ -1640,6 +1641,9 @@ export function ProductViewModal({
           <div>
             <p className="text-xs font-black uppercase tracking-wider text-red-500">Xem sản phẩm</p>
             <h3 className="mt-1 text-lg font-black text-zinc-950">{product.name || product.code}</h3>
+            {product.tenGhep ? (
+              <p className="mt-0.5 text-sm font-semibold text-zinc-800">{product.tenGhep}</p>
+            ) : null}
             <p className="mt-0.5 text-xs font-semibold text-zinc-500">{product.code}{product.newCode ? ` · ${product.newCode}` : ''}</p>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
@@ -3245,7 +3249,7 @@ export function ProductEditModal({
                     />
                   </label>
                   <label className="space-y-1.5">
-                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Độ dày (m)</span>
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Khổ rộng (m)</span>
                     <input
                       value={form.doDayM}
                       onChange={event => setForm(prev => ({ ...prev, doDayM: event.target.value }))}
@@ -5066,18 +5070,19 @@ export function ProductsPanel({
                           {row.doLiDm || '-'}
                         </td>
                         <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle text-xs font-semibold text-zinc-700">
-                          {composeProductionDisplayName(
-                            {
-                              tenGoc: row.tenGoc || row.productionName,
-                              doLi: row.doLi,
-                              doLiDm: row.doLiDm,
-                              doDayM: row.doDayM,
-                              doDaiM: row.doDaiM,
-                              mang: row.mang,
-                              hangPhe: row.hangPhe
-                            },
-                            row.group
-                          )}
+                          {row.tenGhep ||
+                            composeProductionDisplayName(
+                              {
+                                tenGoc: row.tenGoc || row.productionName,
+                                doLi: row.doLi,
+                                doLiDm: row.doLiDm,
+                                doDayM: row.doDayM,
+                                doDaiM: row.doDaiM,
+                                mang: row.mang,
+                                hangPhe: row.hangPhe
+                              },
+                              row.group
+                            )}
                         </td>
                         <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle">
                           <StatusBadge label={row.nature} color="rose" />
