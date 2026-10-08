@@ -120,6 +120,10 @@ export interface ProductRow {
   mang?: string;
   hangPhe?: string;
   tenGhep?: string;
+  /** Tem mặc định của sản phẩm (đơn miền nam / cắt lẻ auto-fill). */
+  tem?: string;
+  /** Màu tem mặc định của sản phẩm (đơn miền nam / cắt lẻ auto-fill). */
+  mauTem?: string;
   nature: string;
   group: string;
   unit: string;

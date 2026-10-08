@@ -2506,6 +2506,8 @@ export function normalizeProducts(data: unknown): ProductRow[] {
         mang: String(record.mang ?? '').trim(),
         hangPhe: String(record.hang_phe ?? '').trim(),
         tenGhep: String(record.ten_ghep ?? '').trim(),
+        tem: String(record.tem ?? '').trim() || undefined,
+        mauTem: String(record.mau_tem ?? '').trim() || undefined,
         nature: String(record.tinh_chat ?? '').trim() || 'Chưa phân loại',
         group: String(record.nhom_vthh ?? '').trim() || 'Chưa nhóm',
         unit: String(record.don_vi ?? '').trim() || '-',

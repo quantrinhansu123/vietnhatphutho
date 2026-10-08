@@ -1342,7 +1342,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
           // Đối với đơn hàng miền nam, tự động fill các cột phía sau nếu có:
           const conversion = productConversions.find(item => item.sanPhamId === match.id);
-          const parsedTem = parseSouthTemFromTenGhep(match.tenGhep || match.productionName);
+          // Ưu tiên field tem/mauTem riêng trên danh mục SP; fallback parse từ tenGhep (dữ liệu cũ)
+          const catalogTemVal = match.tem || '';
+          const catalogMauTemVal = match.mauTem || '';
+          const parsedTem = !catalogTemVal
+            ? parseSouthTemFromTenGhep(match.tenGhep || match.productionName)
+            : { tem: '', mauTem: '', danTem2Dau: false };
+          const autoTemVal = catalogTemVal || parsedTem.tem || line.tem || '';
+          const autoMauTemVal = catalogMauTemVal || parsedTem.mauTem || line.mauTem || SOUTH_TEM_COLOR_DEFAULT;
           const extractedMang = match.mang || extractMang(match.productionName);
 
           const autoMang = extractedMang || line.mang || 'SUN PC';
@@ -1374,9 +1381,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             doLiDm: orderDuplicateDecimalText(autoDoLiDm || ''),
             doDaiTamTieuChuan: orderDuplicateDecimalText(autoDoDaiTamTieuChuan || ''),
             dinhMucTieuChuanKg: orderDuplicateDecimalText(autoDinhMucTieuChuanKg || ''),
-            tem: parsedTem.tem || line.tem || '',
-            mauTem: parsedTem.mauTem || line.mauTem || SOUTH_TEM_COLOR_DEFAULT,
-            danTem2Dau: parsedTem.tem ? parsedTem.danTem2Dau : (line.danTem2Dau ?? false)
+            tem: autoTemVal,
+            mauTem: autoMauTemVal,
+            danTem2Dau: (catalogTemVal || parsedTem.tem) ? parsedTem.danTem2Dau : (line.danTem2Dau ?? false)
           };
         })
       };
@@ -1541,7 +1548,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     const match = findOrderProductById(productOptions, productId);
     const isSouthOrder = orderForm.orderType === SOUTH_ORDER_TYPE;
     const conversion = productId ? productConversions.find(item => item.sanPhamId === productId) : undefined;
-    const parsedTem = isSouthOrder && match ? parseSouthTemFromTenGhep(match.tenGhep || match.productionName) : null;
+    // Ưu tiên field tem/mauTem riêng trên danh mục SP; fallback parse từ tenGhep (dữ liệu cũ)
+    const catalogTem = match?.tem || '';
+    const catalogMauTem = match?.mauTem || '';
+    const parsedTem = isSouthOrder && match && !catalogTem
+      ? parseSouthTemFromTenGhep(match.tenGhep || match.productionName)
+      : null;
+    const autoTem = catalogTem || parsedTem?.tem || '';
+    const autoMauTem = catalogMauTem || parsedTem?.mauTem || '';
     const extractedMang = isSouthOrder && match ? (match.mang || extractMang(match.productionName)) : '';
 
     const rawDaiM = match?.doDaiM ? String(match.doDaiM).replace(/m\s*$/iu, '').trim() : '';
@@ -1571,8 +1585,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         daiM: orderDuplicateDecimalText(autoDaiM || ''),
         doDaiTamTieuChuan: orderDuplicateDecimalText(autoDoDaiTamTieuChuan || ''),
         dinhMucTieuChuanKg: orderDuplicateDecimalText(autoDinhMucTieuChuanKg || ''),
-        tem: parsedTem?.tem || '',
-        mauTem: parsedTem?.mauTem || SOUTH_TEM_COLOR_DEFAULT,
+        tem: autoTem,
+        mauTem: autoMauTem || (autoTem ? SOUTH_TEM_COLOR_DEFAULT : ''),
         danTem2Dau: Boolean(parsedTem?.danTem2Dau)
       } : {})
     });
