@@ -16,7 +16,6 @@ import { classifyProductPxGroup, extractDoLiDmNumber, normalizeDoLiDm, parseProd
 import {
   KHO_CAT_LE,
   KHO_TAI_CHE,
-  KHO_THANH_PHAM,
   buildCatLePrintSlips,
   buildCatLeSanPhamLine,
   catDisplayName,
@@ -136,13 +135,7 @@ function lookupProductName(line: CutLine, catalog: ProductRow[], tenGoc: string)
   if (saved) return saved;
   const root = String(tenGoc || '').trim();
   if (root) return root;
-  const wanted = line.amisCode.trim().toLocaleLowerCase('vi');
-  const product = catalog.find(item => {
-    if (line.productId && item.id === line.productId) return true;
-    return [item.amisCode, item.code, item.newCode, item.amisOldCode].some(
-      value => String(value || '').trim().toLocaleLowerCase('vi') === wanted
-    );
-  });
+  const product = findBaseProduct(catalog, line.productId, line.amisCode.trim());
   return String(product?.name || '').trim();
 }
 
@@ -398,15 +391,44 @@ function motherWidth(mother: CatLeMother): number | null {
 }
 
 /** Sản phẩm chính trên dòng lệnh — lấy từ danh mục / tên sản xuất, không đối chiếu tồn kho. */
+function normCodeKey(value: unknown): string {
+  return String(value || '').trim().toLocaleLowerCase('vi');
+}
+
+/**
+ * Tìm SP GỐC trong danh mục theo mã.
+ * - Ưu tiên id, rồi khớp trực tiếp (mã AMIS / mã SP / mã mới). Khớp trực tiếp
+ *   trúng dòng biến thể (cắt chuỗi, vd 12m→10m) thì giữ nguyên để cắt tiếp.
+ * - Chỉ khi mã gõ vào trùng đúng mã cũ (amisOldCode) của biến thể mà KHÔNG
+ *   trùng mã trực tiếp nào, mới suy ra dòng gốc (dòng không có mã cũ).
+ *   Tránh lấy nhầm_specs biến thể (dài/thừa, mã ghép) làm nguồn.
+ */
+function findBaseProduct(catalog: ProductRow[], productId: string, code: string): ProductRow | undefined {
+  const wanted = normCodeKey(code);
+  if (!wanted) return undefined;
+  if (productId) {
+    const byId = catalog.find(item => item.id === productId);
+    if (byId) return byId;
+  }
+  const direct = catalog.find(item =>
+    [item.amisCode, item.code, item.newCode].some(value => normCodeKey(value) === wanted)
+  );
+  if (direct) return direct;
+  const variant = catalog.find(item => normCodeKey(item.amisOldCode) === wanted);
+  if (!variant) return undefined;
+  const baseKey = normCodeKey(variant.amisOldCode);
+  return catalog.find(
+    item =>
+      [item.amisCode, item.code, item.newCode].some(value => normCodeKey(value) === baseKey) &&
+      !normCodeKey(item.amisOldCode)
+  );
+}
+
+/** Sản phẩm chính trên dòng lệnh — lấy từ danh mục / tên sản xuất, không đối chiếu tồn kho. */
 function motherFromCutLine(line: CutLine, catalog: ProductRow[]): CatLeMother | null {
   const code = line.amisCode.trim();
   if (!code) return null;
-  const wanted = code.toLocaleLowerCase('vi');
-  const product = catalog.find(item => {
-    if (line.productId && item.id === line.productId) return true;
-    return [item.amisCode, item.code, item.newCode, item.amisOldCode]
-      .some(value => String(value || '').trim().toLocaleLowerCase('vi') === wanted);
-  });
+  const product = findBaseProduct(catalog, line.productId, code);
   const name = line.productionName.trim() || product?.productionName || product?.name || '';
   const group = line.nhomVthh.trim() || product?.group || '';
   const parts = parseProductionNameParts(name, group, code);
@@ -783,7 +805,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
     lines.map((line, index) => {
       const preview = previews[index];
       const mother = preview.mother as CatLeMother;
-      return buildCatLeSanPhamLine({
+      const built = buildCatLeSanPhamLine({
         idSanPhamTrongKho: line.productId,
         mother,
         nhomVthh: preview.nhomVthh,
@@ -797,6 +819,10 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         doLiDm: line.doLiDmText,
         ...temArgsFromCutLine(line)
       });
+      // Giữ tên ghép của đơn khi quy cách chưa bị sửa (như lúc Xác nhận).
+      const tenGhep = line.tenGhep.trim();
+      if (tenGhep) built.san_pham_cat_1 = { ...built.san_pham_cat_1, ten_sp: tenGhep };
+      return built;
     });
 
   const confirmLine = (key: string, index: number) => {
@@ -887,9 +913,11 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
       const payload = {
         ngayCat,
         // Xuất nguồn từ kho chính suy từ nhóm VTHH (Đặc → Kho Đặc; Sóng/Rỗng → Kho Sóng).
+        // SP cắt + phần thừa nhập lại chính kho nguồn.
         khoNguon:
           inferKhoChinhTuNhom(previews[0]?.nhomVthh || '') || KHO_CAT_LE,
-        khoDich: KHO_THANH_PHAM,
+        khoDich:
+          inferKhoChinhTuNhom(previews[0]?.nhomVthh || '') || KHO_CAT_LE,
         nguoiThucHien: nguoiThucHien.trim(),
         nguoiLap: nguoiLap.trim(),
         sanPham
@@ -914,7 +942,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
   const handleComplete = async (id: string) => {
     if (
       !window.confirm(
-        `Duyệt lệnh này? Hệ thống xuất kho chính (Kho Đặc / Kho Sóng theo SP) sản phẩm đang có tồn, nhập kho thành phẩm. Mọi phần còn lại nhập lại kho nguồn. Đồng thời tạo SP biến thể (Mã AMIS mới) trong danh mục. Sau khi duyệt không sửa được.`
+        `Duyệt lệnh này? Hệ thống xuất kho nguồn (Kho Đặc / Kho Sóng theo SP) sản phẩm đang có tồn, nhập SP cắt và mọi phần còn lại lại kho nguồn. Đồng thời tạo SP biến thể (Mã AMIS mới) trong danh mục. Sau khi duyệt không sửa được.`
       )
     ) {
       return;
@@ -977,7 +1005,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         <div>
           <h2 className="text-lg font-black text-zinc-900">Lệnh cắt lẻ</h2>
           <p className="text-xs font-semibold text-zinc-500">
-            Một lệnh nhiều sản phẩm. Lưu và sửa không ghi kho — bấm Duyệt mới xuất {KHO_CAT_LE} sản phẩm đang có tồn, nhập {KHO_THANH_PHAM}. Mọi phần còn lại nhập lại {KHO_CAT_LE}. Sau khi duyệt không sửa được.
+            Một lệnh nhiều sản phẩm. Lưu và sửa không ghi kho — bấm Duyệt mới xuất kho nguồn (Kho Đặc / Kho Sóng theo SP) sản phẩm đang có tồn, nhập SP cắt và mọi phần còn lại lại kho nguồn. Sau khi duyệt không sửa được.
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -1076,11 +1104,10 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
             <tbody>
               {filteredLenh.map(row => {
                 const products = normalizeCatLeSanPhamList(row.san_pham);
-                const nguon = products
+                const nguonList = products
                   .map(item => item.san_pham_nguon.ten_sp || item.san_pham_nguon.ma_sp)
-                  .filter(Boolean)
-                  .join(' · ');
-                const cat1 = products
+                  .filter(Boolean);
+                const cat1List = products
                   .map(item =>
                     catDisplayName(
                       item.san_pham_cat_1.ten_sp,
@@ -1088,9 +1115,8 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                       item.san_pham_nguon.ten_sp
                     )
                   )
-                  .filter(Boolean)
-                  .join(' · ');
-                const cat2 = products
+                  .filter(Boolean);
+                const cat2List = products
                   .map(item =>
                     catDisplayName(
                       item.san_pham_cat_2?.ten_sp || '',
@@ -1098,8 +1124,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                       item.san_pham_nguon.ten_sp
                     )
                   )
-                  .filter(Boolean)
-                  .join(' · ');
+                  .filter(Boolean);
                 const soLuongCon = products.reduce(
                   (sum, item) =>
                     sum +
@@ -1112,12 +1137,34 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                   <td className="px-3 py-2 font-black">{row.ma_lenh}</td>
                   <td className="px-3 py-2 font-semibold">{formatDateVN(row.ngay_cat)}</td>
                   <td className="px-3 py-2 font-semibold">
-                    {products.length > 1 ? `${products.length} SP — ` : ''}
-                    {nguon}
+                    {products.length > 1 ? <p className="font-black text-zinc-500">{products.length} SP</p> : null}
+                    <div className="space-y-1">
+                      {nguonList.map((name, i) => (
+                        <p key={i} className="border-b border-dashed border-zinc-100 pb-1 last:border-0 last:pb-0">{name}</p>
+                      ))}
+                    </div>
                   </td>
-                  <td className="px-3 py-2 font-semibold">{cat1 || '—'}</td>
                   <td className="px-3 py-2 font-semibold">
-                    {cat2 || '—'}
+                    {cat1List.length > 0 ? (
+                      <div className="space-y-1">
+                        {cat1List.map((name, i) => (
+                          <p key={i} className="border-b border-dashed border-zinc-100 pb-1 last:border-0 last:pb-0">{name}</p>
+                        ))}
+                      </div>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
+                  <td className="px-3 py-2 font-semibold">
+                    {cat2List.length > 0 ? (
+                      <div className="space-y-1">
+                        {cat2List.map((name, i) => (
+                          <p key={i} className="border-b border-dashed border-zinc-100 pb-1 last:border-0 last:pb-0">{name}</p>
+                        ))}
+                      </div>
+                    ) : (
+                      '—'
+                    )}
                     {products.some(item => item.di_tai_che) && (
                       <span className="ml-1 font-black text-red-600">(nhập tái chế)</span>
                     )}
@@ -1268,7 +1315,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                                 showSlipPreview({
                                   ngay_cat: ngayCat,
                                   kho_nguon: inferKhoChinhTuNhom(previews[0]?.nhomVthh || '') || KHO_CAT_LE,
-                                  kho_dich: KHO_THANH_PHAM,
+                                  kho_dich: inferKhoChinhTuNhom(previews[0]?.nhomVthh || '') || KHO_CAT_LE,
                                   kho_tai_che: KHO_TAI_CHE,
                                   nguoi_lap: nguoiLap.trim(),
                                   san_pham: linesFromForm()
@@ -1341,13 +1388,13 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                             </div>
                             <input
                               value={line.amisCode}
-                              onChange={e => updateLine(line.key, { amisCode: e.target.value, productId: '' })}
+                              onChange={e => updateLine(line.key, { amisCode: e.target.value, productId: '', tenGhep: '' })}
                               placeholder="Mã AMIS"
                               className={orderFieldClass}
                             />
                             <input
                               value={line.productionName}
-                              onChange={e => updateLine(line.key, { productionName: e.target.value })}
+                              onChange={e => updateLine(line.key, { productionName: e.target.value, tenGhep: '' })}
                               placeholder="Tên sản xuất"
                               className={orderFieldClass}
                             />
@@ -1359,7 +1406,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                             />
                             <input
                               value={line.mDaiText}
-                              onChange={e => updateLine(line.key, { mDaiText: e.target.value })}
+                              onChange={e => updateLine(line.key, { mDaiText: e.target.value, tenGhep: '' })}
                               onWheel={e => e.currentTarget.blur()}
                               inputMode="decimal"
                               title="Dài (m) đặt cắt"
@@ -1367,7 +1414,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                             />
                             <input
                               value={line.khoRongText}
-                              onChange={e => updateLine(line.key, { khoRongText: e.target.value })}
+                              onChange={e => updateLine(line.key, { khoRongText: e.target.value, tenGhep: '' })}
                               onWheel={e => e.currentTarget.blur()}
                               inputMode="decimal"
                               title="Hạ khổ rộng (m). Trống = giữ khổ tấm chính. Khổ mới ghi vào mã AMIS."
@@ -1376,7 +1423,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                             />
                             <input
                               value={/\(|đm/iu.test(line.doLiDmText) ? doLiDmSo(line.doLiDmText) : line.doLiDmText}
-                              onChange={e => updateLine(line.key, { doLiDmText: e.target.value })}
+                              onChange={e => updateLine(line.key, { doLiDmText: e.target.value, tenGhep: '' })}
                               onWheel={e => e.currentTarget.blur()}
                               inputMode="decimal"
                               title="Độ li ĐM — chỉ số"
@@ -1419,13 +1466,13 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                               placeholder="Tổng KG"
                               className={cellInputClass}
                             />
-                            <input value={line.tem} onChange={e => updateLine(line.key, { tem: e.target.value })} className={orderFieldClass} />
-                            <input value={line.mauTem} onChange={e => updateLine(line.key, { mauTem: e.target.value })} className={orderFieldClass} />
+                            <input value={line.tem} onChange={e => updateLine(line.key, { tem: e.target.value, tenGhep: '' })} className={orderFieldClass} />
+                            <input value={line.mauTem} onChange={e => updateLine(line.key, { mauTem: e.target.value, tenGhep: '' })} className={orderFieldClass} />
                             <div className="flex h-11 items-center justify-center">
                               <input
                                 type="checkbox"
                                 checked={line.danTem2Dau}
-                                onChange={e => updateLine(line.key, { danTem2Dau: e.target.checked })}
+                                onChange={e => updateLine(line.key, { danTem2Dau: e.target.checked, tenGhep: '' })}
                               />
                             </div>
                             <input
@@ -1489,7 +1536,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                                 <CutResultRow
                                   label="Xuất"
                                   tone="source"
-                                  code={nguon.ma_amis || line.amisCode}
+                                  code={line.amisCode}
                                   productName={tenSp}
                                   productionName={nguon.ten_sp}
                                   qty={xuatChinh}
@@ -1713,7 +1760,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                               <span className="text-xs font-black tabular-nums text-zinc-500">{index + 1}</span>
                             </label>
                             <input readOnly value={item.line.maAmis || item.line.productCode || ''} className={autofillReadClass} />
-                            <input readOnly value={item.line.productionName || item.line.tenGhep || ''} className={autofillReadClass} />
+                            <input readOnly value={item.line.tenGhep || item.line.productionName || ''} className={autofillReadClass} />
                             <input readOnly value={item.line.unit || ''} className={`${autofillReadClass} text-center`} />
                             <input readOnly value={item.line.daiM || ''} className={`${autofillReadClass} text-right`} />
                             <input readOnly value={item.line.kho || ''} className={`${autofillReadClass} text-right`} />

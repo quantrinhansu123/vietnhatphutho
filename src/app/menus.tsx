@@ -722,6 +722,30 @@ export const FACTORY_CONG_NHAN_MENU_ITEMS: MenuCardConfig[] = [
   }
 ];
 
+export const CAT_LE_MENU_ITEMS: MenuCardConfig[] = [
+  {
+    title: 'Lệnh cắt lẻ',
+    desc: 'Cắt cuộn/tấm ở kho chính: SP cắt về kho thành phẩm, phần thừa nhập lại kho nguồn.',
+    icon: Scissors,
+    icon3d: warehouseSlip3d,
+    tab: 'lenh-cat-le'
+  },
+  {
+    title: 'Báo cáo đơn cắt lẻ',
+    desc: 'Tổng hợp tồn kho cắt lẻ theo mã AMIS cũ: đầu kỳ, nhập, xuất, cuối kỳ.',
+    icon: ClipboardCheck,
+    icon3d: reportList3d,
+    tab: 'bao-cao-don-cat-le'
+  },
+  {
+    title: 'Theo dõi cắt lẻ',
+    desc: 'Mã cắt mới gộp theo mã AMIS cũ. Tồn cuối tính từ ngày đến ngày.',
+    icon: BarChart3,
+    icon3d: chartIncreasing3d,
+    tab: 'theo-doi-cat-le'
+  }
+];
+
 export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
   {
     title: 'Danh mục kho',
@@ -772,25 +796,11 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'kiem-kho-chenh-lech'
   },
   {
-    title: 'Lệnh cắt lẻ',
-    desc: 'Cắt cuộn/tấm ở kho chính: SP cắt về kho thành phẩm, phần thừa nhập lại kho nguồn.',
+    title: 'Cắt lẻ',
+    desc: 'Lệnh cắt lẻ, báo cáo đơn cắt lẻ và theo dõi cắt lẻ theo mã AMIS.',
     icon: Scissors,
     icon3d: warehouseSlip3d,
-    tab: 'lenh-cat-le'
-  },
-  {
-    title: 'Báo cáo đơn cắt lẻ',
-    desc: 'Ghi nhận sản phẩm cắt và phần thừa từ lệnh cắt lẻ, sửa được từng dòng.',
-    icon: ClipboardCheck,
-    icon3d: reportList3d,
-    tab: 'bao-cao-don-cat-le'
-  },
-  {
-    title: 'Theo dõi cắt lẻ',
-    desc: 'Tồn, nhập, xuất theo mã AMIS cũ. Chỉ tính phiếu trùng mã, tên sản phẩm và tên sản xuất.',
-    icon: BarChart3,
-    icon3d: chartIncreasing3d,
-    tab: 'theo-doi-cat-le'
+    tab: 'cat-le'
   },
   {
     title: 'Chuyển kho',
@@ -833,13 +843,6 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     icon: History,
     icon3d: warehouseHistory3d,
     tab: 'warehouse-history'
-  },
-  {
-    title: 'Tồn kho',
-    desc: 'Xem tổng hợp tồn kho theo kho, loại và khoảng ngày.',
-    icon: BarChart3,
-    icon3d: chartIncreasing3d,
-    tab: 'ton-kho'
   },
   {
     title: 'Chuẩn bị xuất hàng',
@@ -1132,15 +1135,12 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Cân kiểm kho', tab: 'can-kiem-kho' },
       { label: 'Xử lý chênh lệch', tab: 'kiem-kho-chenh-lech' },
       { label: 'Lịch sử xuất nhập', tab: 'warehouse-history' },
-      { label: 'Lệnh cắt lẻ', tab: 'lenh-cat-le' },
-      { label: 'Báo cáo đơn cắt lẻ', tab: 'bao-cao-don-cat-le' },
-      { label: 'Theo dõi cắt lẻ', tab: 'theo-doi-cat-le' },
+      { label: 'Cắt lẻ', tab: 'cat-le' },
       { label: 'Chuyển kho', tab: 'chuyen-kho' },
       { label: 'Xuất nhập kho NVL', tab: 'phieu-nhap-xuat-tong-hop' },
       { label: 'Danh sách xuất nhập kho NVL', tab: 'phieu-nhap-xuat-tong-hop-list' },
       { label: 'Tổng hợp NVL từ nhà cung cấp', tab: 'tong-hop-ncc' },
       { label: 'Thống kê NVL', tab: 'thong-ke-nvl' },
-      { label: 'Tồn kho', tab: 'ton-kho' },
       { label: 'Chuẩn bị xuất hàng', tab: 'factory-kho', disabled: true }
     ]
   },
@@ -1213,7 +1213,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'warehouse-slip': { group: 'Kho', sub: 'Nhập Xuất Thành Phẩm' },
   'warehouse-history': { group: 'Kho', sub: 'Lịch sử xuất nhập' },
   'lenh-cat-le': { group: 'Kho', sub: 'Lệnh cắt lẻ' },
-  'bao-cao-don-cat-le': { group: 'Kho', sub: 'Báo cáo đơn cắt lẻ' },
+  'cat-le': { group: 'Kho', sub: 'Cắt lẻ' },  'bao-cao-don-cat-le': { group: 'Kho', sub: 'Báo cáo đơn cắt lẻ' },
   'theo-doi-cat-le': { group: 'Kho', sub: 'Theo dõi cắt lẻ' },
   'chuyen-kho': { group: 'Kho', sub: 'Chuyển kho' },
   'phieu-nhap-xuat-tong-hop': { group: 'Kho', sub: 'Xuất nhập kho NVL' },

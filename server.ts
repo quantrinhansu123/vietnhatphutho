@@ -17476,7 +17476,8 @@ async function loadKiemKhoLiveTongHopForDot(
       }
     }
     const khoNguon = String(source.khoNguon ?? source.kho_nguon ?? KHO_CAT_LE).trim() || KHO_CAT_LE;
-    const khoDich = String(source.khoDich ?? source.kho_dich ?? source.khoTp ?? source.kho_tp ?? KHO_THANH_PHAM).trim() || KHO_THANH_PHAM;
+    // SP cắt + phần thừa nhập lại chính kho nguồn (không qua Kho thành phẩm).
+    const khoDich = String(source.khoDich ?? source.kho_dich ?? source.khoTp ?? source.kho_tp ?? khoNguon).trim() || khoNguon;
     // Sản phẩm chỉ nằm trong JSON san_pham (nguồn / cắt 1 / cắt 2). Không ghi cột nguồn/cắt.
     const draft: Record<string, unknown> = {
       ngay_cat: ngayCat,
@@ -17745,7 +17746,8 @@ async function loadKiemKhoLiveTongHopForDot(
     const ngayPhieu = String(lenh.ngay_cat || '').slice(0, 10);
     const maLenh = String(lenh.ma_lenh || '').trim();
     const lyDo = `Cắt lẻ ${maLenh}`.trim();
-    const khoDich = String(lenh.kho_dich || KHO_THANH_PHAM);
+    // SP cắt nhập lại chính kho nguồn (không qua Kho thành phẩm).
+    const khoDich = String(lenh.kho_dich || khoNguon).trim() || khoNguon;
     const maKhoNguonCat = await resolveMaKho(khoNguon);
     const maKhoDichCat = await resolveMaKho(khoDich);
     const usedCodes = new Set<string>();

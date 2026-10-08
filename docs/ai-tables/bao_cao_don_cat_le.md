@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Bảng** | `bao_cao_don_cat_le` (CRUD cũ giữ nguyên, UI mới không dùng) |
-| **Tab** | `bao-cao-don-cat-le` → `/bao-cao-don-cat-le` (card **Báo cáo đơn cắt lẻ** trong Kho `/nha-may/kho` và Sản xuất `/nha-may/cong-nhan`) |
+| **Tab** | `bao-cao-don-cat-le` → `/bao-cao-don-cat-le` (card **Báo cáo đơn cắt lẻ** trong menu **Cắt lẻ** `/cat-le`, menu Kho `/nha-may/kho`) |
 | **SQL** | `supabase-bao-cao-don-cat-le.sql` |
 | **API mới** | `GET /api/bao-cao-cat-le-tong-hop?from&to&nhom` |
 

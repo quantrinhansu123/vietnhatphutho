@@ -861,8 +861,8 @@ function slipLineFromProduct(
 }
 
 /** Bộ phiếu in của 1 lệnh.
- * Một phiếu xuất kho chính: SL nguồn đem cắt.
- * Nhập thành phẩm: SL = nguồn × N (số TP/nguồn). Nhập mọi phần còn lại về kho nguồn: SL = SL nguồn.
+ * Một phiếu xuất kho nguồn: SL nguồn đem cắt.
+ * Nhập lại kho nguồn: SP cắt (SL = nguồn × N) + mọi phần còn lại (SL = SL nguồn).
  * Phiếu Kho tái chế chỉ còn khi lệnh cũ đã ghi `ma_phieu_nhap_tai_che`.
  * `preview`: vẫn dựng phiếu khi chưa có số phiếu (bản xem trước, chưa ghi kho).
  */
@@ -891,7 +891,8 @@ export function buildCatLePrintSlips(lenh: {
   const ngay = String(lenh.ngay_cat || '').slice(0, 10);
   const nguoi = String(lenh.nguoi_lap || '').trim();
   const khoNguon = String(lenh.kho_nguon || KHO_CAT_LE);
-  const khoDich = String(lenh.kho_dich || KHO_THANH_PHAM);
+  // SP cắt nhập lại chính kho nguồn (không qua Kho thành phẩm).
+  const khoDich = String(lenh.kho_dich || khoNguon);
   const khoTaiChe = String(lenh.kho_tai_che || KHO_TAI_CHE);
   const maLenh = String(lenh.ma_lenh || '').trim();
   const slips: CatLePrintSlip[] = [];

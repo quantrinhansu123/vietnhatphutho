@@ -185,7 +185,7 @@ describe('lenh-cat-le — tên theo độ li, khổ rộng, m dài', () => {
     );
     assert.equal(slips[0].slipType, 'xuat');
     assert.equal(slips[0].warehouseName, 'Kho cắt lẻ');
-    assert.equal(slips[1].warehouseName, 'Kho thành phẩm');
+    assert.equal(slips[1].warehouseName, 'Kho cắt lẻ');
     assert.match(slips[0].note, /sản phẩm chuẩn bị cắt/);
     assert.equal(slips[2].slipType, 'nhap');
     assert.equal(slips[2].warehouseName, 'Kho cắt lẻ');

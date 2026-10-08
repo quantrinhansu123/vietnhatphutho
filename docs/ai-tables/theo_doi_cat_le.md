@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Nguồn** | `lenh_cat_le` (mã mới + `ngay_cat`), tồn từ `phieu_nhap_kho` + `phieu_xuat_kho` |
-| **Tab** | `theo-doi-cat-le` → `/theo-doi-cat-le` (card **Theo dõi cắt lẻ** trong Kho và Sản xuất) |
+| **Tab** | `theo-doi-cat-le` → `/theo-doi-cat-le` (card **Theo dõi cắt lẻ** trong menu **Cắt lẻ** `/cat-le`, menu Kho `/nha-may/kho`) |
 | **API** | `GET /api/theo-doi-cat-le?from&to&nhom` (`nhom`: dac/song/rong/khac/all) |
 
 ## Vai trò

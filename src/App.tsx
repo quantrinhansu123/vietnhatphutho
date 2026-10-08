@@ -60,6 +60,7 @@ import {
   ADMIN_MENU_ITEMS, REPORT_FORM_MENU_ITEMS, PRODUCTION_REPORT_MENU_ITEMS, FACILITY_MENU_ITEMS,
   REPORT_LIST_MENU_ITEMS, HCNS_MENU_ITEMS, BUSINESS_MENU_ITEMS, FACTORY_MENU_ITEMS,
   FACTORY_QUAN_DOC_MENU_ITEMS, FACTORY_QC_MENU_ITEMS, FACTORY_CONG_NHAN_MENU_ITEMS, FACTORY_KHO_MENU_ITEMS,
+  CAT_LE_MENU_ITEMS,
   BAO_CAO_TRUONG_CA_TRON_MENU_ITEMS,
   getActivePageMeta
 } from './app/menus';
@@ -1042,6 +1043,18 @@ export default function App() {
               >
                 <MenuPageHeader title="Kho" desc="Quản lý NVL và phiếu xuất nhập kho." />
                 <MenuCardGrid items={filterMenuItems(FACTORY_KHO_MENU_ITEMS)} onNavigate={navigateToTab} />
+              </motion.div>
+            ) : activeTab === 'cat-le' ? (
+              <motion.div
+                key="cat-le-menu"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, x: -8 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-3"
+              >
+                <MenuPageHeader title="Cắt lẻ" desc="Lệnh cắt lẻ, báo cáo đơn cắt lẻ và theo dõi cắt lẻ theo mã AMIS." />
+                <MenuCardGrid items={filterMenuItems(CAT_LE_MENU_ITEMS)} onNavigate={navigateToTab} />
               </motion.div>
             ) : activeTab === 'form' ? (
               <motion.div

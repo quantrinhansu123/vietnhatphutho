@@ -14,7 +14,7 @@ Không có cột nguồn/cắt, `kho_tp`, hay `di_tai_che` trên bảng — `CRE
 
 **Tạo mới / Sửa** chỉ lưu lệnh trạng thái `moi` (chờ duyệt), không ghi kho.
 Trong form, khi đủ thông tin sản phẩm có nút **Xác nhận**: xem sản phẩm nguồn cắt thành cắt 1 / cắt 2 (mã, tên, số lượng, kg/m²/m dài và thông số sẽ ghi `nhap_kho`).
-Bấm **Duyệt** (`POST /:id/hoan-thanh`) mới xuất **kho chính** (Kho Đặc/Kho Sóng theo SP), nhập **Kho thành phẩm**, nhập mọi phần còn lại lại **kho nguồn** (mọi chiều dài, mọi máy — không nhập Kho tái chế). Sau khi duyệt (`hoan_thanh`) không sửa được.
+Bấm **Duyệt** (`POST /:id/hoan-thanh`) mới xuất **kho nguồn** (Kho Đặc/Kho Sóng theo SP), nhập SP cắt và mọi phần còn lại lại **kho nguồn** (không qua Kho thành phẩm). Sau khi duyệt (`hoan_thanh`) không sửa được. Bản in (`buildCatLePrintSlips`) dựng đúng 3 phiếu này.
 
 - Được hạ một chiều (xẻ khổ giữ dài / cắt ngắn giữ rộng) hoặc hạ cả khổ lẫn m dài (`kieu_cat = ca_hai`). Độ li đích đổi riêng được: khi đổi, `do_day_m` của sản phẩm cắt ghép lại theo số li (vd `1` → `1m`) rồi ghi `nhap_kho`; phần còn lại giữ `do_day_m` nguồn. Hạ khổ thì khổ còn lại = khổ nguồn − khổ cắt, m dài phần còn lại giữ của nguồn. Tên SP cắt và phần còn lại nối thêm `mo_ta_tem` của nguồn.
 - **Kho nguồn suy từ nhóm VTHH** (`inferKhoChinhTuNhom` trong `logic.ts`): Đặc → `Kho Đặc`; Sóng/Rỗng → `Kho Sóng` (rỗng chung kho sóng). Form gửi kho suy luận; server fallback khi lệnh thiếu kho.
@@ -41,7 +41,7 @@ resilient khi DB chưa migrate) — xem [nhap_kho.md](./nhap_kho.md).
 
 | File | Nội dung |
 |------|----------|
-| `src/features/lenh-cat-le/index.tsx` | Modal lớn + danh sách (lọc Từ ngày/Đến ngày/Tìm SP/**Trạng thái**, cột Người TH + **Người lập**). Nguồn mẹ tải từ **Kho Đặc + Kho Sóng + Kho cắt lẻ** (chọn mẹ hiện tên kho). Xác nhận và Xem trước phiếu (bản tạm): 1 phiếu xuất kho chính sản phẩm nguồn, nhập thành phẩm, nhập mọi phần còn lại về kho nguồn. Duyệt mới ghi kho |
+| `src/features/lenh-cat-le/index.tsx` | Modal lớn + danh sách (lọc Từ ngày/Đến ngày/Tìm SP/**Trạng thái**, cột Người TH + **Người lập**). Nguồn mẹ tải từ **Kho Đặc + Kho Sóng + Kho cắt lẻ** (chọn mẹ hiện tên kho). Xác nhận và Xem trước phiếu (bản tạm): 1 phiếu xuất kho nguồn sản phẩm nguồn, nhập SP cắt + mọi phần còn lại về kho nguồn. Duyệt mới ghi kho |
 | `src/features/lenh-cat-le/logic.ts` | Pure: `computeCatLe` (tên + quy đổi; phần thừa luôn về kho cắt lẻ), `motherFromNhapKhoRow`, parse/format mét |
 | `tests/unit/lenhCatLe.test.ts` | Chuỗi 20m→12m→10m, xẻ khổ, validate, cân tay |
 
