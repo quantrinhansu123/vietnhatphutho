@@ -323,10 +323,7 @@ export function computeCatLe(
   const doLiCon = normalizeDoLiLabel(input.doLiMoi) || mother.doLi;
   const doiDoLi = Boolean(doLiCon) && !sameLi(doLiCon, mother.doLi);
   if (giuRong && giuDai && !doiDoLi) {
-    if (!options.allowIdentical) {
-      throw new Error('Khổ, m dài và độ li mới giống hệt cuộn nguồn — không có gì để cắt.');
-    }
-    // Dòng fill từ đơn hàng: cho qua nguyên khổ/dài/li (cắt giữ nguyên quy cách).
+    // Giữ nguyên quy cách: cho qua (cắt = nguồn, không thừa) — cả dòng nhập tay lẫn fill từ đơn.
     return {
       kieuCat: 'cat_tam',
       pieces: 1,

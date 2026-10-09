@@ -323,12 +323,14 @@ describe('lenh-cat-le — SL nguồn từ SL thành phẩm, hạ khổ, hạ li'
 });
 
 describe('lenh-cat-le — dòng từ đơn fill thẳng (không bắt hạ)', () => {
-  it('quy cách giữ nguyên thì chặn khi không có cờ', () => {
-    assert.throws(() => computeCatLe(mother20m, { w2: 1.22, l2: 20, qty: 1 }), /không có gì để cắt/);
-    assert.throws(
-      () => suggestCatLePlan(mother20m, { w2: 1.22, l2: 20, desiredConQty: 2 }),
-      /không có gì để cắt/
-    );
+  it('quy cách giữ nguyên thì cho qua cả khi không có cờ', () => {
+    const r = computeCatLe(mother20m, { w2: 1.22, l2: 20, qty: 1 });
+    assert.equal(r.keptIdentical, true);
+    assert.equal(r.tenSpThua, '');
+    const plan = suggestCatLePlan(mother20m, { w2: 1.22, l2: 20, desiredConQty: 2 });
+    assert.equal(plan.kieuCat, 'cat_tam');
+    assert.equal(plan.pieces, 1);
+    assert.equal(plan.mothers, 2);
   });
   it('có cờ allowIdentical thì cho qua, cắt = nguồn, không thừa', () => {
     const r = computeCatLe(mother20m, { w2: 1.22, l2: 20, qty: 2 }, { allowIdentical: true });

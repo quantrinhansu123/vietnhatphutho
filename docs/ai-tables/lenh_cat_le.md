@@ -22,7 +22,7 @@ Bấm **Duyệt** (`POST /:id/hoan-thanh`) mới xuất **kho nguồn** (Kho Đ�
 - **Mã cũ luôn quy về gốc** (`resolveOriginMaCu`): khi chốt dòng (form Xác nhận/Lưu, API tạo/sửa/duyệt), `ma_amis_cu` = mã cũ đã lưu trong `san_pham` cho mã nguồn (chuỗi cắt nhiều nhát từ biến thể vẫn về mã gốc đầu tiên); nguồn gốc thật (chưa có mã cũ) thì lấy mã nguồn. Không bao giờ lưu mã trung gian làm mã cũ.
 - **Tạo từ đơn cắt lẻ:** modal lập lệnh có picker chỉ load `Đơn theo quy cách của khách đặt` — chọn đơn + dòng SP tự điền nguồn (theo `ma_sp` gốc), m cắt (theo `quy_cach_m_dai`/`dai_m`), SL và ghi chú kèm `ma_amis` mới/`ten_ghep`.
 - **Tên sản xuất một quy định:** ô form, picker đơn và bảng Xuất/Cắt/Còn lại đều hiện tên ghép `ten gốc - hàng phế - màng - độ li - đm - khổ - mét dài` (`composeProductionDisplayName`). Rỗng bỏ khổ 2.1m mặc định. Đổi Dài / Hạ khổ / Độ li ĐM thì ghép lại đúng thứ tự đó.
-- **Fill thẳng từ đơn:** dòng có `orderCode` được cho qua khi quy cách giữ nguyên (không bắt hạ khổ/dài/li — `allowIdentical`). Mã cắt vẫn hiện đủ viết tắt từ tên sản xuất (màu, ZEM, số sóng, kg) kể cả khi khổ/dài không đổi. Trọng lượng đơn mang qua theo thứ tự TL/tấm → TL cuộn (`sheetKg`).
+- **Giữ nguyên quy cách:** khổ/dài/li mới giống hệt nguồn thì cho qua luôn (`keptIdentical`, cắt = nguồn, không thừa) — cả dòng nhập tay lẫn fill từ đơn, không validate chặn. Mã cắt vẫn hiện đủ viết tắt từ tên sản xuất (màu, ZEM, số sóng, kg) kể cả khi khổ/dài không đổi. Trọng lượng đơn mang qua theo thứ tự TL/tấm → TL cuộn (`sheetKg`).
 - Gốc trọng lượng là 3 hệ số 1 SP của nguồn (`kg/m2/m dài`): `kg2 = kg1 × (w2×l2)/(w1×l1)`.
   Mất số nguồn thì nhập kg cân tay. Chuỗi cắt (20m→12m→10m) lấy TP làm nguồn qua `parent` logic.
 
