@@ -29,7 +29,7 @@
 
 `ke_hoach_san_xuat`, `don_hang`, `san_pham`
 
-**Lệnh SX không nhận đơn cắt lẻ:** `Đơn theo quy cách của khách đặt` bị chặn 400 ở cả `POST /api/lenh-sx/from-don-hang/:id` và `POST /api/lenh-sx` (server đối chiếu `loai_don_hang`); dropdown đơn trong form lệnh SX (`lenh-sx`, `ke-hoach-san-xuat`) lọc bỏ loại này. Đơn cắt lẻ đi qua **Lệnh cắt lẻ** phía kho (`lenh_cat_le.md`).
+**Lệnh SX không nhận Đơn cắt lẻ kho:** chỉ `Đơn cắt lẻ` bị chặn 400 ở cả `POST /api/lenh-sx/from-don-hang/:id` và `POST /api/lenh-sx` (`isRetailCutOrderTypeServer` đối chiếu `loai_don_hang`); dropdown đơn trong form lệnh SX (`lenh-sx`, `ke-hoach-san-xuat`) lọc bỏ bằng `isRetailCutOrderType`. `Đơn theo quy cách của khách đặt` (QC đặt) vẫn vào Lệnh SX. Đơn cắt lẻ đi qua **Lệnh cắt lẻ** phía kho (`lenh_cat_le.md`).
 
 ### Phân công nhân sự
 

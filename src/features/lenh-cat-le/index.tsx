@@ -7,7 +7,7 @@ import { formatDateVN, VnCalendarPicker } from '../so-che-do-may';
 import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from '../../components/WarehouseSlipPrintModal';
 import { readApiErrorMessage, showAppToast } from '../../lib/appToast';
 import { normalizeOrders } from '../don-hang';
-import { isCutOrderType, orderFieldClass, parseSouthTemFromTenGhep } from '../_shared/orderHelpers';
+import { isRetailCutOrderType, orderFieldClass, parseSouthTemFromTenGhep } from '../_shared/orderHelpers';
 import type { OrderProductLine, OrderRow } from '../_shared/orderRecordHelpers';
 import { normalizeProducts, type ProductRow } from '../san-pham';
 import { orderDuplicateDecimalText } from '../don-hang/southWeight';
@@ -597,7 +597,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
   const [nguoiThucHien, setNguoiThucHien] = useState('');
   const [nguoiLap, setNguoiLap] = useState('');
   const [lines, setLines] = useState<CutLine[]>([newCutLine()]);
-  // Tạo lệnh từ đơn cắt lẻ (chỉ load Đơn theo quy cách của khách đặt).
+  // Tạo lệnh từ đơn cắt lẻ kho (chỉ load Đơn cắt lẻ; Đơn theo quy cách đi Lệnh SX).
   const [cutOrders, setCutOrders] = useState<OrderRow[]>([]);
   const [cutOrdersLoading, setCutOrdersLoading] = useState(false);
   const [showAutofill, setShowAutofill] = useState(false);
@@ -619,7 +619,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
       .then(res => res.json().catch(() => ({})))
       .then(data => {
         const rows = normalizeOrders(data).filter(
-          order => isCutOrderType(order.orderType) && !order.isDeleted
+          order => isRetailCutOrderType(order.orderType) && !order.isDeleted
         );
         setCutOrders(rows);
       })

@@ -6915,6 +6915,10 @@ function isCutOrderTypeServer(orderType?: string | null) {
   const value = String(orderType || '').trim();
   return value === CUT_ORDER_TYPE_SERVER || value === CUT_ORDER_TYPE_NEW_SERVER;
 }
+/** Chỉ Đơn cắt lẻ kho bị chặn khỏi Lệnh SX. Đơn theo quy cách (QC đặt) vẫn vào Lệnh SX. */
+function isRetailCutOrderTypeServer(orderType?: string | null) {
+  return String(orderType || '').trim() === CUT_ORDER_TYPE_NEW_SERVER;
+}
 function isCutLikeOrderTypeServer(orderType?: string | null) {
   const value = String(orderType || '').trim();
   return isCutOrderTypeServer(value) || value === SOUTH_ORDER_TYPE_SERVER;
@@ -10839,8 +10843,8 @@ export function createApp() {
 
       const orderCode = pickRowField(orderRow, ['ma_don_hang', 'order_code', 'code']);
       const orderType = String(orderRow.loai_don_hang ?? (orderRow as Record<string, unknown>).orderType ?? '').trim();
-      if (isCutOrderTypeServer(orderType)) {
-        return res.status(400).json({ error: 'Đơn cắt lẻ (theo quy cách khách đặt) không tạo lệnh SX. Hãy tạo Lệnh cắt lẻ phía kho hàng.' });
+      if (isRetailCutOrderTypeServer(orderType)) {
+        return res.status(400).json({ error: 'Đơn cắt lẻ không tạo lệnh SX. Hãy tạo Lệnh cắt lẻ phía kho hàng.' });
       }
       const orderProducts = parseOrderProductsFromRow(orderRow);
       if (!orderCode) {
@@ -10919,7 +10923,7 @@ export function createApp() {
       const orderRef = String(record.ma_don_hang ?? '').trim();
       const orderProducts = parseOrderProductsFromRow(record);
 
-      // Lệnh SX không nhận đơn cắt lẻ — đơn cắt lẻ đi qua Lệnh cắt lẻ phía kho.
+      // Lệnh SX không nhận đơn cắt lẻ kho — đơn cắt lẻ đi qua Lệnh cắt lẻ phía kho. Đơn theo quy cách vẫn vào Lệnh SX.
       if (orderRef) {
         const { data: refOrder } = await supabase
           .from(SUPABASE_ORDERS_TABLE)
@@ -10927,8 +10931,8 @@ export function createApp() {
           .eq('ma_don_hang', orderRef)
           .maybeSingle();
         const refType = String((refOrder as Record<string, unknown> | null)?.loai_don_hang ?? '').trim();
-        if (isCutOrderTypeServer(refType)) {
-          return res.status(400).json({ error: 'Đơn cắt lẻ (theo quy cách khách đặt) không tạo lệnh SX. Hãy tạo Lệnh cắt lẻ phía kho hàng.' });
+        if (isRetailCutOrderTypeServer(refType)) {
+          return res.status(400).json({ error: 'Đơn cắt lẻ không tạo lệnh SX. Hãy tạo Lệnh cắt lẻ phía kho hàng.' });
         }
       }
 
