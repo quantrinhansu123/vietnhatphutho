@@ -14,6 +14,7 @@
 import {
   buildCutAmisCodeFull,
   calculateDoLiDm,
+  classifyProductPxGroup,
   composeProductionDisplayName,
   isValidDoLiToken,
   normalizeDoLiDm
@@ -39,6 +40,21 @@ export function inferKhoChinhTuNhom(nhomVthh?: string | null): string {
   if (key.includes('px rỗng') || key.includes('px rong')) return KHO_RONG;
   if (key.includes('px sóng') || key.includes('px song')) return KHO_SONG;
   return '';
+}
+
+/**
+ * Nhóm VTHH của dòng cắt: ưu tiên nhóm đã lưu, trống thì đoán từ tên/mã
+ * (rỗng/ECR → Rỗng; sóng/STS → Sóng; đặc/STD → Đặc) để suy đúng kho.
+ */
+export function resolveCatLeNhomVthh(group: unknown, name: unknown, code: unknown): string {
+  const g = String(group || '').trim();
+  if (classifyProductPxGroup(g) !== 'other') return g;
+  const ten = String(name || '');
+  const ma = String(code || '').trim();
+  if (/rỗng/iu.test(ten) || /^ecr/i.test(ma)) return 'TP; PX Rỗng';
+  if (/sóng/iu.test(ten) || /^sts/i.test(ma)) return 'TP; PX Sóng';
+  if (/đặc/iu.test(ten) || /^std/i.test(ma)) return 'TP; PX Đặc';
+  return g;
 }
 
 export interface CatLeSpecs {
@@ -1045,8 +1061,11 @@ export function buildCatLePrintSlips(lenh: {
   // SP cắt nhập lại chính kho nguồn của dòng (không qua Kho thành phẩm).
   const khoNguonMacDinh = String(lenh.kho_nguon || '').trim();
   const khoDichMacDinh = String(lenh.kho_dich || '').trim();
-  const khoNguonCua = (line: CatLeSanPhamLine) =>
-    khoNguonMacDinh || inferKhoChinhTuNhom(String(line.san_pham_nguon?.nhom_vthh || '')) || KHO_CAT_LE;
+  const khoNguonCua = (line: CatLeSanPhamLine) => {
+    const nguon = line.san_pham_nguon as unknown as Record<string, unknown> | null;
+    const nhom = resolveCatLeNhomVthh(nguon?.nhom_vthh, nguon?.ten_sp, nguon?.ma_sp || nguon?.ma_amis);
+    return khoNguonMacDinh || inferKhoChinhTuNhom(nhom) || KHO_CAT_LE;
+  };
   const khoDichCua = (khoNguon: string) => khoDichMacDinh || khoNguon;
   const khoTaiChe = String(lenh.kho_tai_che || KHO_TAI_CHE);
   const maLenh = String(lenh.ma_lenh || '').trim();

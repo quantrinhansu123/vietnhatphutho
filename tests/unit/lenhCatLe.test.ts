@@ -4,7 +4,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCatLePrintSlips, buildCatLeSanPhamLine, catDisplayName, computeCatLe, extractTemSuffix, inferKhoChinhTuNhom, KHO_DAC, KHO_SONG, KHO_RONG, resolveOriginMaCu, suggestCatLePlan, type CatLeMother } from '../../src/features/lenh-cat-le/logic';
+import { buildCatLePrintSlips, buildCatLeSanPhamLine, catDisplayName, computeCatLe, extractTemSuffix, inferKhoChinhTuNhom, KHO_DAC, KHO_SONG, KHO_RONG, resolveCatLeNhomVthh, resolveOriginMaCu, suggestCatLePlan, type CatLeMother } from '../../src/features/lenh-cat-le/logic';
 
 describe('lenh-cat-le - phieu in chia theo kho tung dong', () => {
   const lineFor = (ma: string, nhom: string) => ({
@@ -47,6 +47,13 @@ describe('lenh-cat-le - suy kho theo nhom VTHH (khong lon kho)', () => {
     assert.equal(inferKhoChinhTuNhom('TP; PX Thường'), '');
     assert.equal(inferKhoChinhTuNhom(''), '');
     assert.equal(inferKhoChinhTuNhom(null), '');
+  });
+  it('trong nhom thi doan tu ten/ma de suy dung kho', () => {
+    assert.equal(resolveCatLeNhomVthh('', 'Tấm nhựa rỗng màu trà - ECO - 10li - 5.8m', 'ECR01'), 'TP; PX Rỗng');
+    assert.equal(resolveCatLeNhomVthh('', 'Tấm sóng 11 sóng', 'STS01'), 'TP; PX Sóng');
+    assert.equal(resolveCatLeNhomVthh('', 'Tấm đặc Décor', 'STD01'), 'TP; PX Đặc');
+    assert.equal(resolveCatLeNhomVthh('TP; PX Rỗng', 'Tên lạ', 'X'), 'TP; PX Rỗng');
+    assert.equal(inferKhoChinhTuNhom(resolveCatLeNhomVthh('', 'Tấm nhựa rỗng màu trà', 'ECR01')), KHO_RONG);
   });
 });
 
@@ -271,6 +278,8 @@ describe('lenh-cat-le — tên theo độ li, khổ rộng, m dài', () => {
     const slips = buildCatLePrintSlips({
       ma_lenh: 'CL-1',
       ngay_cat: '2026-09-23',
+      kho_nguon: 'Kho cắt lẻ',
+      kho_dich: 'Kho cắt lẻ',
       san_pham: [line],
       ma_phieu_xuat: 'PX-1',
       ma_phieu_nhap_tp: 'PN-1',
@@ -291,7 +300,7 @@ describe('lenh-cat-le — tên theo độ li, khổ rộng, m dài', () => {
     assert.equal(slips[2].warehouseName, 'Kho cắt lẻ');
     assert.match(slips[2].note, /còn lại/);
     assert.equal(slips.some(slip => slip.slipType === 'xuat' && /tái chế/i.test(slip.reason + slip.note)), false);
-    const preview = buildCatLePrintSlips({ ma_lenh: 'CL-1', ngay_cat: '2026-09-23', san_pham: [line] }, { preview: true });
+    const preview = buildCatLePrintSlips({ ma_lenh: 'CL-1', ngay_cat: '2026-09-23', kho_nguon: 'Kho cắt lẻ', kho_dich: 'Kho cắt lẻ', san_pham: [line] }, { preview: true });
     assert.deepEqual(
       preview.map(slip => slip.slipType),
       ['xuat', 'nhap', 'nhap']

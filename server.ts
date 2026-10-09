@@ -40,7 +40,7 @@ import {
   stripMixingNormRevisionSuffix
 } from './src/utils/mixingNormAuxiliary';
 import { buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, calculateDoLiDm, isDiscontinuedWhiteSuProduct, parseProductionNameParts, replaceCutLengthMeters, replaceDoLiDmInTenGhep, replaceMangInName, stripTrailingDuplicateCutAfterTem } from './src/utils/productProductionName';
-import { buildCatLeSanPhamLine, KHO_CAT_LE, KHO_TAI_CHE, KHO_THANH_PHAM, inferKhoChinhTuNhom, normalizeCatLeSanPhamList, type CatLeSanPhamLine } from './src/features/lenh-cat-le/logic';
+import { buildCatLeSanPhamLine, KHO_CAT_LE, KHO_TAI_CHE, KHO_THANH_PHAM, inferKhoChinhTuNhom, normalizeCatLeSanPhamList, resolveCatLeNhomVthh, type CatLeSanPhamLine } from './src/features/lenh-cat-le/logic';
 
 dotenv.config();
 
@@ -17864,9 +17864,12 @@ async function loadKiemKhoLiveTongHopForDot(
       const ten = String(line.san_pham_nguon.ten_sp || '').trim();
       const qty = Number(line.san_pham_nguon.so_luong) || 0;
       if (!(qty > 0)) return { ok: false, status: 400, error: `Số lượng cắt của ${ma || 'dòng'} không hợp lệ.` };
-      const kho = lenhKhoChon ||
-        inferKhoChinhTuNhom(String(line.san_pham_nguon?.nhom_vthh || '')) ||
-        KHO_CAT_LE;
+      const nhomDong = resolveCatLeNhomVthh(
+        line.san_pham_nguon?.nhom_vthh,
+        line.san_pham_nguon?.ten_sp,
+        line.san_pham_nguon?.ma_sp || line.san_pham_nguon?.ma_amis
+      );
+      const kho = lenhKhoChon || inferKhoChinhTuNhom(nhomDong) || KHO_CAT_LE;
       const key = `${kho}||${ma}||${ten.toLocaleLowerCase('vi')}`;
       const prev = need.get(key);
       if (prev) prev.qty = Math.round((prev.qty + qty) * 1000) / 1000;
@@ -17890,7 +17893,13 @@ async function loadKiemKhoLiveTongHopForDot(
     // SP cắt nhập lại chính kho nguồn của dòng đó (không qua Kho thành phẩm).
     const khoDichChon = String(lenh.kho_dich || '').trim();
     const khoNguonCuaDong = (line: CatLeSanPhamLine) =>
-      lenhKhoChon || inferKhoChinhTuNhom(String(line.san_pham_nguon?.nhom_vthh || '')) || KHO_CAT_LE;
+      lenhKhoChon ||
+      inferKhoChinhTuNhom(resolveCatLeNhomVthh(
+        line.san_pham_nguon?.nhom_vthh,
+        line.san_pham_nguon?.ten_sp,
+        line.san_pham_nguon?.ma_sp || line.san_pham_nguon?.ma_amis
+      )) ||
+      KHO_CAT_LE;
     const khoDichCuaDong = (khoNguon: string) => khoDichChon || khoNguon;
     const maKhoCache = new Map<string, string>();
     const maKhoCua = async (kho: string) => {
