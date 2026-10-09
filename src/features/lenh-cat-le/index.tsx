@@ -777,8 +777,9 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
       const l2 = parseMeterInput(line.mDaiText);
       const finished = parseLocalizedNumber(line.conCanText);
       const namedGroup = line.nhomVthh.trim() || product?.group || '';
-      const nhomVthh = classifyProductPxGroup(namedGroup) === 'other' && /sóng/iu.test(line.productionName || mother.tenSp || '')
-        ? 'TP; PX Sóng'
+      // Catalog trống nhóm thì đoán từ tên/mã (rỗng/sóng/đặc) để suy đúng kho — không lộn kho.
+      const nhomVthh = classifyProductPxGroup(namedGroup) === 'other'
+        ? groupForTenGhep(namedGroup, line.productionName || mother.tenSp || '', line.amisCode.trim()) || namedGroup
         : namedGroup;
       const base = { ...empty, mother, nhomVthh, w2, l2, qty: 0, pieces: 1 };
       if (!w2 || !l2) return { ...base, error: 'Nhập Dài (m).' };
