@@ -142,6 +142,7 @@ const SUPABASE_NHAP_KHO_TABLE = process.env.SUPABASE_NHAP_KHO_TABLE || 'nhap_kho
 const NHAP_KHO_LOAI_THANH_PHAM = 'thanh_pham';
 /** Lệnh cắt lẻ: cuộn nguồn kho chính -> SP cắt kho TP + thừa nhập lại kho nguồn. */
 const SUPABASE_LENH_CAT_LE_TABLE = process.env.SUPABASE_LENH_CAT_LE_TABLE || 'lenh_cat_le';
+const SUPABASE_BANG_CAT_LE_TABLE = process.env.SUPABASE_BANG_CAT_LE_TABLE || 'bang_cat_le';
 const SUPABASE_BAO_CAO_DON_CAT_LE_TABLE = process.env.SUPABASE_BAO_CAO_DON_CAT_LE_TABLE || 'bao_cao_don_cat_le';
 const SUPABASE_BAO_CAO_DON_CAT_LE_SAN_PHAM_TABLE =
   process.env.SUPABASE_BAO_CAO_DON_CAT_LE_SAN_PHAM_TABLE || 'bao_cao_don_cat_le_san_pham';
@@ -6914,6 +6915,10 @@ function isCutOrderTypeServer(orderType?: string | null) {
   const value = String(orderType || '').trim();
   return value === CUT_ORDER_TYPE_SERVER || value === CUT_ORDER_TYPE_NEW_SERVER;
 }
+/** Chỉ Đơn cắt lẻ kho bị chặn khỏi Lệnh SX. Đơn theo quy cách (QC đặt) vẫn vào Lệnh SX. */
+function isRetailCutOrderTypeServer(orderType?: string | null) {
+  return String(orderType || '').trim() === CUT_ORDER_TYPE_NEW_SERVER;
+}
 function isCutLikeOrderTypeServer(orderType?: string | null) {
   const value = String(orderType || '').trim();
   return isCutOrderTypeServer(value) || value === SOUTH_ORDER_TYPE_SERVER;
@@ -10838,8 +10843,8 @@ export function createApp() {
 
       const orderCode = pickRowField(orderRow, ['ma_don_hang', 'order_code', 'code']);
       const orderType = String(orderRow.loai_don_hang ?? (orderRow as Record<string, unknown>).orderType ?? '').trim();
-      if (isCutOrderTypeServer(orderType)) {
-        return res.status(400).json({ error: 'Đơn cắt lẻ (theo quy cách khách đặt) không tạo lệnh SX. Hãy tạo Lệnh cắt lẻ phía kho hàng.' });
+      if (isRetailCutOrderTypeServer(orderType)) {
+        return res.status(400).json({ error: 'Đơn cắt lẻ không tạo lệnh SX. Hãy tạo Lệnh cắt lẻ phía kho hàng.' });
       }
       const orderProducts = parseOrderProductsFromRow(orderRow);
       if (!orderCode) {
@@ -10918,7 +10923,7 @@ export function createApp() {
       const orderRef = String(record.ma_don_hang ?? '').trim();
       const orderProducts = parseOrderProductsFromRow(record);
 
-      // Lệnh SX không nhận đơn cắt lẻ — đơn cắt lẻ đi qua Lệnh cắt lẻ phía kho.
+      // Lệnh SX không nhận đơn cắt lẻ kho — đơn cắt lẻ đi qua Lệnh cắt lẻ phía kho. Đơn theo quy cách vẫn vào Lệnh SX.
       if (orderRef) {
         const { data: refOrder } = await supabase
           .from(SUPABASE_ORDERS_TABLE)
@@ -10926,8 +10931,8 @@ export function createApp() {
           .eq('ma_don_hang', orderRef)
           .maybeSingle();
         const refType = String((refOrder as Record<string, unknown> | null)?.loai_don_hang ?? '').trim();
-        if (isCutOrderTypeServer(refType)) {
-          return res.status(400).json({ error: 'Đơn cắt lẻ (theo quy cách khách đặt) không tạo lệnh SX. Hãy tạo Lệnh cắt lẻ phía kho hàng.' });
+        if (isRetailCutOrderTypeServer(refType)) {
+          return res.status(400).json({ error: 'Đơn cắt lẻ không tạo lệnh SX. Hãy tạo Lệnh cắt lẻ phía kho hàng.' });
         }
       }
 
@@ -17581,6 +17586,60 @@ async function loadKiemKhoLiveTongHopForDot(
     };
   }
 
+  // Một dòng bảng cắt lẻ cho mỗi miếng nguồn / cắt / còn lại (Báo cáo + Theo dõi đọc từ đây).
+  function catLeBangRow(
+    line: CatLeSanPhamLine,
+    kind: 'nguon' | 'cat_1' | 'cat_2' | 'cat_3',
+    kho: string,
+    maLenh: string,
+    ngayCat: string
+  ): Record<string, unknown> | null {
+    const rec = line as unknown as Record<string, unknown>;
+    const nguon = line.san_pham_nguon as unknown as Record<string, unknown>;
+    const piece = (
+      kind === 'nguon'
+        ? nguon
+        : kind === 'cat_1'
+          ? (line.san_pham_cat_1 as unknown as Record<string, unknown>)
+          : kind === 'cat_2'
+            ? (line.san_pham_cat_2 as unknown as Record<string, unknown>)
+            : (line.san_pham_cat_3 as unknown as Record<string, unknown>)
+    ) as Record<string, unknown> | null;
+    if (!piece) return null;
+    const nguonCode = String(nguon?.ma_amis || nguon?.ma_sp || '').trim();
+    const maMoi = kind === 'nguon' ? nguonCode : String(piece.ma_amis || '').trim();
+    if (!maMoi) return null;
+    const maCu =
+      kind === 'nguon' ? nguonCode : String(piece.ma_amis_cu || nguon?.ma_amis || nguon?.ma_sp || '').trim() || null;
+    const qtyMe = Number(nguon?.so_luong) || 0;
+    const savedCon = Number(rec.so_luong_cat_1);
+    const piecesRaw = Number(rec.so_con_mot_me);
+    const pieces = Number.isFinite(piecesRaw) && piecesRaw >= 1 ? Math.floor(piecesRaw) : 1;
+    const qty =
+      kind === 'nguon' || kind === 'cat_2' || kind === 'cat_3'
+        ? qtyMe
+        : Number.isFinite(savedCon) && savedCon > 0
+          ? savedCon
+          : Math.round(qtyMe * pieces * 1000) / 1000;
+    const tenSanXuat =
+      kind === 'nguon'
+        ? String(nguon?.productionName ?? nguon?.ten_san_xuat ?? nguon?.tenSanXuat ?? '').trim()
+        : String(piece.tenSanXuat ?? piece.ten_san_xuat ?? '').trim();
+    return {
+      ma_lenh: maLenh,
+      loai: kind,
+      ma_amis: maMoi,
+      ma_amis_cu: maCu,
+      ten_sp: String(piece.ten_sp || '').trim() || null,
+      ten_san_xuat: tenSanXuat || null,
+      ngay: ngayCat || null,
+      kho: String(kho || '').trim() || null,
+      so_luong: qty > 0 ? qty : null,
+      don_vi: String(nguon?.don_vi || '').trim() || 'Tấm',
+      nhom_vthh: String(nguon?.nhom_vthh || '').trim() || null
+    };
+  }
+
   function takeSlipCode(loai: 'nhap' | 'xuat', used: Set<string>): string {
     let code = generateWarehouseSlipCode(loai);
     let n = 2;
@@ -17795,30 +17854,30 @@ async function loadKiemKhoLiveTongHopForDot(
         if (ensured.warning) variantWarnings.push(ensured.warning);
       }
     }
-    const need = new Map<string, { ma: string; ten: string; qty: number }>();
+    // Kho đã chọn trên lệnh thắng; thiếu thì mỗi dòng suy kho từ nhóm VTHH của nó
+    // (Đặc → Kho Đặc; Sóng/Rỗng → Kho Sóng), cuối cùng về Kho cắt lẻ.
+    const lenhKhoChon = String(lenh.kho_nguon || '').trim();
+    const need = new Map<string, { ma: string; ten: string; qty: number; kho: string }>();
     for (const line of lines) {
       const ma = String(line.san_pham_nguon.ma_sp || '').trim();
       const ten = String(line.san_pham_nguon.ten_sp || '').trim();
       const qty = Number(line.san_pham_nguon.so_luong) || 0;
       if (!(qty > 0)) return { ok: false, status: 400, error: `Số lượng cắt của ${ma || 'dòng'} không hợp lệ.` };
-      const key = `${ma}||${ten.toLocaleLowerCase('vi')}`;
+      const kho = lenhKhoChon ||
+        inferKhoChinhTuNhom(String(line.san_pham_nguon?.nhom_vthh || '')) ||
+        KHO_CAT_LE;
+      const key = `${kho}||${ma}||${ten.toLocaleLowerCase('vi')}`;
       const prev = need.get(key);
       if (prev) prev.qty = Math.round((prev.qty + qty) * 1000) / 1000;
-      else need.set(key, { ma, ten, qty });
+      else need.set(key, { ma, ten, qty, kho });
     }
-    // Kho nguồn: ưu tiên kho đã chọn trên lệnh; thiếu thì suy kho chính từ nhóm
-    // VTHH dòng đầu (Đặc → Kho Đặc; Sóng/Rỗng → Kho Sóng), cuối cùng về Kho cắt lẻ.
-    const khoNguon =
-      String(lenh.kho_nguon || '').trim() ||
-      inferKhoChinhTuNhom(String(lines[0]?.san_pham_nguon?.nhom_vthh || '')) ||
-      KHO_CAT_LE;
     for (const item of need.values()) {
-      const ton = await getSanPhamTonSlTheoKhoVaTen(item.ma, item.ten, khoNguon);
+      const ton = await getSanPhamTonSlTheoKhoVaTen(item.ma, item.ten, item.kho);
       if (ton !== null && ton < item.qty - 1e-9) {
         return {
           ok: false,
           status: 400,
-          error: `${khoNguon} chỉ còn ${ton} «${item.ten || item.ma}» — không đủ cắt ${item.qty}.`
+          error: `${item.kho} chỉ còn ${ton} «${item.ten || item.ma}» — không đủ cắt ${item.qty}.`
         };
       }
     }
@@ -17826,16 +17885,23 @@ async function loadKiemKhoLiveTongHopForDot(
     const ngayPhieu = String(lenh.ngay_cat || '').slice(0, 10);
     const maLenh = String(lenh.ma_lenh || '').trim();
     const lyDo = `Cắt lẻ ${maLenh}`.trim();
-    // SP cắt nhập lại chính kho nguồn (không qua Kho thành phẩm).
-    const khoDich = String(lenh.kho_dich || khoNguon).trim() || khoNguon;
-    const maKhoNguonCat = await resolveMaKho(khoNguon);
-    const maKhoDichCat = await resolveMaKho(khoDich);
+    // Kho theo từng dòng, không lộn kho: Đặc → Kho Đặc, Sóng → Kho Sóng, Rỗng → Kho Rỗng.
+    // SP cắt nhập lại chính kho nguồn của dòng đó (không qua Kho thành phẩm).
+    const khoDichChon = String(lenh.kho_dich || '').trim();
+    const khoNguonCuaDong = (line: CatLeSanPhamLine) =>
+      lenhKhoChon || inferKhoChinhTuNhom(String(line.san_pham_nguon?.nhom_vthh || '')) || KHO_CAT_LE;
+    const khoDichCuaDong = (khoNguon: string) => khoDichChon || khoNguon;
+    const maKhoCache = new Map<string, string>();
+    const maKhoCua = async (kho: string) => {
+      const hit = maKhoCache.get(kho);
+      if (hit) return hit;
+      const ma = await resolveMaKho(kho);
+      maKhoCache.set(kho, ma);
+      return ma;
+    };
     const usedCodes = new Set<string>();
-    const maXuat = takeSlipCode('xuat', usedCodes);
-    const maNhapTp = takeSlipCode('nhap', usedCodes);
     const conLaiOLai = lines.filter(line => line.san_pham_cat_2 || line.san_pham_cat_3);
     const sanPhamVeKhoCatLe = lines.map(line => ({ ...line, di_tai_che: false }));
-    const maNhapThua = conLaiOLai.length > 0 ? takeSlipCode('nhap', usedCodes) : '';
     const written: string[] = [];
     const rollback = async () => {
       for (const code of written) await deleteWarehouseSlipEverywhere(code);
@@ -17851,57 +17917,82 @@ async function loadKiemKhoLiveTongHopForDot(
       diaChi: null as null,
       soTronIds: [] as string[]
     };
-    const xuatRecords = buildWarehouseSlipInsertRecords(
-      {
-        ...header,
-        loaiPhieu: 'xuat',
-        loaiKho: 'san_pham',
-        maKho: maKhoNguonCat,
-        lyDo,
-        ghiChu: `Lệnh cắt ${maLenh} — sản phẩm nguồn`,
-        tenKho: khoNguon,
-        loaiNhapKho: null,
-        items: lines.map(line => catLeSlipItem(line, 'nguon'))
-      },
-      maXuat
-    );
-    const nhapTpRecords = buildWarehouseSlipInsertRecords(
-      {
-        ...header,
-        loaiPhieu: 'nhap',
-        loaiKho: 'san_pham',
-        maKho: maKhoDichCat,
-        lyDo,
-        ghiChu: `Lệnh cắt ${maLenh} — sản phẩm cắt 1`,
-        tenKho: khoDich,
-        loaiNhapKho: 'Cắt lẻ',
-        items: lines.map(line => catLeSlipItem(line, 'cat_1'))
-      },
-      maNhapTp
-    );
     const tableXuat = await resolveWarehouseWriteTable('xuat');
     const tableNhap = await resolveWarehouseWriteTable('nhap');
-    const r1 = await insertWarehouseSlipRecordsResilient(tableXuat, xuatRecords);
-    if (r1.error) return { ok: false, status: 500, error: `Không ghi được phiếu xuất cắt lẻ. ${r1.error.message}` };
-    written.push(maXuat);
-    const r2 = await insertWarehouseSlipRecordsResilient(tableNhap, nhapTpRecords);
-    if (r2.error) {
-      await rollback();
-      return { ok: false, status: 500, error: `Không ghi được phiếu nhập thành phẩm. ${r2.error.message}` };
+    const groupLines = (pick: (line: CatLeSanPhamLine) => string, source: CatLeSanPhamLine[]) => {
+      const groups = new Map<string, CatLeSanPhamLine[]>();
+      for (const line of source) {
+        const kho = pick(line);
+        const list = groups.get(kho) || [];
+        list.push(line);
+        groups.set(kho, list);
+      }
+      return groups;
+    };
+    const maXuatList: string[] = [];
+    for (const [kho, groupLinesOfKho] of groupLines(line => khoNguonCuaDong(line), lines)) {
+      const maXuat = takeSlipCode('xuat', usedCodes);
+      const xuatRecords = buildWarehouseSlipInsertRecords(
+        {
+          ...header,
+          loaiPhieu: 'xuat',
+          loaiKho: 'san_pham',
+          maKho: await maKhoCua(kho),
+          lyDo,
+          ghiChu: `Lệnh cắt ${maLenh} — sản phẩm nguồn (${kho})`,
+          tenKho: kho,
+          loaiNhapKho: null,
+          items: groupLinesOfKho.map(line => catLeSlipItem(line, 'nguon'))
+        },
+        maXuat
+      );
+      const r = await insertWarehouseSlipRecordsResilient(tableXuat, xuatRecords);
+      if (r.error) {
+        await rollback();
+        return { ok: false, status: 500, error: `Không ghi được phiếu xuất cắt lẻ (${kho}). ${r.error.message}` };
+      }
+      written.push(maXuat);
+      maXuatList.push(maXuat);
     }
-    written.push(maNhapTp);
-    if (maNhapThua) {
+    const maNhapTpList: string[] = [];
+    for (const [kho, groupLinesOfKho] of groupLines(line => khoDichCuaDong(khoNguonCuaDong(line)), lines)) {
+      const maNhapTp = takeSlipCode('nhap', usedCodes);
+      const nhapTpRecords = buildWarehouseSlipInsertRecords(
+        {
+          ...header,
+          loaiPhieu: 'nhap',
+          loaiKho: 'san_pham',
+          maKho: await maKhoCua(kho),
+          lyDo,
+          ghiChu: `Lệnh cắt ${maLenh} — sản phẩm cắt 1 (${kho})`,
+          tenKho: kho,
+          loaiNhapKho: 'Cắt lẻ',
+          items: groupLinesOfKho.map(line => catLeSlipItem(line, 'cat_1'))
+        },
+        maNhapTp
+      );
+      const r = await insertWarehouseSlipRecordsResilient(tableNhap, nhapTpRecords);
+      if (r.error) {
+        await rollback();
+        return { ok: false, status: 500, error: `Không ghi được phiếu nhập thành phẩm (${kho}). ${r.error.message}` };
+      }
+      written.push(maNhapTp);
+      maNhapTpList.push(maNhapTp);
+    }
+    const maNhapThuaList: string[] = [];
+    for (const [kho, groupLinesOfKho] of groupLines(line => khoNguonCuaDong(line), conLaiOLai)) {
+      const maNhapThua = takeSlipCode('nhap', usedCodes);
       const nhapThuaRecords = buildWarehouseSlipInsertRecords(
         {
           ...header,
           loaiPhieu: 'nhap',
           loaiKho: 'san_pham',
-          maKho: maKhoNguonCat,
+          maKho: await maKhoCua(kho),
           lyDo,
-          ghiChu: `Lệnh cắt ${maLenh} — sản phẩm còn lại`,
-          tenKho: khoNguon,
+          ghiChu: `Lệnh cắt ${maLenh} — sản phẩm còn lại (${kho})`,
+          tenKho: kho,
           loaiNhapKho: 'Cắt lẻ',
-          items: conLaiOLai.flatMap(line => {
+          items: groupLinesOfKho.flatMap(line => {
             const items = [];
             if (line.san_pham_cat_2) items.push(catLeSlipItem(line, 'cat_2'));
             if (line.san_pham_cat_3) items.push(catLeSlipItem(line, 'cat_3'));
@@ -17910,30 +18001,60 @@ async function loadKiemKhoLiveTongHopForDot(
         },
         maNhapThua
       );
-      const r3 = await insertWarehouseSlipRecordsResilient(tableNhap, nhapThuaRecords);
-      if (r3.error) {
+      const r = await insertWarehouseSlipRecordsResilient(tableNhap, nhapThuaRecords);
+      if (r.error) {
         await rollback();
-        return { ok: false, status: 500, error: `Không ghi được phiếu nhập phần còn lại. ${r3.error.message}` };
+        return { ok: false, status: 500, error: `Không ghi được phiếu nhập phần còn lại (${kho}). ${r.error.message}` };
       }
       written.push(maNhapThua);
+      maNhapThuaList.push(maNhapThua);
     }
-    const catResult = await insertNhapKhoCatalogRows([
-      ...lines.map(line => catLeCatalogRow(line, 'cat_1', khoDich, maKhoDichCat)),
-      ...conLaiOLai.flatMap(line => {
-        const rows = [];
-        if (line.san_pham_cat_2) rows.push(catLeCatalogRow(line, 'cat_2', khoNguon, maKhoNguonCat));
-        if (line.san_pham_cat_3) rows.push(catLeCatalogRow(line, 'cat_3', khoNguon, maKhoNguonCat));
-        return rows;
-      })
-    ]);
+    const catalogRows: Array<Record<string, unknown>> = [];
+    for (const line of lines) {
+      const khoNguon = khoNguonCuaDong(line);
+      const khoDich = khoDichCuaDong(khoNguon);
+      catalogRows.push(catLeCatalogRow(line, 'cat_1', khoDich, await maKhoCua(khoDich)));
+      if (line.san_pham_cat_2) catalogRows.push(catLeCatalogRow(line, 'cat_2', khoNguon, await maKhoCua(khoNguon)));
+      if (line.san_pham_cat_3) catalogRows.push(catLeCatalogRow(line, 'cat_3', khoNguon, await maKhoCua(khoNguon)));
+    }
+    const catResult = await insertNhapKhoCatalogRows(catalogRows);
+    // Bảng cắt lẻ: nguồn + cắt 1 + phần thừa (Báo cáo / Theo dõi đọc từ đây).
+    const bangCatLeRows = lines.flatMap(line => {
+      const rows = [];
+      const khoNguon = khoNguonCuaDong(line);
+      const khoDich = khoDichCuaDong(khoNguon);
+      const kinds: Array<'nguon' | 'cat_1' | 'cat_2' | 'cat_3'> = ['nguon', 'cat_1', 'cat_2', 'cat_3'];
+      for (const kind of kinds) {
+        const row = catLeBangRow(line, kind, kind === 'cat_1' ? khoDich : khoNguon, maLenh, ngayPhieu);
+        if (row) rows.push(row);
+      }
+      return rows;
+    });
+    if (bangCatLeRows.length > 0) {
+      const { error: bangError } = await supabase
+        .from(SUPABASE_BANG_CAT_LE_TABLE)
+        .upsert(bangCatLeRows, { onConflict: 'ma_lenh,loai,ma_amis' });
+      if (bangError) {
+        await rollback();
+        return {
+          ok: false,
+          status: 500,
+          error: `Không ghi được bảng cắt lẻ. ${bangError.message} (chạy supabase-bang-cat-le.sql trên Supabase rồi duyệt lại)`
+        };
+      }
+    }
+    // Nhiều kho → nhiều phiếu: lưu các mã cách nhau bằng dấu phẩy (cột chỉ để hiển thị).
+    const maXuatSaved = maXuatList.join(',') || null;
+    const maNhapTpSaved = maNhapTpList.join(',') || null;
+    const maNhapThuaSaved = maNhapThuaList.join(',') || null;
     const { data: updated, error: updateError } = await saveLenhCatLe(
       'update',
       {
         trang_thai: 'hoan_thanh',
         san_pham: sanPhamVeKhoCatLe,
-        ma_phieu_xuat: maXuat,
-        ma_phieu_nhap_tp: maNhapTp,
-        ma_phieu_nhap_thua: maNhapThua || null,
+        ma_phieu_xuat: maXuatSaved,
+        ma_phieu_nhap_tp: maNhapTpSaved,
+        ma_phieu_nhap_thua: maNhapThuaSaved,
         ma_phieu_chuyen_tai_che: null,
         ma_phieu_xuat_tai_che: null,
         ma_phieu_nhap_tai_che: null
@@ -17946,9 +18067,9 @@ async function loadKiemKhoLiveTongHopForDot(
         status: 500,
         error: `Đã ghi phiếu nhưng không cập nhật được lệnh. ${updateError.message}`,
         extra: {
-          ma_phieu_xuat: maXuat,
-          ma_phieu_nhap_tp: maNhapTp,
-          ma_phieu_nhap_thua: maNhapThua || null,
+          ma_phieu_xuat: maXuatSaved,
+          ma_phieu_nhap_tp: maNhapTpSaved,
+          ma_phieu_nhap_thua: maNhapThuaSaved,
           ma_phieu_chuyen_tai_che: null,
           ma_phieu_nhap_tai_che: null
         }
@@ -17959,9 +18080,9 @@ async function loadKiemKhoLiveTongHopForDot(
       body: {
         success: true,
         record: (updated || [])[0] || null,
-        ma_phieu_xuat: maXuat,
-        ma_phieu_nhap_tp: maNhapTp,
-        ma_phieu_nhap_thua: maNhapThua || null,
+        ma_phieu_xuat: maXuatSaved,
+        ma_phieu_nhap_tp: maNhapTpSaved,
+        ma_phieu_nhap_thua: maNhapThuaSaved,
         ma_phieu_chuyen_tai_che: null,
         ma_phieu_nhap_tai_che: null,
         di_tai_che: false,
@@ -18493,48 +18614,9 @@ async function loadKiemKhoLiveTongHopForDot(
     maLenh: string;
   };
 
-  /** Bóc các miếng (nguồn / cắt 1 / cắt 2) từ 1 lệnh cắt lẻ. Mã mới + ngày cắt. */
-  function catLeLenhPieces(lenh: Record<string, unknown>): CatLePieceHit[] {
-    const out: CatLePieceHit[] = [];
-    const ngayCat = String(lenh.ngay_cat ?? '').slice(0, 10);
-    const maLenh = String(lenh.ma_lenh ?? '').trim();
-    const lines = normalizeCatLeSanPhamList((lenh as { san_pham?: unknown }).san_pham);
-    for (const line of lines) {
-      const nguon = (line.san_pham_nguon || {}) as Record<string, unknown>;
-      const baseCode = String(nguon.ma_amis || nguon.ma_sp || '').trim();
-      if (!baseCode) continue;
-      const tenGoc = String(nguon.ten_goc || '').trim();
-      const donVi = String(nguon.don_vi || '').trim();
-      const nhom = String(nguon.nhom_vthh || '').trim();
-      const push = (codeRaw: unknown, maCuRaw: unknown, tenSxRaw: unknown) => {
-        const code = String(codeRaw || '').trim() || baseCode;
-        if (!code) return;
-        out.push({
-          code,
-          maCu: String(maCuRaw || '').trim(),
-          tenGoc,
-          tenSx: String(tenSxRaw || '').trim(),
-          donVi,
-          nhom,
-          nhomVthh: catLeVthhGroup(nhom),
-          ngayCat,
-          maLenh
-        });
-      };
-      push(baseCode, '', nguon.ten_sp);
-      const cat1 = (line.san_pham_cat_1 || {}) as unknown as Record<string, unknown>;
-      push(cat1.ma_amis, cat1.ma_amis_cu || baseCode, cat1.ten_sp);
-      const cat2 = (line.san_pham_cat_2 || null) as unknown as Record<string, unknown> | null;
-      if (cat2) push(cat2.ma_amis, cat2.ma_amis_cu || baseCode, cat2.ten_sp);
-      const cat3 = (line.san_pham_cat_3 || null) as unknown as Record<string, unknown> | null;
-      if (cat3) push(cat3.ma_amis, cat3.ma_amis_cu || baseCode, cat3.ten_sp);
-    }
-    return out;
-  }
-
   /* ================= Theo dõi cắt lẻ =================
-   * Nguồn: lệnh cắt lẻ (mã mới + ngày cắt). Gộp theo mã AMIS cũ
-   * (không có mã cũ thì dùng mã nguồn). Tồn tính từ phiếu nhập/xuất
+   * Nguồn: bảng cắt lẻ bang_cat_le (ghi lúc Duyệt lệnh). Gộp theo mã AMIS cũ
+   * (không có mã cũ thì dùng mã mới). Tồn tính từ phiếu nhập/xuất
    * theo kỳ từ ngày → đến ngày. UI chỉ hiện 2 cột: Mã hàng, Tồn cuối.
    */
   app.get('/api/theo-doi-cat-le', async (req, res) => {
@@ -18548,15 +18630,15 @@ async function loadKiemKhoLiveTongHopForDot(
       const to = dateRe.test(toRaw) ? toRaw : '';
       const nhomFilter = String(query.nhom ?? '').trim().toLocaleLowerCase('vi');
 
-      const lenhResult = await fetchTheoDoiCatLeTable(
-        SUPABASE_LENH_CAT_LE_TABLE,
-        'id, ma_lenh, ngay_cat, trang_thai, san_pham'
+      // Nguồn miếng cắt: bảng cắt lẻ (ghi lúc Duyệt lệnh) — thay bóc JSON lenh_cat_le.
+      const bangResult = await fetchTheoDoiCatLeTable(
+        SUPABASE_BANG_CAT_LE_TABLE,
+        'ma_lenh, loai, ma_amis, ma_amis_cu, ten_sp, ten_san_xuat, ngay, kho, so_luong, don_vi, nhom_vthh'
       );
-      if (lenhResult.error) {
-        if (isMissingTableError(lenhResult.error)) {
-          return res.status(503).json({ error: 'Chưa có bảng lenh_cat_le. Chạy file supabase-lenh-cat-le.sql.' });
-        }
-        return res.status(500).json({ error: `Không thể tải lệnh cắt lẻ. ${lenhResult.error.message}` });
+      if (bangResult.error) {
+        return res.status(500).json({
+          error: `Không thể tải bảng cắt lẻ. ${bangResult.error.message} (chạy supabase-bang-cat-le.sql trên Supabase)`
+        });
       }
       const slipColumns = 'ma_sp, ten_sp, ma_npl, ten_npl, ten_nvl_sx, don_vi, so_luong, so_m2, trong_luong_kg, thanh_tien, ngay_phieu, treo';
       const [nhapResult, xuatResult] = await Promise.all([
@@ -18567,9 +18649,21 @@ async function loadKiemKhoLiveTongHopForDot(
       if (xuatResult.error) return res.status(500).json({ error: `Không thể tải phiếu xuất. ${xuatResult.error.message}` });
 
       const pieces: CatLePieceHit[] = [];
-      for (const row of lenhResult.rows) {
-        if (String(row.trang_thai || '') === 'huy') continue;
-        pieces.push(...catLeLenhPieces(row));
+      for (const row of bangResult.rows) {
+        const code = String(row.ma_amis ?? '').trim();
+        if (!code) continue;
+        const nhom = String(row.nhom_vthh ?? '').trim();
+        pieces.push({
+          code,
+          maCu: String(row.ma_amis_cu ?? '').trim(),
+          tenGoc: String(row.ten_sp ?? '').trim(),
+          tenSx: String(row.ten_san_xuat ?? '').trim(),
+          donVi: String(row.don_vi ?? '').trim(),
+          nhom,
+          nhomVthh: catLeVthhGroup(nhom),
+          ngayCat: String(row.ngay ?? '').slice(0, 10),
+          maLenh: String(row.ma_lenh ?? '').trim()
+        });
       }
       const byCode = new Map<string, CatLePieceHit[]>();
       for (const piece of pieces) {
@@ -18682,7 +18776,7 @@ async function loadKiemKhoLiveTongHopForDot(
   });
 
   /* ================= Báo cáo cắt lẻ tổng hợp (kiểu Tổng hợp tồn kho) ===
-   * Hàng = mã AMIS cũ gộp các mã AMIS có trong sổ nhap_kho.
+   * Hàng = mã AMIS cũ gộp các miếng trong bảng cắt lẻ bang_cat_le.
    * Số liệu cộng từ phieu_nhap_kho / phieu_xuat_kho theo kỳ:
    * SL = so_luong, SL theo ĐVC (m2) = so_m2, Giá trị = thanh_tien.
    */
@@ -18697,24 +18791,21 @@ async function loadKiemKhoLiveTongHopForDot(
       const to = dateRe.test(toRaw) ? toRaw : '';
       const nhomFilter = String(query.nhom ?? '').trim().toLocaleLowerCase('vi');
 
-      const catalogFull = 'ma_sp, ma_sp_cu, ma_amis, ten_sp, don_vi, ten_kho, loai_kho';
-      let catalogRows: Array<Record<string, unknown>> = [];
+      // Nhóm hàng từ bảng cắt lẻ (ghi lúc Duyệt lệnh) — thay sổ nhap_kho.
+      const bangSelect = 'ma_lenh, loai, ma_amis, ma_amis_cu, ten_sp, ten_san_xuat, ngay, kho, so_luong, don_vi, nhom_vthh';
+      let bangRows: Array<Record<string, unknown>> = [];
       {
-        const full = await fetchTheoDoiCatLeTable(SUPABASE_NHAP_KHO_TABLE, catalogFull);
-        if (full.error && /column|does not exist|schema cache/i.test(full.error.message || '')) {
-          const minimal = await fetchTheoDoiCatLeTable(SUPABASE_NHAP_KHO_TABLE, 'ma_sp, ten_sp, don_vi');
-          if (minimal.error) return res.status(500).json({ error: `Không thể tải sổ nhập kho. ${minimal.error.message}` });
-          catalogRows = minimal.rows;
-        } else if (full.error) {
-          return res.status(500).json({ error: `Không thể tải sổ nhập kho. ${full.error.message}` });
-        } else {
-          catalogRows = full.rows;
+        const fetched = await fetchTheoDoiCatLeTable(SUPABASE_BANG_CAT_LE_TABLE, bangSelect);
+        if (fetched.error) {
+          return res.status(500).json({
+            error: `Không thể tải bảng cắt lẻ. ${fetched.error.message} (chạy supabase-bang-cat-le.sql trên Supabase)`
+          });
         }
+        bangRows = fetched.rows;
       }
       // Tên mặt hàng + nhóm VTHH từ danh mục sản phẩm (best-effort).
       // Tên hàng = Tên sản phẩm (ten_sp) của dòng GỐC (ma_sp/ma_amis trùng mã cũ,
       // ma_amis_cu rỗng) — không lấy tên sản xuất, không lấy tên của biến thể.
-      const spByCode = new Map<string, Record<string, unknown>>();
       const facingByOldCode = new Map<string, string>();
       {
         const tryCols = [
@@ -18732,9 +18823,7 @@ async function loadKiemKhoLiveTongHopForDot(
         }
         for (const row of spRows) {
           const code = String(row.ma_sp ?? '').trim();
-          if (code && !spByCode.has(theoDoiCatLeKey(code))) spByCode.set(theoDoiCatLeKey(code), row);
           const amis = String(row.ma_amis ?? '').trim();
-          if (amis && !spByCode.has(theoDoiCatLeKey(amis))) spByCode.set(theoDoiCatLeKey(amis), row);
           const maCu = String(row.ma_amis_cu ?? '').trim();
           const tenSp = String(row.ten_sp ?? '').trim();
           if (!tenSp) continue;
@@ -18763,10 +18852,10 @@ async function loadKiemKhoLiveTongHopForDot(
         xuat: { sl: number; dvc: number; tien: number };
       };
       const groups = new Map<string, Group>();
-      for (const row of catalogRows) {
-        const maSp = String(row.ma_sp ?? '').trim();
-        if (!maSp) continue;
-        const maCu = String(row.ma_sp_cu ?? '').trim() || String(row.ma_amis ?? '').trim() || maSp;
+      for (const row of bangRows) {
+        const maAmis = String(row.ma_amis ?? '').trim();
+        if (!maAmis) continue;
+        const maCu = String(row.ma_amis_cu ?? '').trim() || maAmis;
         const key = theoDoiCatLeKey(maCu);
         let g = groups.get(key);
         if (!g) {
@@ -18777,23 +18866,18 @@ async function loadKiemKhoLiveTongHopForDot(
           };
           groups.set(key, g);
         }
-        g.members.add(theoDoiCatLeKey(maSp));
-        const maAmis = String(row.ma_amis ?? '').trim();
-        if (maAmis) g.members.add(theoDoiCatLeKey(maAmis));
-        if (maSp !== maCu) g.maMoi.add(maSp);
-        else if (maAmis && maAmis !== maCu) g.maMoi.add(maAmis);
+        // Mã cũ bắt xuất nguồn / nhập bán gốc; mã mới bắt nhập/xuất miếng cắt.
+        g.members.add(theoDoiCatLeKey(maCu));
+        g.members.add(theoDoiCatLeKey(maAmis));
+        if (maAmis !== maCu) g.maMoi.add(maAmis);
+        const loai = String(row.loai ?? '').trim();
         const tenSp = String(row.ten_sp ?? '').trim();
         if (!g.tenHang) g.tenHang = tenSp;
-        else if (maSp === maCu && tenSp) g.tenHang = tenSp;
+        else if (loai === 'nguon' && tenSp) g.tenHang = tenSp;
         const dvt = String(row.don_vi ?? '').trim();
         if (!g.dvt && dvt) g.dvt = dvt;
-        const sp = spByCode.get(theoDoiCatLeKey(maSp)) || (maAmis ? spByCode.get(theoDoiCatLeKey(maAmis)) : undefined);
-        if (sp) {
-          const nhom = catLeVthhGroup(sp.nhom_vthh);
-          if (g.nhomVthh === 'khac' && nhom !== 'khac') g.nhomVthh = nhom;
-          const spDvt = String(sp.don_vi ?? '').trim();
-          if (!g.dvt && spDvt) g.dvt = spDvt;
-        }
+        const nhom = catLeVthhGroup(row.nhom_vthh);
+        if (g.nhomVthh === 'khac' && nhom !== 'khac') g.nhomVthh = nhom;
       }
       const memberToGroup = new Map<string, Group>();
       for (const g of groups.values()) {

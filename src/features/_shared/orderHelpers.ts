@@ -6,10 +6,18 @@ import { parsePercentInput } from '../../utils';
 
 export const ORDER_TYPE_OPTIONS = ['Đơn bán', 'Đơn sản xuất', 'Đơn theo quy cách của khách đặt', 'Đơn cắt lẻ', 'Đơn miền nam'] as const;
 export const CUT_ORDER_TYPE = 'Đơn theo quy cách của khách đặt';
-/** Tên mới của đơn cắt lẻ — cùng hành vi cắt với CUT_ORDER_TYPE (giữ cả 2 để đơn cũ vẫn chạy). */
+/** Đơn cắt lẻ kho — khác với Đơn theo quy cách (QC đặt đi Lệnh SX, cắt lẻ đi Lệnh cắt lẻ). */
 export const CUT_ORDER_TYPE_NEW = 'Đơn cắt lẻ';
 export const SOUTH_ORDER_TYPE = 'Đơn miền nam';
-/** Đơn cắt lẻ (= Đơn theo quy cách của khách đặt hoặc Đơn cắt lẻ) — đi qua Lệnh cắt lẻ phía kho, không vào Lệnh SX. */
+/** Đơn theo quy cách của khách đặt — đi Lệnh SX, KHÔNG đi Lệnh cắt lẻ. */
+export function isCustomSpecOrderType(orderType?: string | null) {
+  return String(orderType || '').trim() === CUT_ORDER_TYPE;
+}
+/** Đơn cắt lẻ kho — đi Lệnh cắt lẻ phía kho, không vào Lệnh SX. */
+export function isRetailCutOrderType(orderType?: string | null) {
+  return String(orderType || '').trim() === CUT_ORDER_TYPE_NEW;
+}
+/** Gộp cũ (form quy cách): QC đặt + cắt lẻ dùng chung lưới Dài m / Hạ khổ / Tem / Bắc-Trung-Nam. Không dùng để chặn Lệnh SX. */
 export function isCutOrderType(orderType?: string | null) {
   const value = String(orderType || '').trim();
   return value === CUT_ORDER_TYPE || value === CUT_ORDER_TYPE_NEW;

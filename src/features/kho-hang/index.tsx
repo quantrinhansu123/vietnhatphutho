@@ -37,13 +37,16 @@ export function normalizeWarehouseName(name: string) {
 
 export function warehouseCatalogKind(name: string): InventoryCatalogKind {
   const normalized = normalizeWarehouseName(name);
-  // Kho thành phẩm / cắt lẻ / tái chế đều chứa THÀNH PHẨM (danh mục nhap_kho + phiếu san_pham),
-  // không phải kho vật tư — xem ThanhPhamStockPanel (strictKho=1).
+  // Kho thành phẩm / cắt lẻ / tái chế / Đặc / Sóng / Rỗng đều chứa THÀNH PHẨM
+  // (danh mục nhap_kho + phiếu san_pham), không phải kho vật tư — xem ThanhPhamStockPanel (strictKho=1).
   return normalized.includes('san pham') ||
     normalized.includes('thanh pham') ||
     normalized.includes('hang hoa') ||
     normalized.includes('cat le') ||
-    normalized.includes('tai che')
+    normalized.includes('tai che') ||
+    normalized === 'kho dac' ||
+    normalized === 'kho song' ||
+    normalized === 'kho rong'
     ? 'products'
     : 'materials';
 }
@@ -191,12 +194,17 @@ export function InventoryCatalogPanel({ onBack }: { onBack: () => void }) {
     );
   }
 
-  // Kho thành phẩm / sản phẩm / cắt lẻ / tái chế → một màn: SP từ nhap_kho + tồn kỳ từ phiếu NX.
+  // Kho thành phẩm / sản phẩm / cắt lẻ / tái chế / Đặc / Sóng / Rỗng
+  // → một màn: SP từ nhap_kho + tồn kỳ từ phiếu NX.
+  const normalizedSelected = normalizeWarehouseName(selectedWarehouse);
   const isFinishedGoods =
-    normalizeWarehouseName(selectedWarehouse).includes('thanh pham') ||
-    normalizeWarehouseName(selectedWarehouse).includes('san pham') ||
-    normalizeWarehouseName(selectedWarehouse).includes('cat le') ||
-    normalizeWarehouseName(selectedWarehouse).includes('tai che');
+    normalizedSelected.includes('thanh pham') ||
+    normalizedSelected.includes('san pham') ||
+    normalizedSelected.includes('cat le') ||
+    normalizedSelected.includes('tai che') ||
+    normalizedSelected === 'kho dac' ||
+    normalizedSelected === 'kho song' ||
+    normalizedSelected === 'kho rong';
 
   if (isFinishedGoods) {
     return <ThanhPhamStockPanel warehouseName={selectedWarehouse} topControls={warehousePicker} />;

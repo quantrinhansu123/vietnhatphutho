@@ -26,23 +26,18 @@ export const KHO_TAI_CHE = 'Kho tái chế';
 /** Kho chính theo nhóm VTHH (plan lệnh cắt lẻ kho). */
 export const KHO_DAC = 'Kho Đặc';
 export const KHO_SONG = 'Kho Sóng';
+export const KHO_RONG = 'Kho Rỗng';
 
 /**
  * Suy kho chính từ nhóm VTHH để xuất nguồn khi cắt:
- * Đặc → Kho Đặc; Sóng/Rỗng → Kho Sóng (rỗng chung kho sóng).
+ * Đặc → Kho Đặc; Sóng → Kho Sóng; Rỗng → Kho Rỗng.
  * Trả '' khi không suy được (giữ kho đã chọn / Kho cắt lẻ).
  */
 export function inferKhoChinhTuNhom(nhomVthh?: string | null): string {
   const key = String(nhomVthh || '').trim().toLocaleLowerCase('vi');
   if (key.includes('px đặc') || key.includes('px dac')) return KHO_DAC;
-  if (
-    key.includes('px sóng') ||
-    key.includes('px song') ||
-    key.includes('px rỗng') ||
-    key.includes('px rong')
-  ) {
-    return KHO_SONG;
-  }
+  if (key.includes('px rỗng') || key.includes('px rong')) return KHO_RONG;
+  if (key.includes('px sóng') || key.includes('px song')) return KHO_SONG;
   return '';
 }
 
@@ -328,10 +323,7 @@ export function computeCatLe(
   const doLiCon = normalizeDoLiLabel(input.doLiMoi) || mother.doLi;
   const doiDoLi = Boolean(doLiCon) && !sameLi(doLiCon, mother.doLi);
   if (giuRong && giuDai && !doiDoLi) {
-    if (!options.allowIdentical) {
-      throw new Error('Khổ, m dài và độ li mới giống hệt cuộn nguồn — không có gì để cắt.');
-    }
-    // Dòng fill từ đơn hàng: cho qua nguyên khổ/dài/li (cắt giữ nguyên quy cách).
+    // Giữ nguyên quy cách: cho qua (cắt = nguồn, không thừa) — cả dòng nhập tay lẫn fill từ đơn.
     return {
       kieuCat: 'cat_tam',
       pieces: 1,

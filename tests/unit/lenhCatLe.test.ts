@@ -4,7 +4,21 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCatLePrintSlips, buildCatLeSanPhamLine, catDisplayName, computeCatLe, extractTemSuffix, resolveOriginMaCu, suggestCatLePlan, type CatLeMother } from '../../src/features/lenh-cat-le/logic';
+import { buildCatLePrintSlips, buildCatLeSanPhamLine, catDisplayName, computeCatLe, extractTemSuffix, inferKhoChinhTuNhom, KHO_DAC, KHO_SONG, KHO_RONG, resolveOriginMaCu, suggestCatLePlan, type CatLeMother } from '../../src/features/lenh-cat-le/logic';
+
+describe('lenh-cat-le - suy kho theo nhom VTHH (khong lon kho)', () => {
+  it('Dac -> Kho Dac; Song -> Kho Song; Rong -> Kho Rong rieng', () => {
+    assert.equal(inferKhoChinhTuNhom('TP; PX Đặc'), KHO_DAC);
+    assert.equal(inferKhoChinhTuNhom('TP; PX Sóng'), KHO_SONG);
+    assert.equal(inferKhoChinhTuNhom('TP; PX Rỗng'), KHO_RONG);
+    assert.equal(KHO_RONG, 'Kho Rỗng');
+  });
+  it('nhom la thi khong suy (ve kho da chon / Kho cat le)', () => {
+    assert.equal(inferKhoChinhTuNhom('TP; PX Thường'), '');
+    assert.equal(inferKhoChinhTuNhom(''), '');
+    assert.equal(inferKhoChinhTuNhom(null), '');
+  });
+});
 
 const mother20m: CatLeMother = {
   maSp: 'SP-CAT',
@@ -309,12 +323,14 @@ describe('lenh-cat-le — SL nguồn từ SL thành phẩm, hạ khổ, hạ li'
 });
 
 describe('lenh-cat-le — dòng từ đơn fill thẳng (không bắt hạ)', () => {
-  it('quy cách giữ nguyên thì chặn khi không có cờ', () => {
-    assert.throws(() => computeCatLe(mother20m, { w2: 1.22, l2: 20, qty: 1 }), /không có gì để cắt/);
-    assert.throws(
-      () => suggestCatLePlan(mother20m, { w2: 1.22, l2: 20, desiredConQty: 2 }),
-      /không có gì để cắt/
-    );
+  it('quy cách giữ nguyên thì cho qua cả khi không có cờ', () => {
+    const r = computeCatLe(mother20m, { w2: 1.22, l2: 20, qty: 1 });
+    assert.equal(r.keptIdentical, true);
+    assert.equal(r.tenSpThua, '');
+    const plan = suggestCatLePlan(mother20m, { w2: 1.22, l2: 20, desiredConQty: 2 });
+    assert.equal(plan.kieuCat, 'cat_tam');
+    assert.equal(plan.pieces, 1);
+    assert.equal(plan.mothers, 2);
   });
   it('có cờ allowIdentical thì cho qua, cắt = nguồn, không thừa', () => {
     const r = computeCatLe(mother20m, { w2: 1.22, l2: 20, qty: 2 }, { allowIdentical: true });

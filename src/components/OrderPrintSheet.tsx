@@ -1,7 +1,7 @@
 import React from 'react';
 import { formatNumber, parsePercentInput } from '../utils';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
-import { SOUTH_ORDER_TYPE, getAllocatedQtyFromMap, isCutLikeOrderType, isCutOrderType } from '../features/_shared/orderHelpers';
+import { SOUTH_ORDER_TYPE, getAllocatedQtyFromMap, isRetailCutOrderType } from '../features/_shared/orderHelpers';
 import { getOrderProductLines, type OrderRow } from '../features/_shared/orderRecordHelpers';
 import { cutOrderPrintSize, cutOrderPrintTenHang, formatPhuThoDate } from './cutOrderPrint';
 
@@ -37,8 +37,7 @@ export default function OrderPrintSheet({ order, allocatedQtyMap }: { order: Ord
       : 0;
   const totalAllocated = productLines.reduce((sum, line) => sum + allocatedOf(line), 0);
   const orderNote = displayCell(order.note);
-  const isRetailCutOrder = isCutOrderType(order.orderType);
-  const isCutOrder = isCutLikeOrderType(order.orderType);
+  const isRetailCutOrder = isRetailCutOrderType(order.orderType);
   const isSouthOrder = order.orderType === SOUTH_ORDER_TYPE;
 
   if (isRetailCutOrder) {
@@ -148,7 +147,7 @@ export default function OrderPrintSheet({ order, allocatedQtyMap }: { order: Ord
           </div>
         </header>
 
-        <h1 className="order-print-title">{isSouthOrder ? 'ĐƠN ĐẶT HÀNG MIỀN NAM' : isCutOrder ? 'ĐƠN ĐẶT CẮT LẺ' : 'ĐƠN ĐẶT HÀNG SẢN XUẤT'}</h1>
+        <h1 className="order-print-title">{isSouthOrder ? 'ĐƠN ĐẶT HÀNG MIỀN NAM' : isRetailCutOrder ? 'ĐƠN ĐẶT CẮT LẺ' : 'ĐƠN ĐẶT HÀNG SẢN XUẤT'}</h1>
 
         <table className="order-print-meta-table">
           <tbody>

@@ -37,7 +37,7 @@ import {
 } from '../ke-hoach-san-xuat';
 import { ProductionOrderPrintPreviewModal } from './PrintPreviewModal';
 import { normalizeOrders } from '../don-hang';
-import { isCutOrderType } from '../_shared/orderHelpers';
+import { isRetailCutOrderType } from '../_shared/orderHelpers';
 import { normalizeProducts } from '../san-pham';
 import type { ProductRow } from '../san-pham/types';
 import { normalizeMachines, type MachineRow } from '../danh-sach-may';
@@ -217,7 +217,7 @@ export function ProductionOrdersPanel({
         throw new Error(data.error || 'Không thể tải lệnh sản xuất từ Supabase.');
       }
 
-      const orderRows = orderRes.ok ? normalizeOrders(orderData).filter(order => !isCutOrderType(order.orderType)) : [];
+      const orderRows = orderRes.ok ? normalizeOrders(orderData).filter(order => !isRetailCutOrderType(order.orderType)) : [];
       const customerByOrderCode = new Map(
         orderRows
           .filter(order => order.orderCode && order.orderCode !== '-')
@@ -280,7 +280,7 @@ export function ProductionOrdersPanel({
       if (!orderRes.ok || !productRes.ok || !machineRes.ok) {
         throw new Error('Không thể tải dữ liệu để sửa lệnh sản xuất.');
       }
-      setOrders(normalizeOrders(orderData).filter(order => !isCutOrderType(order.orderType)));
+      setOrders(normalizeOrders(orderData).filter(order => !isRetailCutOrderType(order.orderType)));
       setCatalogProducts(normalizeProducts(productData));
       setMachines(normalizeMachines(machineData));
       setEditingRow(row);

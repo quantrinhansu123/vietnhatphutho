@@ -9,8 +9,8 @@
 
 ## Vai trò (mới, kiểu Tổng hợp tồn kho phần mềm)
 
-Hàng = mã AMIS cũ gộp các mã AMIS có trong sổ `nhap_kho`
-(`ma_sp_cu` → cũ, `ma_sp`/`ma_amis` → mới).
+Hàng = mã AMIS cũ gộp các miếng trong **`bang_cat_le`**
+(`ma_amis_cu` → cũ, `ma_amis` → mới; gồm cả mã nguồn để bắt xuất nguồn).
 Số liệu cộng từ `phieu_nhap_kho` / `phieu_xuat_kho` theo kỳ:
 SL = `so_luong`, SL theo ĐVC = `so_m2`, Giá trị = `thanh_tien`.
 Tên hàng = Tên sản phẩm (`san_pham.ten_sp` dòng gốc, theo mã cũ) — không dùng tên sản xuất;

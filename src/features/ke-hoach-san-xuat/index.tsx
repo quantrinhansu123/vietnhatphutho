@@ -81,7 +81,7 @@ import {
   calculateOrderConversion,
   conversionSupportsUnit,
   allowedOrderUnits,
-  isCutOrderType,
+  isRetailCutOrderType,
   type OrderProductConversion
 } from '../_shared/orderHelpers';
 import {
@@ -5656,7 +5656,7 @@ export function AddProductionOrderModal({
         const settingData = await settingRes.json().catch(() => ({}));
         const productData = await productRes.json().catch(() => ({}));
 
-        if (orderRes.ok) setOrders(normalizeOrders(orderData).filter(order => !isCutOrderType(order.orderType)));
+        if (orderRes.ok) setOrders(normalizeOrders(orderData).filter(order => !isRetailCutOrderType(order.orderType)));
         if (productionRes.ok) setProductionOrders(normalizeProductionOrders(productionData));
         if (machineRes.ok) setMachines(normalizeMachines(machineData));
         if (settingRes.ok) setSettings(mapProductionOrderSettings(settingData));

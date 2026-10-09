@@ -4,7 +4,7 @@
 |---|---|
 | **Bảng** | `lenh_cat_le` |
 | **Tab** | `lenh-cat-le` → `/lenh-cat-le` (card **Lệnh cắt lẻ** trong `/nha-may/kho`) |
-| **SQL** | `supabase-lenh-cat-le.sql` (bảng + seed `Kho cắt lẻ`/`Kho tái chế`), `supabase-nhap-kho-cat-le.sql` (7 cột thông số ghép tên trên `nhap_kho`) |
+| **SQL** | `supabase-lenh-cat-le.sql` (bảng + seed `Kho cắt lẻ`/`Kho tái chế`), `supabase-nhap-kho-cat-le.sql` (7 cột thông số ghép tên trên `nhap_kho`), `supabase-bang-cat-le.sql` (bảng `bang_cat_le`: miếng nguồn/cắt/thừa ghi lúc Duyệt) |
 
 ## Vai trò
 
@@ -14,15 +14,15 @@ Không có cột nguồn/cắt, `kho_tp`, hay `di_tai_che` trên bảng — `CRE
 
 **Tạo mới / Sửa** chỉ lưu lệnh trạng thái `moi` (chờ duyệt), không ghi kho.
 Trong form, khi đủ thông tin sản phẩm có nút **Xác nhận**: xem sản phẩm nguồn cắt thành cắt 1 / cắt 2 / cắt 3 (mã, tên, số lượng, kg/m²/m dài và thông số sẽ ghi `nhap_kho`).
-Bấm **Duyệt** (`POST /:id/hoan-thanh`) mới xuất **kho nguồn** (Kho Đặc/Kho Sóng theo SP), nhập SP cắt và mọi phần còn lại lại **kho nguồn** (không qua Kho thành phẩm). Sau khi duyệt (`hoan_thanh`) không sửa được. Bản in (`buildCatLePrintSlips`) dựng đúng 3 phiếu này.
+Bấm **Duyệt** (`POST /:id/hoan-thanh`) mới xuất **kho nguồn** (Kho Đặc/Kho Sóng theo SP), nhập SP cắt và mọi phần còn lại lại **kho nguồn** (không qua Kho thành phẩm), đồng thời ghi mỗi miếng (nguồn/cắt 1/cắt 2/cắt 3) vào **`bang_cat_le`** (`catLeBangRow`, upsert `ma_lenh,loai,ma_amis`; lỗi thì rollback phiếu, lệnh ở lại `moi`). Sau khi duyệt (`hoan_thanh`) không sửa được. Bản in (`buildCatLePrintSlips`) dựng đúng 3 phiếu này.
 
 - Được hạ một chiều (xẻ khổ giữ dài / cắt ngắn giữ rộng) hoặc hạ cả khổ lẫn m dài (`kieu_cat = ca_hai`). Khi hạ cả 2 chiều (`ca_hai`), tự động sinh đủ 2 phần thừa: phần thừa 1 (dải dọc: khổ = khổ nguồn − khổ cắt, dài = dài nguồn) và phần thừa 2 (`san_pham_cat_3`: khổ = khổ cắt, dài = dài nguồn − dài cắt), bảo toàn 100% diện tích và trọng lượng tấm nguồn. Độ li đích đổi riêng được: khi đổi, `do_day_m` của sản phẩm cắt ghép lại theo số li (vd `1` → `1m`) rồi ghi `nhap_kho`; phần còn lại giữ `do_day_m` nguồn. Tên SP cắt và phần còn lại nối thêm `mo_ta_tem` của nguồn.
-- **Kho nguồn suy từ nhóm VTHH** (`inferKhoChinhTuNhom` trong `logic.ts`): Đặc → `Kho Đặc`; Sóng/Rỗng → `Kho Sóng` (rỗng chung kho sóng). Form gửi kho suy luận; server fallback khi lệnh thiếu kho.
+- **Kho nguồn suy từ nhóm VTHH** (`inferKhoChinhTuNhom` trong `logic.ts`): Đặc → `Kho Đặc`; Sóng → `Kho Sóng`; Rỗng → `Kho Rỗng` riêng (seed trong `supabase-bang-cat-le.sql`). Form gửi kho suy luận; server fallback khi lệnh thiếu kho. Đối soát tồn + phiếu xuất/nhập + catalog đều **chia theo kho từng dòng** (lệnh có `kho_nguon`/`kho_dich` thì thắng); nhiều kho → nhiều phiếu, mã phiếu lưu gộp bằng dấu phẩy.
 - **Mã mới + mã cũ:** SP cắt / phần thừa mang `ma_amis` = mã MỚI (`buildCutAmisCodeFull`: mã gốc + viết tắt từ tên sản xuất — TRẮNG→`TR`, XANH→`XA`, `11 SÓNG`→`11s`, `8ZEM`→`8ZEM`, `5KG`→`5kg` — rồi TC/phế, màng, khổ, mét dài, tem) + `ma_amis_cu` = mã gốc. Tính lúc lập dòng (`buildCatLeSanPhamLine`). Ô **Hạ khổ rộng (m)** trống thì giữ khổ nguồn; có số khác khổ nguồn thì ghi `*Nm` vào mã mới. Duyệt lệnh upsert biến thể vào `san_pham` (tìm theo `ma_amis + ten_sp`, cần migration `supabase-san-pham-ma-amis-cu.sql`); phiếu xuất/nhập và catalog `nhap_kho` ghi `ma_sp` = mã mới + `ma_sp_cu` = mã gốc (migration `supabase-nhap-kho-ma-sp-cu.sql`, để tổng hợp về sau).
 - **Mã cũ luôn quy về gốc** (`resolveOriginMaCu`): khi chốt dòng (form Xác nhận/Lưu, API tạo/sửa/duyệt), `ma_amis_cu` = mã cũ đã lưu trong `san_pham` cho mã nguồn (chuỗi cắt nhiều nhát từ biến thể vẫn về mã gốc đầu tiên); nguồn gốc thật (chưa có mã cũ) thì lấy mã nguồn. Không bao giờ lưu mã trung gian làm mã cũ.
-- **Tạo từ đơn cắt lẻ:** modal lập lệnh có picker chỉ load `Đơn theo quy cách của khách đặt` — chọn đơn + dòng SP tự điền nguồn (theo `ma_sp` gốc), m cắt (theo `quy_cach_m_dai`/`dai_m`), SL và ghi chú kèm `ma_amis` mới/`ten_ghep`.
+- **Tạo từ đơn cắt lẻ kho:** modal lập lệnh có picker chỉ load `Đơn cắt lẻ` (`isRetailCutOrderType`) — chọn đơn + dòng SP tự điền nguồn (theo `ma_sp` gốc), m cắt (theo `quy_cach_m_dai`/`dai_m`), SL và ghi chú kèm `ma_amis` mới/`ten_ghep`. `Đơn theo quy cách của khách đặt` đi Lệnh SX, không vào đây.
 - **Tên sản xuất một quy định:** ô form, picker đơn và bảng Xuất/Cắt/Còn lại đều hiện tên ghép `ten gốc - hàng phế - màng - độ li - đm - khổ - mét dài` (`composeProductionDisplayName`). Rỗng bỏ khổ 2.1m mặc định. Đổi Dài / Hạ khổ / Độ li ĐM thì ghép lại đúng thứ tự đó.
-- **Fill thẳng từ đơn:** dòng có `orderCode` được cho qua khi quy cách giữ nguyên (không bắt hạ khổ/dài/li — `allowIdentical`). Mã cắt vẫn hiện đủ viết tắt từ tên sản xuất (màu, ZEM, số sóng, kg) kể cả khi khổ/dài không đổi. Trọng lượng đơn mang qua theo thứ tự TL/tấm → TL cuộn (`sheetKg`).
+- **Giữ nguyên quy cách:** khổ/dài/li mới giống hệt nguồn thì cho qua luôn (`keptIdentical`, cắt = nguồn, không thừa) — cả dòng nhập tay lẫn fill từ đơn, không validate chặn. Mã cắt vẫn hiện đủ viết tắt từ tên sản xuất (màu, ZEM, số sóng, kg) kể cả khi khổ/dài không đổi. Trọng lượng đơn mang qua theo thứ tự TL/tấm → TL cuộn (`sheetKg`).
 - Gốc trọng lượng là 3 hệ số 1 SP của nguồn (`kg/m2/m dài`): `kg2 = kg1 × (w2×l2)/(w1×l1)`.
   Mất số nguồn thì nhập kg cân tay. Chuỗi cắt (20m→12m→10m) lấy TP làm nguồn qua `parent` logic.
 
