@@ -4,7 +4,21 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCatLePrintSlips, buildCatLeSanPhamLine, catDisplayName, computeCatLe, extractTemSuffix, resolveOriginMaCu, suggestCatLePlan, type CatLeMother } from '../../src/features/lenh-cat-le/logic';
+import { buildCatLePrintSlips, buildCatLeSanPhamLine, catDisplayName, computeCatLe, extractTemSuffix, inferKhoChinhTuNhom, KHO_DAC, KHO_SONG, KHO_RONG, resolveOriginMaCu, suggestCatLePlan, type CatLeMother } from '../../src/features/lenh-cat-le/logic';
+
+describe('lenh-cat-le - suy kho theo nhom VTHH (khong lon kho)', () => {
+  it('Dac -> Kho Dac; Song -> Kho Song; Rong -> Kho Rong rieng', () => {
+    assert.equal(inferKhoChinhTuNhom('TP; PX Đặc'), KHO_DAC);
+    assert.equal(inferKhoChinhTuNhom('TP; PX Sóng'), KHO_SONG);
+    assert.equal(inferKhoChinhTuNhom('TP; PX Rỗng'), KHO_RONG);
+    assert.equal(KHO_RONG, 'Kho Rỗng');
+  });
+  it('nhom la thi khong suy (ve kho da chon / Kho cat le)', () => {
+    assert.equal(inferKhoChinhTuNhom('TP; PX Thường'), '');
+    assert.equal(inferKhoChinhTuNhom(''), '');
+    assert.equal(inferKhoChinhTuNhom(null), '');
+  });
+});
 
 const mother20m: CatLeMother = {
   maSp: 'SP-CAT',

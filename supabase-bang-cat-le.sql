@@ -63,4 +63,9 @@ create policy "bang_cat_le_delete_all" on public.bang_cat_le for delete using (t
 
 grant select, insert, update, delete on public.bang_cat_le to anon, authenticated, service_role;
 
-select 'OK - bang bang_cat_le.' as result;
+-- Seed kho Rỗng dùng cho luồng cắt lẻ (Rỗng đi kho riêng, không chung Kho Sóng).
+insert into public.quan_ly_kho (ten_kho)
+select v.ten_kho from (values ('Kho Rỗng')) as v(ten_kho)
+where not exists (select 1 from public.quan_ly_kho q where lower(btrim(q.ten_kho)) = lower(btrim(v.ten_kho)));
+
+select 'OK - bang bang_cat_le + kho Rong.' as result;

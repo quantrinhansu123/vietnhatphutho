@@ -17867,11 +17867,6 @@ async function loadKiemKhoLiveTongHopForDot(
       if (prev) prev.qty = Math.round((prev.qty + qty) * 1000) / 1000;
       else need.set(key, { ma, ten, qty, kho });
     }
-    // Kho ghi phiếu: ưu tiên kho đã chọn trên lệnh; thiếu thì suy từ nhóm VTHH dòng đầu (giữ như cũ).
-    const khoNguon =
-      lenhKhoChon ||
-      inferKhoChinhTuNhom(String(lines[0]?.san_pham_nguon?.nhom_vthh || '')) ||
-      KHO_CAT_LE;
     for (const item of need.values()) {
       const ton = await getSanPhamTonSlTheoKhoVaTen(item.ma, item.ten, item.kho);
       if (ton !== null && ton < item.qty - 1e-9) {
@@ -17886,16 +17881,23 @@ async function loadKiemKhoLiveTongHopForDot(
     const ngayPhieu = String(lenh.ngay_cat || '').slice(0, 10);
     const maLenh = String(lenh.ma_lenh || '').trim();
     const lyDo = `Cắt lẻ ${maLenh}`.trim();
-    // SP cắt nhập lại chính kho nguồn (không qua Kho thành phẩm).
-    const khoDich = String(lenh.kho_dich || khoNguon).trim() || khoNguon;
-    const maKhoNguonCat = await resolveMaKho(khoNguon);
-    const maKhoDichCat = await resolveMaKho(khoDich);
+    // Kho theo từng dòng, không lộn kho: Đặc → Kho Đặc, Sóng → Kho Sóng, Rỗng → Kho Rỗng.
+    // SP cắt nhập lại chính kho nguồn của dòng đó (không qua Kho thành phẩm).
+    const khoDichChon = String(lenh.kho_dich || '').trim();
+    const khoNguonCuaDong = (line: CatLeSanPhamLine) =>
+      lenhKhoChon || inferKhoChinhTuNhom(String(line.san_pham_nguon?.nhom_vthh || '')) || KHO_CAT_LE;
+    const khoDichCuaDong = (khoNguon: string) => khoDichChon || khoNguon;
+    const maKhoCache = new Map<string, string>();
+    const maKhoCua = async (kho: string) => {
+      const hit = maKhoCache.get(kho);
+      if (hit) return hit;
+      const ma = await resolveMaKho(kho);
+      maKhoCache.set(kho, ma);
+      return ma;
+    };
     const usedCodes = new Set<string>();
-    const maXuat = takeSlipCode('xuat', usedCodes);
-    const maNhapTp = takeSlipCode('nhap', usedCodes);
     const conLaiOLai = lines.filter(line => line.san_pham_cat_2 || line.san_pham_cat_3);
     const sanPhamVeKhoCatLe = lines.map(line => ({ ...line, di_tai_che: false }));
-    const maNhapThua = conLaiOLai.length > 0 ? takeSlipCode('nhap', usedCodes) : '';
     const written: string[] = [];
     const rollback = async () => {
       for (const code of written) await deleteWarehouseSlipEverywhere(code);
@@ -17911,57 +17913,82 @@ async function loadKiemKhoLiveTongHopForDot(
       diaChi: null as null,
       soTronIds: [] as string[]
     };
-    const xuatRecords = buildWarehouseSlipInsertRecords(
-      {
-        ...header,
-        loaiPhieu: 'xuat',
-        loaiKho: 'san_pham',
-        maKho: maKhoNguonCat,
-        lyDo,
-        ghiChu: `Lệnh cắt ${maLenh} — sản phẩm nguồn`,
-        tenKho: khoNguon,
-        loaiNhapKho: null,
-        items: lines.map(line => catLeSlipItem(line, 'nguon'))
-      },
-      maXuat
-    );
-    const nhapTpRecords = buildWarehouseSlipInsertRecords(
-      {
-        ...header,
-        loaiPhieu: 'nhap',
-        loaiKho: 'san_pham',
-        maKho: maKhoDichCat,
-        lyDo,
-        ghiChu: `Lệnh cắt ${maLenh} — sản phẩm cắt 1`,
-        tenKho: khoDich,
-        loaiNhapKho: 'Cắt lẻ',
-        items: lines.map(line => catLeSlipItem(line, 'cat_1'))
-      },
-      maNhapTp
-    );
     const tableXuat = await resolveWarehouseWriteTable('xuat');
     const tableNhap = await resolveWarehouseWriteTable('nhap');
-    const r1 = await insertWarehouseSlipRecordsResilient(tableXuat, xuatRecords);
-    if (r1.error) return { ok: false, status: 500, error: `Không ghi được phiếu xuất cắt lẻ. ${r1.error.message}` };
-    written.push(maXuat);
-    const r2 = await insertWarehouseSlipRecordsResilient(tableNhap, nhapTpRecords);
-    if (r2.error) {
-      await rollback();
-      return { ok: false, status: 500, error: `Không ghi được phiếu nhập thành phẩm. ${r2.error.message}` };
+    const groupLines = (pick: (line: CatLeSanPhamLine) => string, source: CatLeSanPhamLine[]) => {
+      const groups = new Map<string, CatLeSanPhamLine[]>();
+      for (const line of source) {
+        const kho = pick(line);
+        const list = groups.get(kho) || [];
+        list.push(line);
+        groups.set(kho, list);
+      }
+      return groups;
+    };
+    const maXuatList: string[] = [];
+    for (const [kho, groupLinesOfKho] of groupLines(line => khoNguonCuaDong(line), lines)) {
+      const maXuat = takeSlipCode('xuat', usedCodes);
+      const xuatRecords = buildWarehouseSlipInsertRecords(
+        {
+          ...header,
+          loaiPhieu: 'xuat',
+          loaiKho: 'san_pham',
+          maKho: await maKhoCua(kho),
+          lyDo,
+          ghiChu: `Lệnh cắt ${maLenh} — sản phẩm nguồn (${kho})`,
+          tenKho: kho,
+          loaiNhapKho: null,
+          items: groupLinesOfKho.map(line => catLeSlipItem(line, 'nguon'))
+        },
+        maXuat
+      );
+      const r = await insertWarehouseSlipRecordsResilient(tableXuat, xuatRecords);
+      if (r.error) {
+        await rollback();
+        return { ok: false, status: 500, error: `Không ghi được phiếu xuất cắt lẻ (${kho}). ${r.error.message}` };
+      }
+      written.push(maXuat);
+      maXuatList.push(maXuat);
     }
-    written.push(maNhapTp);
-    if (maNhapThua) {
+    const maNhapTpList: string[] = [];
+    for (const [kho, groupLinesOfKho] of groupLines(line => khoDichCuaDong(khoNguonCuaDong(line)), lines)) {
+      const maNhapTp = takeSlipCode('nhap', usedCodes);
+      const nhapTpRecords = buildWarehouseSlipInsertRecords(
+        {
+          ...header,
+          loaiPhieu: 'nhap',
+          loaiKho: 'san_pham',
+          maKho: await maKhoCua(kho),
+          lyDo,
+          ghiChu: `Lệnh cắt ${maLenh} — sản phẩm cắt 1 (${kho})`,
+          tenKho: kho,
+          loaiNhapKho: 'Cắt lẻ',
+          items: groupLinesOfKho.map(line => catLeSlipItem(line, 'cat_1'))
+        },
+        maNhapTp
+      );
+      const r = await insertWarehouseSlipRecordsResilient(tableNhap, nhapTpRecords);
+      if (r.error) {
+        await rollback();
+        return { ok: false, status: 500, error: `Không ghi được phiếu nhập thành phẩm (${kho}). ${r.error.message}` };
+      }
+      written.push(maNhapTp);
+      maNhapTpList.push(maNhapTp);
+    }
+    const maNhapThuaList: string[] = [];
+    for (const [kho, groupLinesOfKho] of groupLines(line => khoNguonCuaDong(line), conLaiOLai)) {
+      const maNhapThua = takeSlipCode('nhap', usedCodes);
       const nhapThuaRecords = buildWarehouseSlipInsertRecords(
         {
           ...header,
           loaiPhieu: 'nhap',
           loaiKho: 'san_pham',
-          maKho: maKhoNguonCat,
+          maKho: await maKhoCua(kho),
           lyDo,
-          ghiChu: `Lệnh cắt ${maLenh} — sản phẩm còn lại`,
-          tenKho: khoNguon,
+          ghiChu: `Lệnh cắt ${maLenh} — sản phẩm còn lại (${kho})`,
+          tenKho: kho,
           loaiNhapKho: 'Cắt lẻ',
-          items: conLaiOLai.flatMap(line => {
+          items: groupLinesOfKho.flatMap(line => {
             const items = [];
             if (line.san_pham_cat_2) items.push(catLeSlipItem(line, 'cat_2'));
             if (line.san_pham_cat_3) items.push(catLeSlipItem(line, 'cat_3'));
@@ -17970,25 +17997,28 @@ async function loadKiemKhoLiveTongHopForDot(
         },
         maNhapThua
       );
-      const r3 = await insertWarehouseSlipRecordsResilient(tableNhap, nhapThuaRecords);
-      if (r3.error) {
+      const r = await insertWarehouseSlipRecordsResilient(tableNhap, nhapThuaRecords);
+      if (r.error) {
         await rollback();
-        return { ok: false, status: 500, error: `Không ghi được phiếu nhập phần còn lại. ${r3.error.message}` };
+        return { ok: false, status: 500, error: `Không ghi được phiếu nhập phần còn lại (${kho}). ${r.error.message}` };
       }
       written.push(maNhapThua);
+      maNhapThuaList.push(maNhapThua);
     }
-    const catResult = await insertNhapKhoCatalogRows([
-      ...lines.map(line => catLeCatalogRow(line, 'cat_1', khoDich, maKhoDichCat)),
-      ...conLaiOLai.flatMap(line => {
-        const rows = [];
-        if (line.san_pham_cat_2) rows.push(catLeCatalogRow(line, 'cat_2', khoNguon, maKhoNguonCat));
-        if (line.san_pham_cat_3) rows.push(catLeCatalogRow(line, 'cat_3', khoNguon, maKhoNguonCat));
-        return rows;
-      })
-    ]);
+    const catalogRows: Array<Record<string, unknown>> = [];
+    for (const line of lines) {
+      const khoNguon = khoNguonCuaDong(line);
+      const khoDich = khoDichCuaDong(khoNguon);
+      catalogRows.push(catLeCatalogRow(line, 'cat_1', khoDich, await maKhoCua(khoDich)));
+      if (line.san_pham_cat_2) catalogRows.push(catLeCatalogRow(line, 'cat_2', khoNguon, await maKhoCua(khoNguon)));
+      if (line.san_pham_cat_3) catalogRows.push(catLeCatalogRow(line, 'cat_3', khoNguon, await maKhoCua(khoNguon)));
+    }
+    const catResult = await insertNhapKhoCatalogRows(catalogRows);
     // Bảng cắt lẻ: nguồn + cắt 1 + phần thừa (Báo cáo / Theo dõi đọc từ đây).
     const bangCatLeRows = lines.flatMap(line => {
       const rows = [];
+      const khoNguon = khoNguonCuaDong(line);
+      const khoDich = khoDichCuaDong(khoNguon);
       const kinds: Array<'nguon' | 'cat_1' | 'cat_2' | 'cat_3'> = ['nguon', 'cat_1', 'cat_2', 'cat_3'];
       for (const kind of kinds) {
         const row = catLeBangRow(line, kind, kind === 'cat_1' ? khoDich : khoNguon, maLenh, ngayPhieu);
@@ -18009,14 +18039,18 @@ async function loadKiemKhoLiveTongHopForDot(
         };
       }
     }
+    // Nhiều kho → nhiều phiếu: lưu các mã cách nhau bằng dấu phẩy (cột chỉ để hiển thị).
+    const maXuatSaved = maXuatList.join(',') || null;
+    const maNhapTpSaved = maNhapTpList.join(',') || null;
+    const maNhapThuaSaved = maNhapThuaList.join(',') || null;
     const { data: updated, error: updateError } = await saveLenhCatLe(
       'update',
       {
         trang_thai: 'hoan_thanh',
         san_pham: sanPhamVeKhoCatLe,
-        ma_phieu_xuat: maXuat,
-        ma_phieu_nhap_tp: maNhapTp,
-        ma_phieu_nhap_thua: maNhapThua || null,
+        ma_phieu_xuat: maXuatSaved,
+        ma_phieu_nhap_tp: maNhapTpSaved,
+        ma_phieu_nhap_thua: maNhapThuaSaved,
         ma_phieu_chuyen_tai_che: null,
         ma_phieu_xuat_tai_che: null,
         ma_phieu_nhap_tai_che: null
@@ -18029,9 +18063,9 @@ async function loadKiemKhoLiveTongHopForDot(
         status: 500,
         error: `Đã ghi phiếu nhưng không cập nhật được lệnh. ${updateError.message}`,
         extra: {
-          ma_phieu_xuat: maXuat,
-          ma_phieu_nhap_tp: maNhapTp,
-          ma_phieu_nhap_thua: maNhapThua || null,
+          ma_phieu_xuat: maXuatSaved,
+          ma_phieu_nhap_tp: maNhapTpSaved,
+          ma_phieu_nhap_thua: maNhapThuaSaved,
           ma_phieu_chuyen_tai_che: null,
           ma_phieu_nhap_tai_che: null
         }
@@ -18042,9 +18076,9 @@ async function loadKiemKhoLiveTongHopForDot(
       body: {
         success: true,
         record: (updated || [])[0] || null,
-        ma_phieu_xuat: maXuat,
-        ma_phieu_nhap_tp: maNhapTp,
-        ma_phieu_nhap_thua: maNhapThua || null,
+        ma_phieu_xuat: maXuatSaved,
+        ma_phieu_nhap_tp: maNhapTpSaved,
+        ma_phieu_nhap_thua: maNhapThuaSaved,
         ma_phieu_chuyen_tai_che: null,
         ma_phieu_nhap_tai_che: null,
         di_tai_che: false,
