@@ -4,7 +4,7 @@
 |---|---|
 | **Bảng** | `lenh_cat_le` |
 | **Tab** | `lenh-cat-le` → `/lenh-cat-le` (card **Lệnh cắt lẻ** trong `/nha-may/kho`) |
-| **SQL** | `supabase-lenh-cat-le.sql` (bảng + seed `Kho cắt lẻ`/`Kho tái chế`), `supabase-nhap-kho-cat-le.sql` (7 cột thông số ghép tên trên `nhap_kho`) |
+| **SQL** | `supabase-lenh-cat-le.sql` (bảng + seed `Kho cắt lẻ`/`Kho tái chế`), `supabase-nhap-kho-cat-le.sql` (7 cột thông số ghép tên trên `nhap_kho`), `supabase-bang-cat-le.sql` (bảng `bang_cat_le`: miếng nguồn/cắt/thừa ghi lúc Duyệt) |
 
 ## Vai trò
 
@@ -14,7 +14,7 @@ Không có cột nguồn/cắt, `kho_tp`, hay `di_tai_che` trên bảng — `CRE
 
 **Tạo mới / Sửa** chỉ lưu lệnh trạng thái `moi` (chờ duyệt), không ghi kho.
 Trong form, khi đủ thông tin sản phẩm có nút **Xác nhận**: xem sản phẩm nguồn cắt thành cắt 1 / cắt 2 / cắt 3 (mã, tên, số lượng, kg/m²/m dài và thông số sẽ ghi `nhap_kho`).
-Bấm **Duyệt** (`POST /:id/hoan-thanh`) mới xuất **kho nguồn** (Kho Đặc/Kho Sóng theo SP), nhập SP cắt và mọi phần còn lại lại **kho nguồn** (không qua Kho thành phẩm). Sau khi duyệt (`hoan_thanh`) không sửa được. Bản in (`buildCatLePrintSlips`) dựng đúng 3 phiếu này.
+Bấm **Duyệt** (`POST /:id/hoan-thanh`) mới xuất **kho nguồn** (Kho Đặc/Kho Sóng theo SP), nhập SP cắt và mọi phần còn lại lại **kho nguồn** (không qua Kho thành phẩm), đồng thời ghi mỗi miếng (nguồn/cắt 1/cắt 2/cắt 3) vào **`bang_cat_le`** (`catLeBangRow`, upsert `ma_lenh,loai,ma_amis`; lỗi thì rollback phiếu, lệnh ở lại `moi`). Sau khi duyệt (`hoan_thanh`) không sửa được. Bản in (`buildCatLePrintSlips`) dựng đúng 3 phiếu này.
 
 - Được hạ một chiều (xẻ khổ giữ dài / cắt ngắn giữ rộng) hoặc hạ cả khổ lẫn m dài (`kieu_cat = ca_hai`). Khi hạ cả 2 chiều (`ca_hai`), tự động sinh đủ 2 phần thừa: phần thừa 1 (dải dọc: khổ = khổ nguồn − khổ cắt, dài = dài nguồn) và phần thừa 2 (`san_pham_cat_3`: khổ = khổ cắt, dài = dài nguồn − dài cắt), bảo toàn 100% diện tích và trọng lượng tấm nguồn. Độ li đích đổi riêng được: khi đổi, `do_day_m` của sản phẩm cắt ghép lại theo số li (vd `1` → `1m`) rồi ghi `nhap_kho`; phần còn lại giữ `do_day_m` nguồn. Tên SP cắt và phần còn lại nối thêm `mo_ta_tem` của nguồn.
 - **Kho nguồn suy từ nhóm VTHH** (`inferKhoChinhTuNhom` trong `logic.ts`): Đặc → `Kho Đặc`; Sóng/Rỗng → `Kho Sóng` (rỗng chung kho sóng). Form gửi kho suy luận; server fallback khi lệnh thiếu kho.
