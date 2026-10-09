@@ -14,13 +14,11 @@ import { orderDuplicateDecimalText } from '../don-hang/southWeight';
 import { parseLocalizedNumber } from '../../utils';
 import { DEFAULT_RONG_WIDTH_M, buildOrderTenGhep, classifyProductPxGroup, extractDoLiDmNumber, normalizeDoLiDm, parseProductionNameParts, parseSongLengthMeters, replaceCutWidthMeters } from '../../utils/productProductionName';
 import {
-  KHO_CAT_LE,
   KHO_TAI_CHE,
   buildCatLePrintSlips,
   buildCatLeSanPhamLine,
   catDisplayName,
   computeCatLe,
-  inferKhoChinhTuNhom,
   normalizeCatLeSanPhamList,
   normalizeDoLiLabel,
   parseMeterInput,
@@ -993,12 +991,11 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
       });
       const payload = {
         ngayCat,
-        // Xuất nguồn từ kho chính suy từ nhóm VTHH (Đặc → Kho Đặc; Sóng/Rỗng → Kho Sóng).
-        // SP cắt + phần thừa nhập lại chính kho nguồn.
-        khoNguon:
-          inferKhoChinhTuNhom(previews[0]?.nhomVthh || '') || KHO_CAT_LE,
-        khoDich:
-          inferKhoChinhTuNhom(previews[0]?.nhomVthh || '') || KHO_CAT_LE,
+        // Để trống kho → lúc Duyệt server suy theo nhóm VTHH từng dòng
+        // (Đặc → Kho Đặc; Sóng → Kho Sóng; Rỗng → Kho Rỗng), không lộn kho.
+        // SP cắt + phần thừa nhập lại chính kho nguồn của dòng.
+        khoNguon: '',
+        khoDich: '',
         nguoiThucHien: nguoiThucHien.trim(),
         nguoiLap: nguoiLap.trim(),
         sanPham
@@ -1411,8 +1408,8 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                               try {
                                 showSlipPreview({
                                   ngay_cat: ngayCat,
-                                  kho_nguon: inferKhoChinhTuNhom(previews[0]?.nhomVthh || '') || KHO_CAT_LE,
-                                  kho_dich: inferKhoChinhTuNhom(previews[0]?.nhomVthh || '') || KHO_CAT_LE,
+                                  kho_nguon: '',
+                                  kho_dich: '',
                                   kho_tai_che: KHO_TAI_CHE,
                                   nguoi_lap: nguoiLap.trim(),
                                   san_pham: linesFromForm()

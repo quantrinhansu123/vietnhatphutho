@@ -17495,9 +17495,10 @@ async function loadKiemKhoLiveTongHopForDot(
         return { error: `Dòng ${index + 1} (${mother.maSp}): ${err?.message || 'Thông số cắt không hợp lệ.'}` };
       }
     }
-    const khoNguon = String(source.khoNguon ?? source.kho_nguon ?? KHO_CAT_LE).trim() || KHO_CAT_LE;
+    // Kho để trống → lúc Duyệt suy theo nhóm VTHH từng dòng (Đặc/Sóng/Rỗng không lộn kho).
+    const khoNguon = String(source.khoNguon ?? source.kho_nguon ?? '').trim();
     // SP cắt + phần thừa nhập lại chính kho nguồn (không qua Kho thành phẩm).
-    const khoDich = String(source.khoDich ?? source.kho_dich ?? source.khoTp ?? source.kho_tp ?? khoNguon).trim() || khoNguon;
+    const khoDich = String(source.khoDich ?? source.kho_dich ?? source.khoTp ?? source.kho_tp ?? khoNguon).trim();
     // Sản phẩm chỉ nằm trong JSON san_pham (nguồn / cắt 1 / cắt 2). Không ghi cột nguồn/cắt.
     const draft: Record<string, unknown> = {
       ngay_cat: ngayCat,

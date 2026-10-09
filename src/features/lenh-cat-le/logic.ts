@@ -1040,69 +1040,89 @@ export function buildCatLePrintSlips(lenh: {
   const lines = normalizeCatLeSanPhamList(lenh.san_pham);
   const ngay = String(lenh.ngay_cat || '').slice(0, 10);
   const nguoi = String(lenh.nguoi_lap || '').trim();
-  const khoNguon = String(lenh.kho_nguon || KHO_CAT_LE);
-  // SP cắt nhập lại chính kho nguồn (không qua Kho thành phẩm).
-  const khoDich = String(lenh.kho_dich || khoNguon);
+  // Kho theo từng dòng, không lộn kho: lệnh cũ có kho chung thì giữ 1 kho;
+  // lệnh mới để trống → suy từ nhóm VTHH dòng đó (Đặc/Sóng/Rỗng).
+  // SP cắt nhập lại chính kho nguồn của dòng (không qua Kho thành phẩm).
+  const khoNguonMacDinh = String(lenh.kho_nguon || '').trim();
+  const khoDichMacDinh = String(lenh.kho_dich || '').trim();
+  const khoNguonCua = (line: CatLeSanPhamLine) =>
+    khoNguonMacDinh || inferKhoChinhTuNhom(String(line.san_pham_nguon?.nhom_vthh || '')) || KHO_CAT_LE;
+  const khoDichCua = (khoNguon: string) => khoDichMacDinh || khoNguon;
   const khoTaiChe = String(lenh.kho_tai_che || KHO_TAI_CHE);
   const maLenh = String(lenh.ma_lenh || '').trim();
   const slips: CatLePrintSlip[] = [];
-  const xuatLines = lines.map(line =>
-    slipLineFromProduct(
-      line.san_pham_nguon.ma_sp,
-      line.san_pham_nguon.ten_sp,
-      line.san_pham_nguon.don_vi,
-      line.san_pham_nguon.so_luong,
-      line.san_pham_nguon.kg
-    )
-  );
-  const nhapTpLines = lines.map(line =>
-    slipLineFromProduct(
-      line.san_pham_nguon.ma_sp,
-      line.san_pham_cat_1.ten_sp,
-      line.san_pham_nguon.don_vi,
-      catLeConQty(line),
-      line.san_pham_cat_1.kg
-    )
-  );
+  const groupByKho = (pick: (line: CatLeSanPhamLine) => string, source: CatLeSanPhamLine[]) => {
+    const groups = new Map<string, CatLeSanPhamLine[]>();
+    for (const line of source) {
+      const kho = pick(line);
+      const list = groups.get(kho) || [];
+      list.push(line);
+      groups.set(kho, list);
+    }
+    return [...groups];
+  };
+  const splitCodes = (value: unknown) => String(value ?? '').split(',').map(part => part.trim()).filter(Boolean);
   const conLai = lines.filter(line => (line.san_pham_cat_2 || line.san_pham_cat_3) && !line.di_tai_che);
   const taiChe = lines.filter(line => (line.san_pham_cat_2 || line.san_pham_cat_3) && line.di_tai_che);
-  const maXuat = slipCode(lenh.ma_phieu_xuat);
-  if (maXuat && xuatLines.length > 0) {
+  const maXuatCodes = splitCodes(lenh.ma_phieu_xuat);
+  groupByKho(line => khoNguonCua(line), lines).forEach(([kho, groupLines], index) => {
+    const maXuat = preview ? 'Chưa sinh' : maXuatCodes[index] || maXuatCodes.join(',');
+    if (!maXuat || groupLines.length === 0) return;
     slips.push({
       slipCode: maXuat,
       slipType: 'xuat',
       slipDate: ngay,
       reason: `Cắt lẻ ${maLenh}`,
-      note: `Xuất ${khoNguon} — sản phẩm chuẩn bị cắt`,
-      warehouseName: khoNguon,
+      note: `Xuất ${kho} — sản phẩm chuẩn bị cắt`,
+      warehouseName: kho,
       createdBy: nguoi,
-      lines: xuatLines
+      lines: groupLines.map(line =>
+        slipLineFromProduct(
+          line.san_pham_nguon.ma_sp,
+          line.san_pham_nguon.ten_sp,
+          line.san_pham_nguon.don_vi,
+          line.san_pham_nguon.so_luong,
+          line.san_pham_nguon.kg
+        )
+      )
     });
-  }
-  const maNhapTp = slipCode(lenh.ma_phieu_nhap_tp);
-  if (maNhapTp && nhapTpLines.length > 0) {
+  });
+  const maNhapTpCodes = splitCodes(lenh.ma_phieu_nhap_tp);
+  groupByKho(line => khoDichCua(khoNguonCua(line)), lines).forEach(([kho, groupLines], index) => {
+    const maNhapTp = preview ? 'Chưa sinh' : maNhapTpCodes[index] || maNhapTpCodes.join(',');
+    if (!maNhapTp || groupLines.length === 0) return;
     slips.push({
       slipCode: maNhapTp,
       slipType: 'nhap',
       slipDate: ngay,
       reason: `Cắt lẻ ${maLenh}`,
-      note: `Nhập ${khoDich} — sản phẩm được cắt`,
-      warehouseName: khoDich,
+      note: `Nhập ${kho} — sản phẩm được cắt`,
+      warehouseName: kho,
       createdBy: nguoi,
-      lines: nhapTpLines
+      lines: groupLines.map(line =>
+        slipLineFromProduct(
+          line.san_pham_nguon.ma_sp,
+          line.san_pham_cat_1.ten_sp,
+          line.san_pham_nguon.don_vi,
+          catLeConQty(line),
+          line.san_pham_cat_1.kg
+        )
+      )
     });
-  }
-  const maNhapThua = slipCode(lenh.ma_phieu_nhap_thua);
-  if (maNhapThua && conLai.length > 0) {
+  });
+  const maNhapThuaCodes = splitCodes(lenh.ma_phieu_nhap_thua);
+  groupByKho(line => khoNguonCua(line), conLai).forEach(([kho, groupLines], index) => {
+    const maNhapThua = preview ? 'Chưa sinh' : maNhapThuaCodes[index] || maNhapThuaCodes.join(',');
+    if (!maNhapThua || groupLines.length === 0) return;
     slips.push({
       slipCode: maNhapThua,
       slipType: 'nhap',
       slipDate: ngay,
       reason: `Cắt lẻ ${maLenh}`,
-      note: `Nhập ${khoNguon} — sản phẩm còn lại`,
-      warehouseName: khoNguon,
+      note: `Nhập ${kho} — sản phẩm còn lại`,
+      warehouseName: kho,
       createdBy: nguoi,
-      lines: conLai.flatMap(line => {
+      lines: groupLines.flatMap(line => {
         const out: CatLePrintLine[] = [];
         if (line.san_pham_cat_2) {
           out.push(
@@ -1129,7 +1149,7 @@ export function buildCatLePrintSlips(lenh: {
         return out;
       })
     });
-  }
+  });
   if (taiChe.length > 0 && (preview || lenh.ma_phieu_nhap_tai_che)) {
     const ckLines = taiChe.flatMap(line => {
       const out: CatLePrintLine[] = [];

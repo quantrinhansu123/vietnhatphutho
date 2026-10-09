@@ -6,6 +6,36 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildCatLePrintSlips, buildCatLeSanPhamLine, catDisplayName, computeCatLe, extractTemSuffix, inferKhoChinhTuNhom, KHO_DAC, KHO_SONG, KHO_RONG, resolveOriginMaCu, suggestCatLePlan, type CatLeMother } from '../../src/features/lenh-cat-le/logic';
 
+describe('lenh-cat-le - phieu in chia theo kho tung dong', () => {
+  const lineFor = (ma: string, nhom: string) => ({
+    san_pham_nguon: { ma_sp: ma, ten_sp: `SP ${ma}`, don_vi: 'Tấm', so_luong: 5, nhom_vthh: nhom, kg: 10 },
+    san_pham_cat_1: { ma_sp: ma, ten_sp: `SP ${ma} cat`, kg: 10 }
+  });
+  it('lenh trong kho + tron Dac/Rong: xuat/nhap rieng Kho Dac / Kho Rong', () => {
+    const slips = buildCatLePrintSlips({
+      ma_lenh: 'CL-TEST', ngay_cat: '2026-10-09', kho_nguon: '', kho_dich: '',
+      san_pham: [lineFor('STD01', 'TP; PX Đặc'), lineFor('ECR01', 'TP; PX Rỗng')]
+    } as any, { preview: true });
+    const xuat = slips.filter(s => s.slipType === 'xuat');
+    assert.equal(xuat.length, 2);
+    assert.deepEqual(xuat.map(s => s.warehouseName).sort(), ['Kho Rỗng', 'Kho Đặc']);
+    const nhap = slips.filter(s => s.slipType === 'nhap');
+    assert.equal(nhap.length, 2);
+    assert.deepEqual(nhap.map(s => s.warehouseName).sort(), ['Kho Rỗng', 'Kho Đặc']);
+  });
+  it('lenh cu co kho chung: giu 1 phieu nhu cu', () => {
+    const slips = buildCatLePrintSlips({
+      ma_lenh: 'CL-OLD', kho_nguon: 'Kho Sóng', kho_dich: 'Kho Sóng',
+      ma_phieu_xuat: 'PXK-1', ma_phieu_nhap_tp: 'PNK-1',
+      san_pham: [lineFor('STS01', 'TP; PX Sóng')]
+    } as any);
+    const xuat = slips.filter(s => s.slipType === 'xuat');
+    assert.equal(xuat.length, 1);
+    assert.equal(xuat[0].slipCode, 'PXK-1');
+    assert.equal(xuat[0].warehouseName, 'Kho Sóng');
+  });
+});
+
 describe('lenh-cat-le - suy kho theo nhom VTHH (khong lon kho)', () => {
   it('Dac -> Kho Dac; Song -> Kho Song; Rong -> Kho Rong rieng', () => {
     assert.equal(inferKhoChinhTuNhom('TP; PX Đặc'), KHO_DAC);
