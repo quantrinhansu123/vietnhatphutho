@@ -13,6 +13,7 @@ import {
 } from '../utils/mixingOrderAutofill';
 import { buildOrderTenGhep } from '../utils/productProductionName';
 import { isCuonProduct, isTamProduct } from '../features/_shared/orderHelpers';
+import { filterMachinesByScope, machineInScope, useMyMachineScope } from '../features/_shared/machineScope';
 import { waitForPrintImagesReady } from '../utils/printReady';
 import {
   MixingNormRatioPrintBatch,
@@ -1173,6 +1174,8 @@ const MIXING_CONVERSION_PAGE_SIZE = 1000;
 export default function MixingNormMaterialsTab() {
   const { canCreate, canEdit, canDelete } = useTabAccess('mixing-report-list');
   const initialLoadStartedRef = useRef(false);
+  /** Phạm vi máy của người đăng nhập (null = không giới hạn). */
+  const { scope: machineScope } = useMyMachineScope();
   const [rows, setRows] = useState<MixingNormRow[]>([]);
   const [materials, setMaterials] = useState<MaterialOption[]>([]);
   const [productionOrders, setProductionOrders] = useState<MixingProductionOrder[]>([]);
@@ -2165,6 +2168,20 @@ export default function MixingNormMaterialsTab() {
     }
     setForm(prev => ({ ...prev, may: nextMachine, maLenhSx: kept.join(', ') }));
   };
+
+  /** Máy trong phạm vi của người đăng nhập (rỗng phạm vi = tất cả máy). */
+  const scopedMachines = useMemo(() => {
+    if (!machineScope || machineScope.length === 0) return machines;
+    return machines.filter(machine => machineInScope(machine, machineScope));
+  }, [machines, machineScope]);
+
+  // Người chỉ được phân công đúng 1 máy: phiếu mới tự chọn sẵn máy đó.
+  useEffect(() => {
+    if (!showForm || editingId || form.may.trim()) return;
+    if (scopedMachines.length !== 1) return;
+    const only = scopedMachines[0];
+    if (only.code) updateNormMachine(only.code);
+  }, [showForm, editingId, form.may, scopedMachines]);
 
   /** Chọn nhiều mã SP trong ô "Mã sản phẩm" của 1 dòng SP — dùng chung 1 công thức trộn. */
   const updateProductCodes = (productKey: string, selected: ProductOption[]) => {
@@ -3182,7 +3199,7 @@ export default function MixingNormMaterialsTab() {
                   <SearchableSelect
                     value={form.may}
                     onChange={updateNormMachine}
-                    options={machines}
+                    options={scopedMachines}
                     placeholder="Chọn máy..."
                     getValue={item => (item as { code: string }).code}
                     getLabel={item => (item as { code: string; name: string }).name}

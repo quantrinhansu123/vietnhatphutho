@@ -1514,6 +1514,9 @@ function mapStaffRecord(row: Record<string, unknown>) {
   const region = pickStaffField(row, ['khu_vuc', 'region'], '');
   const deletedAtRaw = row.deleted_at ?? row.deletedAt ?? null;
   const deletedAt = deletedAtRaw ? String(deletedAtRaw) : null;
+  const machineCodes = normalizeStaffMachineCodes(
+    row.may_phan_cong ?? row.machineCodes ?? row.ma_may_list ?? []
+  );
 
   return {
     id: code || name,
@@ -1537,7 +1540,9 @@ function mapStaffRecord(row: Record<string, unknown>) {
     viewPermissions: normalizeStaffViewPermissions(row.quyen_xem ?? row.viewPermissions),
     quyen_xem: normalizeStaffViewPermissions(row.quyen_xem ?? row.viewPermissions),
     assignedPositions: normalizeAssignablePositions(row.vi_tri_gan ?? row.assignedPositions),
-    vi_tri_gan: normalizeAssignablePositions(row.vi_tri_gan ?? row.assignedPositions)
+    vi_tri_gan: normalizeAssignablePositions(row.vi_tri_gan ?? row.assignedPositions),
+    may_phan_cong: machineCodes,
+    machineCodes
   };
 }
 
@@ -1631,6 +1636,44 @@ function buildStaffViTriLabel(department: string, jobTitle: string) {
   return `${dept}_${job}`;
 }
 
+/** Chuẩn hóa máy phân công của nhân sự → mảng mã máy (ma_may). Trống = không giới hạn. */
+function normalizeStaffMachineCodes(value: unknown): string[] {
+  const push = (list: string[], raw: unknown) => {
+    if (raw === null || raw === undefined) return;
+    if (typeof raw === 'string') {
+      for (const part of raw.split(/[,;|/]+/)) {
+        const code = part.trim();
+        if (code && code !== '-' && !list.includes(code)) list.push(code);
+      }
+      return;
+    }
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        if (item && typeof item === 'object') {
+          const record = item as Record<string, unknown>;
+          push(list, record.ma_may ?? record.code ?? record.maMay ?? record.ten_may);
+        } else {
+          push(list, item);
+        }
+      }
+    }
+  };
+  const list: string[] = [];
+  push(list, value);
+  return list.slice(0, 50);
+}
+
+/** Bỏ cột may_phan_cong khi DB chưa chạy migration máy phân công (giữ tương thích ngược). */
+function stripStaffMachineColumn(record: Record<string, unknown>): Record<string, unknown> {
+  const { may_phan_cong: _omitted, ...rest } = record;
+  return rest;
+}
+
+function isMissingStaffMachineColumn(error: { code?: string; message?: string } | null) {
+  if (!error || !isMissingColumnError(error)) return false;
+  return /may_phan_cong/i.test(String(error.message ?? ''));
+}
+
 function parseStaffBody(body: unknown): { error: string } | { record: Record<string, unknown> } {
   if (!body || typeof body !== 'object') {
     return { error: 'Dữ liệu không hợp lệ.' };
@@ -1692,6 +1735,17 @@ function parseStaffBody(body: unknown): { error: string } | { record: Record<str
     Object.prototype.hasOwnProperty.call(source, 'assignedPositions')
   ) {
     record.vi_tri_gan = normalizeAssignablePositions(source.vi_tri_gan ?? source.assignedPositions);
+  }
+
+  // Chỉ ghi máy phân công khi client gửi rõ — trống = không giới hạn máy.
+  if (
+    Object.prototype.hasOwnProperty.call(source, 'may_phan_cong') ||
+    Object.prototype.hasOwnProperty.call(source, 'machineCodes') ||
+    Object.prototype.hasOwnProperty.call(source, 'ma_may_list')
+  ) {
+    record.may_phan_cong = normalizeStaffMachineCodes(
+      source.may_phan_cong ?? source.machineCodes ?? source.ma_may_list
+    );
   }
 
   return { record };
@@ -13685,11 +13739,22 @@ export function createApp() {
         }
       }
 
-      const { data: created, error: insertError } = await supabase
+      let staffRecord = { ...parsed.record };
+      let { data: created, error: insertError } = await supabase
         .from(SUPABASE_STAFF_TABLE)
-        .insert(parsed.record)
+        .insert(staffRecord)
         .select('*')
         .single();
+
+      // DB chưa chạy migration máy phân công → thử lại không kèm may_phan_cong.
+      if (insertError && isMissingStaffMachineColumn(insertError)) {
+        staffRecord = stripStaffMachineColumn(staffRecord);
+        ({ data: created, error: insertError } = await supabase
+          .from(SUPABASE_STAFF_TABLE)
+          .insert(staffRecord)
+          .select('*')
+          .single());
+      }
 
       if (insertError) {
         console.error('Supabase nhan_su insert error:', insertError);
@@ -13854,22 +13919,34 @@ export function createApp() {
         return res.status(400).json({ error: parsed.error });
       }
 
-      const record = { ...parsed.record, deleted_at: null };
+      const record = { ...parsed.record, deleted_at: null } as Record<string, unknown>;
       delete (record as Record<string, unknown>).ma_nhan_su;
 
+      let staffUpdateRecord = record;
       let { data: updated, error: updateError } = await supabase
         .from(SUPABASE_STAFF_TABLE)
-        .update(record)
+        .update(staffUpdateRecord)
         .eq('ma_nhan_su', code)
         .select('*')
         .single();
 
-      // DB chưa chạy migration soft-delete → thử lại không kèm deleted_at.
-      if (updateError && isMissingColumnError(updateError) && /deleted/i.test(updateError.message || '')) {
-        delete (record as Record<string, unknown>).deleted_at;
+      // DB chưa chạy migration máy phân công → thử lại không kèm may_phan_cong.
+      if (updateError && isMissingStaffMachineColumn(updateError)) {
+        staffUpdateRecord = stripStaffMachineColumn(staffUpdateRecord);
         ({ data: updated, error: updateError } = await supabase
           .from(SUPABASE_STAFF_TABLE)
-          .update(record)
+          .update(staffUpdateRecord)
+          .eq('ma_nhan_su', code)
+          .select('*')
+          .single());
+      }
+
+      // DB chưa chạy migration soft-delete → thử lại không kèm deleted_at.
+      if (updateError && isMissingColumnError(updateError) && /deleted/i.test(updateError.message || '')) {
+        delete (staffUpdateRecord as Record<string, unknown>).deleted_at;
+        ({ data: updated, error: updateError } = await supabase
+          .from(SUPABASE_STAFF_TABLE)
+          .update(staffUpdateRecord)
           .eq('ma_nhan_su', code)
           .select('*')
           .single());
@@ -20122,6 +20199,14 @@ async function loadKiemKhoLiveTongHopForDot(
       const ca = typeof req.query.ca === 'string' ? req.query.ca.trim() : '';
       const exact = String(req.query.exact ?? '') === '1';
       const maLenhSx = typeof req.query.ma_lenh_sx === 'string' ? req.query.ma_lenh_sx.trim() : '';
+      const maMayParam =
+        typeof req.query.ma_may === 'string'
+          ? req.query.ma_may.trim()
+          : typeof req.query.may === 'string'
+            ? req.query.may.trim()
+            : typeof req.query.machine === 'string'
+              ? req.query.machine.trim()
+              : '';
       const limitRaw = Number(req.query.limit ?? 300);
       const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 500) : 300;
 
@@ -20157,6 +20242,19 @@ async function loadKiemKhoLiveTongHopForDot(
           return tokens.some(token => values.includes(token));
         });
       }
+      if (maMayParam) {
+        const needle = maMayParam.toLowerCase();
+        records = records.filter(row => {
+          const r = row as Record<string, unknown>;
+          const values = [r.may, r.ma_may, r.ten_may]
+            .map(value => String(value ?? '').trim().toLowerCase())
+            .filter(Boolean);
+          if (values.length === 0) return false;
+          return values.some(
+            value => (exact ? value === needle : value === needle || value.includes(needle) || needle.includes(value))
+          );
+        });
+      }
       records = records.map(row => {
         const r = row as Record<string, unknown>;
         const ten_phieu = String(r.ten_phieu ?? '').trim() ||
@@ -20171,7 +20269,7 @@ async function loadKiemKhoLiveTongHopForDot(
         const needle = q.toLowerCase();
         records = records.filter(row => {
           const r = row as Record<string, unknown>;
-          return `${r.ten_phieu ?? ''} ${r.ngay ?? ''} ${r.ca ?? ''} ${r.ma_lenh_sx ?? ''} ${r.ma_sp ?? ''} ${r.ten_sp ?? ''} ${r.ma_nvl ?? ''} ${r.ten_nvl ?? ''} ${r.ghi_chu ?? ''}`
+          return `${r.ten_phieu ?? ''} ${r.ngay ?? ''} ${r.ca ?? ''} ${r.ma_lenh_sx ?? ''} ${r.may ?? ''} ${r.ma_may ?? ''} ${r.ten_may ?? ''} ${r.ma_sp ?? ''} ${r.ten_sp ?? ''} ${r.ma_nvl ?? ''} ${r.ten_nvl ?? ''} ${r.ghi_chu ?? ''}`
             .toLowerCase()
             .includes(needle);
         });

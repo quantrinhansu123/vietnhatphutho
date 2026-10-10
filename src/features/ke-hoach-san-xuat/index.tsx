@@ -8,6 +8,7 @@ import { BackButton } from '../../components/layout/NavButtons';
 import { RowActionsMenu } from '../../components/shared/table';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from '../../components/layout/constants';
 import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
+import { filterMachinesByScope, machineInScope, useMyMachineScope } from '../_shared/machineScope';
 import { SearchableSelect, SimpleSelect } from '../../components/shared/SearchableSelect';
 import SearchableMultiSelect from '../../components/SearchableMultiSelect';
 import { SearchableProductCodeField } from '../../components/shared/SearchableProductCodeField';
@@ -5615,6 +5616,8 @@ export function AddProductionOrderModal({
   const [dragProductIndex, setDragProductIndex] = useState<number | null>(null);
   const [dragOverProductIndex, setDragOverProductIndex] = useState<number | null>(null);
   const dragProductIndexRef = useRef<number | null>(null);
+  /** Phạm vi máy của người đăng nhập (null = không giới hạn). */
+  const { scope: machineScope } = useMyMachineScope();
 
   useEffect(() => {
     if (!open) return;
@@ -5775,18 +5778,30 @@ export function AddProductionOrderModal({
   }, [selectedShifts, settings]);
 
   const availableMachines = useMemo(() => {
-    return machines.filter(machine => {
-      const candidates = [machine.code, machine.name]
-        .filter(value => value && value !== '-')
-        .map(value => value.toLowerCase());
+    return machines
+      .filter(machine => {
+        const candidates = [machine.code, machine.name]
+          .filter(value => value && value !== '-')
+          .map(value => value.toLowerCase());
 
-      return !candidates.some(
-        key =>
-          assignedMachineKeys.has(key) ||
-          [...assignedMachineKeys].some(assigned => key.includes(assigned) || assigned.includes(key))
-      );
-    });
-  }, [assignedMachineKeys, machines]);
+        return !candidates.some(
+          key =>
+            assignedMachineKeys.has(key) ||
+            [...assignedMachineKeys].some(assigned => key.includes(assigned) || assigned.includes(key))
+        );
+      })
+      // Phạm vi máy của người đăng nhập: chỉ hiện máy được phân công (rỗng = tất cả).
+      .filter(machine => !machineScope || machineScope.length === 0 || machineInScope(machine, machineScope));
+  }, [assignedMachineKeys, machines, machineScope]);
+
+  // Người chỉ được phân công đúng 1 máy và máy đó còn trống ca → tự chọn sẵn.
+  useEffect(() => {
+    if (!open || form.machine) return;
+    if (availableMachines.length !== 1) return;
+    const only = availableMachines[0];
+    const label = String(only.name || only.code || '').trim();
+    if (label) setForm(prev => (prev.machine ? prev : { ...prev, machine: label }));
+  }, [open, availableMachines, form.machine]);
 
   const autofillOrderOptions = useMemo(() => {
     const normalized = autofillSearch.trim().toLowerCase();
@@ -7737,6 +7752,12 @@ export function EditProductionOrderModal({
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  /** Phạm vi máy của người đăng nhập (null = không giới hạn). */
+  const { scope: machineScope } = useMyMachineScope();
+  const scopedEditMachines = useMemo(
+    () => filterMachinesByScope(machines, machineScope),
+    [machines, machineScope]
+  );
   const [dragProductIndex, setDragProductIndex] = useState<number | null>(null);
   const [dragOverProductIndex, setDragOverProductIndex] = useState<number | null>(null);
   const dragProductIndexRef = useRef<number | null>(null);
@@ -8550,7 +8571,7 @@ export function EditProductionOrderModal({
                 {renderMachineSelect(
                   form.machine,
                   machine => setForm(prev => ({ ...prev, machine })),
-                  machines,
+                  scopedEditMachines,
                   { placeholder: 'Gõ để tìm máy' }
                 )}
               </label>

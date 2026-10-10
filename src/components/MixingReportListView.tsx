@@ -33,6 +33,7 @@ import type { MixingReport } from './MixingReportForm';
 import MixingReportForm from './MixingReportForm';
 import MixingNormMaterialsTab from './MixingNormMaterialsTab';
 import ActualMixingSheetTab from './ActualMixingSheetTab';
+import { buildScopeKeys, filterMachinesByScope, matchesScopeKeys, useMyMachineScope } from '../features/_shared/machineScope';
 import {
   getProductionShiftOptions,
   normalizeShiftSettings,
@@ -127,6 +128,19 @@ function emptyFilters(): MixingReportFilters {
     ca: '',
     machineId: ''
   };
+}
+
+/** Đọc máy mặc định từ URL (?machine= / ?ma_may= / ?may=) để mở là lọc ngay theo máy đó. */
+function readDefaultMachineParam(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const raw =
+      params.get('machine') ?? params.get('ma_may') ?? params.get('may') ?? '';
+    return raw.trim();
+  } catch {
+    return '';
+  }
 }
 
 function buildFilterQuery(filters: MixingReportFilters, machines: MachineOption[]) {
@@ -245,6 +259,13 @@ export default function MixingReportListView({
   const { canCreate, canEdit, canDelete } = useTabAccess('mixing-report-list');
   const [filters, setFilters] = useState<MixingReportFilters>(emptyFilters);
   const [machines, setMachines] = useState<MachineOption[]>([]);
+  /** Phạm vi máy của người đăng nhập (null = không giới hạn). */
+  const { scope: machineScope } = useMyMachineScope();
+  /** Máy hiện trong dropdown (đã giới hạn theo phân công). */
+  const scopedMachines = useMemo(
+    () => filterMachinesByScope(machines, machineScope),
+    [machines, machineScope]
+  );
   const [shiftSettings, setShiftSettings] = useState<ShiftSetting[]>([]);
   const [reports, setReports] = useState<MixingReport[]>([]);
   const [normSlips, setNormSlips] = useState<RelatedMixingSlip[]>([]);
@@ -298,6 +319,8 @@ export default function MixingReportListView({
   const relatedSlips = useMemo(() => {
     const machine = machines.find(item => item.id === filters.machineId);
     const query = searchText.trim().toLowerCase();
+    // Khóa mã + tên máy được phân công (dữ liệu có chỗ lưu mã, chỗ lưu tên).
+    const scopeKeys = buildScopeKeys(machines, machineScope);
 
     const reportRows: RelatedMixingSlip[] = reports.map(report => ({
       kind: 'report' as const,
@@ -328,6 +351,15 @@ export default function MixingReportListView({
             if (!matches) return false;
           }
         }
+      } else if (scopeKeys.length > 0) {
+        // Chưa chọn máy nhưng người này chỉ được phân công một số máy → chỉ hiện máy đó.
+        if (row.kind === 'report') {
+          const report = reports.find(item => item.id === row.id);
+          if (!report) return false;
+          if (!matchesScopeKeys(report.ma_may, scopeKeys) && !matchesScopeKeys(report.ten_may, scopeKeys)) return false;
+        } else if (row.kind === 'norm') {
+          if (!matchesScopeKeys(row.machine, scopeKeys)) return false;
+        }
       }
       if (!query) return true;
       return `${row.title} ${row.detail} ${row.meta} ${row.machine || ''} ${row.ca} ${row.ngay} ${relatedKindLabel(row.kind)}`
@@ -343,7 +375,7 @@ export default function MixingReportListView({
       const order = { report: 0, norm: 1, actual: 2 } as const;
       return order[left.kind] - order[right.kind];
     });
-  }, [reports, normSlips, actualSlips, filters, machines, searchText]);
+  }, [reports, normSlips, actualSlips, filters, machines, machineScope, searchText]);
 
   const relatedCounts = useMemo(() => {
     return {
@@ -380,9 +412,15 @@ export default function MixingReportListView({
     const listLimit = 300;
     const reportQuery = new URLSearchParams(query);
     reportQuery.set('limit', String(listLimit));
+    const normMachine = machineList.find(item => item.id === nextFilters.machineId);
+    const normQuery = new URLSearchParams();
+    normQuery.set('limit', String(listLimit));
+    if (normMachine?.code) normQuery.set('ma_may', normMachine.code);
+    else if (normMachine?.name) normQuery.set('may', normMachine.name);
+    if (nextFilters.ca) normQuery.set('ca', nextFilters.ca);
     const [reportRes, normRes, actualRes] = await Promise.all([
       fetch(`/api/bao-cao-phoi-tron?${reportQuery.toString()}`),
-      fetch(`/api/bang-tron-vat-tu-dinh-muc?limit=${listLimit}`),
+      fetch(`/api/bang-tron-vat-tu-dinh-muc?${normQuery.toString()}`),
       fetch(`/api/phieu-tron-thuc-te?limit=${listLimit}`)
     ]);
     const reportData = await reportRes.json().catch(() => ({}));
@@ -458,6 +496,33 @@ export default function MixingReportListView({
   useEffect(() => {
     void loadReferenceData();
   }, []);
+
+  // Mặc định filter theo máy từ URL (chỉ áp 1 lần sau khi đã tải danh mục máy).
+  useEffect(() => {
+    if (machines.length === 0) return;
+    const needleRaw = readDefaultMachineParam();
+    if (!needleRaw) return;
+    const needle = needleRaw.toLowerCase();
+    const matched = machines.find(
+      item =>
+        String(item.id || '').toLowerCase() === needle ||
+        String(item.code || '').trim().toLowerCase() === needle ||
+        String(item.name || '').trim().toLowerCase() === needle
+    );
+    if (matched) {
+      setFilters(prev => (prev.machineId ? prev : { ...prev, machineId: matched.id }));
+    }
+  }, [machines]);
+
+  // Người chỉ được phân công đúng 1 máy: tự chọn sẵn máy đó khi chưa chọn gì.
+  useEffect(() => {
+    if (!machineScope || machineScope.length !== 1 || machines.length === 0) return;
+    setFilters(prev => {
+      if (prev.machineId) return prev;
+      const only = scopedMachines[0];
+      return only ? { ...prev, machineId: only.id } : prev;
+    });
+  }, [machineScope, machines, scopedMachines]);
 
   useEffect(() => {
     let cancelled = false;
@@ -938,7 +1003,7 @@ export default function MixingReportListView({
                 className={inputClass}
               >
                 <option value="">Tất cả máy</option>
-                {machines.map(machine => (
+                {scopedMachines.map(machine => (
                   <option key={machine.id} value={machine.id}>
                     {machine.code} · {machine.name}
                   </option>

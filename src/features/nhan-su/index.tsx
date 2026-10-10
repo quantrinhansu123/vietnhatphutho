@@ -17,7 +17,9 @@ import {
   isPhongBanSanXuat,
   PHONG_BAN_SAN_XUAT
 } from './phongBanSanXuat';
-import { normalizeHrBranches } from '../_shared/hr';
+import { normalizeHrBranches, normalizeHrMachineCodes } from '../_shared/hr';
+import SearchableMultiSelect from '../../components/SearchableMultiSelect';
+import { machineSelectLabel, normalizeMachines, type MachineRow } from '../danh-sach-may';
 import { STANDARD_SHIFTS } from '../../types';
 import {
   STAFF_MENU_VIEW_TREE,
@@ -83,6 +85,21 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isBulkRestoring, setIsBulkRestoring] = useState(false);
   const excelInputRef = useRef<HTMLInputElement>(null);
+  const [machineCatalog, setMachineCatalog] = useState<MachineRow[]>([]);
+  const machineNameByCode = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const machine of machineCatalog) {
+      const code = String(machine.code || '').trim();
+      const name = String(machine.name || '').trim();
+      if (code && !map.has(code.toLowerCase())) map.set(code.toLowerCase(), name || code);
+      if (name && !map.has(name.toLowerCase())) map.set(name.toLowerCase(), name);
+    }
+    return map;
+  }, [machineCatalog]);
+  const machineDisplayName = (code: string) => {
+    const key = String(code || '').trim().toLowerCase();
+    return machineNameByCode.get(key) || String(code || '').trim();
+  };
   const [addStaffDefaults, setAddStaffDefaults] = useState<{ branchId: string; department: string }>({
     branchId: '',
     department: ''
@@ -114,6 +131,18 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     void loadStaffGroups(false);
+    let active = true;
+    fetch('/api/danh-sach-may')
+      .then(res => res.json().then(data => ({ ok: res.ok, data })).catch(() => ({ ok: false, data: {} })))
+      .then(({ ok, data }) => {
+        if (active && ok) setMachineCatalog(normalizeMachines(data));
+      })
+      .catch(() => {
+        if (active) setMachineCatalog([]);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const toggleShowDeleted = () => {
@@ -212,7 +241,8 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
           shift: member.shift || '',
           status: member.status || '',
           username: member.username || '',
-          region: member.region || ''
+          region: member.region || '',
+          machines: (member.machineCodes ?? []).join(', ')
         }))
       )
     );
@@ -276,6 +306,10 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
         };
         if (row.password.trim()) {
           payload.mat_khau = row.password.trim();
+        }
+        // Chỉ gửi máy khi Excel có dữ liệu — tránh file mẫu cũ xóa máy đã gán.
+        if (row.machines.trim()) {
+          payload.may_phan_cong = row.machines.trim();
         }
 
         const codeKey = code.toUpperCase();
@@ -839,6 +873,7 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                 <TableHeadCell>Chức vụ</TableHeadCell>
                 <TableHeadCell>Vị trí</TableHeadCell>
                 <TableHeadCell>Khu vực</TableHeadCell>
+                <TableHeadCell>Máy phân công</TableHeadCell>
                 <TableHeadCell>Ca</TableHeadCell>
                 <TableHeadCell>Tên đăng nhập</TableHeadCell>
                 <TableHeadCell>Mật khẩu</TableHeadCell>
@@ -883,6 +918,15 @@ export function HumanResourcesPanel({ onBack }: { onBack: () => void }) {
                       <td className="whitespace-nowrap px-4 py-3 text-zinc-700">{member.role || '—'}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-zinc-700">{member.position || '—'}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-zinc-700">{member.region || '—'}</td>
+                      <td className="max-w-[220px] px-4 py-3 text-zinc-700" title={(member.machineCodes ?? []).join(', ')}>
+                        {(member.machineCodes ?? []).length > 0 ? (
+                          <span className="font-semibold">
+                            {(member.machineCodes ?? []).map(code => machineDisplayName(code)).join(', ')}
+                          </span>
+                        ) : (
+                          <span className="font-semibold text-zinc-400">—</span>
+                        )}
+                      </td>
                       <td className="whitespace-nowrap px-4 py-3 text-zinc-700">{member.shift || '—'}</td>
                       <td className="max-w-[200px] truncate px-4 py-3 font-mono text-zinc-700" title={member.username}>
                         {member.username || '—'}
@@ -1070,6 +1114,7 @@ function StaffDetailModal({
     ['Chức vụ', member.role || '—'],
     ['Vị trí', member.position || '—'],
     ['Khu vực', member.region || '—'],
+    ['Máy phân công', (member.machineCodes ?? []).length > 0 ? (member.machineCodes ?? []).join(', ') : '—'],
     ['Ca làm', member.shift || '—'],
     ['Tên đăng nhập', member.username || '—'],
     ['Mật khẩu', member.password || '—'],
@@ -1302,6 +1347,8 @@ export type StaffFormState = {
   password: string;
   signatureUrl: string;
   region: string;
+  /** Mã máy được phân công. Rỗng = tất cả máy. */
+  machineCodes: string[];
   viewPermissions: StaffViewPermissions;
 };
 
@@ -1318,6 +1365,7 @@ export function emptyStaffForm(defaults?: { branch?: string; department?: string
     password: '',
     signatureUrl: '',
     region: '',
+    machineCodes: [],
     viewPermissions: []
   };
 }
@@ -1345,6 +1393,23 @@ export function AddStaffModal({
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingSignature, setIsUploadingSignature] = useState(false);
+  const [machineCatalog, setMachineCatalog] = useState<MachineRow[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    fetch('/api/danh-sach-may')
+      .then(res => res.json().then(data => ({ ok: res.ok, data })).catch(() => ({ ok: false, data: {} })))
+      .then(({ ok, data }) => {
+        if (active && ok) setMachineCatalog(normalizeMachines(data));
+      })
+      .catch(() => {
+        if (active) setMachineCatalog([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open]);
 
   const isEditing = Boolean(editTarget);
 
@@ -1370,6 +1435,7 @@ export function AddStaffModal({
         password: member.password || '',
         signatureUrl: member.signatureUrl || '',
         region: member.region || '',
+        machineCodes: [...(member.machineCodes ?? [])],
         viewPermissions: member.viewPermissions || []
       });
       setFormError('');
@@ -1447,6 +1513,7 @@ export function AddStaffModal({
         mat_khau: form.password.trim(),
         link_chu_ky: form.signatureUrl.trim(),
         khu_vuc: form.region.trim(),
+        may_phan_cong: normalizeHrMachineCodes(form.machineCodes),
         quyen_xem: form.viewPermissions
       };
 
@@ -1643,6 +1710,33 @@ export function AddStaffModal({
               ))}
             </select>
           </label>
+
+          <div className="col-span-2 space-y-1.5">
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Máy phân công</span>
+            <SearchableMultiSelect
+              values={form.machineCodes}
+              onChange={machineCodes =>
+                setForm(prev => ({ ...prev, machineCodes: normalizeHrMachineCodes(machineCodes) }))
+              }
+              options={machineCatalog.map(machine => machine.code).filter(Boolean)}
+              placeholder="Để trống = không giới hạn"
+              getLabel={code => {
+                const found = machineCatalog.find(
+                  machine => String(machine.code || '').trim().toLowerCase() === String(code || '').trim().toLowerCase()
+                );
+                return found ? machineSelectLabel(found) : String(code);
+              }}
+              getSearchText={code => {
+                const found = machineCatalog.find(
+                  machine => String(machine.code || '').trim().toLowerCase() === String(code || '').trim().toLowerCase()
+                );
+                return found ? `${found.code} ${found.name}` : String(code);
+              }}
+            />
+            <p className="text-[11px] font-semibold text-zinc-500">
+              Chỉ tick máy người này được phụ trách. Để trống thì các ô chọn máy vẫn bình thường, không cố định máy nào.
+            </p>
+          </div>
 
           <div className="col-span-2 space-y-2">
             <div className="flex items-center justify-between gap-2">

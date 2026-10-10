@@ -71,6 +71,7 @@ export async function refreshAuthUserPermissions(username: string): Promise<Auth
       name: matched.member.name,
       username: matched.member.username || user,
       role: matched.member.role || 'Nhân sự',
+      machineCodes: matched.member.machineCodes ?? [],
       viewPermissions: resolved.viewPermissions,
       editPermissions: resolved.editPermissions,
       deletePermissions: resolved.deletePermissions

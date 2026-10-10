@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { BackButton } from '../../components/layout/NavButtons';
 import { normalizeHrBranches } from '../_shared/hr';
+import { filterMachinesByScope, useMyMachineScope } from '../_shared/machineScope';
 import SearchableMultiSelect from '../../components/SearchableMultiSelect';
 import { findMachineByRef, normalizeMachines, type MachineRow } from '../danh-sach-may';
 import { useTabAccess } from '../../app/useTabAccess';
@@ -1227,6 +1228,25 @@ export function SoCheDoMayWorkspace({
   const [selectedMays, setSelectedMays] = useState<string[]>([]);
   /** Máy bỏ tick (không lưu/in) — máy mới thêm mặc định được tick. */
   const [uncheckedMays, setUncheckedMays] = useState<string[]>([]);
+  /** Phạm vi máy của người đăng nhập (null = không giới hạn). */
+  const { scope: machineScope } = useMyMachineScope();
+  /** Máy hiện trong ô chọn (đã giới hạn theo phân công). */
+  const scopedMachines = useMemo(
+    () => filterMachinesByScope(machines, machineScope),
+    [machines, machineScope]
+  );
+  // Người bị giới hạn máy: tự chọn sẵn các máy được phân công (mới mở trang).
+  const preselectedScopeRef = useRef(false);
+  useEffect(() => {
+    if (preselectedScopeRef.current) return;
+    if (!machineScope || machineScope.length === 0 || scopedMachines.length === 0) return;
+    if (selectedMays.length > 0) {
+      preselectedScopeRef.current = true;
+      return;
+    }
+    preselectedScopeRef.current = true;
+    setSelectedMays(scopedMachines.map(machineKeyOf).filter(Boolean));
+  }, [machineScope, scopedMachines, selectedMays.length]);
   const updateSelected = (next: string[]) => {
     setSelectedMays(next);
     setUncheckedMays(prev => prev.filter(c => next.includes(c)));
@@ -1248,15 +1268,15 @@ export function SoCheDoMayWorkspace({
   });
 
   const month = parseMonthStr(monthStr);
-  const machineCodes = useMemo(() => machines.map(machineKeyOf).filter(Boolean), [machines]);
+  const machineCodes = useMemo(() => scopedMachines.map(machineKeyOf).filter(Boolean), [scopedMachines]);
   const machineMap = useMemo(() => {
     const map = new Map<string, MachineRow>();
-    machines.forEach(m => {
+    scopedMachines.forEach(m => {
       const key = machineKeyOf(m);
       if (key && !map.has(key)) map.set(key, m);
     });
     return map;
-  }, [machines]);
+  }, [scopedMachines]);
   const machineLabel = (code: string) => {
     const found = machineMap.get(code);
     return found ? machineLabelOf(found) : code;
@@ -1778,7 +1798,7 @@ export function SoCheDoMayWorkspace({
                     thang={month.thang}
                     nam={month.nam}
                     maMay={code}
-                    machines={machines}
+                    machines={scopedMachines}
                     oCheDo={st.oCheDo}
                     banGiao={st.banGiao}
                     ghiChu={ghiChu}
@@ -1839,7 +1859,7 @@ export function SoCheDoMayWorkspace({
         <NoteModal
           thang={month.thang}
           nam={month.nam}
-          machines={machines}
+          machines={scopedMachines}
           initial={noteModal.editing}
           onClose={() => setNoteModal({ open: false, editing: null })}
           onSave={saveNote}

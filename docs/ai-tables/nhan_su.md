@@ -2,7 +2,7 @@
 
 | **Bảng** | `nhan_su` |
 | **Tab** | `hr` → `/nhan-su` |
-| **SQL** | `supabase-nhan-su.sql`, `supabase-nhan-su-dang-nhap.sql`, `supabase-nhan-su-vi-tri.sql`, `supabase-nhan-su-vi-tri-gan.sql`, `supabase-nhan-su-quyen-xem.sql`, `supabase-nhan-su-soft-delete.sql` |
+| **SQL** | `supabase-nhan-su.sql`, `supabase-nhan-su-dang-nhap.sql`, `supabase-nhan-su-vi-tri.sql`, `supabase-nhan-su-vi-tri-gan.sql`, `supabase-nhan-su-quyen-xem.sql`, `supabase-nhan-su-soft-delete.sql`, `supabase-nhan-su-khu-vuc.sql`, `supabase-nhan-su-may-phan-cong.sql` (cột `may_phan_cong` jsonb: mảng `ma_may`, trống = không giới hạn máy) |
 
 **API:** `server.ts` — `/api/nhan-su`, `POST /api/nhan-su/sync-vi-tri`, `POST /api/nhan-su/bulk-delete`, `POST /api/nhan-su/bulk-restore`, `POST /api/nhan-su/:code/restore`, `PATCH /api/nhan-su/:code/vi-tri-gan`  
 **UI:** `src/features/nhan-su/index.tsx` — `HumanResourcesPanel`, `AddStaffModal`  

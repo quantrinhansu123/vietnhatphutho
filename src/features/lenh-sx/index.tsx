@@ -40,7 +40,8 @@ import { normalizeOrders } from '../don-hang';
 import { isRetailCutOrderType } from '../_shared/orderHelpers';
 import { normalizeProducts } from '../san-pham';
 import type { ProductRow } from '../san-pham/types';
-import { normalizeMachines, type MachineRow } from '../danh-sach-may';
+import { machineSelectValue, normalizeMachines, type MachineRow } from '../danh-sach-may';
+import { buildScopeKeys, matchesScopeKeys, useMyMachineScope } from '../_shared/machineScope';
 import type { OrderRow } from '../_shared/orderRecordHelpers';
 import { useTabAccess } from '../../app/useTabAccess';
 import type { AuthUser } from '../../app/authUser';
@@ -76,6 +77,22 @@ function normalizeStaffMatchKey(value: string) {
 
 function isNhanVienRole(role: string) {
   return normalizeStaffMatchKey(role) === normalizeStaffMatchKey('Nhân Viên');
+}
+
+/** Đọc máy mặc định từ URL (?machine= / ?ma_may= / ?may=, nhiều máy cách nhau bằng dấu phẩy). */
+function readDefaultMachinesFromUrl(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const raw =
+      params.get('machine') ?? params.get('ma_may') ?? params.get('may') ?? '';
+    return raw
+      .split(',')
+      .map(part => part.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 /** Tách chuỗi phân công (có thể nhiều tên ngăn bởi , ; / |) rồi khớp đúng tên đăng nhập. */
@@ -148,7 +165,7 @@ export function ProductionOrdersPanel({
   const [rows, setRows] = useState<ProductionOrderRow[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('all');
-  const [selectedMachines, setSelectedMachines] = useState<string[]>([]);
+  const [selectedMachines, setSelectedMachines] = useState<string[]>(() => readDefaultMachinesFromUrl());
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
@@ -166,6 +183,25 @@ export function ProductionOrdersPanel({
   const [staffBranches, setStaffBranches] = useState<any[]>([]);
   const [previewOrder, setPreviewOrder] = useState<ProductionOrderRow | null>(null);
   const [acceptanceReports, setAcceptanceReports] = useState<AcceptanceReport[]>([]);
+  /** Phạm vi máy của người đăng nhập (null = không giới hạn). */
+  const { scope: machineScope } = useMyMachineScope();
+  /** Catalog máy để đổi mã ↔ tên khi khớp phạm vi. */
+  const [machineCatalog, setMachineCatalog] = useState<MachineRow[]>([]);
+  useEffect(() => {
+    let active = true;
+    fetch('/api/danh-sach-may')
+      .then(res => res.json().then(data => ({ ok: res.ok, data })).catch(() => ({ ok: false, data: {} })))
+      .then(({ ok, data }) => {
+        if (active && ok) setMachineCatalog(normalizeMachines(data));
+      })
+      .catch(() => {
+        if (active) setMachineCatalog([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  const scopeKeys = useMemo(() => buildScopeKeys(machineCatalog, machineScope), [machineCatalog, machineScope]);
 
   const loadAcceptanceReportsForOrders = async (productionRows: ProductionOrderRow[]) => {
     const dates = [
@@ -330,11 +366,32 @@ export function ProductionOrdersPanel({
   }, [staffBranches]);
 
   const machineFilters = useMemo(() => {
-    const machines = rows
-      .map(row => row.machine)
-      .filter((machine): machine is string => Boolean(machine) && machine !== '-');
-    return [...new Set(machines)].sort((a, b) => String(a).localeCompare(String(b), 'vi'));
-  }, [rows]);
+    const fromRows = [...new Set(
+      rows
+        .map(row => row.machine)
+        .filter((machine): machine is string => Boolean(machine) && machine !== '-')
+    )].sort((a, b) => String(a).localeCompare(String(b), 'vi'));
+    // Không giới hạn máy: giữ nguyên như cũ (options từ dòng lệnh đang có).
+    if (scopeKeys.length === 0) return fromRows;
+    // Bị giới hạn máy: options lấy từ danh mục máy được phân công (kể cả khi
+    // chưa có lệnh nào gán máy thì vẫn chọn được), gộp thêm máy lẻ trong dữ liệu.
+    const catalogNames = machineCatalog
+      .map(machine => machineSelectValue(machine))
+      .map(value => String(value || '').trim())
+      .filter(Boolean);
+    const merged: string[] = [];
+    for (const name of [...catalogNames, ...fromRows]) {
+      if (!merged.includes(name) && matchesScopeKeys(name, scopeKeys)) merged.push(name);
+    }
+    return merged.sort((a, b) => String(a).localeCompare(String(b), 'vi'));
+  }, [rows, machineCatalog, scopeKeys]);
+
+  // Người bị giới hạn máy: mặc định lọc đúng các máy được phân công (chưa chọn gì).
+  useEffect(() => {
+    if (!machineScope || machineScope.length === 0) return;
+    if (selectedMachines.length > 0 || machineFilters.length === 0) return;
+    setSelectedMachines(machineFilters);
+  }, [machineScope, machineFilters, selectedMachines.length]);
 
   // Định dạng dd/mm/yyyy hiển thị trên bảng -> mốc thời gian để so sánh khoảng ngày.
   const parseDisplayDate = (value: string): number | null => {
@@ -373,7 +430,15 @@ export function ProductionOrdersPanel({
           return false;
         }
         const matchesStatus = selectedStatus === 'all' || row.status === selectedStatus;
-        const matchesMachine = selectedMachines.length === 0 || selectedMachines.includes(row.machine);
+        const matchesMachine =
+          selectedMachines.length === 0
+            ? scopeKeys.length === 0 || matchesScopeKeys(row.machine, scopeKeys)
+            : selectedMachines.some(selected => {
+                const needle = String(selected || '').trim().toLowerCase();
+                const key = String(row.machine || '').trim().toLowerCase();
+                if (!needle || !key) return false;
+                return needle === key || needle.includes(key) || key.includes(needle);
+              });
         const rowStartTime = parseDisplayDate(row.startDate);
         const matchesFrom = !fromTime || (rowStartTime !== null && rowStartTime >= fromTime);
         const matchesTo = !toTime || (rowStartTime !== null && rowStartTime <= toTime);
