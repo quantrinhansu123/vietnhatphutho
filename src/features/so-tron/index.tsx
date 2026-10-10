@@ -10,6 +10,7 @@ import {
   normalizeMachines,
   type MachineRow
 } from '../danh-sach-may';
+import { buildScopeKeys, filterMachinesByScope, matchesScopeKeys, useMyMachineScope } from '../_shared/machineScope';
 import { normalizeMaterialsInventory, type MaterialRow } from '../kho-nvl';
 import { normalizeWarehouseName } from '../kho-hang';
 import { normalizeProducts } from '../san-pham';
@@ -924,6 +925,18 @@ export function SoTronPanel({
   // Máy (chọn 1) + Ca (chọn 1) để lọc lệnh SX
   const [machineRef, setMachineRef] = useState('');
   const [selectedCa, setSelectedCa] = useState('');
+  /** Phạm vi máy của người đăng nhập (null = không giới hạn). */
+  const { scope: machineScope } = useMyMachineScope();
+  /** Máy hiện trong các ô chọn (đã giới hạn theo phân công). */
+  const scopedMachines = useMemo(
+    () => filterMachinesByScope(machines, machineScope),
+    [machines, machineScope]
+  );
+  /** Khóa mã + tên máy được phân công (dữ liệu có chỗ lưu mã, chỗ lưu tên). */
+  const scopeKeys = useMemo(
+    () => buildScopeKeys(machines, machineScope),
+    [machines, machineScope]
+  );
   const [phanCong, setPhanCong] = useState<PhanCongItem[]>([]);
   // Nhân sự gom theo từng combo Máy-Ca (để hiển thị theo máy và ca)
   const [staffGroups, setStaffGroups] = useState<{ key: string; label: string; staff: PhanCongItem[] }[]>([]);
@@ -1003,6 +1016,12 @@ export function SoTronPanel({
   const [suCoMainRows, setSuCoMainRows] = useState<SuCoRow[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [slipGate, setSlipGate] = useState<SoTronSlipGate | null>(null);
+  // Thêm mới + chỉ được phân công đúng 1 máy: tự chọn sẵn máy đó.
+  useEffect(() => {
+    if (editingId || machineRef.trim()) return;
+    if (scopedMachines.length !== 1) return;
+    setMachineRef(machineSelectValue(scopedMachines[0]));
+  }, [editingId, machineRef, scopedMachines]);
   const soTronActor = useMemo(() => actorForSoTron(currentUser), [currentUser]);
   const soTronAccess = useMemo(() => {
     const gate: SoTronSlipGate = editingId
@@ -3283,11 +3302,14 @@ export function SoTronPanel({
       if (listFilterMachine) {
         const m = listFilterMachine.toLowerCase();
         if (!(r.ma_may?.toLowerCase().includes(m) || r.ten_may?.toLowerCase().includes(m))) return false;
+      } else if (scopeKeys.length > 0) {
+        // Chưa chọn máy nhưng người này chỉ được phân công một số máy → chỉ hiện máy đó.
+        if (!matchesScopeKeys(r.ma_may, scopeKeys) && !matchesScopeKeys(r.ten_may, scopeKeys)) return false;
       }
       if (listFilterCa && r.ca !== listFilterCa) return false;
       return true;
     });
-  }, [savedReports, listFilterDate, listFilterMachine, listFilterCa]);
+  }, [savedReports, listFilterDate, listFilterMachine, listFilterCa, scopeKeys]);
 
   const handleDeleteSavedReport = async (id: string) => {
     if (!window.confirm('Xóa sổ trộn này?')) return;
@@ -3456,7 +3478,7 @@ export function SoTronPanel({
                   className={inputClass}
                 >
                   <option value="">-- Tất cả máy --</option>
-                  {machines.map(m => {
+                  {scopedMachines.map(m => {
                     const value = m.code || m.name;
                     const label =
                       m.name && m.code && m.name !== m.code ? `${m.name} (${m.code})` : m.name || m.code;
@@ -3599,7 +3621,7 @@ export function SoTronPanel({
                 <SearchableSelect
                   value={machineRef}
                   onChange={setMachineRef}
-                  options={machines as unknown[]}
+                  options={scopedMachines as unknown[]}
                   placeholder="Chọn máy..."
                   inputClassName={inputClass}
                   getLabel={item => {
@@ -5968,6 +5990,21 @@ export function SoTronListView({
   const [filterDate, setFilterDate] = useState('');
   const [filterMachine, setFilterMachine] = useState('');
   const [filterCa, setFilterCa] = useState('');
+  /** Phạm vi máy của người đăng nhập (null = không giới hạn). */
+  const { scope: machineScope } = useMyMachineScope();
+  const scopedMachines = useMemo(
+    () => filterMachinesByScope(machines, machineScope),
+    [machines, machineScope]
+  );
+  const scopeKeys = useMemo(
+    () => buildScopeKeys(machines, machineScope),
+    [machines, machineScope]
+  );
+  // Người chỉ được phân công đúng 1 máy: tự lọc sẵn máy đó khi chưa chọn gì.
+  useEffect(() => {
+    if (filterMachine || scopedMachines.length !== 1) return;
+    setFilterMachine(scopedMachines[0].code || scopedMachines[0].name);
+  }, [filterMachine, scopedMachines]);
   const soTronActor = useMemo(() => actorForSoTron(currentUser), [currentUser]);
   const allowDelete = useMemo(() => canDeleteSoTron(soTronActor?.roles), [soTronActor]);
 
@@ -6035,11 +6072,14 @@ export function SoTronListView({
       if (filterMachine) {
         const m = filterMachine.toLowerCase();
         if (!(r.ma_may?.toLowerCase().includes(m) || r.ten_may?.toLowerCase().includes(m))) return false;
+      } else if (scopeKeys.length > 0) {
+        // Chưa chọn máy nhưng người này chỉ được phân công một số máy → chỉ hiện máy đó.
+        if (!matchesScopeKeys(r.ma_may, scopeKeys) && !matchesScopeKeys(r.ten_may, scopeKeys)) return false;
       }
       if (filterCa && r.ca !== filterCa) return false;
       return true;
     });
-  }, [reports, filterDate, filterMachine, filterCa]);
+  }, [reports, filterDate, filterMachine, filterCa, scopeKeys]);
 
   const hasExtraFilter = Boolean(filterMachine || filterCa);
   const clearFilters = () => {
@@ -6094,7 +6134,7 @@ export function SoTronListView({
             <label className="block text-[11px] font-semibold text-slate-500 mb-1">Lọc theo máy:</label>
             <select value={filterMachine} onChange={e => setFilterMachine(e.target.value)} className={inputClass}>
               <option value="">-- Tất cả máy --</option>
-              {machines.map(m => {
+              {scopedMachines.map(m => {
                 const value = m.code || m.name;
                 const label =
                   m.name && m.code && m.name !== m.code ? `${m.name} (${m.code})` : m.name || m.code;

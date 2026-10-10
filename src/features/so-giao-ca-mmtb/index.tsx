@@ -24,6 +24,7 @@ import {
   normalizeMachines,
   type MachineRow
 } from '../danh-sach-may';
+import { buildScopeKeys, filterMachinesByScope, matchesScopeKeys, useMyMachineScope } from '../_shared/machineScope';
 import { StaffSelect } from './StaffSelect';
 import { SoTronDatePicker, formatNgayVN } from '../so-tron/SoTronDatePicker';
 import { TimePicker24h } from '../../components/shared/TimePicker24h';
@@ -142,6 +143,13 @@ export function SoGiaoCaMmtbPanel({
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  /** Phạm vi máy của người đăng nhập (null = không giới hạn). */
+  const { scope: machineScope } = useMyMachineScope();
+  /** Máy hiện trong ô chọn (đã giới hạn theo phân công). */
+  const scopedMachines = useMemo(
+    () => filterMachinesByScope(machines, machineScope),
+    [machines, machineScope]
+  );
 
   // Load master data (máy, ca)
   useEffect(() => {
@@ -196,22 +204,34 @@ export function SoGiaoCaMmtbPanel({
     }
   }, [editRecord, onEditConsumed]);
 
-  // Options máy cho SearchableSelect
+  // Options máy cho SearchableSelect (đã giới hạn theo phân công).
   const machineOptions = useMemo(() => {
-    return machines.map(m => ({
+    return scopedMachines.map(m => ({
       value: m.code || m.id,
       label: machineSelectValue(m)
     }));
-  }, [machines]);
+  }, [scopedMachines]);
 
   const handleSelectMachine = (code: string) => {
-    const found = findMachineByRef(machines, code);
+    const found = findMachineByRef(scopedMachines, code) ?? findMachineByRef(machines, code);
     setRecord(prev => ({
       ...prev,
       ma_may: found?.code || code,
       ten_may: found?.name || code
     }));
   };
+
+  // Phiếu mới + chỉ được phân công đúng 1 máy: tự chọn sẵn máy đó.
+  useEffect(() => {
+    if (editRecord || record.ma_may.trim()) return;
+    if (scopedMachines.length !== 1) return;
+    const only = scopedMachines[0];
+    setRecord(prev =>
+      prev.ma_may.trim()
+        ? prev
+        : { ...prev, ma_may: only.code || '', ten_may: only.name || only.code || '' }
+    );
+  }, [editRecord, record.ma_may, scopedMachines]);
 
   // Cập nhật dòng tiêu chuẩn (người dùng tự do nhập)
   const updateDongTieuChuan = (patch: Partial<DongTieuChuan>) => {
@@ -1017,6 +1037,21 @@ export function SoGiaoCaMmtbListView({ onBack, onCreate, onEdit }: SoGiaoCaMmtbL
   const [machines, setMachines] = useState<MachineRow[]>([]);
   const [previewRecord, setPreviewRecord] = useState<SoGiaoCaMmtbRecord | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  /** Phạm vi máy của người đăng nhập (null = không giới hạn). */
+  const { scope: machineScope } = useMyMachineScope();
+  const scopedMachines = useMemo(
+    () => filterMachinesByScope(machines, machineScope),
+    [machines, machineScope]
+  );
+  const scopeKeys = useMemo(
+    () => buildScopeKeys(machines, machineScope),
+    [machines, machineScope]
+  );
+  // Người chỉ được phân công đúng 1 máy: tự lọc sẵn máy đó khi chưa chọn gì.
+  useEffect(() => {
+    if (filterMachine || scopedMachines.length !== 1) return;
+    setFilterMachine(scopedMachines[0].code || scopedMachines[0].id);
+  }, [filterMachine, scopedMachines]);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -1061,11 +1096,11 @@ export function SoGiaoCaMmtbListView({ onBack, onCreate, onEdit }: SoGiaoCaMmtbL
   }, []);
 
   const machineOptions = useMemo(() => {
-    return machines.map(m => ({
+    return scopedMachines.map(m => ({
       value: m.code || m.id,
       label: machineSelectValue(m)
     }));
-  }, [machines]);
+  }, [scopedMachines]);
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Bạn có chắc chắn muốn xóa sổ giao ca này không?')) return;
@@ -1090,10 +1125,14 @@ export function SoGiaoCaMmtbListView({ onBack, onCreate, onEdit }: SoGiaoCaMmtbL
     return records.filter(r => {
       if (filterDate && r.ngay !== filterDate) return false;
       if (filterMachine && r.ma_may !== filterMachine) return false;
+      if (!filterMachine && scopeKeys.length > 0) {
+        // Chưa chọn máy nhưng người này chỉ được phân công một số máy → chỉ hiện máy đó.
+        if (!matchesScopeKeys(r.ma_may, scopeKeys) && !matchesScopeKeys(r.ten_may, scopeKeys)) return false;
+      }
       if (filterShift && r.ca !== filterShift) return false;
       return true;
     });
-  }, [records, filterDate, filterMachine, filterShift]);
+  }, [records, filterDate, filterMachine, filterShift, scopeKeys]);
 
   // Vào trang danh sách KHÔNG hiển thị gì — chỉ khi chọn ngày mới hiện sổ của ngày đó.
   const hasDateFilter = Boolean(filterDate);

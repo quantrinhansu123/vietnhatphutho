@@ -9,6 +9,8 @@ export type AuthUser = {
   name: string;
   username: string;
   role: string;
+  /** Mã máy được phân công. Trống/không có = không giới hạn, chọn máy bình thường. */
+  machineCodes?: string[];
   viewPermissions?: StaffViewPermissions;
   editPermissions?: StaffViewPermissions;
   deletePermissions?: StaffViewPermissions;
@@ -21,6 +23,7 @@ export function grantResolvedAccess(user: AuthUser): AuthUser {
   return {
     ...user,
     fullAccess: true,
+    machineCodes: user.machineCodes ?? [],
     viewPermissions: allPermissions,
     editPermissions: allPermissions,
     deletePermissions: allPermissions

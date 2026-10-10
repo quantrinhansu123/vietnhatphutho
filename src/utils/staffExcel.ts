@@ -10,6 +10,8 @@ export type StaffExcelRow = {
   status: string;
   username: string;
   password: string;
+  /** Mã máy phân công, cách nhau bằng dấu phẩy. Trống = không giới hạn. */
+  machines: string;
   rowNumber: number;
 };
 
@@ -22,6 +24,7 @@ export type StaffExcelExportRow = {
   shift: string;
   status: string;
   username: string;
+  machines: string;
 };
 
 const CODE_HEADERS = ['ma nhan su', 'ma nv', 'ma_nhan_su', 'ma_nv', 'code'];
@@ -33,6 +36,7 @@ const SHIFT_HEADERS = ['ca lam', 'ca', 'ca_lam', 'shift'];
 const STATUS_HEADERS = ['trang thai', 'trang_thai', 'status'];
 const USERNAME_HEADERS = ['ten dang nhap', 'ten_dang_nhap', 'username', 'login'];
 const PASSWORD_HEADERS = ['mat khau', 'mat_khau', 'password'];
+const MACHINE_HEADERS = ['may phan cong', 'may duoc phan cong', 'may', 'machine', 'machines', 'ma may', 'may_phan_cong'];
 
 function normalizeHeader(value: unknown) {
   return String(value ?? '')
@@ -80,6 +84,7 @@ export async function parseStaffExcel(file: File): Promise<StaffExcelRow[]> {
   const statusIndex = findColumn(headers, STATUS_HEADERS);
   const usernameIndex = findColumn(headers, USERNAME_HEADERS);
   const passwordIndex = findColumn(headers, PASSWORD_HEADERS);
+  const machineIndex = findColumn(headers, MACHINE_HEADERS);
 
   return matrix
     .slice(1)
@@ -93,6 +98,7 @@ export async function parseStaffExcel(file: File): Promise<StaffExcelRow[]> {
       status: statusIndex >= 0 ? cellToText(row[statusIndex]) : '',
       username: usernameIndex >= 0 ? cellToText(row[usernameIndex]) : '',
       password: passwordIndex >= 0 ? cellToText(row[passwordIndex]) : '',
+      machines: machineIndex >= 0 ? cellToText(row[machineIndex]) : '',
       rowNumber: index + 2
     }))
     .filter(
@@ -105,7 +111,8 @@ export async function parseStaffExcel(file: File): Promise<StaffExcelRow[]> {
         row.shift ||
         row.status ||
         row.username ||
-        row.password
+        row.password ||
+        row.machines
     );
 }
 
@@ -120,7 +127,8 @@ export function downloadStaffExcelTemplate() {
       'Ca làm',
       'Trạng thái',
       'Tên đăng nhập',
-      'Mật khẩu'
+      'Mật khẩu',
+      'Máy phân công'
     ],
     [
       'NV001',
@@ -131,7 +139,8 @@ export function downloadStaffExcelTemplate() {
       'Ca 1',
       'Đang làm',
       'nv001',
-      '123456'
+      '123456',
+      'MAY-01, MAY-02'
     ]
   ]);
   worksheet['!cols'] = [
@@ -143,7 +152,8 @@ export function downloadStaffExcelTemplate() {
     { wch: 12 },
     { wch: 12 },
     { wch: 16 },
-    { wch: 14 }
+    { wch: 14 },
+    { wch: 22 }
   ];
 
   const workbook = XLSX.utils.book_new();
@@ -161,7 +171,8 @@ export function downloadStaffExcel(rows: StaffExcelExportRow[]) {
     'Ca làm': row.shift,
     'Trạng thái': row.status,
     'Tên đăng nhập': row.username,
-    'Mật khẩu': ''
+    'Mật khẩu': '',
+    'Máy phân công': row.machines
   }));
   const worksheet = XLSX.utils.json_to_sheet(data);
   worksheet['!cols'] = [
@@ -173,7 +184,8 @@ export function downloadStaffExcel(rows: StaffExcelExportRow[]) {
     { wch: 12 },
     { wch: 12 },
     { wch: 16 },
-    { wch: 14 }
+    { wch: 14 },
+    { wch: 22 }
   ];
 
   const workbook = XLSX.utils.book_new();
