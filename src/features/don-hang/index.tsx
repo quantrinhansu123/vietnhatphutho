@@ -35,6 +35,7 @@ import {
   extractProductWidth,
   conversionSupportsUnit,
   allowedOrderUnits,
+  findCutOrderLineMissingKg,
   resolveCutOrderLineUnit,
   isCuonProduct,
   isTamProduct,
@@ -747,7 +748,8 @@ export function orderProductLinesToPayload(
               tem: temValue || undefined,
               mauTem: mauTemValue || undefined,
               danTem2Dau: danTem2DauValue || undefined,
-              tenSanXuat: isSouthOrder ? undefined : line.productionName.trim() || catalogProductionName
+              tenSanXuat: isSouthOrder ? undefined : line.productionName.trim() || catalogProductionName,
+              ngayCat: orderForm.createdAt || undefined
             })
           : '';
       const variantExtraFields = maAmisMoiValue
@@ -1647,6 +1649,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     if (products.length === 0) {
       setFormError('Vui lòng thêm ít nhất một sản phẩm.');
       return;
+    }
+    // Đơn cắt lẻ: bắt buộc có KG (Tổng KG nhập tay / Định mức / TL danh mục) để lập được lệnh cắt lẻ.
+    if (isCutLikeOrder && !isSouthOrder) {
+      const missingKg = findCutOrderLineMissingKg(products);
+      if (missingKg) {
+        setFormError(`Nhập Tổng KG cho sản phẩm ${missingKg} (hoặc bổ sung TL/tấm – TL/cuộn trong danh mục).`);
+        return;
+      }
     }
 
     for (const product of products) {

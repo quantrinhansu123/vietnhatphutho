@@ -755,6 +755,30 @@ export function allowedOrderUnits(product: Pick<OrderProductOption, 'group' | 'u
 }
 
 /**
+ * Dòng đơn cắt lẻ thiếu KG: có SL mà không có Tổng KG (nhập tay/định mức) lẫn
+ * TL danh mục → trả mã SP vi phạm đầu tiên, đủ KG hết thì `null`.
+ */
+export function findCutOrderLineMissingKg(
+  products: Array<{
+    ma_sp?: string; ten_sp?: string; so_luong?: number | string | null;
+    tong_kg?: number | string | null; tl_tam?: number | string | null;
+    tl_cuon?: number | string | null; kg_1_sp?: number | string | null;
+    ket_qua_quy_doi?: Array<{ don_vi: string; gia_tri: number }>;
+  }>
+): string | null {
+  for (const product of products) {
+    if (!(Number(product.so_luong) > 0)) continue;
+    const num = (value: unknown) => Number(value) || 0;
+    const hasPerUnit = num(product.tl_tam) > 0 || num(product.tl_cuon) > 0 || num(product.kg_1_sp) > 0;
+    const results = Array.isArray(product.ket_qua_quy_doi) ? product.ket_qua_quy_doi : [];
+    const hasTotal = num(product.tong_kg) > 0 ||
+      results.some(item => item && String(item.don_vi || '') === 'kg' && num(item.gia_tri) > 0);
+    if (!hasPerUnit && !hasTotal) return String(product.ma_sp || product.ten_sp || '');
+  }
+  return null;
+}
+
+/**
  * ĐVT dòng đơn cắt/miền nam: mặc định `Tấm`; SP có nhiều ĐVT (Đặc/Sóng →
  * `Tấm`/`Cuộn`) thì giữ lựa chọn trên form, sai thì về `Tấm`.
  */

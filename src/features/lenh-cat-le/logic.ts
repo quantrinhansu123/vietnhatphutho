@@ -577,6 +577,8 @@ export function buildCatLeSanPhamLine(args: {
   allowIdentical?: boolean | null;
   /** Tên sản xuất đang hiện trên dòng (tên ghép đơn). Mã cắt rút viết tắt từ tên này. */
   tenSanXuat?: string | null;
+  /** Ngày cắt để gắn token (DD.MM.YYYY) vào mã AMIS mới. */
+  ngayCat?: string | Date | null;
 }): CatLeSanPhamLine {
   const { mother } = args;
   const sourceWidth = parseMeterLabel(mother.doDayM);
@@ -648,7 +650,8 @@ export function buildCatLeSanPhamLine(args: {
     tem: args.tem,
     mauTem: args.mauTem,
     danTem2Dau: args.danTem2Dau,
-    tenSanXuat: String(args.tenSanXuat || '').trim() || computed.tenSpCon
+    tenSanXuat: String(args.tenSanXuat || '').trim() || computed.tenSpCon,
+    ngayCat: args.ngayCat
   });
   const moiThua =
     cat2 != null
@@ -664,7 +667,8 @@ export function buildCatLeSanPhamLine(args: {
           mang: mother.mang,
           hangPhe: mother.hangPhe,
           doLiDm: mother.doLiDm,
-          tenSanXuat: computed.tenSpThua
+          tenSanXuat: computed.tenSpThua,
+          ngayCat: args.ngayCat
         })
       : '';
   const moiThua2 =
@@ -681,7 +685,8 @@ export function buildCatLeSanPhamLine(args: {
           mang: mother.mang,
           hangPhe: mother.hangPhe,
           doLiDm: mother.doLiDm,
-          tenSanXuat: computed.tenSpThua2
+          tenSanXuat: computed.tenSpThua2,
+          ngayCat: args.ngayCat
         })
       : '';
   return {
@@ -784,9 +789,23 @@ export function variantCodeForCatPiece(args: {
   danTem2Dau?: boolean | null;
   /** Tên sản xuất của tấm cắt — rút màu / ZEM / số sóng / kg vào mã. */
   tenSanXuat?: string | null;
+  /** Ngày cắt để gắn token (DD.MM.YYYY) vào mã AMIS mới. */
+  ngayCat?: string | Date | null;
 }): string {
   const base = String(args.baseMaAmis || '').trim();
   if (!base) return '';
+  
+  // --- XÁC ĐỊNH TIÊNG PREFIX THEO NHÓM VTHH ---
+  // Quy tắc: DAC→DAC, SONG→SONG, RONG→RONG, mặc định STD
+  let filmPrefix = 'STD'; // Mặc định giữ STD cho backward compatibility
+  if (args.nhomVthh) {
+    const group = classifyProductPxGroup(args.nhomVthh);
+    if (group === 'dac') filmPrefix = 'DAC';
+    if (group === 'song') filmPrefix = 'SONG';
+    if (group === 'rong') filmPrefix = 'RONG';
+  }
+  // ------------------------------------------------
+
   const lCon = parseMeterLabel(args.pieceDaiM);
   const lMe = parseMeterLabel(args.motherDaiM);
   const cutDiffers = lCon != null && (lMe == null || Math.abs(lCon - lMe) > 1e-9);
@@ -802,6 +821,7 @@ export function variantCodeForCatPiece(args: {
   const shared = {
     baseMaAmis: base,
     nhomVthh: args.nhomVthh,
+    // --- TRÊN ĐÃ THÊM filmPrefix ---
     cutLengthM: lCon != null && lCon > 0 ? lCon : undefined,
     cutWidthM: widthDiffers ? wCon : undefined,
     doLi: liDiffers ? String(args.pieceLi || '') : undefined,
@@ -811,8 +831,11 @@ export function variantCodeForCatPiece(args: {
     tem: args.tem,
     mauTem: args.mauTem,
     danTem2Dau: args.danTem2Dau,
+    ngayCat: args.ngayCat,
     ...widthArg
   };
+  // ------------------------------------------------
+  
   const plain = buildCutAmisCodeFull(shared);
   const named = buildCutAmisCodeFull({ ...shared, tenSanXuat: args.tenSanXuat });
   const specsChanged = cutDiffers || widthDiffers || liDiffers || Boolean(String(args.tem || '').trim() || String(args.mauTem || '').trim() || args.danTem2Dau);
@@ -822,7 +845,7 @@ export function variantCodeForCatPiece(args: {
     if (named.toLocaleLowerCase('vi') === base.toLocaleLowerCase('vi')) return '';
     return named;
   }
-  const normalizedBase = buildCutAmisCodeFull({ baseMaAmis: base, tenSanXuat: args.tenSanXuat });
+  const normalizedBase = buildCutAmisCodeFull({ baseMaAmis: base, tenSanXuat: args.tenSanXuat, ngayCat: args.ngayCat });
   if (!named || named === normalizedBase) return '';
   return named;
 }

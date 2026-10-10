@@ -7598,6 +7598,27 @@ async function enrichOrderProductsWithConversionData(
   }
 }
 
+/**
+ * Đơn cắt lẻ (trừ miền nam): dòng có SL phải có KG — Tổng KG nhập tay /
+ * Định mức / TL danh mục — để lập được lệnh cắt lẻ.
+ */
+function validateCutOrderProductsKg(products: OrderProductRecord[], orderType: string): string | null {
+  const type = String(orderType || '').trim();
+  if (!isCutLikeOrderTypeServer(type) || type === SOUTH_ORDER_TYPE_SERVER) return null;
+  for (const product of products) {
+    if (!(Number(product.so_luong) > 0)) continue;
+    const num = (value: unknown) => Number(value) || 0;
+    const hasPerUnit = num(product.tl_tam) > 0 || num(product.tl_cuon) > 0 || num(product.kg_1_sp) > 0;
+    const results = Array.isArray(product.ket_qua_quy_doi) ? product.ket_qua_quy_doi : [];
+    const hasTotal = num(product.tong_kg) > 0 ||
+      results.some(item => item && item.don_vi === 'kg' && num(item.gia_tri) > 0);
+    if (!hasPerUnit && !hasTotal) {
+      return `Nhập Tổng KG cho sản phẩm ${product.ma_sp || product.ten_sp} (hoặc bổ sung TL/tấm – TL/cuộn trong danh mục).`;
+    }
+  }
+  return null;
+}
+
 function parseOrderBody(
   body: unknown,
   options?: { isCreate?: boolean }
@@ -9970,6 +9991,11 @@ export function createApp() {
       const enrichedProducts = await enrichOrderProductsWithConversionData(productsInput.products, String(source.orderType ?? '').trim());
       source.products = enrichedProducts;
 
+      const kgError = validateCutOrderProductsKg(enrichedProducts, String(source.orderType ?? '').trim());
+      if (kgError) {
+        return res.status(400).json({ error: kgError });
+      }
+
       const parsed = parseOrderBody(source, { isCreate: true });
       if ('error' in parsed) {
         return res.status(400).json({ error: parsed.error });
@@ -10039,6 +10065,11 @@ export function createApp() {
 
       const enrichedProducts = await enrichOrderProductsWithConversionData(productsInput.products, orderType);
       source.products = enrichedProducts;
+
+      const kgError = validateCutOrderProductsKg(enrichedProducts, orderType);
+      if (kgError) {
+        return res.status(400).json({ error: kgError });
+      }
 
       const parsed = parseOrderBody(source);
       if ('error' in parsed) {
@@ -17465,7 +17496,9 @@ async function loadKiemKhoLiveTongHopForDot(
             danTem2Dau: item.danTem2Dau === true || item.dan_tem_2_dau === true || String(item.danTem2Dau ?? item.dan_tem_2_dau ?? '') === '1',
             doLiDm: mother.doLiDm,
             // Dòng fill từ đơn hàng: cho qua khi quy cách giữ nguyên (không bắt hạ).
-            allowIdentical: Boolean(String(item.orderCode ?? item.order_code ?? '').trim())
+            allowIdentical: Boolean(String(item.orderCode ?? item.order_code ?? '').trim()),
+            tenSanXuat: String(item.tenSanXuat ?? item.ten_san_xuat ?? item.tenGhep ?? item.ten_ghep ?? '').trim() || undefined,
+            ngayCat
           })
         );
         const saved = lines[lines.length - 1];
@@ -17823,12 +17856,14 @@ async function loadKiemKhoLiveTongHopForDot(
               liCon && liCon.toLocaleLowerCase('vi') !== liMe.toLocaleLowerCase('vi') ? liCon : undefined,
             doLiDm: dmExplicit ?? (!liChanged ? piece.do_li_dm || nguon.do_li_dm || undefined : undefined),
             hangPhe: nguon.hang_phe || undefined,
-            mang: nguon.mang || undefined
+            mang: nguon.mang || undefined,
+            ngayCat: lenh.ngay_cat || undefined
           });
           if (maMoi) {
             const normalizedBase = buildCutAmisCodeFull({
               baseMaAmis: baseAmis,
-              tenSanXuat: String(piece.ten_sp || nguon.ten_sp || '')
+              tenSanXuat: String(piece.ten_sp || nguon.ten_sp || ''),
+              ngayCat: lenh.ngay_cat || undefined
             });
             if (maMoi === normalizedBase) maMoi = '';
           }

@@ -897,6 +897,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         originMaCu: originCuForLine(line, mother),
         allowIdentical: Boolean(line.orderCode.trim()),
         tenSanXuat: line.tenGhep.trim() || line.productionName.trim(),
+        ngayCat,
         ...temArgsFromCutLine(line)
       });
       return built;
@@ -932,6 +933,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         originMaCu: lines[index] ? originCuForLine(lines[index], preview.mother) : '',
         allowIdentical: Boolean(lines[index]?.orderCode?.trim()),
         tenSanXuat: lines[index]?.tenGhep.trim() || lines[index]?.productionName.trim() || '',
+        ngayCat,
         ...temArgsFromCutLine(lines[index])
       });
       setConfirmedByKey(prev => ({ ...prev, [key]: built }));
