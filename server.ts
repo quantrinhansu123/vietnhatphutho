@@ -40,7 +40,7 @@ import {
   stripMixingNormRevisionSuffix
 } from './src/utils/mixingNormAuxiliary';
 import { buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, calculateDoLiDm, isDiscontinuedWhiteSuProduct, parseProductionNameParts, replaceCutLengthMeters, replaceDoLiDmInTenGhep, replaceMangInName, stripTrailingDuplicateCutAfterTem } from './src/utils/productProductionName';
-import { buildCatLeSanPhamLine, KHO_CAT_LE, KHO_TAI_CHE, KHO_THANH_PHAM, inferKhoChinhTuNhom, normalizeCatLeSanPhamList, type CatLeSanPhamLine } from './src/features/lenh-cat-le/logic';
+import { buildCatLeSanPhamLine, KHO_CAT_LE, KHO_TAI_CHE, KHO_THANH_PHAM, inferKhoChinhTuNhom, normalizeCatLeSanPhamList, resolveCatLeNhomVthh, type CatLeSanPhamLine } from './src/features/lenh-cat-le/logic';
 
 dotenv.config();
 
@@ -7598,6 +7598,27 @@ async function enrichOrderProductsWithConversionData(
   }
 }
 
+/**
+ * Đơn cắt lẻ (trừ miền nam): dòng có SL phải có KG — Tổng KG nhập tay /
+ * Định mức / TL danh mục — để lập được lệnh cắt lẻ.
+ */
+function validateCutOrderProductsKg(products: OrderProductRecord[], orderType: string): string | null {
+  const type = String(orderType || '').trim();
+  if (!isCutLikeOrderTypeServer(type) || type === SOUTH_ORDER_TYPE_SERVER) return null;
+  for (const product of products) {
+    if (!(Number(product.so_luong) > 0)) continue;
+    const num = (value: unknown) => Number(value) || 0;
+    const hasPerUnit = num(product.tl_tam) > 0 || num(product.tl_cuon) > 0 || num(product.kg_1_sp) > 0;
+    const results = Array.isArray(product.ket_qua_quy_doi) ? product.ket_qua_quy_doi : [];
+    const hasTotal = num(product.tong_kg) > 0 ||
+      results.some(item => item && item.don_vi === 'kg' && num(item.gia_tri) > 0);
+    if (!hasPerUnit && !hasTotal) {
+      return `Nhập Tổng KG cho sản phẩm ${product.ma_sp || product.ten_sp} (hoặc bổ sung TL/tấm – TL/cuộn trong danh mục).`;
+    }
+  }
+  return null;
+}
+
 function parseOrderBody(
   body: unknown,
   options?: { isCreate?: boolean }
@@ -9970,6 +9991,11 @@ export function createApp() {
       const enrichedProducts = await enrichOrderProductsWithConversionData(productsInput.products, String(source.orderType ?? '').trim());
       source.products = enrichedProducts;
 
+      const kgError = validateCutOrderProductsKg(enrichedProducts, String(source.orderType ?? '').trim());
+      if (kgError) {
+        return res.status(400).json({ error: kgError });
+      }
+
       const parsed = parseOrderBody(source, { isCreate: true });
       if ('error' in parsed) {
         return res.status(400).json({ error: parsed.error });
@@ -10039,6 +10065,11 @@ export function createApp() {
 
       const enrichedProducts = await enrichOrderProductsWithConversionData(productsInput.products, orderType);
       source.products = enrichedProducts;
+
+      const kgError = validateCutOrderProductsKg(enrichedProducts, orderType);
+      if (kgError) {
+        return res.status(400).json({ error: kgError });
+      }
 
       const parsed = parseOrderBody(source);
       if ('error' in parsed) {
@@ -17465,7 +17496,9 @@ async function loadKiemKhoLiveTongHopForDot(
             danTem2Dau: item.danTem2Dau === true || item.dan_tem_2_dau === true || String(item.danTem2Dau ?? item.dan_tem_2_dau ?? '') === '1',
             doLiDm: mother.doLiDm,
             // Dòng fill từ đơn hàng: cho qua khi quy cách giữ nguyên (không bắt hạ).
-            allowIdentical: Boolean(String(item.orderCode ?? item.order_code ?? '').trim())
+            allowIdentical: Boolean(String(item.orderCode ?? item.order_code ?? '').trim()),
+            tenSanXuat: String(item.tenSanXuat ?? item.ten_san_xuat ?? item.tenGhep ?? item.ten_ghep ?? '').trim() || undefined,
+            ngayCat
           })
         );
         const saved = lines[lines.length - 1];
@@ -17495,9 +17528,10 @@ async function loadKiemKhoLiveTongHopForDot(
         return { error: `Dòng ${index + 1} (${mother.maSp}): ${err?.message || 'Thông số cắt không hợp lệ.'}` };
       }
     }
-    const khoNguon = String(source.khoNguon ?? source.kho_nguon ?? KHO_CAT_LE).trim() || KHO_CAT_LE;
+    // Kho để trống → lúc Duyệt suy theo nhóm VTHH từng dòng (Đặc/Sóng/Rỗng không lộn kho).
+    const khoNguon = String(source.khoNguon ?? source.kho_nguon ?? '').trim();
     // SP cắt + phần thừa nhập lại chính kho nguồn (không qua Kho thành phẩm).
-    const khoDich = String(source.khoDich ?? source.kho_dich ?? source.khoTp ?? source.kho_tp ?? khoNguon).trim() || khoNguon;
+    const khoDich = String(source.khoDich ?? source.kho_dich ?? source.khoTp ?? source.kho_tp ?? khoNguon).trim();
     // Sản phẩm chỉ nằm trong JSON san_pham (nguồn / cắt 1 / cắt 2). Không ghi cột nguồn/cắt.
     const draft: Record<string, unknown> = {
       ngay_cat: ngayCat,
@@ -17822,12 +17856,14 @@ async function loadKiemKhoLiveTongHopForDot(
               liCon && liCon.toLocaleLowerCase('vi') !== liMe.toLocaleLowerCase('vi') ? liCon : undefined,
             doLiDm: dmExplicit ?? (!liChanged ? piece.do_li_dm || nguon.do_li_dm || undefined : undefined),
             hangPhe: nguon.hang_phe || undefined,
-            mang: nguon.mang || undefined
+            mang: nguon.mang || undefined,
+            ngayCat: lenh.ngay_cat || undefined
           });
           if (maMoi) {
             const normalizedBase = buildCutAmisCodeFull({
               baseMaAmis: baseAmis,
-              tenSanXuat: String(piece.ten_sp || nguon.ten_sp || '')
+              tenSanXuat: String(piece.ten_sp || nguon.ten_sp || ''),
+              ngayCat: lenh.ngay_cat || undefined
             });
             if (maMoi === normalizedBase) maMoi = '';
           }
@@ -17863,9 +17899,12 @@ async function loadKiemKhoLiveTongHopForDot(
       const ten = String(line.san_pham_nguon.ten_sp || '').trim();
       const qty = Number(line.san_pham_nguon.so_luong) || 0;
       if (!(qty > 0)) return { ok: false, status: 400, error: `Số lượng cắt của ${ma || 'dòng'} không hợp lệ.` };
-      const kho = lenhKhoChon ||
-        inferKhoChinhTuNhom(String(line.san_pham_nguon?.nhom_vthh || '')) ||
-        KHO_CAT_LE;
+      const nhomDong = resolveCatLeNhomVthh(
+        line.san_pham_nguon?.nhom_vthh,
+        line.san_pham_nguon?.ten_sp,
+        line.san_pham_nguon?.ma_sp || line.san_pham_nguon?.ma_amis
+      );
+      const kho = lenhKhoChon || inferKhoChinhTuNhom(nhomDong) || KHO_CAT_LE;
       const key = `${kho}||${ma}||${ten.toLocaleLowerCase('vi')}`;
       const prev = need.get(key);
       if (prev) prev.qty = Math.round((prev.qty + qty) * 1000) / 1000;
@@ -17889,7 +17928,13 @@ async function loadKiemKhoLiveTongHopForDot(
     // SP cắt nhập lại chính kho nguồn của dòng đó (không qua Kho thành phẩm).
     const khoDichChon = String(lenh.kho_dich || '').trim();
     const khoNguonCuaDong = (line: CatLeSanPhamLine) =>
-      lenhKhoChon || inferKhoChinhTuNhom(String(line.san_pham_nguon?.nhom_vthh || '')) || KHO_CAT_LE;
+      lenhKhoChon ||
+      inferKhoChinhTuNhom(resolveCatLeNhomVthh(
+        line.san_pham_nguon?.nhom_vthh,
+        line.san_pham_nguon?.ten_sp,
+        line.san_pham_nguon?.ma_sp || line.san_pham_nguon?.ma_amis
+      )) ||
+      KHO_CAT_LE;
     const khoDichCuaDong = (khoNguon: string) => khoDichChon || khoNguon;
     const maKhoCache = new Map<string, string>();
     const maKhoCua = async (kho: string) => {

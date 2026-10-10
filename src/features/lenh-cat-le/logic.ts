@@ -14,6 +14,7 @@
 import {
   buildCutAmisCodeFull,
   calculateDoLiDm,
+  classifyProductPxGroup,
   composeProductionDisplayName,
   isValidDoLiToken,
   normalizeDoLiDm
@@ -39,6 +40,21 @@ export function inferKhoChinhTuNhom(nhomVthh?: string | null): string {
   if (key.includes('px rỗng') || key.includes('px rong')) return KHO_RONG;
   if (key.includes('px sóng') || key.includes('px song')) return KHO_SONG;
   return '';
+}
+
+/**
+ * Nhóm VTHH của dòng cắt: ưu tiên nhóm đã lưu, trống thì đoán từ tên/mã
+ * (rỗng/ECR → Rỗng; sóng/STS → Sóng; đặc/STD → Đặc) để suy đúng kho.
+ */
+export function resolveCatLeNhomVthh(group: unknown, name: unknown, code: unknown): string {
+  const g = String(group || '').trim();
+  if (classifyProductPxGroup(g) !== 'other') return g;
+  const ten = String(name || '');
+  const ma = String(code || '').trim();
+  if (/rỗng/iu.test(ten) || /^ecr/i.test(ma)) return 'TP; PX Rỗng';
+  if (/sóng/iu.test(ten) || /^sts/i.test(ma)) return 'TP; PX Sóng';
+  if (/đặc/iu.test(ten) || /^std/i.test(ma)) return 'TP; PX Đặc';
+  return g;
 }
 
 export interface CatLeSpecs {
@@ -561,6 +577,8 @@ export function buildCatLeSanPhamLine(args: {
   allowIdentical?: boolean | null;
   /** Tên sản xuất đang hiện trên dòng (tên ghép đơn). Mã cắt rút viết tắt từ tên này. */
   tenSanXuat?: string | null;
+  /** Ngày cắt để gắn token (DD.MM.YYYY) vào mã AMIS mới. */
+  ngayCat?: string | Date | null;
 }): CatLeSanPhamLine {
   const { mother } = args;
   const sourceWidth = parseMeterLabel(mother.doDayM);
@@ -632,7 +650,8 @@ export function buildCatLeSanPhamLine(args: {
     tem: args.tem,
     mauTem: args.mauTem,
     danTem2Dau: args.danTem2Dau,
-    tenSanXuat: String(args.tenSanXuat || '').trim() || computed.tenSpCon
+    tenSanXuat: String(args.tenSanXuat || '').trim() || computed.tenSpCon,
+    ngayCat: args.ngayCat
   });
   const moiThua =
     cat2 != null
@@ -648,7 +667,8 @@ export function buildCatLeSanPhamLine(args: {
           mang: mother.mang,
           hangPhe: mother.hangPhe,
           doLiDm: mother.doLiDm,
-          tenSanXuat: computed.tenSpThua
+          tenSanXuat: computed.tenSpThua,
+          ngayCat: args.ngayCat
         })
       : '';
   const moiThua2 =
@@ -665,7 +685,8 @@ export function buildCatLeSanPhamLine(args: {
           mang: mother.mang,
           hangPhe: mother.hangPhe,
           doLiDm: mother.doLiDm,
-          tenSanXuat: computed.tenSpThua2
+          tenSanXuat: computed.tenSpThua2,
+          ngayCat: args.ngayCat
         })
       : '';
   return {
@@ -768,9 +789,23 @@ export function variantCodeForCatPiece(args: {
   danTem2Dau?: boolean | null;
   /** Tên sản xuất của tấm cắt — rút màu / ZEM / số sóng / kg vào mã. */
   tenSanXuat?: string | null;
+  /** Ngày cắt để gắn token (DD.MM.YYYY) vào mã AMIS mới. */
+  ngayCat?: string | Date | null;
 }): string {
   const base = String(args.baseMaAmis || '').trim();
   if (!base) return '';
+  
+  // --- XÁC ĐỊNH TIÊNG PREFIX THEO NHÓM VTHH ---
+  // Quy tắc: DAC→DAC, SONG→SONG, RONG→RONG, mặc định STD
+  let filmPrefix = 'STD'; // Mặc định giữ STD cho backward compatibility
+  if (args.nhomVthh) {
+    const group = classifyProductPxGroup(args.nhomVthh);
+    if (group === 'dac') filmPrefix = 'DAC';
+    if (group === 'song') filmPrefix = 'SONG';
+    if (group === 'rong') filmPrefix = 'RONG';
+  }
+  // ------------------------------------------------
+
   const lCon = parseMeterLabel(args.pieceDaiM);
   const lMe = parseMeterLabel(args.motherDaiM);
   const cutDiffers = lCon != null && (lMe == null || Math.abs(lCon - lMe) > 1e-9);
@@ -786,6 +821,7 @@ export function variantCodeForCatPiece(args: {
   const shared = {
     baseMaAmis: base,
     nhomVthh: args.nhomVthh,
+    // --- TRÊN ĐÃ THÊM filmPrefix ---
     cutLengthM: lCon != null && lCon > 0 ? lCon : undefined,
     cutWidthM: widthDiffers ? wCon : undefined,
     doLi: liDiffers ? String(args.pieceLi || '') : undefined,
@@ -795,8 +831,11 @@ export function variantCodeForCatPiece(args: {
     tem: args.tem,
     mauTem: args.mauTem,
     danTem2Dau: args.danTem2Dau,
+    ngayCat: args.ngayCat,
     ...widthArg
   };
+  // ------------------------------------------------
+  
   const plain = buildCutAmisCodeFull(shared);
   const named = buildCutAmisCodeFull({ ...shared, tenSanXuat: args.tenSanXuat });
   const specsChanged = cutDiffers || widthDiffers || liDiffers || Boolean(String(args.tem || '').trim() || String(args.mauTem || '').trim() || args.danTem2Dau);
@@ -806,7 +845,7 @@ export function variantCodeForCatPiece(args: {
     if (named.toLocaleLowerCase('vi') === base.toLocaleLowerCase('vi')) return '';
     return named;
   }
-  const normalizedBase = buildCutAmisCodeFull({ baseMaAmis: base, tenSanXuat: args.tenSanXuat });
+  const normalizedBase = buildCutAmisCodeFull({ baseMaAmis: base, tenSanXuat: args.tenSanXuat, ngayCat: args.ngayCat });
   if (!named || named === normalizedBase) return '';
   return named;
 }
@@ -1040,69 +1079,92 @@ export function buildCatLePrintSlips(lenh: {
   const lines = normalizeCatLeSanPhamList(lenh.san_pham);
   const ngay = String(lenh.ngay_cat || '').slice(0, 10);
   const nguoi = String(lenh.nguoi_lap || '').trim();
-  const khoNguon = String(lenh.kho_nguon || KHO_CAT_LE);
-  // SP cắt nhập lại chính kho nguồn (không qua Kho thành phẩm).
-  const khoDich = String(lenh.kho_dich || khoNguon);
+  // Kho theo từng dòng, không lộn kho: lệnh cũ có kho chung thì giữ 1 kho;
+  // lệnh mới để trống → suy từ nhóm VTHH dòng đó (Đặc/Sóng/Rỗng).
+  // SP cắt nhập lại chính kho nguồn của dòng (không qua Kho thành phẩm).
+  const khoNguonMacDinh = String(lenh.kho_nguon || '').trim();
+  const khoDichMacDinh = String(lenh.kho_dich || '').trim();
+  const khoNguonCua = (line: CatLeSanPhamLine) => {
+    const nguon = line.san_pham_nguon as unknown as Record<string, unknown> | null;
+    const nhom = resolveCatLeNhomVthh(nguon?.nhom_vthh, nguon?.ten_sp, nguon?.ma_sp || nguon?.ma_amis);
+    return khoNguonMacDinh || inferKhoChinhTuNhom(nhom) || KHO_CAT_LE;
+  };
+  const khoDichCua = (khoNguon: string) => khoDichMacDinh || khoNguon;
   const khoTaiChe = String(lenh.kho_tai_che || KHO_TAI_CHE);
   const maLenh = String(lenh.ma_lenh || '').trim();
   const slips: CatLePrintSlip[] = [];
-  const xuatLines = lines.map(line =>
-    slipLineFromProduct(
-      line.san_pham_nguon.ma_sp,
-      line.san_pham_nguon.ten_sp,
-      line.san_pham_nguon.don_vi,
-      line.san_pham_nguon.so_luong,
-      line.san_pham_nguon.kg
-    )
-  );
-  const nhapTpLines = lines.map(line =>
-    slipLineFromProduct(
-      line.san_pham_nguon.ma_sp,
-      line.san_pham_cat_1.ten_sp,
-      line.san_pham_nguon.don_vi,
-      catLeConQty(line),
-      line.san_pham_cat_1.kg
-    )
-  );
+  const groupByKho = (pick: (line: CatLeSanPhamLine) => string, source: CatLeSanPhamLine[]) => {
+    const groups = new Map<string, CatLeSanPhamLine[]>();
+    for (const line of source) {
+      const kho = pick(line);
+      const list = groups.get(kho) || [];
+      list.push(line);
+      groups.set(kho, list);
+    }
+    return [...groups];
+  };
+  const splitCodes = (value: unknown) => String(value ?? '').split(',').map(part => part.trim()).filter(Boolean);
   const conLai = lines.filter(line => (line.san_pham_cat_2 || line.san_pham_cat_3) && !line.di_tai_che);
   const taiChe = lines.filter(line => (line.san_pham_cat_2 || line.san_pham_cat_3) && line.di_tai_che);
-  const maXuat = slipCode(lenh.ma_phieu_xuat);
-  if (maXuat && xuatLines.length > 0) {
+  const maXuatCodes = splitCodes(lenh.ma_phieu_xuat);
+  groupByKho(line => khoNguonCua(line), lines).forEach(([kho, groupLines], index) => {
+    const maXuat = preview ? 'Chưa sinh' : maXuatCodes[index] || maXuatCodes.join(',');
+    if (!maXuat || groupLines.length === 0) return;
     slips.push({
       slipCode: maXuat,
       slipType: 'xuat',
       slipDate: ngay,
       reason: `Cắt lẻ ${maLenh}`,
-      note: `Xuất ${khoNguon} — sản phẩm chuẩn bị cắt`,
-      warehouseName: khoNguon,
+      note: `Xuất ${kho} — sản phẩm chuẩn bị cắt`,
+      warehouseName: kho,
       createdBy: nguoi,
-      lines: xuatLines
+      lines: groupLines.map(line =>
+        slipLineFromProduct(
+          line.san_pham_nguon.ma_sp,
+          line.san_pham_nguon.ten_sp,
+          line.san_pham_nguon.don_vi,
+          line.san_pham_nguon.so_luong,
+          line.san_pham_nguon.kg
+        )
+      )
     });
-  }
-  const maNhapTp = slipCode(lenh.ma_phieu_nhap_tp);
-  if (maNhapTp && nhapTpLines.length > 0) {
+  });
+  const maNhapTpCodes = splitCodes(lenh.ma_phieu_nhap_tp);
+  groupByKho(line => khoDichCua(khoNguonCua(line)), lines).forEach(([kho, groupLines], index) => {
+    const maNhapTp = preview ? 'Chưa sinh' : maNhapTpCodes[index] || maNhapTpCodes.join(',');
+    if (!maNhapTp || groupLines.length === 0) return;
     slips.push({
       slipCode: maNhapTp,
       slipType: 'nhap',
       slipDate: ngay,
       reason: `Cắt lẻ ${maLenh}`,
-      note: `Nhập ${khoDich} — sản phẩm được cắt`,
-      warehouseName: khoDich,
+      note: `Nhập ${kho} — sản phẩm được cắt`,
+      warehouseName: kho,
       createdBy: nguoi,
-      lines: nhapTpLines
+      lines: groupLines.map(line =>
+        slipLineFromProduct(
+          line.san_pham_nguon.ma_sp,
+          line.san_pham_cat_1.ten_sp,
+          line.san_pham_nguon.don_vi,
+          catLeConQty(line),
+          line.san_pham_cat_1.kg
+        )
+      )
     });
-  }
-  const maNhapThua = slipCode(lenh.ma_phieu_nhap_thua);
-  if (maNhapThua && conLai.length > 0) {
+  });
+  const maNhapThuaCodes = splitCodes(lenh.ma_phieu_nhap_thua);
+  groupByKho(line => khoNguonCua(line), conLai).forEach(([kho, groupLines], index) => {
+    const maNhapThua = preview ? 'Chưa sinh' : maNhapThuaCodes[index] || maNhapThuaCodes.join(',');
+    if (!maNhapThua || groupLines.length === 0) return;
     slips.push({
       slipCode: maNhapThua,
       slipType: 'nhap',
       slipDate: ngay,
       reason: `Cắt lẻ ${maLenh}`,
-      note: `Nhập ${khoNguon} — sản phẩm còn lại`,
-      warehouseName: khoNguon,
+      note: `Nhập ${kho} — sản phẩm còn lại`,
+      warehouseName: kho,
       createdBy: nguoi,
-      lines: conLai.flatMap(line => {
+      lines: groupLines.flatMap(line => {
         const out: CatLePrintLine[] = [];
         if (line.san_pham_cat_2) {
           out.push(
@@ -1129,7 +1191,7 @@ export function buildCatLePrintSlips(lenh: {
         return out;
       })
     });
-  }
+  });
   if (taiChe.length > 0 && (preview || lenh.ma_phieu_nhap_tai_che)) {
     const ckLines = taiChe.flatMap(line => {
       const out: CatLePrintLine[] = [];

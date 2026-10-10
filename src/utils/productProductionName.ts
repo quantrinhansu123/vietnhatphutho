@@ -801,6 +801,50 @@ export function mvByMauTem(mauTem?: string | null): string {
   return 'MVCC';
 }
 
+/**
+ * Chuẩn hóa ngày cắt thành token `(DD.MM.YYYY)` ở đuôi mã AMIS.
+ * Nhận `2026-10-09`, `09/10/2026`, `09-10-2026`, `09.10.2026` hoặc Date object.
+ * Trả về `(09.10.2026)` hoặc `''` nếu không hợp lệ.
+ */
+export function formatAmisDateToken(date?: string | Date | null): string {
+  if (!date) return '';
+  if (date instanceof Date) {
+    if (isNaN(date.getTime())) return '';
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const yyyy = String(date.getFullYear());
+    return `(${dd}.${mm}.${yyyy})`;
+  }
+  const raw = String(date).trim();
+  if (!raw) return '';
+  // Đã có sẵn dạng (DD.MM.YYYY) hoặc DD.MM.YYYY / DD/MM/YYYY
+  const wrapped = raw.match(/^\(?\s*(\d{1,2})[./-](\d{1,2})[./-](\d{4})\s*\)?$/);
+  if (wrapped) {
+    const dd = wrapped[1].padStart(2, '0');
+    const mm = wrapped[2].padStart(2, '0');
+    const yyyy = wrapped[3];
+    return `(${dd}.${mm}.${yyyy})`;
+  }
+  // Dạng ISO YYYY-MM-DD
+  const iso = raw.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})/);
+  if (iso) {
+    const yyyy = iso[1];
+    const mm = iso[2].padStart(2, '0');
+    const dd = iso[3].padStart(2, '0');
+    return `(${dd}.${mm}.${yyyy})`;
+  }
+  return '';
+}
+
+/**
+ * Xóa token ngày `(DD.MM.YYYY)` ở đuôi mã AMIS để tránh nhân đôi khi sửa/cắt tiếp.
+ */
+export function stripAmisDateToken(code?: string | null): string {
+  let text = String(code || '').trim();
+  if (!text) return '';
+  return text.replace(/\s*\(\s*\d{1,2}[./-]\d{1,2}[./-]\d{4}\s*\)\s*$/u, '').trim();
+}
+
 export interface MaAmisMoiInput {
   /** Mã chuẩn gốc (vd STD06-0.8li*1.22m, STS06-5.0kg-NP2). */
   baseMaAmis: string;
@@ -826,6 +870,8 @@ export interface MaAmisMoiInput {
    * thành viết tắt rồi ghép vào mã để mã mang đủ thông tin của tên.
    */
   tenSanXuat?: string | null;
+  /** Ngày cắt / ngày tạo đơn (vd `2026-10-09` hoặc `09/10/2026`), sẽ định dạng thành `(DD.MM.YYYY)` ở đuôi mã. */
+  ngayCat?: string | Date | null;
 }
 
 /** Hàng phế trong tên → viết tắt trên mã. Không suy ngược từ token NP đã có trong mã gốc. */
@@ -953,7 +999,7 @@ function amisTemToken(tem: string): string {
  * → `STD06-0.75li*1.22m-3m-ECO - TEM1.2li-MVKH-2DAU`.
  */
 export function buildMaAmisMoi(input: MaAmisMoiInput): string {
-  const raw = String(input.baseMaAmis || '').trim().replace(/\s+/g, ' ');
+  const raw = stripAmisDateToken(String(input.baseMaAmis || '').trim().replace(/\s+/g, ' '));
   if (!raw) return '';
   // Chuẩn hóa mã cũ: bỏ chữ "Giá rẻ" thừa (đã mã hóa bằng NP2), gộp cách quanh `-`.
   let base = raw
@@ -971,9 +1017,29 @@ export function buildMaAmisMoi(input: MaAmisMoiInput): string {
 
   const group = classifyProductPxGroup(input.nhomVthh || '');
 
+// --- XÁC ĐỊNH TIÊNG PREFIX THEO NHÓM VTHH ---
+  // Quy tắc: DAC→DAC, SONG→SONG, RONG→RONG, mặc định STD
+  let filmPrefix = 'STD'; // Mặc định giữ STD cho backward compatibility
+  if (group === 'dac') filmPrefix = 'DAC';
+  if (group === 'song') filmPrefix = 'SONG';
+  if (group === 'rong') filmPrefix = 'RONG';
+  // ------------------------------------------------
+
   // Độ li ĐM thay token li (`6li` → `6.7li`). Không có đm thì mới dùng độ li hạ thật.
   const doLiNew = doLiTokenFromDm(input.doLiDm || '') || normalizeDoLiToken(input.doLi || '');
   if (doLiNew) base = replaceLiToken(base, doLiNew);
+
+  // --- THÊM PHÍM PREFIX MỚI NẾU ĐÃ THAY ĐỔI NHÓM ---
+  // Trích xuất prefix hiện tại (từ STD, STS, ECO, HA, LUX, SUNPC,...)
+  const currentPrefixMatch = base.match(/^[A-Za-z]+\d+/);
+  if (currentPrefixMatch && currentPrefixMatch[0]) {
+    const currentPrefix = currentPrefixMatch[0];
+    // Nếu prefix hiện tại khác prefix mới theo nhóm, thay thế
+    if (currentPrefix.toUpperCase() !== filmPrefix) {
+      base = base.replace(currentPrefix, filmPrefix);
+    }
+  }
+  // ------------------------------------------------
 
   const width = Number(String(input.cutWidthM ?? '').replace(',', '.'));
   if (Number.isFinite(width) && width > 0) base = applyCutWidthToAmis(base, width);
@@ -1003,21 +1069,24 @@ export function buildMaAmisMoi(input: MaAmisMoiInput): string {
     temSuffix = `- ${[temNorm, mv, haiDau ? '2DAU' : ''].filter(Boolean).join('-')}`;
   }
 
+  const dateToken = formatAmisDateToken(input.ngayCat);
+  const dateSuffix = dateToken ? ` ${dateToken}` : '';
+
   return (
-    `${base}${npSuffix}${pheSuffix}${mang ? `-${mang}` : ''}${temSuffix ? ` ${temSuffix}` : ''}`
+    `${base}${npSuffix}${pheSuffix}${mang ? `-${mang}` : ''}${temSuffix ? ` ${temSuffix}` : ''}${dateSuffix}`
       .replace(/\s+/g, ' ')
       .trim()
   );
 }
 
 /**
- * Mã biến thể cắt lẻ ĐỦ THÔNG TIN (mẫu: `STD06-0.75li*1.22m-TC-ECO-30m - TEM1.2li-MVKH-2DAU`):
+ * Mã biến thể cắt lẻ ĐỦ THÔNG TIN (mẫu: `STD06-0.75li*1.22m-TC-ECO-30m - TEM1.2li-MVKH-2DAU (09.10.2026)`):
  * `{gốc}-{TC|phế}-{MÀNG}-{dài}m`, mét dài luôn cuối (trước hậu tố tem).
  * `-TC-` cho hàng chuẩn (không phế); giữ `-NP-…` cho hàng phế.
  * Chỉ dùng cho luồng cắt lẻ (mới). Đơn miền nam giữ `buildMaAmisMoi` cũ.
  */
 export function buildCutAmisCodeFull(input: MaAmisMoiInput & { ensureWidthM?: number | string | null }): string {
-  const raw = String(input.baseMaAmis || '').trim().replace(/\s+/g, ' ');
+  const raw = stripAmisDateToken(String(input.baseMaAmis || '').trim().replace(/\s+/g, ' '));
   if (!raw) return '';
   let base = raw
     .replace(/\s*-+\s*/g, '-')
@@ -1080,8 +1149,11 @@ export function buildCutAmisCodeFull(input: MaAmisMoiInput & { ensureWidthM?: nu
   const flat = (s: string) => String(s || '').replace(/[\s-]+/g, '').toLocaleLowerCase('vi');
   if (temSuffix && flat(base).endsWith(flat(temSuffix))) temSuffix = '';
 
+  const dateToken = formatAmisDateToken(input.ngayCat);
+  const dateSuffix = dateToken ? ` ${dateToken}` : '';
+
   return (
-    `${base}${midBlock}${mangPart}${lenPart}${temSuffix ? ` ${temSuffix}` : ''}`
+    `${base}${midBlock}${mangPart}${lenPart}${temSuffix ? ` ${temSuffix}` : ''}${dateSuffix}`
       .replace(/\s+/g, ' ')
       .trim()
   );
