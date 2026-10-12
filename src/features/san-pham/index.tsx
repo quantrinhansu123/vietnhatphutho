@@ -2642,16 +2642,17 @@ export function autoCalculateProductConversion(
     updated.trongLuongKgMDai = String(formulas.kgPerLinearM);
   }
 
+  // Trọng lượng (kg/Tấm) và (kg/Cuộn) cho phép nhập tay để chốt TL khi thiếu
+  // thông tin tính toán. Công thức chỉ tự điền khi ô đang trống (giống backend:
+  // giữ giá trị được cung cấp, chỉ điền các trường còn trống), không ghi đè/xóa số đã nhập.
   const applyCalculatedWeight = (
     key: 'trongLuongKgTam' | 'trongLuongKgCuon',
     value: number | null
   ) => {
-    if (value !== null) updated[key] = String(value);
-    else if (changedKey) updated[key] = '';
+    if (changedKey === key) return;
+    if (value !== null && !updated[key].trim()) updated[key] = String(value);
   };
 
-  // kg/tấm và kg/cuộn là kết quả chỉ đọc. Khi sửa dữ liệu nguồn, kết quả
-  // không còn đủ điều kiện tính sẽ được xóa để tránh giữ số cũ sai lệch.
   applyCalculatedWeight('trongLuongKgTam', formulas.kgPerSheet);
   applyCalculatedWeight('trongLuongKgCuon', formulas.kgPerRoll);
 
@@ -2659,10 +2660,6 @@ export function autoCalculateProductConversion(
 }
 
 const emptyConversion = (): ProductConversionForm => ({ khoTamRongM: '', khoTamDaiM: '', khoCuonRongM: '', khoCuonDaiM: '', dienTichM2: '', trongLuongKgMDai: '', trongLuongKgM2: '', trongLuongKgTam: '', trongLuongKgCuon: '' });
-const CALCULATED_WEIGHT_FIELDS = new Set<keyof ProductConversionForm>([
-  'trongLuongKgTam',
-  'trongLuongKgCuon'
-]);
 const conversionToForm = (item: ProductConversionFactors): ProductConversionForm => {
   const base: ProductConversionForm = {
     khoTamRongM: String(item.khoTamRongM ?? ''), khoTamDaiM: String(item.khoTamDaiM ?? ''),
@@ -3321,7 +3318,7 @@ export function ProductEditModal({
                 <div>
                   <h4 className="text-xs font-black uppercase text-zinc-700">Thông tin quy đổi sản phẩm</h4>
                   <p className="text-[10px] font-semibold text-zinc-500">
-                    Có thể nhập ngay. Mét dài trong Thông số sản xuất chính là Khổ tấm dài — đổi Mét dài sẽ đồng bộ và tính lại Trọng lượng (kg/Tấm). Chọn SP chính theo AMIS để lấy sẵn quy đổi gốc.
+                    Có thể nhập ngay. Mét dài trong Thông số sản xuất chính là Khổ tấm dài — đổi Mét dài sẽ đồng bộ và tính lại Trọng lượng (kg/Tấm) khi ô đang trống. Trọng lượng (kg/Tấm) và (kg/Cuộn) có thể nhập tay để chốt TL khi thiếu thông tin tính toán. Chọn SP chính theo AMIS để lấy sẵn quy đổi gốc.
                   </p>
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -3338,7 +3335,6 @@ export function ProductEditModal({
                       ['trongLuongKgCuon', 'Trọng lượng (kg/Cuộn)']
                     ] as Array<[keyof ProductConversionForm, string]>
                   ).map(([key, label]) => {
-                    const isCalculated = CALCULATED_WEIGHT_FIELDS.has(key);
                     return (
                       <label key={key} className="space-y-1.5">
                         <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">{label}</span>
@@ -3346,11 +3342,12 @@ export function ProductEditModal({
                           inputMode="decimal"
                           value={(form.conversions[0] || emptyConversion())[key]}
                           onChange={event => updateConversion(0, key, event.target.value)}
-                          readOnly={isCalculated}
-                          aria-readonly={isCalculated}
-                          className={`${productFieldClass} ${
-                            isCalculated ? 'cursor-not-allowed bg-zinc-100 text-zinc-600' : 'bg-white'
-                          }`}
+                          title={
+                            key === 'trongLuongKgTam' || key === 'trongLuongKgCuon'
+                              ? 'Tự tính khi để trống — có thể nhập tay để chốt TL'
+                              : undefined
+                          }
+                          className={`${productFieldClass} bg-white`}
                         />
                       </label>
                     );

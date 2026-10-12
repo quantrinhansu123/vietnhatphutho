@@ -118,6 +118,8 @@ export function ProductionOrderPrintPreviewModal({
   const [rows, setRows] = useState<PreviewRow[]>([]);
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
   const [fetchedOrders, setFetchedOrders] = useState<OrderRow[]>([]);
+  /** Ghi chú chung từ API xem trước (nguồn chính thống theo đúng đơn trong lệnh). */
+  const [planNotes, setPlanNotes] = useState({ donHangGhiChu: '', lenhGhiChu: '' });
 
   // Fallback: modal mở độc lập không được truyền orders thì tự tải để hiển thị ghi chú đơn hàng.
   useEffect(() => {
@@ -155,6 +157,27 @@ export function ProductionOrderPrintPreviewModal({
     [orders, fetchedOrders, order?.orderRef]
   );
 
+  /**
+   * Ghi chú chung các đơn trong lệnh, mỗi ghi chú một dòng.
+   * Ưu tiên danh sách đơn đã tải; fallback sang API xem trước
+   * (don_hang_ghi_chu nối bằng ` | ` → tách thành từng dòng).
+   */
+  const orderNoteLines = useMemo(() => {
+    if (orderNotesText.trim()) {
+      return orderNotesText.split('\n').map(line => line.trim()).filter(Boolean);
+    }
+    return String(planNotes.donHangGhiChu || '')
+      .split('|')
+      .map(line => line.trim())
+      .filter(Boolean);
+  }, [orderNotesText, planNotes.donHangGhiChu]);
+
+  const lenhNote = planNotes.lenhGhiChu.trim();
+  // Tránh in trùng khi ghi chú lệnh chính là khối ghi chú đơn đã hiển thị.
+  const showLenhNote = Boolean(
+    lenhNote && lenhNote !== orderNoteLines.join('\n') && !orderNoteLines.includes(lenhNote)
+  );
+
   useEffect(() => {
     if (!open || !order) return;
 
@@ -163,6 +186,7 @@ export function ProductionOrderPrintPreviewModal({
     setError('');
     setFormError('');
     setMeta(EMPTY_META);
+    setPlanNotes({ donHangGhiChu: '', lenhGhiChu: '' });
     setRows([]);
     setEdits({});
 
@@ -179,6 +203,10 @@ export function ProductionOrderPrintPreviewModal({
           ngay_lien_lac: previewData.plan?.ngay_lien_lac || '',
           dac_ta: previewData.plan?.dac_ta || '',
           lan_ban_hanh: previewData.plan?.lan_ban_hanh || '01'
+        });
+        setPlanNotes({
+          donHangGhiChu: String(previewData.plan?.don_hang_ghi_chu || ''),
+          lenhGhiChu: String(previewData.plan?.lenh_ghi_chu || '')
         });
         const previewRows: PreviewRow[] = (previewData.rows || [])
           .map((r: any, idx: number) => {
@@ -482,24 +510,41 @@ export function ProductionOrderPrintPreviewModal({
                   {meta.dac_ta}
                 </div>
               )}
-              {orderNotesText && (
+              {showLenhNote && (
                 <div className="whitespace-pre-wrap break-words border-b border-gray-300 px-2 py-1 text-[10px]">
-                  <span className="font-bold">Ghi chú đơn hàng:{'\n'}</span>
-                  {orderNotesText}
+                  <span className="font-bold">Ghi chú lệnh SX:{'\n'}</span>
+                  {lenhNote}
+                </div>
+              )}
+              {orderNoteLines.length > 0 && (
+                <div className="border-b border-gray-300 px-2 py-1 text-[10px]">
+                  <div className="font-bold">Ghi chú đơn hàng:</div>
+                  {orderNoteLines.map((line, idx) => (
+                    <div key={idx} className="whitespace-pre-wrap break-words">
+                      {line}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
 
             {/* Screen wrapper — min-h-full + sm:p-6 làm thừa trang khi in */}
             <div className="production-order-preview-print-body bg-zinc-100 p-4 sm:p-6 print:bg-transparent print:p-0">
-              {orderNotesText && (
+              {(showLenhNote || orderNoteLines.length > 0) && (
                 <div className="production-order-preview-noprint mx-auto mb-3 max-w-[1400px] rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
                   <p className="text-[10px] font-black uppercase tracking-wider text-amber-800">
                     Ghi chú chung từ đơn hàng
                   </p>
-                  <pre className="mt-1 whitespace-pre-wrap break-words text-xs font-bold leading-5 text-amber-900">
-                    {orderNotesText}
-                  </pre>
+                  {showLenhNote && (
+                    <pre className="mt-1 whitespace-pre-wrap break-words text-xs font-bold leading-5 text-amber-900">
+                      Ghi chú lệnh SX: {lenhNote}
+                    </pre>
+                  )}
+                  {orderNoteLines.map((line, idx) => (
+                    <pre key={idx} className="mt-1 whitespace-pre-wrap break-words text-xs font-bold leading-5 text-amber-900">
+                      {line}
+                    </pre>
+                  ))}
                 </div>
               )}
               <div className="mx-auto max-w-[1400px] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm print:max-w-none print:overflow-visible print:rounded-none print:border-0 print:shadow-none">
@@ -580,9 +625,13 @@ export function ProductionOrderPrintPreviewModal({
                                   value={edits[editKey]?.ghiChu ?? ''}
                                   disabled={!canEdit}
                                   onChange={e => updateEdit(editKey, { ghiChu: e.target.value })}
-                                  className={`${CELL_INPUT_CLASS} ${!canEdit ? 'bg-zinc-50 text-zinc-600' : ''}`}
+                                  className={`${CELL_INPUT_CLASS} ${!canEdit ? 'bg-zinc-50 text-zinc-600' : ''} print:hidden`}
                                   title={canEdit ? 'Quản đốc có thể sửa ghi chú trước khi in' : 'Chỉ xem'}
                                 />
+                                {/* Khi in: input một dòng bị che mất chữ dài → in chữ bọc dòng đầy đủ. */}
+                                <span className="hidden whitespace-pre-wrap break-words text-zinc-900 print:block">
+                                  {edits[editKey]?.ghiChu || row.ghi_chu || '—'}
+                                </span>
                               </td>
                               <td className={`${bodyCell} text-center text-zinc-700`}>
                                 {row.don_vi || '—'}
@@ -599,8 +648,11 @@ export function ProductionOrderPrintPreviewModal({
                                   value={edits[editKey]?.bac ?? '0'}
                                   disabled={!canEdit}
                                   onChange={e => updateEdit(editKey, { bac: e.target.value })}
-                                  className={row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS}
+                                  className={`${row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS} print:hidden`}
                                 />
+                                <span className="hidden text-right tabular-nums text-zinc-900 print:block">
+                                  {edits[editKey]?.bac ?? '0'}
+                                </span>
                               </td>
                               <td className={bodyCell}>
                                 <input
@@ -610,8 +662,11 @@ export function ProductionOrderPrintPreviewModal({
                                   value={edits[editKey]?.trung ?? '0'}
                                   disabled={!canEdit}
                                   onChange={e => updateEdit(editKey, { trung: e.target.value })}
-                                  className={row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS}
+                                  className={`${row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS} print:hidden`}
                                 />
+                                <span className="hidden text-right tabular-nums text-zinc-900 print:block">
+                                  {edits[editKey]?.trung ?? '0'}
+                                </span>
                               </td>
                               <td className={bodyCell}>
                                 <input
@@ -621,8 +676,11 @@ export function ProductionOrderPrintPreviewModal({
                                   value={edits[editKey]?.nam ?? '0'}
                                   disabled={!canEdit}
                                   onChange={e => updateEdit(editKey, { nam: e.target.value })}
-                                  className={row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS}
+                                  className={`${row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS} print:hidden`}
                                 />
+                                <span className="hidden text-right tabular-nums text-zinc-900 print:block">
+                                  {edits[editKey]?.nam ?? '0'}
+                                </span>
                               </td>
                               <td className={`${bodyCell} text-right tabular-nums text-zinc-700`}>
                                 {isCuon ? formatNum(row.kg_cuon) : '—'}
