@@ -6,12 +6,18 @@ export function parseSouthDinhMucKg(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) / 100 : null;
 }
 
-/** Đơn cắt lẻ + miền nam: Tổng KG = Định mức KG × SL tổng (làm tròn 2 số lẻ). Thiếu ĐM/SL = null. */
+/** Đơn cắt lẻ + miền nam: Tổng KG = Định mức KG × SL tổng (làm tròn số nguyên). Thiếu ĐM/SL = null. */
 export function southDinhMucKgTotal(dinhMucKg: unknown, quantity: unknown): number | null {
   const dm = parseSouthDinhMucKg(dinhMucKg);
   const qty = Number(quantity);
   if (dm === null || !Number.isFinite(qty) || qty <= 0) return null;
-  return Math.round(dm * qty * 100) / 100;
+  return Math.round(dm * qty);
+}
+
+/** Tổng KG đơn hàng luôn lưu/hiển thị số nguyên (làm tròn). Không hợp lệ / <= 0 = null. */
+export function roundTotalKgInt(value: unknown): number | null {
+  const parsed = parsePercentInput(String(value ?? ''));
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
 }
 
 /**
@@ -40,7 +46,7 @@ export function southKgPerStandardMeter(
   return Math.round((kg / sheetLength) * 1000) / 1000;
 }
 
-/** Tổng trọng lượng miền nam = kg/1m × m dài × số lượng. */
+/** Tổng trọng lượng miền nam = kg/1m × m dài × số lượng (làm tròn số nguyên). */
 export function southLengthScaledTotalKg(
   standardKg: unknown,
   doDaiTamTieuChuan: unknown,
@@ -51,7 +57,7 @@ export function southLengthScaledTotalKg(
   const length = parsePercentInput(String(daiM ?? ''));
   const qty = parsePercentInput(String(quantity ?? ''));
   if (perMeter === null || !Number.isFinite(length) || length <= 0 || !Number.isFinite(qty) || qty <= 0) return null;
-  return Math.round(perMeter * length * qty * 100) / 100;
+  return Math.round(perMeter * length * qty);
 }
 
 function orderDecimalFractionDigits(text: string): number {
