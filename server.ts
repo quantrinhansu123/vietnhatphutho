@@ -23254,18 +23254,22 @@ async function loadKiemKhoLiveTongHopForDot(
       .replace(/\s+/g, '');
     const mDai = extractLenhSxItemQuyCachMDai(item);
     const mDaiKey = mDai !== null ? mDai.toFixed(3) : 'none';
+    // Trùng mã nhưng khác tên sản xuất (tên ghép) phải hiển thị khác dòng —
+    // luôn đưa tên ghép chuẩn hóa vào khóa gộp (cả khi đã có san_pham_id).
+    const tenGhepKey = String(
+      item?.ten_ghep ?? item?.tenGhep ?? item?.ten_san_xuat ?? item?.productionName ?? item?.ten_sp ?? ''
+    )
+      .trim()
+      .toLowerCase();
 
     if (resolvedSpId) {
-      return `pid:${resolvedSpId}__m:${mDaiKey}__u:${donVi}`;
+      return `pid:${resolvedSpId}__ten:${tenGhepKey}__m:${mDaiKey}__u:${donVi}`;
     }
 
     const maSp = String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '')
       .trim()
       .toLowerCase();
-    const tenSx = String(item?.ten_san_xuat ?? item?.productionName ?? item?.ten_sp ?? '')
-      .trim()
-      .toLowerCase();
-    return `code:${maSp}__ten:${tenSx}__m:${mDaiKey}__u:${donVi}`;
+    return `code:${maSp}__ten:${tenGhepKey}__m:${mDaiKey}__u:${donVi}`;
   }
 
   app.get('/api/lenh-sx/:id/print-preview', async (req, res) => {
@@ -23458,6 +23462,9 @@ async function loadKiemKhoLiveTongHopForDot(
         defaultNam: number;
         notes: Set<string>;
         tenGheps: Set<string>;
+        /** Ghi chú phân biệt theo từng đơn + mã SP + tên ghép (không gộp chuỗi). */
+        noteDetails: Array<{ ma_don_hang: string; ma_sp: string; ten_ghep: string; ghi_chu: string }>;
+        noteDetailKeys: Set<string>;
       }
 
       const groupsMap = new Map<string, MergedGroup>();
@@ -23474,6 +23481,20 @@ async function loadKiemKhoLiveTongHopForDot(
         const noteFromDonHang = resolveOrderLineNote(item, maDonHang);
         const note = noteFromLenh || noteFromDonHang;
         const tenGhepFromJson = String(item?.ten_ghep ?? item?.tenGhep ?? '').trim();
+        // Chi tiết ghi chú phân biệt theo từng đơn + mã SP + tên ghép (để frontend in không trùng).
+        const noteDetail = note
+          ? {
+              ma_don_hang: maDonHang || orderLevelMaDonHang.split(',')[0]?.trim() || '',
+              ma_sp: String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '').trim(),
+              ten_ghep:
+                tenGhepFromJson ||
+                String(item?.ten_san_xuat ?? item?.productionName ?? item?.ten_sp ?? '').trim(),
+              ghi_chu: note
+            }
+          : null;
+        const noteDetailKey = noteDetail
+          ? `${noteDetail.ma_don_hang}__${noteDetail.ma_sp}__${noteDetail.ten_ghep}__${noteDetail.ghi_chu}`
+          : '';
 
         const savedSlSx =
           item?.sl_sx && typeof item.sl_sx === 'object' ? (item.sl_sx as Record<string, unknown>) : null;
@@ -23528,7 +23549,9 @@ async function loadKiemKhoLiveTongHopForDot(
             defaultTrung: itemDefTrung,
             defaultNam: itemDefNam,
             notes: new Set(note ? [note] : []),
-            tenGheps: new Set(tenGhepFromJson ? [tenGhepFromJson] : [])
+            tenGheps: new Set(tenGhepFromJson ? [tenGhepFromJson] : []),
+            noteDetails: noteDetail ? [noteDetail] : [],
+            noteDetailKeys: new Set(noteDetailKey ? [noteDetailKey] : [])
           };
           groupsMap.set(groupKey, grp);
           groupList.push(grp);
@@ -23548,6 +23571,10 @@ async function loadKiemKhoLiveTongHopForDot(
           grp.defaultNam += itemDefNam;
           if (note) grp.notes.add(note);
           if (tenGhepFromJson) grp.tenGheps.add(tenGhepFromJson);
+          if (noteDetail && noteDetailKey && !grp.noteDetailKeys.has(noteDetailKey)) {
+            grp.noteDetailKeys.add(noteDetailKey);
+            grp.noteDetails.push(noteDetail);
+          }
         }
       });
 
@@ -23591,6 +23618,7 @@ async function loadKiemKhoLiveTongHopForDot(
           kg_cuon: Number.isFinite(kgCuonFromJson) && kgCuonFromJson > 0 ? kgCuonFromJson : null,
           tl_tam: Number.isFinite(tlTamFromJson) && tlTamFromJson > 0 ? tlTamFromJson : null,
           ghi_chu: ghiChuMerged,
+          don_hang_notes: grp.noteDetails,
           has_saved_detail: grp.hasSavedDetail,
           quy_cach_m_dai: grp.quyCachMDaiNum
         };
