@@ -218,3 +218,60 @@ export {
   stripTrailingDuplicateCutAfterTem
 } from '../../utils/productProductionName';
 
+function escapeNoteRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Bóc tiền tố "mã đơn - mã SP - … tên ghép:" khỏi ghi chú dòng để khi in
+ * ô Ghi chú chỉ còn nội dung (mã đơn / tên SX đã có cột riêng).
+ * Không khớp thì giữ nguyên; bóc xong rỗng thì giữ nguyên.
+ */
+export function extractBareNoteText(
+  note: string,
+  identifiers?: { orderCode?: string; productCode?: string; tenGhep?: string }
+): string {
+  let text = String(note || '').trim();
+  if (!text) return '';
+  const original = text;
+
+  // Bóc tiền tố "mã đơn - " / "mã SP: " ở đầu (dài trước để nuốt cả mã ghép dấu -).
+  const leaders = [identifiers?.orderCode, identifiers?.productCode]
+    .map(part => String(part || '').trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  let changed = true;
+  while (changed && text) {
+    changed = false;
+    for (const id of leaders) {
+      const match = text.match(new RegExp(`^${escapeNoteRegExp(id)}\\s*[-:–—]\\s*`, 'i'));
+      if (match) {
+        text = text.slice(match[0].length).trim();
+        changed = true;
+        break;
+      }
+    }
+  }
+  if (!text) return original;
+
+  // Bóc đoạn tên ghép + dấu phân cách sau nó. Chỉ bóc khi phần trước tên ghép
+  // không phải câu chữ (trống, hoặc mã/ký hiệu ngắn có số) để khỏi cắt câu thật.
+  const tenGhep = String(identifiers?.tenGhep || '').trim();
+  if (tenGhep) {
+    const idx = text.toLowerCase().indexOf(tenGhep.toLowerCase());
+    if (idx >= 0) {
+      const head = text.slice(0, idx).replace(/[\s:–—-]+$/, '');
+      const rest = text.slice(idx + tenGhep.length).replace(/^[\s:–—-]+/, '').trim();
+      const headIsCodes =
+        head === '' ||
+        (head.length <= 30 &&
+          /[0-9]/.test(head) &&
+          /^[\p{L}0-9\s.,\-–—:/]+$/u.test(head) &&
+          !/[a-zà-ỹ]{4,}/.test(head));
+      if (rest && headIsCodes) text = rest;
+    }
+  }
+
+  return text || original;
+}
+
