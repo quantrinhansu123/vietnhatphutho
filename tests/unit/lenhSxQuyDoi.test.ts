@@ -6,10 +6,12 @@ import assert from 'node:assert/strict';
 import {
   conversionRatesForEntry,
   scaleProductionEntryQuantity,
-  type EntryConversionLine
+  setManualEntryConversionValue,
+  type EntryConversionLine,
+  type ManualConversionFlags
 } from '../../src/features/ke-hoach-san-xuat/entryConversion';
 
-function line(partial: Partial<EntryConversionLine> & { quantity?: string }): EntryConversionLine {
+function line(partial: Partial<EntryConversionLine> & { quantity?: string }): EntryConversionLine & ManualConversionFlags {
   return {
     key: 'k',
     orderRef: 'DH1',
@@ -58,5 +60,36 @@ describe('lệnh SX — đổi SL tính lại quy đổi', () => {
     const again = { ...cleared, ...scaleProductionEntryQuantity(cleared, '4') };
     assert.equal(again.tongKg, '10');
     assert.equal(again.mDai, '8');
+  });
+});
+
+describe('lệnh SX — sửa tay KG / M2 / M dài', () => {
+  it('sửa tay KG chốt số tuyệt đối, đổi SL chỉ tính lại ô tự động', () => {
+    const base = line({
+      quyDoiMotDonVi: conversionRatesForEntry(line({}), 100)
+    });
+    const manual = setManualEntryConversionValue(base, 'kg', '300');
+    assert.equal(manual.tongKg, '300');
+    assert.equal(manual.manualKg, true);
+    assert.equal(manual.conversionResults?.find(item => item.unit === 'kg')?.value, 300);
+    // M2 / M dài tự động giữ nguyên
+    assert.equal(manual.m2, '40');
+
+    const afterQty = { ...manual, ...scaleProductionEntryQuantity(manual, '200') };
+    assert.equal(afterQty.quantity, '200');
+    assert.equal(afterQty.tongKg, '300');
+    assert.equal(afterQty.m2, '80');
+    assert.equal(afterQty.mDai, '400');
+  });
+
+  it('xóa trắng ô tay thì về tự động theo suất gốc', () => {
+    const base = line({
+      quyDoiMotDonVi: conversionRatesForEntry(line({}), 100)
+    });
+    const manual = setManualEntryConversionValue(base, 'm2', '50');
+    assert.equal(manual.manualM2, true);
+    const backToAuto = setManualEntryConversionValue(manual, 'm2', '');
+    assert.equal(backToAuto.manualM2, false);
+    assert.equal(backToAuto.m2, '40');
   });
 });

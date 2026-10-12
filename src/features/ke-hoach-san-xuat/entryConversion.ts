@@ -4,6 +4,15 @@ export type ProductionConversionRates = {
   mDai?: number;
 };
 
+export type ManualConversionFlags = {
+  /** Người dùng đã sửa tay ô KG (hiển thị nguyên văn đã gõ). */
+  manualKg?: boolean;
+  /** Người dùng đã sửa tay ô M2 (hiển thị nguyên văn đã gõ). */
+  manualM2?: boolean;
+  /** Người dùng đã sửa tay ô M dài (hiển thị nguyên văn đã gõ). */
+  manualMDai?: boolean;
+};
+
 export type EntryConversionLine = {
   quantity: string;
   conversionResults?: Array<{ unit: string; value: number }>;
@@ -64,23 +73,35 @@ export function scaleProductionEntryQuantity<T extends EntryConversionLine>(
   const rates = line.quyDoiMotDonVi ?? conversionRatesForEntry(line, parseQty(line.quantity));
   if (!rates) return { quantity } as Partial<T>;
   const qty = parseQty(quantity);
+  // Ô đã sửa tay (còn số hợp lệ) thì giữ nguyên tuyệt đối, chỉ tính lại các ô tự động.
+  const flags = line as Partial<ManualConversionFlags>;
+  const manualText = (flag: boolean | undefined, text: string | undefined) => {
+    const trimmed = String(text ?? '').trim();
+    return flag && parseQty(trimmed) > 0 && qty > 0 ? trimmed : null;
+  };
+  const keptKg = manualText(flags.manualKg, line.tongKg);
+  const keptM2 = manualText(flags.manualM2, line.m2);
+  const keptMDai = manualText(flags.manualMDai, line.mDai);
   const scaled = (rate: number | undefined) => {
     if (!rate || qty <= 0) return '';
     const value = roundEntryConversion(rate * qty);
     return value > 0 ? String(value) : '';
   };
-  const kg = scaled(rates.kg);
-  const m2 = scaled(rates.m2);
-  const mDai = scaled(rates.mDai);
+  const kg = keptKg ?? scaled(rates.kg);
+  const m2 = keptM2 ?? scaled(rates.m2);
+  const mDai = keptMDai ?? scaled(rates.mDai);
   const kept = (line.conversionResults || []).filter(item => {
     const unit = normalizeConversionUnitLabel(item.unit);
-    return unit !== 'kg' && unit !== 'm2' && unit !== 'm dài';
+    if (unit === 'kg') return keptKg !== null;
+    if (unit === 'm2') return keptM2 !== null;
+    if (unit === 'm dài') return keptMDai !== null;
+    return true;
   });
   const nextResults = [
     ...kept,
-    ...(kg ? [{ unit: 'kg', value: Number(kg) }] : []),
-    ...(m2 ? [{ unit: 'm2', value: Number(m2) }] : []),
-    ...(mDai ? [{ unit: 'm dài', value: Number(mDai) }] : [])
+    ...(kg && !keptKg ? [{ unit: 'kg', value: Number(kg) }] : []),
+    ...(m2 && !keptM2 ? [{ unit: 'm2', value: Number(m2) }] : []),
+    ...(mDai && !keptMDai ? [{ unit: 'm dài', value: Number(mDai) }] : [])
   ];
   return {
     quantity,
@@ -90,4 +111,55 @@ export function scaleProductionEntryQuantity<T extends EntryConversionLine>(
     conversionResults: nextResults,
     quyDoiMotDonVi: rates
   } as Partial<T>;
+}
+
+/**
+ * Người dùng sửa tay ô KG / M2 / M dài: chốt số đã nhập (lưu + hiển thị),
+ * suất 1 SP gốc giữ nguyên. Đổi SL sau đó: ô tay giữ nguyên tuyệt đối,
+ * các ô còn lại tính theo suất gốc. Xóa trắng ô → quay về tự động.
+ */
+export function setManualEntryConversionValue<T extends EntryConversionLine & ManualConversionFlags>(
+  line: T,
+  unit: 'kg' | 'm2' | 'm dài',
+  rawValue: string
+): T {
+  const flagKey = unit === 'kg' ? 'manualKg' : unit === 'm2' ? 'manualM2' : 'manualMDai';
+  const fieldKey = unit === 'kg' ? 'tongKg' : unit === 'm2' ? 'm2' : 'mDai';
+  const rateKey = unit === 'kg' ? 'kg' : unit === 'm2' ? 'm2' : 'mDai';
+  const trimmed = rawValue.trim();
+  const keptResults = (line.conversionResults || []).filter(
+    item => normalizeConversionUnitLabel(item.unit) !== normalizeConversionUnitLabel(unit)
+  );
+
+  // Xóa trắng → về tự động (tính lại theo suất gốc còn giữ nguyên).
+  if (trimmed === '') {
+    const cleared: T = { ...line, [fieldKey]: '', [flagKey]: false, conversionResults: keptResults };
+    const rates = cleared.quyDoiMotDonVi ?? conversionRatesForEntry(cleared, parseQty(cleared.quantity));
+    const qty = parseQty(cleared.quantity);
+    const rate = rates?.[rateKey];
+    if (rate && qty > 0) {
+      const value = roundEntryConversion(rate * qty);
+      const text = value > 0 ? String(value) : '';
+      return {
+        ...cleared,
+        [fieldKey]: text,
+        conversionResults: [...keptResults, ...(value > 0 ? [{ unit, value: Number(value) }] : [])],
+        quyDoiMotDonVi: rates
+      };
+    }
+    return { ...cleared, quyDoiMotDonVi: rates };
+  }
+
+  const numeric = parseQty(trimmed);
+  // Chưa phải số hợp lệ (đang gõ dở) → giữ nguyên văn, chưa chốt suất.
+  if (!(numeric > 0)) {
+    return { ...line, [fieldKey]: rawValue, [flagKey]: true };
+  }
+
+  return {
+    ...line,
+    [fieldKey]: trimmed,
+    [flagKey]: true,
+    conversionResults: [...keptResults, { unit, value: numeric }]
+  };
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Loader2, Printer, Save, X } from 'lucide-react';
 import {
@@ -65,6 +65,42 @@ const NUM_INPUT_CLASS = `${CELL_INPUT_CLASS} text-right tabular-nums`;
 
 const NUM_INPUT_ERROR_CLASS =
   'h-7 w-full rounded-md border border-rose-400 bg-rose-50 px-1.5 text-right text-xs font-bold tabular-nums text-rose-700 outline-none transition focus:border-rose-500 focus:ring-1 focus:ring-rose-200';
+
+/** Textarea ghi chú tự giãn theo nội dung để xem/sửa dễ (thay input một dòng). */
+function AutoGrowNoteTextarea({
+  value,
+  disabled,
+  onChange,
+  className = '',
+  title
+}: {
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+  className?: string;
+  title?: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      value={value}
+      disabled={disabled}
+      onChange={e => onChange(e.target.value)}
+      title={title}
+      className={className}
+    />
+  );
+}
 
 function formatNum(value: number | null): string {
   return value !== null && Number.isFinite(value) ? value.toFixed(2) : '—';
@@ -620,15 +656,14 @@ export function ProductionOrderPrintPreviewModal({
                                 {row.ten_ghep || row.ten_san_xuat || row.ten_sp || '—'}
                               </td>
                               <td className={bodyCell}>
-                                <input
-                                  type="text"
+                                <AutoGrowNoteTextarea
                                   value={edits[editKey]?.ghiChu ?? ''}
                                   disabled={!canEdit}
-                                  onChange={e => updateEdit(editKey, { ghiChu: e.target.value })}
-                                  className={`${CELL_INPUT_CLASS} ${!canEdit ? 'bg-zinc-50 text-zinc-600' : ''} print:hidden`}
+                                  onChange={value => updateEdit(editKey, { ghiChu: value })}
+                                  className={`${CELL_INPUT_CLASS} h-auto max-h-40 min-h-[1.75rem] resize-none overflow-hidden whitespace-pre-wrap break-words py-1 leading-snug print:hidden ${!canEdit ? 'bg-zinc-50 text-zinc-600' : ''}`}
                                   title={canEdit ? 'Quản đốc có thể sửa ghi chú trước khi in' : 'Chỉ xem'}
                                 />
-                                {/* Khi in: input một dòng bị che mất chữ dài → in chữ bọc dòng đầy đủ. */}
+                                {/* Khi in: ẩn ô nhập, in chữ bọc dòng đầy đủ. */}
                                 <span className="hidden whitespace-pre-wrap break-words text-zinc-900 print:block">
                                   {edits[editKey]?.ghiChu || row.ghi_chu || '—'}
                                 </span>
