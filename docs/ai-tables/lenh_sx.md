@@ -72,3 +72,11 @@ Gộp dòng tiến độ (`buildProductionProgressForOrder` trong `src/utils/pro
 - Form thêm/sửa Lệnh SX chọn ca bằng component select2 tìm kiếm (`SearchableMultiSelect`), vẫn cho phép chọn nhiều ca nhưng chỉ gọi `POST /api/lenh-sx` một lần và chỉ tạo một bản ghi `lenh_sx`.
 - Các ca được lưu chung trong cột `ca`, phân cách bằng dấu phẩy; ngày giờ bắt đầu/kết thúc bao trùm các ca đã chọn. Danh sách/in hiển thị nhãn từng ca và đối chiếu phiếu xuất kho khớp nếu có ít nhất một ca trùng nhau.
 - Thứ tự trường trong form: Ca * (chọn nhiều ca), Máy, Giờ bắt đầu, Giờ kết thúc, Trạng thái.
+
+### Ghi chú chung đơn hàng → lệnh SX
+
+- Mỗi ghi chú một dòng, cấu trúc `Mã ĐH - ghi chú` (vd `DH001 - Giao gấp`); ghi chú nhiều dòng gọn thành một dòng (`; `).
+- Helper dùng chung: `buildOrderGeneralNotesText` (+ `splitOrderRefCodes`) trong `src/features/_shared/orderRecordHelpers.ts`.
+- Hiển thị **trên danh sách sản phẩm**: chi tiết lệnh (`ProductionOrderViewModal`), xem trước/in ở `/lenh-san-xuat` (`src/features/lenh-sx/PrintPreviewModal.tsx`), bản in giấy (`ProductionOrderPrintSheet` + CSS `.production-order-print-notes` trong `src/index.css`).
+- Form thêm/sửa: khối "Ghi chú chung từ đơn hàng (tự động)" + nút chép vào `ghi_chu`; lưu để trống thì client/server (`buildProductionOrderNotesFromOrders` trong `server.ts`, `POST /api/lenh-sx`) tự ghép từ `don_hang.ghi_chu`.
+- `ProductionOrderViewModal` ở `/bang-dieu-khien` phải được truyền `orders` (đã có fallback tự tải `/api/don-hang`).

@@ -613,6 +613,7 @@ export function ProductionOrdersPanel({
         onClose={() => setViewingRow(null)}
         staffMap={staffMap}
         catalogProducts={catalogProducts}
+        orders={orders}
       />
 
       <EditProductionOrderModal
@@ -821,6 +822,7 @@ export function ProductionOrdersPanel({
         staffMap={staffMap}
         canEdit={canEdit}
         onClose={() => setPreviewOrder(null)}
+        orders={orders}
       />
     </div>
   );
