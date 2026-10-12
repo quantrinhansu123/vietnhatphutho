@@ -7921,6 +7921,42 @@ function productionOrderProductLabel(productCode: string, productName: string) {
   return productName || productCode || '-';
 }
 
+/**
+ * Ghép ghi chú chung các đơn hàng cho lệnh SX: `Mã đơn hàng - ghi chú`,
+ * mỗi ghi chú một dòng (ghi chú nhiều dòng được gọn thành một dòng).
+ */
+function buildProductionOrderNotesFromOrders(
+  orderCodes: string[],
+  noteByCode: Map<string, string> | Record<string, string>
+): string {
+  const uniqueCodes: string[] = [];
+  for (const raw of orderCodes) {
+    for (const part of String(raw || '').split(/[,;+|/]+/)) {
+      const code = part.trim();
+      if (!code || code === '-' || uniqueCodes.includes(code)) continue;
+      uniqueCodes.push(code);
+    }
+  }
+  const lookup = (code: string): string => {
+    if (noteByCode instanceof Map) {
+      return noteByCode.get(code) ?? noteByCode.get(code.toLowerCase()) ?? '';
+    }
+    return (noteByCode as Record<string, string>)[code] ?? '';
+  };
+  const lines: string[] = [];
+  for (const code of uniqueCodes) {
+    const note = String(lookup(code) || '')
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .map(part => part.trim())
+      .filter(Boolean)
+      .join('; ');
+    if (!note) continue;
+    lines.push(`${code} - ${note}`);
+  }
+  return lines.join('\n');
+}
+
 function buildProductionOrderRecordFromOrder(
   order: Record<string, unknown>,
   code: string,
@@ -8004,7 +8040,10 @@ function buildProductionOrderRecordFromOrder(
     ngay_ket_thuc: todayDateString(),
     ngay_gio_bat_dau: `${todayDateString()}T08:00`,
     ngay_gio_ket_thuc: `${todayDateString()}T18:00`,
-    ghi_chu: pickRowField(order, ['ghi_chu', 'note'])
+    ghi_chu: buildProductionOrderNotesFromOrders(
+      [orderCode],
+      new Map(orderCode ? [[orderCode, pickRowField(order, ['ghi_chu', 'note'])]] : [])
+    ) || pickRowField(order, ['ghi_chu', 'note'])
   };
 }
 
@@ -11031,6 +11070,37 @@ export function createApp() {
           return res.status(400).json({
             error: `Sản phẩm ${productCode} không có trong đơn ${productOrderRef} hoặc chưa có số lượng đặt hàng.`
           });
+        }
+      }
+
+      // Ghi chú chung của đơn hàng chưa chuyển sang lệnh SX trước đây:
+      // lệnh có đơn nào thì tự chuyển ghi chú đơn đó sang ghi_chu
+      // dạng "Mã đơn hàng - ghi chú" (mỗi ghi chú một dòng) khi client để trống.
+      if (!String(record.ghi_chu ?? '').trim()) {
+        const refCodes = [...new Set(
+          [
+            ...String(orderRef || '').split(/[,;+|/]+/),
+            ...orderProducts.map(item => String(item.ma_don_hang ?? ''))
+          ].map(code => code.trim()).filter(code => code && code !== '-')
+        )];
+        if (refCodes.length > 0) {
+          const { data: refOrders } = await supabase
+            .from(SUPABASE_ORDERS_TABLE)
+            .select('ma_don_hang,ghi_chu')
+            .in('ma_don_hang', refCodes);
+          if (Array.isArray(refOrders) && refOrders.length > 0) {
+            const noteByCode = new Map(
+              refOrders.map(row => {
+                const recordRow = row as Record<string, unknown>;
+                return [
+                  String(recordRow.ma_don_hang ?? '').trim(),
+                  String(recordRow.ghi_chu ?? '').trim()
+                ] as const;
+              })
+            );
+            const composed = buildProductionOrderNotesFromOrders(refCodes, noteByCode);
+            if (composed) record.ghi_chu = composed;
+          }
         }
       }
 

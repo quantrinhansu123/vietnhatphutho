@@ -3088,6 +3088,20 @@ input[type="number"] {
   font-size: 11pt;
 }
 
+.production-order-print-notes {
+  margin: 0 0 3mm;
+  font-size: 11pt;
+  line-height: 1.45;
+}
+
+.production-order-print-notes-label {
+  font-weight: 700;
+}
+
+.production-order-print-notes-line {
+  display: block;
+}
+
 .production-order-print-section-title {
   margin: 0 0 2mm;
   font-family: 'Times New Roman', Times, serif;

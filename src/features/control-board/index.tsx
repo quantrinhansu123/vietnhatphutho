@@ -1151,6 +1151,7 @@ export function ControlBoardPanel({
         onClose={() => setViewingProductionOrder(null)}
         staffMap={staffMap}
         catalogProducts={products}
+        orders={orders}
       />
 
       <EditProductionOrderModal
@@ -1184,6 +1185,7 @@ export function ControlBoardPanel({
           productConversions={printingProductConversions}
           shiftSettings={shiftSettings}
           staffMap={staffMap}
+          orders={orders}
         />
       )}
 
@@ -1194,6 +1196,7 @@ export function ControlBoardPanel({
           productCatalog={printingBatchProductCatalog}
           productConversions={printingBatchProductConversions}
           staffMap={staffMap}
+          orders={orders}
         />
       )}
     </div>

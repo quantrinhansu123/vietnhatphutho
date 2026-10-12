@@ -236,3 +236,52 @@ export function formatOrderProductsSummary(products: OrderProductLine[]) {
     })
     .join(' · ');
 }
+
+/** Tách các mã đơn trong chuỗi ma_don_hang (ngăn bởi , ; + | /). */
+export function splitOrderRefCodes(orderRef: string): string[] {
+  return String(orderRef || '')
+    .split(/[,;+|/]+/)
+    .map(part => part.trim())
+    .filter(part => part && part !== '-');
+}
+
+/**
+ * Ghép ghi chú chung của các đơn hàng thành văn bản nhiều dòng cho lệnh SX.
+ * Mỗi ghi chú một dòng, cấu trúc `Mã đơn hàng - ghi chú` (vd `DH001 - Giao gấp`).
+ * Chỉ gồm đơn có ghi chú; ghi chú nhiều dòng được gọn thành một dòng.
+ */
+export function buildOrderGeneralNotesText(
+  orders: Pick<OrderRow, 'orderCode' | 'note'>[],
+  orderRefs: Iterable<string> | string
+): string {
+  const rawCodes: string[] = typeof orderRefs === 'string' ? splitOrderRefCodes(orderRefs) : [...orderRefs]
+    .flatMap(code => splitOrderRefCodes(String(code || '')));
+  const uniqueCodes: string[] = [];
+  for (const code of rawCodes) {
+    const trimmed = String(code || '').trim();
+    if (!trimmed || trimmed === '-' || uniqueCodes.includes(trimmed)) continue;
+    uniqueCodes.push(trimmed);
+  }
+  const byCode = new Map(
+    orders
+      .filter(order => order.orderCode && order.orderCode !== '-')
+      .map(order => [order.orderCode.trim(), order] as const)
+  );
+  // Khớp không phân biệt hoa thường khi mã lệch case.
+  const lowerByCode = new Map(
+    [...byCode.entries()].map(([code, order]) => [code.toLowerCase(), order] as const)
+  );
+  const lines: string[] = [];
+  for (const code of uniqueCodes) {
+    const order = byCode.get(code) ?? lowerByCode.get(code.toLowerCase());
+    const note = String(order?.note || '')
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .map(part => part.trim())
+      .filter(Boolean)
+      .join('; ');
+    if (!note) continue;
+    lines.push(`${code} - ${note}`);
+  }
+  return lines.join('\n');
+}

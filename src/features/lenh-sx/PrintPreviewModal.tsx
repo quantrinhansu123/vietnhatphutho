@@ -10,6 +10,8 @@ import {
 import { splitProductNameAndNote } from '../ke-hoach-san-xuat/PrintPreviewModal';
 import { isCuonProduct, isTamProduct } from '../_shared/orderHelpers';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from '../../components/layout/constants';
+import { buildOrderGeneralNotesText } from '../_shared/orderRecordHelpers';
+import type { OrderRow } from '../_shared/orderRecordHelpers';
 import { waitForPrintImagesReady } from '../../utils/printReady';
 
 interface ProductionOrderPrintMeta {
@@ -97,13 +99,15 @@ export function ProductionOrderPrintPreviewModal({
   open,
   order,
   canEdit = true,
-  onClose
+  onClose,
+  orders = []
 }: {
   open: boolean;
   order: ProductionOrderRow | null;
   staffMap?: Map<string, string>;
   canEdit?: boolean;
   onClose: () => void;
+  orders?: OrderRow[];
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -113,6 +117,43 @@ export function ProductionOrderPrintPreviewModal({
   const [meta, setMeta] = useState<ProductionOrderPrintMeta>(EMPTY_META);
   const [rows, setRows] = useState<PreviewRow[]>([]);
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
+  const [fetchedOrders, setFetchedOrders] = useState<OrderRow[]>([]);
+
+  // Fallback: modal mở độc lập không được truyền orders thì tự tải để hiển thị ghi chú đơn hàng.
+  useEffect(() => {
+    if (!open || orders.length > 0) return;
+    let cancelled = false;
+    fetch('/api/don-hang')
+      .then(res => res.json().then(data => ({ ok: res.ok, data })).catch(() => ({ ok: false, data: {} })))
+      .then(({ ok, data }) => {
+        if (cancelled || !ok) return;
+        const list = (data as { orders?: unknown }).orders;
+        if (Array.isArray(list)) {
+          setFetchedOrders(
+            list
+              .filter(item => item && typeof item === 'object')
+              .map(item => {
+                const record = item as Record<string, unknown>;
+                const code = String(record.ma_don_hang ?? record.order_code ?? record.code ?? '').trim();
+                const note = String(record.ghi_chu ?? record.note ?? '').trim();
+                return { orderCode: code, note } as OrderRow;
+              })
+              .filter(item => item.orderCode)
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setFetchedOrders([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, orders.length]);
+
+  const orderNotesText = useMemo(
+    () => buildOrderGeneralNotesText(orders.length > 0 ? orders : fetchedOrders, order?.orderRef || ''),
+    [orders, fetchedOrders, order?.orderRef]
+  );
 
   useEffect(() => {
     if (!open || !order) return;
@@ -441,10 +482,26 @@ export function ProductionOrderPrintPreviewModal({
                   {meta.dac_ta}
                 </div>
               )}
+              {orderNotesText && (
+                <div className="whitespace-pre-wrap break-words border-b border-gray-300 px-2 py-1 text-[10px]">
+                  <span className="font-bold">Ghi chú đơn hàng:{'\n'}</span>
+                  {orderNotesText}
+                </div>
+              )}
             </div>
 
             {/* Screen wrapper — min-h-full + sm:p-6 làm thừa trang khi in */}
             <div className="production-order-preview-print-body bg-zinc-100 p-4 sm:p-6 print:bg-transparent print:p-0">
+              {orderNotesText && (
+                <div className="production-order-preview-noprint mx-auto mb-3 max-w-[1400px] rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-amber-800">
+                    Ghi chú chung từ đơn hàng
+                  </p>
+                  <pre className="mt-1 whitespace-pre-wrap break-words text-xs font-bold leading-5 text-amber-900">
+                    {orderNotesText}
+                  </pre>
+                </div>
+              )}
               <div className="mx-auto max-w-[1400px] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm print:max-w-none print:overflow-visible print:rounded-none print:border-0 print:shadow-none">
                 <div className="overflow-x-auto print:overflow-hidden">
                   <table className="w-full border-collapse text-xs print:[&_td]:border print:[&_td]:border-gray-400 print:[&_th]:border print:[&_th]:border-gray-400">

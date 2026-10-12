@@ -52,6 +52,7 @@ import {
   summarizeOrderProducts,
   getOrderProductLines,
   formatOrderProductsSummary,
+  buildOrderGeneralNotesText,
   type OrderRow
 } from '../_shared/orderRecordHelpers';
 import {
@@ -3719,6 +3720,7 @@ export function ProductionPlanModal({
                   productConversions={relatedPrintConversions}
                   showActualQuantity
                   staffMap={staffMap}
+                  orders={relatedPrintCustomerOrders}
                 />
               </div>
             ))}
@@ -4266,7 +4268,8 @@ export function ProductionOrderPrintSheet({
   productConversions = [],
   shiftSettings = [],
   showActualQuantity = false,
-  staffMap
+  staffMap,
+  orders = []
 }: {
   order: ProductionOrderRow;
   materials: ProductionOrderMaterialLine[];
@@ -4279,11 +4282,15 @@ export function ProductionOrderPrintSheet({
   /** Hiện cột KL thực tế lấy từ Lệnh xuất vật tư cùng ngày + ca. */
   showActualQuantity?: boolean;
   staffMap?: Map<string, string>;
+  /** Đơn hàng để tra cứu ghi chú chung (hiển thị phía trên danh sách sản phẩm). */
+  orders?: OrderRow[];
 }) {
   const printDate = formatProductionOrderPrintDate(order.startDate);
   const orderQuantity = parseProductionOrderQuantity(order.quantity);
   const shiftLabel = formatProductionOrderShiftLabel(order.shift, shiftSettings);
   const productLines = getProductionOrderProductLines(order);
+  /** Ghi chú chung của các đơn hàng trong lệnh — mỗi ghi chú một dòng `Mã ĐH - ghi chú`. */
+  const orderNotesText = buildOrderGeneralNotesText(orders, order.orderRef);
 
   const resolveStaffName = (personnelId: string): string => {
     if (!personnelId || personnelId === '-') return '-';
@@ -4355,6 +4362,16 @@ export function ProductionOrderPrintSheet({
         </table>
 
         <h2 className="production-order-print-section-title">1. Thành phẩm:</h2>
+        {orderNotesText ? (
+          <p className="production-order-print-notes">
+            <span className="production-order-print-notes-label">Ghi chú đơn hàng:</span>
+            {orderNotesText.split('\n').map((noteLine, noteIdx) => (
+              <span key={`${noteIdx}-${noteLine}`} className="production-order-print-notes-line">
+                {noteLine}
+              </span>
+            ))}
+          </p>
+        ) : null}
         <table className="production-order-print-grid-table production-order-print-product-table">
           <thead>
             <tr>
@@ -4488,13 +4505,16 @@ export function ProductionOrderBatchPrintSheets({
   shiftSettings = [],
   productCatalog = [],
   productConversions = [],
-  staffMap
+  staffMap,
+  orders = []
 }: {
   items: PrintableProductionOrder[];
   shiftSettings?: ProductionOrderLookupSetting[];
   productCatalog?: ProductRow[];
   productConversions?: OrderProductConversion[];
   staffMap?: Map<string, string>;
+  /** Đơn hàng để tra cứu ghi chú chung trên từng lệnh in. */
+  orders?: OrderRow[];
 }) {
   if (items.length === 0) return null;
 
@@ -4511,6 +4531,7 @@ export function ProductionOrderBatchPrintSheets({
             productConversions={productConversions}
             shiftSettings={shiftSettings}
             staffMap={staffMap}
+            orders={orders}
           />
         </div>
       ))}
@@ -5746,6 +5767,16 @@ export function AddProductionOrderModal({
     );
   }, [ordersWithProductionProducts]);
 
+  /** Ghi chú chung của các đơn hàng đang có trong lệnh (Mã đơn - ghi chú, mỗi dòng một ghi chú). */
+  const formOrderNotesText = useMemo(
+    () =>
+      buildOrderGeneralNotesText(
+        orders,
+        form.entryLines.map(line => line.orderRef)
+      ),
+    [orders, form.entryLines]
+  );
+
   const shiftOptions = useMemo(() => {
     const fromSettings = settings
       .filter(
@@ -5957,19 +5988,35 @@ export function AddProductionOrderModal({
         line => line.orderRef.trim() || line.productCode.trim() || Number(line.quantity) > 0
       );
 
+      // Ghi chú chung của đơn hàng chưa chuyển sang lệnh SX trước đây → tự điền
+      // dạng "Mã đơn hàng - ghi chú" (mỗi ghi chú một dòng) khi ô ghi chú còn trống.
+      const autoNotes = buildOrderGeneralNotesText(
+        orders,
+        nextLines.map(line => line.orderRef)
+      );
+      const nextNote = prev.note.trim() ? prev.note : autoNotes;
+
       if (!hasExistingData || !autofillAppendMode) {
         return {
           ...prev,
-          entryLines: nextLines
+          entryLines: nextLines,
+          note: nextNote
         };
       }
 
       const validExisting = prev.entryLines.filter(
         line => line.orderRef.trim() && line.productCode.trim()
       );
+      const mergedNotes = prev.note.trim()
+        ? prev.note
+        : buildOrderGeneralNotesText(orders, [
+            ...validExisting.map(line => line.orderRef),
+            ...nextLines.map(line => line.orderRef)
+          ]);
       return {
         ...prev,
-        entryLines: [...validExisting, ...nextLines]
+        entryLines: [...validExisting, ...nextLines],
+        note: mergedNotes
       };
     });
 
@@ -6320,10 +6367,16 @@ export function AddProductionOrderModal({
     setFormError('');
 
     try {
+      const fallbackNotes = buildOrderGeneralNotesText(
+        orders,
+        filledLines.map(line => line.orderRef)
+      );
       const shiftForm: ProductionOrderFormState = {
         ...form,
         // Một lệnh SX có thể phụ trách nhiều ca; lưu danh sách ca trên cùng bản ghi.
-        shift: selectedShifts.join(', ')
+        shift: selectedShifts.join(', '),
+        // Đơn hàng có đơn nào thì ghi chú chung đơn đó chuyển sang lệnh SX.
+        note: form.note.trim() ? form.note : fallbackNotes
       };
       const res = await fetch('/api/lenh-sx', {
         method: 'POST',
@@ -6379,6 +6432,36 @@ export function AddProductionOrderModal({
           )}
 
           <div className="grid grid-cols-2 gap-3 p-4">
+            <div className="col-span-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-black uppercase tracking-wider text-amber-800">
+                  Ghi chú chung từ đơn hàng (tự động)
+                </p>
+                {formOrderNotesText ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setForm(prev => ({
+                        ...prev,
+                        note: prev.note.trim() ? `${prev.note.trim()}\n${formOrderNotesText}` : formOrderNotesText
+                      }))
+                    }
+                    className="h-7 rounded-lg border border-amber-300 bg-white px-2.5 text-[11px] font-extrabold text-amber-800 transition hover:bg-amber-100"
+                  >
+                    Chép vào ghi chú chung
+                  </button>
+                ) : null}
+              </div>
+              {formOrderNotesText ? (
+                <pre className="mt-1.5 whitespace-pre-wrap break-words text-xs font-semibold leading-5 text-amber-900">
+                  {formOrderNotesText}
+                </pre>
+              ) : (
+                <p className="mt-1 text-xs font-semibold text-amber-700">
+                  Đơn hàng trong lệnh chưa có ghi chú chung.
+                </p>
+              )}
+            </div>
             <label className="space-y-1.5">
               <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã lệnh</span>
               <input
@@ -7481,16 +7564,20 @@ export function ProductionOrderViewModal({
   row,
   onClose,
   staffMap,
-  catalogProducts
+  catalogProducts,
+  orders = []
 }: {
   row: ProductionOrderRow | null;
   onClose: () => void;
   staffMap?: Map<string, string>;
   catalogProducts?: ProductRow[];
+  orders?: OrderRow[];
 }) {
   const [scheduleRows, setScheduleRows] = useState<ProductionOrderScheduleRow[]>([]);
   const [isLoadingSchedule, setIsLoadingSchedule] = useState(false);
   const [scheduleError, setScheduleError] = useState('');
+  /** Fallback: modal mở ở nơi không truyền orders thì tự tải để vẫn hiện ghi chú đơn hàng. */
+  const [fetchedOrders, setFetchedOrders] = useState<OrderRow[]>([]);
 
   useEffect(() => {
     if (!row) return;
@@ -7575,9 +7662,33 @@ export function ProductionOrderViewModal({
     row?.shift
   ]);
 
+  useEffect(() => {
+    if (!row || orders.length > 0) return;
+    let cancelled = false;
+    fetch('/api/don-hang')
+      .then(res => res.json().then(data => ({ ok: res.ok, data })).catch(() => ({ ok: false, data: {} })))
+      .then(({ ok, data }) => {
+        if (cancelled || !ok) return;
+        try {
+          const list = normalizeOrders(data).filter(order => order.orderCode && order.orderCode !== '-');
+          if (!cancelled) setFetchedOrders(list);
+        } catch {
+          if (!cancelled) setFetchedOrders([]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setFetchedOrders([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [row, orders.length]);
+
   if (!row) return null;
 
   const productLines = getProductionOrderProductLines(row);
+  /** Ghi chú chung của các đơn hàng trong lệnh — mỗi ghi chú một dòng `Mã ĐH - ghi chú`. */
+  const orderNotes = buildOrderGeneralNotesText(orders.length > 0 ? orders : fetchedOrders, row.orderRef);
   const { dates: scheduleDateRange } = resolveProductionOrderDateBounds(row);
   const scheduleGroupsByDay = new Map(groupProductionOrderScheduleRows(scheduleRows).map(group => [group.day, group.groups] as const));
   const scheduleDays = scheduleDateRange.length > 0 ? scheduleDateRange : [...scheduleGroupsByDay.keys()].sort((a, b) => a.localeCompare(b));
@@ -7686,6 +7797,16 @@ export function ProductionOrderViewModal({
           )}
         </div>
         <div className="px-4 pb-4">
+          {orderNotes ? (
+            <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+              <p className="text-[10px] font-black uppercase tracking-wider text-amber-800">
+                Ghi chú chung từ đơn hàng
+              </p>
+              <pre className="mt-1 whitespace-pre-wrap break-words text-xs font-bold leading-5 text-amber-900">
+                {orderNotes}
+              </pre>
+            </div>
+          ) : null}
           <p className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-zinc-400">
             Sản phẩm ({productLines.length})
           </p>
@@ -7875,6 +7996,16 @@ export function EditProductionOrderModal({
       a.localeCompare(b, 'vi')
     );
   }, [orders]);
+
+  /** Ghi chú chung của các đơn hàng đang có trong lệnh (Mã đơn - ghi chú, mỗi dòng một ghi chú). */
+  const editOrderNotesText = useMemo(
+    () =>
+      buildOrderGeneralNotesText(
+        orders,
+        form.entryLines.map(line => line.orderRef)
+      ),
+    [orders, form.entryLines]
+  );
 
   const statusOptions = useMemo(() => {
     const options = [...PRODUCTION_ORDER_STATUS_OPTIONS];
@@ -8121,8 +8252,12 @@ export function EditProductionOrderModal({
     setFormError('');
 
     try {
+      const fallbackNotes = buildOrderGeneralNotesText(
+        orders,
+        filledLines.map(line => line.orderRef)
+      );
       const payload = productionOrderFormToCreatePayload(
-        { ...form, shift: selectedShift },
+        { ...form, shift: selectedShift, note: form.note.trim() ? form.note : fallbackNotes },
         filledLines
       );
       const res = await fetch(`/api/lenh-sx/${row.id}`, {
@@ -8170,6 +8305,36 @@ export function EditProductionOrderModal({
           )}
 
           <div className="grid grid-cols-2 gap-3 p-4">
+            <div className="col-span-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-black uppercase tracking-wider text-amber-800">
+                  Ghi chú chung từ đơn hàng (tự động)
+                </p>
+                {editOrderNotesText ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setForm(prev => ({
+                        ...prev,
+                        note: prev.note.trim() ? `${prev.note.trim()}\n${editOrderNotesText}` : editOrderNotesText
+                      }))
+                    }
+                    className="h-7 rounded-lg border border-amber-300 bg-white px-2.5 text-[11px] font-extrabold text-amber-800 transition hover:bg-amber-100"
+                  >
+                    Chép vào ghi chú chung
+                  </button>
+                ) : null}
+              </div>
+              {editOrderNotesText ? (
+                <pre className="mt-1.5 whitespace-pre-wrap break-words text-xs font-semibold leading-5 text-amber-900">
+                  {editOrderNotesText}
+                </pre>
+              ) : (
+                <p className="mt-1 text-xs font-semibold text-amber-700">
+                  Đơn hàng trong lệnh chưa có ghi chú chung.
+                </p>
+              )}
+            </div>
             <label className="space-y-1.5">
               <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã lệnh</span>
               <input value={form.code} onChange={e => setForm(prev => ({ ...prev, code: e.target.value }))} className={orderFieldClass} />

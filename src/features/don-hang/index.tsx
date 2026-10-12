@@ -608,7 +608,8 @@ export function orderProductLinesToPayload(
   lines: OrderProductFormLine[],
   productOptions: OrderProductOption[],
   orderType?: string,
-  productConversions: OrderProductConversion[] = []
+  productConversions: OrderProductConversion[] = [],
+  ngayCat?: string
 ) {
   const isCutLikeOrder = isCutOrderType(orderType) || orderType === SOUTH_ORDER_TYPE;
   const isProductionOrder = orderType === PRODUCTION_ORDER_TYPE;
@@ -749,7 +750,7 @@ export function orderProductLinesToPayload(
               mauTem: mauTemValue || undefined,
               danTem2Dau: danTem2DauValue || undefined,
               tenSanXuat: isSouthOrder ? undefined : line.productionName.trim() || catalogProductionName,
-              ngayCat: orderForm.createdAt || undefined
+              ngayCat: ngayCat || undefined
             })
           : '';
       const variantExtraFields = maAmisMoiValue
@@ -1645,7 +1646,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         }
       }
     }
-    const products = orderProductLinesToPayload(activeProductLines, productOptions, orderForm.orderType, productConversions);
+    const products = orderProductLinesToPayload(activeProductLines, productOptions, orderForm.orderType, productConversions, orderForm.createdAt);
     if (products.length === 0) {
       setFormError('Vui lòng thêm ít nhất một sản phẩm.');
       return;
