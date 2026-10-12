@@ -12,6 +12,7 @@ import { isCuonProduct, isTamProduct } from '../_shared/orderHelpers';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from '../../components/layout/constants';
 import { buildOrderGeneralNotesText } from '../_shared/orderRecordHelpers';
 import type { OrderRow } from '../_shared/orderRecordHelpers';
+import { extractBareNoteText } from '../_shared/productionProductHelpers';
 import { waitForPrintImagesReady } from '../../utils/printReady';
 
 interface ProductionOrderPrintMeta {
@@ -683,8 +684,9 @@ export function ProductionOrderPrintPreviewModal({
                                   className={`${CELL_INPUT_CLASS} h-auto max-h-40 min-h-[1.75rem] resize-none overflow-hidden whitespace-pre-wrap break-words py-1 leading-snug print:hidden ${!canEdit ? 'bg-zinc-50 text-zinc-600' : ''}`}
                                   title={canEdit ? 'Quản đốc có thể sửa ghi chú trước khi in' : 'Chỉ xem'}
                                 />
-                                {/* Khi in: ẩn ô nhập. Quản đốc đã sửa tay thì in đúng chữ đã sửa;
-                                    ngược lại in từng ghi chú phân biệt theo đơn + mã SP + tên ghép. */}
+                                {/* Khi in: ẩn ô nhập, chỉ in nội dung ghi chú (mã đơn / tên SX đã có cột riêng).
+                                    Quản đốc đã sửa tay thì in đúng chữ đã sửa; ngược lại bóc tiền tố
+                                    mã đơn - mã SP - tên ghép khỏi từng ghi chú, khử dòng trùng. */}
                                 {(() => {
                                   const editedNote = edits[editKey]?.ghiChu ?? '';
                                   if (editedNote !== (row.ghi_chu || '')) {
@@ -694,21 +696,36 @@ export function ProductionOrderPrintPreviewModal({
                                       </span>
                                     );
                                   }
-                                  if (row.don_hang_notes && row.don_hang_notes.length > 0) {
+                                  const bareNotes = row.don_hang_notes && row.don_hang_notes.length > 0
+                                    ? row.don_hang_notes.map(note =>
+                                        extractBareNoteText(note.ghi_chu, {
+                                          orderCode: note.ma_don_hang || row.ma_don_hang,
+                                          productCode: note.ma_sp || row.ma_sp,
+                                          tenGhep: note.ten_ghep || row.ten_ghep || row.ten_san_xuat
+                                        })
+                                      )
+                                    : [
+                                        extractBareNoteText(row.ghi_chu, {
+                                          orderCode: row.ma_don_hang,
+                                          productCode: row.ma_sp,
+                                          tenGhep: row.ten_ghep || row.ten_san_xuat
+                                        })
+                                      ];
+                                  const uniqueBareNotes = [...new Set(bareNotes.map(line => line.trim()).filter(Boolean))];
+                                  if (uniqueBareNotes.length === 0) {
                                     return (
-                                      <span className="hidden print:block">
-                                        {row.don_hang_notes.map((note, noteIdx) => (
-                                          <span key={noteIdx} className="block whitespace-pre-wrap break-words text-zinc-900">
-                                            {[note.ma_don_hang || row.ma_don_hang || '', note.ma_sp || row.ma_sp || '', note.ten_ghep || row.ten_ghep || row.ten_san_xuat || ''].filter(Boolean).join(' · ')}
-                                            {': '}{note.ghi_chu}
-                                          </span>
-                                        ))}
+                                      <span className="hidden whitespace-pre-wrap break-words text-zinc-900 print:block">
+                                        —
                                       </span>
                                     );
                                   }
                                   return (
-                                    <span className="hidden whitespace-pre-wrap break-words text-zinc-900 print:block">
-                                      {row.ghi_chu || '—'}
+                                    <span className="hidden print:block">
+                                      {uniqueBareNotes.map((line, noteIdx) => (
+                                        <span key={noteIdx} className="block whitespace-pre-wrap break-words text-zinc-900">
+                                          {line}
+                                        </span>
+                                      ))}
                                     </span>
                                   );
                                 })()}
