@@ -44,6 +44,7 @@ import {
   conversionRatesForEntry,
   productionEntryConversionValue,
   scaleProductionEntryQuantity,
+  setManualEntryConversionValue,
   type ProductionConversionRates
 } from './entryConversion';
 import { normalizeMaterialsInventory, parseInventoryNumber, type MaterialRow } from '../kho-nvl';
@@ -5401,6 +5402,10 @@ export type ProductionOrderEntryLine = {
   slNam?: string;
   /** Quy đổi cho 1 đơn vị SL. Giữ cố định để mỗi lần đổi SL tính lại KG / M2 / M dài. */
   quyDoiMotDonVi?: ProductionConversionRates;
+  /** Người dùng đã sửa tay các ô KG / M2 / M dài (hiển thị nguyên văn, chỉ cục bộ trên form). */
+  manualKg?: boolean;
+  manualM2?: boolean;
+  manualMDai?: boolean;
 };
 
 function productionEntryMetadataFromOrderLine(line?: OrderProductLine): Partial<ProductionOrderEntryLine> {
@@ -6807,24 +6812,33 @@ export function AddProductionOrderModal({
                           <div className="w-full min-w-0">
                             <input
                               type="text"
-                              value={kgValue !== null ? formatNumber(kgValue, 3) : ''}
-                              readOnly
+                              inputMode="decimal"
+                              value={line.manualKg ? (line.tongKg ?? '') : (kgValue !== null ? formatNumber(kgValue, 3) : '')}
+                              onChange={e => updateEntryLine(line.key, setManualEntryConversionValue(line, 'kg', e.target.value))}
+                              title="KG — tự tính theo SL, có thể sửa tay (xóa trắng để về tự động)"
+                              placeholder="KG"
                               className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                             />
                           </div>
                           <div className="w-full min-w-0">
                             <input
                               type="text"
-                              value={m2Value !== null ? formatNumber(m2Value, 3) : ''}
-                              readOnly
+                              inputMode="decimal"
+                              value={line.manualM2 ? (line.m2 ?? '') : (m2Value !== null ? formatNumber(m2Value, 3) : '')}
+                              onChange={e => updateEntryLine(line.key, setManualEntryConversionValue(line, 'm2', e.target.value))}
+                              title="M2 — tự tính theo SL, có thể sửa tay (xóa trắng để về tự động)"
+                              placeholder="M2"
                               className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                             />
                           </div>
                           <div className="w-full min-w-0">
                             <input
                               type="text"
-                              value={mdaiValue !== null ? formatNumber(mdaiValue, 3) : ''}
-                              readOnly
+                              inputMode="decimal"
+                              value={line.manualMDai ? (line.mDai ?? '') : (mdaiValue !== null ? formatNumber(mdaiValue, 3) : '')}
+                              onChange={e => updateEntryLine(line.key, setManualEntryConversionValue(line, 'm dài', e.target.value))}
+                              title="M dài — tự tính theo SL, có thể sửa tay (xóa trắng để về tự động)"
+                              placeholder="M dài"
                               className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                             />
                           </div>
@@ -8657,24 +8671,33 @@ export function EditProductionOrderModal({
                           <div className="w-full min-w-0">
                             <input
                               type="text"
-                              value={kgValue !== null ? formatNumber(kgValue, 3) : ''}
-                              readOnly
+                              inputMode="decimal"
+                              value={line.manualKg ? (line.tongKg ?? '') : (kgValue !== null ? formatNumber(kgValue, 3) : '')}
+                              onChange={e => updateEntryLine(line.key, setManualEntryConversionValue(line, 'kg', e.target.value))}
+                              title="KG — tự tính theo SL, có thể sửa tay (xóa trắng để về tự động)"
+                              placeholder="KG"
                               className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                             />
                           </div>
                           <div className="w-full min-w-0">
                             <input
                               type="text"
-                              value={m2Value !== null ? formatNumber(m2Value, 3) : ''}
-                              readOnly
+                              inputMode="decimal"
+                              value={line.manualM2 ? (line.m2 ?? '') : (m2Value !== null ? formatNumber(m2Value, 3) : '')}
+                              onChange={e => updateEntryLine(line.key, setManualEntryConversionValue(line, 'm2', e.target.value))}
+                              title="M2 — tự tính theo SL, có thể sửa tay (xóa trắng để về tự động)"
+                              placeholder="M2"
                               className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                             />
                           </div>
                           <div className="w-full min-w-0">
                             <input
                               type="text"
-                              value={mdaiValue !== null ? formatNumber(mdaiValue, 3) : ''}
-                              readOnly
+                              inputMode="decimal"
+                              value={line.manualMDai ? (line.mDai ?? '') : (mdaiValue !== null ? formatNumber(mdaiValue, 3) : '')}
+                              onChange={e => updateEntryLine(line.key, setManualEntryConversionValue(line, 'm dài', e.target.value))}
+                              title="M dài — tự tính theo SL, có thể sửa tay (xóa trắng để về tự động)"
+                              placeholder="M dài"
                               className="h-11 w-full rounded-lg border border-zinc-200 px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                             />
                           </div>
