@@ -174,6 +174,8 @@ export default function OrderPrintSheet({ order, allocatedQtyMap }: { order: Ord
           </tbody>
         </table>
 
+        {orderNote ? <p className="order-print-note">Ghi chú: {orderNote}</p> : null}
+
         <table className="order-print-products-table">
           <thead>
             <tr>
@@ -209,7 +211,7 @@ export default function OrderPrintSheet({ order, allocatedQtyMap }: { order: Ord
                     {displayCell(line.quantity) || '—'}
                   </td>
                   <td>{order.deliveryDate ? formatOrderCreatedAt(order.deliveryDate) : ''}</td>
-                  <td>{displayCell(line.note) || (idx === 0 ? orderNote : '')}</td>
+                  <td>{displayCell(line.note)}</td>
                   <td className="order-print-center order-print-qty">
                     {formatNumber(allocatedOf(line))}
                   </td>

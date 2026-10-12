@@ -988,6 +988,13 @@ input[type="number"] {
   font-weight: 700;
 }
 
+.order-print-note {
+  margin: 2mm 0 3mm;
+  font-weight: 700;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .order-print-cut-table {
   width: 100%;
   border-collapse: collapse;

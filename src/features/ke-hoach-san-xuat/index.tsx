@@ -5606,6 +5606,23 @@ export function productionOrderFormToPayload(
   return productionOrderFormToCreatePayload(form, [line]);
 }
 
+/** Chép ghi chú đơn hàng vào ghi chú chung: chỉ thêm dòng chưa có (bấm nhiều lần không trùng). */
+export function mergeProductionOrderNotes(currentNote: string, addition: string): string {
+  const base = String(currentNote || '').trim();
+  const existing = new Set(
+    base
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+  );
+  const missing = String(addition || '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line && !existing.has(line));
+  if (missing.length === 0) return currentNote;
+  return base ? `${base}\n${missing.join('\n')}` : missing.join('\n');
+}
+
 export function AddProductionOrderModal({
   open,
   onClose,
@@ -6448,7 +6465,7 @@ export function AddProductionOrderModal({
                     onClick={() =>
                       setForm(prev => ({
                         ...prev,
-                        note: prev.note.trim() ? `${prev.note.trim()}\n${formOrderNotesText}` : formOrderNotesText
+                        note: mergeProductionOrderNotes(prev.note, formOrderNotesText)
                       }))
                     }
                     className="h-7 rounded-lg border border-amber-300 bg-white px-2.5 text-[11px] font-extrabold text-amber-800 transition hover:bg-amber-100"
@@ -8330,7 +8347,7 @@ export function EditProductionOrderModal({
                     onClick={() =>
                       setForm(prev => ({
                         ...prev,
-                        note: prev.note.trim() ? `${prev.note.trim()}\n${editOrderNotesText}` : editOrderNotesText
+                        note: mergeProductionOrderNotes(prev.note, editOrderNotesText)
                       }))
                     }
                     className="h-7 rounded-lg border border-amber-300 bg-white px-2.5 text-[11px] font-extrabold text-amber-800 transition hover:bg-amber-100"

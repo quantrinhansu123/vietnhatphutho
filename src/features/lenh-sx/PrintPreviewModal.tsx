@@ -21,6 +21,13 @@ interface ProductionOrderPrintMeta {
   lan_ban_hanh: string;
 }
 
+interface PreviewOrderNote {
+  ma_don_hang: string;
+  ma_sp: string;
+  ten_ghep: string;
+  ghi_chu: string;
+}
+
 interface PreviewRow {
   key: string;
   stt: number;
@@ -42,6 +49,8 @@ interface PreviewRow {
   kg_cuon: number | null;
   tl_tam: number | null;
   ghi_chu: string;
+  /** Ghi chú phân biệt theo từng đơn + mã SP + tên ghép (server đã khử trùng). */
+  don_hang_notes?: PreviewOrderNote[];
   has_saved_detail: boolean;
   quy_cach_m_dai?: number | null;
 }
@@ -272,6 +281,17 @@ export function ProductionOrderPrintPreviewModal({
               kg_cuon: r.kg_cuon !== null && r.kg_cuon !== undefined ? Number(r.kg_cuon) : null,
               tl_tam: r.tl_tam !== null && r.tl_tam !== undefined ? Number(r.tl_tam) : null,
               ghi_chu: r.ghi_chu || '',
+              don_hang_notes: Array.isArray(r.don_hang_notes)
+                ? r.don_hang_notes
+                    .filter((n: any) => n && typeof n === 'object')
+                    .map((n: any) => ({
+                      ma_don_hang: String(n.ma_don_hang || '').trim(),
+                      ma_sp: String(n.ma_sp || '').trim(),
+                      ten_ghep: String(n.ten_ghep || '').trim(),
+                      ghi_chu: String(n.ghi_chu || '').trim()
+                    }))
+                    .filter((n: PreviewOrderNote) => n.ghi_chu)
+                : [],
               has_saved_detail: Boolean(r.has_saved_detail),
               quy_cach_m_dai: quyCachNum
             };
@@ -663,10 +683,35 @@ export function ProductionOrderPrintPreviewModal({
                                   className={`${CELL_INPUT_CLASS} h-auto max-h-40 min-h-[1.75rem] resize-none overflow-hidden whitespace-pre-wrap break-words py-1 leading-snug print:hidden ${!canEdit ? 'bg-zinc-50 text-zinc-600' : ''}`}
                                   title={canEdit ? 'Quản đốc có thể sửa ghi chú trước khi in' : 'Chỉ xem'}
                                 />
-                                {/* Khi in: ẩn ô nhập, in chữ bọc dòng đầy đủ. */}
-                                <span className="hidden whitespace-pre-wrap break-words text-zinc-900 print:block">
-                                  {edits[editKey]?.ghiChu || row.ghi_chu || '—'}
-                                </span>
+                                {/* Khi in: ẩn ô nhập. Quản đốc đã sửa tay thì in đúng chữ đã sửa;
+                                    ngược lại in từng ghi chú phân biệt theo đơn + mã SP + tên ghép. */}
+                                {(() => {
+                                  const editedNote = edits[editKey]?.ghiChu ?? '';
+                                  if (editedNote !== (row.ghi_chu || '')) {
+                                    return (
+                                      <span className="hidden whitespace-pre-wrap break-words text-zinc-900 print:block">
+                                        {editedNote || '—'}
+                                      </span>
+                                    );
+                                  }
+                                  if (row.don_hang_notes && row.don_hang_notes.length > 0) {
+                                    return (
+                                      <span className="hidden print:block">
+                                        {row.don_hang_notes.map((note, noteIdx) => (
+                                          <span key={noteIdx} className="block whitespace-pre-wrap break-words text-zinc-900">
+                                            {[note.ma_don_hang || row.ma_don_hang || '', note.ma_sp || row.ma_sp || '', note.ten_ghep || row.ten_ghep || row.ten_san_xuat || ''].filter(Boolean).join(' · ')}
+                                            {': '}{note.ghi_chu}
+                                          </span>
+                                        ))}
+                                      </span>
+                                    );
+                                  }
+                                  return (
+                                    <span className="hidden whitespace-pre-wrap break-words text-zinc-900 print:block">
+                                      {row.ghi_chu || '—'}
+                                    </span>
+                                  );
+                                })()}
                               </td>
                               <td className={`${bodyCell} text-center text-zinc-700`}>
                                 {row.don_vi || '—'}
