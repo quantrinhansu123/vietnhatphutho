@@ -5743,12 +5743,7 @@ export function AddProductionOrderModal({
     setAutofillProductSearch('');
   }, [autofillDate]);
 
-  const ordersForSelectedDate = useMemo(
-    () => filterOrdersForProductionDate(orders, productionOrders, form.startDate),
-    [orders, productionOrders, form.startDate]
-  );
-
-  /** Đơn còn SL chưa lập lệnh — dùng chung cho Ngày bắt đầu và Ngày trong modal Tự điền. */
+  /** Đơn còn SL chưa lập lệnh — không lọc theo Ngày bắt đầu: hiện mọi đơn chưa đủ SX / chưa có lệnh. */
   const selectOrdersWithRemainingQty = (list: typeof orders) =>
     list.filter(order =>
       getOrderProductLines(order).some(line => {
@@ -5769,8 +5764,8 @@ export function AddProductionOrderModal({
     );
 
   const ordersWithProductionProducts = useMemo(
-    () => selectOrdersWithRemainingQty(ordersForSelectedDate),
-    [ordersForSelectedDate, orders, productionOrders]
+    () => selectOrdersWithRemainingQty(orders),
+    [orders, productionOrders]
   );
 
   const ordersForAutofillDate = useMemo(
@@ -6079,7 +6074,7 @@ export function AddProductionOrderModal({
     }
 
     const selectedProduct = listProductOptionsForOrder(
-      ordersForSelectedDate,
+      orders,
       productionOrders,
       catalogProducts,
       orderRef
@@ -6132,7 +6127,7 @@ export function AddProductionOrderModal({
     if (currentLine && currentLine.orderRef.trim() === orderRef.trim()) {
       return;
     }
-    const options = listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef);
+    const options = listProductOptionsForOrder(orders, productionOrders, catalogProducts, orderRef);
     let patch: Partial<ProductionOrderEntryLine> = {
       orderRef,
       productCode: '',
@@ -6183,7 +6178,7 @@ export function AddProductionOrderModal({
       return;
     }
 
-    const options = listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef);
+    const options = listProductOptionsForOrder(orders, productionOrders, catalogProducts, orderRef);
     const product = typeof productIdentifier === 'object'
       ? productIdentifier
       : options.find(item => item.optionKey === productIdentifier) ||
@@ -6555,7 +6550,7 @@ export function AddProductionOrderModal({
                       <button
                         type="button"
                         onClick={openAutofillModal}
-                        disabled={isLoadingLookups || ordersForSelectedDate.length === 0}
+                        disabled={isLoadingLookups || ordersWithProductionProducts.length === 0}
                         className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/25 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <ClipboardCheck className="h-3.5 w-3.5" />
@@ -6583,7 +6578,7 @@ export function AddProductionOrderModal({
                     const isDragged = dragProductIndex === index;
                     const isTarget = dragProductIndex !== null && dragOverProductIndex === index && dragProductIndex !== index;
                     const productOptions = listProductOptionsForOrder(
-                      ordersForSelectedDate,
+                      orders,
                       productionOrders,
                       catalogProducts,
                       line.orderRef
@@ -7278,7 +7273,7 @@ export function AddProductionOrderModal({
                   onChange={optionKey => {
                     setLineDraftProductCode(optionKey);
                     const product = listProductOptionsForOrder(
-                      ordersForSelectedDate,
+                      orders,
                       productionOrders,
                       catalogProducts,
                       lineDraftOrderRef
@@ -7286,7 +7281,7 @@ export function AddProductionOrderModal({
                     setLineDraftQuantity(product?.orderQty > 0 ? String(product.orderQty) : '');
                   }}
                   options={listProductOptionsForOrder(
-                    ordersForSelectedDate,
+                    orders,
                     productionOrders,
                     catalogProducts,
                     lineDraftOrderRef
