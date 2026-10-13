@@ -1097,6 +1097,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const [productConversions, setProductConversions] = useState<OrderProductConversion[]>([]);
   const [isLoadingLookups, setIsLoadingLookups] = useState(false);
   const [lookupError, setLookupError] = useState('');
+  const [isSyncingProducts, setIsSyncingProducts] = useState(false);
+  const [productSyncMessage, setProductSyncMessage] = useState('');
   const [orderForm, setOrderForm] = useState<OrderFormState>(emptyOrderForm);
   const [orderFormOverlayEl, setOrderFormOverlayEl] = useState<HTMLDivElement | null>(null);
   const [selectedProductLineKey, setSelectedProductLineKey] = useState<string | null>(null);
@@ -1234,6 +1236,48 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     };
   }, [formMode]);
 
+  /** Đồng bộ lại danh mục SP + bảng quy đổi ngay trong form thêm/sửa.
+   * Chỉ setProductOptions/setProductConversions — KHÔNG đụng orderForm nên
+   * các dòng đã chọn giữ nguyên định mức (shouldRecalculateConversion=false
+   * vẫn hiện số đã lưu). Chọn lại SP ở dòng đó sẽ tính theo quy đổi mới. */
+  const reloadProductLookups = async () => {
+    if (isSyncingProducts) return;
+    setIsSyncingProducts(true);
+    setProductSyncMessage('');
+    try {
+      const [productRes, conversionRes] = await Promise.all([
+        fetch('/api/san-pham?format=table'),
+        fetch(`/api/bang-quy-doi-san-pham?page=1&pageSize=${ORDER_CONVERSION_PAGE_SIZE}`)
+      ]);
+      const productData = await productRes.json().catch(() => ({}));
+      const conversionData = await conversionRes.json().catch(() => ({}));
+      if (!productRes.ok) {
+        throw new Error((productData as any).error || 'Không thể tải hàng hóa.');
+      }
+      if (!conversionRes.ok) {
+        throw new Error((conversionData as any).error || 'Không thể tải bảng quy đổi sản phẩm.');
+      }
+      const conversions = Array.isArray((conversionData as any).items)
+        ? (conversionData as any).items as OrderProductConversion[]
+        : [];
+      const conversionTotal = Number((conversionData as any).total) || conversions.length;
+      for (let page = 2; conversions.length < conversionTotal; page += 1) {
+        const res = await fetch(`/api/bang-quy-doi-san-pham?page=${page}&pageSize=${ORDER_CONVERSION_PAGE_SIZE}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error((data as any).error || 'Không thể tải đầy đủ bảng quy đổi sản phẩm.');
+        conversions.push(...(Array.isArray((data as any).items) ? (data as any).items as OrderProductConversion[] : []));
+      }
+      const nextOptions = normalizeOrderProducts(productData);
+      setProductOptions(nextOptions);
+      setProductConversions(conversions);
+      setProductSyncMessage(`Đã đồng bộ ${nextOptions.length} sản phẩm.`);
+    } catch (error: any) {
+      setLookupError(error.message || 'Không thể đồng bộ sản phẩm.');
+    } finally {
+      setIsSyncingProducts(false);
+    }
+  };
+
   useEffect(() => {
     if (!formMode) return;
     const previousOverflow = document.body.style.overflow;
@@ -1247,6 +1291,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     if (!canCreate) return;
     setFormError('');
     setActionMessage('');
+    setProductSyncMessage('');
     setEditingId(null);
     setOrderForm({
       ...emptyOrderForm(),
@@ -1261,6 +1306,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     if (!canEdit) return;
     setFormError('');
     setActionMessage('');
+    setProductSyncMessage('');
     setViewingOrder(null);
     setEditingId(order.id);
     setOrderForm(orderToForm(order));
@@ -1273,6 +1319,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     setFormMode(null);
     setEditingId(null);
     setFormError('');
+    setProductSyncMessage('');
     setSelectedProductLineKey(null);
     setDragProductIndex(null);
   };
@@ -2026,14 +2073,31 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
                   {formMode === 'edit' ? 'Sửa đơn hàng' : 'Thêm đơn hàng mới'}
                 </h3>
+                <p className="mt-0.5 text-[11px] font-semibold text-rose-600">
+                  Lưu ý: bấm Đồng bộ sản phẩm chỉ thêm sản phẩm mới để chọn, không tính lại định mức các sản phẩm đã chọn. Muốn áp dụng định mức mới, chọn lại sản phẩm ở dòng đó.
+                </p>
+                {productSyncMessage ? (
+                  <p className="mt-0.5 text-[11px] font-semibold text-emerald-700">{productSyncMessage}</p>
+                ) : null}
               </div>
-              <button
-                type="button"
-                onClick={closeForm}
-                className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
-              >
-                Đóng
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void reloadProductLookups()}
+                  disabled={isSyncingProducts || isLoadingLookups}
+                  title="Tải lại danh mục sản phẩm vừa thêm ở /san-pham mà không mất dòng đang nhập"
+                  className="h-9 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-black text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSyncingProducts ? 'Đang đồng bộ…' : `↻ Đồng bộ SP (${productOptions.length})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeForm}
+                  className="h-9 rounded-lg border border-zinc-200 px-3 text-xs font-bold text-zinc-600 transition hover:bg-zinc-50"
+                >
+                  Đóng
+                </button>
+              </div>
             </div>
             {(formError || lookupError) && (
               <div className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-semibold leading-5 text-rose-700">

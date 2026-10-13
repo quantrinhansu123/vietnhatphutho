@@ -3311,7 +3311,7 @@ export function ProductEditModal({
                   </label>
                   <label className="space-y-1.5 sm:col-span-2 lg:col-span-3">
                     <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">
-                      Tên ghép {form.tenGhepManual.trim() ? '(sửa tay)' : '(tự động)'}
+                      Tên sản xuất mới {form.tenGhepManual.trim() ? '(sửa tay)' : '(tự động)'}
                     </span>
                     <div className="flex gap-2">
                       <input
@@ -3320,7 +3320,7 @@ export function ProductEditModal({
                           const value = event.target.value;
                           setForm(prev => ({ ...prev, tenGhepManual: value, productionName: value }));
                         }}
-                        placeholder="Sửa tên ghép — Tên sản xuất đổi theo"
+                        placeholder="Sửa tên sản xuất mới — Tên sản xuất đổi theo"
                         className={`${productFieldClass} bg-white font-semibold text-zinc-800`}
                       />
                       {form.tenGhepManual.trim() ? (
