@@ -2556,6 +2556,8 @@ export type ProductFormState = {
   doDaiM: string;
   mang: string;
   hangPhe: string;
+  /** Tên ghép sửa tay (trống = tự động ghép từ thông số). Sửa ô này đổi luôn Tên sản xuất. */
+  tenGhepManual: string;
   nature: string;
   group: string;
   unit: string;
@@ -2707,6 +2709,7 @@ export function productToForm(product: ProductRow, conversions: ProductConversio
     doDaiM: productCellToInput(product.doDaiM),
     mang: productCellToInput(product.mang),
     hangPhe: productCellToInput(product.hangPhe),
+    tenGhepManual: '',
     nature: productCellToInput(product.nature),
     group: productCellToInput(product.group),
     unit: normalizeUnitForForm(product.unit),
@@ -2744,6 +2747,7 @@ export function emptyProductForm(): ProductFormState {
     doDaiM: '',
     mang: '',
     hangPhe: '',
+    tenGhepManual: '',
     nature: '',
     group: '',
     unit: '',
@@ -2802,18 +2806,20 @@ export function productFormToPayload(
     extractDoLiDm(form.productionName) ||
     calculateDoLiDm(form.doLi, form.group) ||
     '';
-  const tenGhep = composeProductionDisplayName(
-    {
-      tenGoc: form.tenGoc.trim(),
-      doLi: form.doLi.trim(),
-      doLiDm,
-      doDayM: form.doDayM.trim(),
-      doDaiM: form.doDaiM.trim(),
-      mang: form.mang.trim(),
-      hangPhe: form.hangPhe.trim()
-    },
-    form.group.trim()
-  );
+  const tenGhep =
+    form.tenGhepManual.trim() ||
+    composeProductionDisplayName(
+      {
+        tenGoc: form.tenGoc.trim(),
+        doLi: form.doLi.trim(),
+        doLiDm,
+        doDayM: form.doDayM.trim(),
+        doDaiM: form.doDaiM.trim(),
+        mang: form.mang.trim(),
+        hangPhe: form.hangPhe.trim()
+      },
+      form.group.trim()
+    );
   return {
     ...base,
     code: form.amisCode.trim() || form.code.trim(),
@@ -2956,7 +2962,7 @@ export function ProductEditModal({
           }
         : { ...prev, group };
       const seeded = seedSpecsFromName({ group }, withGroup);
-      return { ...withGroup, ...seeded };
+      return { ...withGroup, ...seeded, tenGhepManual: '' };
     });
   };
 
@@ -3111,7 +3117,8 @@ export function ProductEditModal({
                               doDayM: seeded.doDayM,
                               doDaiM: seeded.doDaiM,
                               mang: seeded.mang,
-                              hangPhe: seeded.hangPhe || item.hangPhe || ''
+                              hangPhe: seeded.hangPhe || item.hangPhe || '',
+                              tenGhepManual: ''
                             };
                           });
                           setAmisOpen(false);
@@ -3211,7 +3218,7 @@ export function ProductEditModal({
                     const productionName = event.target.value;
                     setForm(prev => {
                       const seeded = seedSpecsFromName({ productionName }, prev);
-                      return { ...prev, productionName, ...seeded };
+                      return { ...prev, productionName, ...seeded, tenGhepManual: '' };
                     });
                   }}
                   className={productFieldClass}
@@ -3225,7 +3232,7 @@ export function ProductEditModal({
                     <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Tên gốc</span>
                     <input
                       value={form.tenGoc}
-                      onChange={event => setForm(prev => ({ ...prev, tenGoc: event.target.value }))}
+                      onChange={event => setForm(prev => ({ ...prev, tenGoc: event.target.value, tenGhepManual: '' }))}
                       className={`${productFieldClass} bg-white`}
                     />
                   </label>
@@ -3233,7 +3240,7 @@ export function ProductEditModal({
                     <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Độ li / ZEM</span>
                     <input
                       value={form.doLi}
-                      onChange={event => setForm(prev => ({ ...prev, doLi: event.target.value }))}
+                      onChange={event => setForm(prev => ({ ...prev, doLi: event.target.value, tenGhepManual: '' }))}
                       className={`${productFieldClass} bg-white`}
                       placeholder="5.0li / 6ZEM"
                     />
@@ -3242,7 +3249,7 @@ export function ProductEditModal({
                     <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">ĐM (đm li, đm kg)</span>
                     <input
                       value={form.doLiDm}
-                      onChange={event => setForm(prev => ({ ...prev, doLiDm: event.target.value }))}
+                      onChange={event => setForm(prev => ({ ...prev, doLiDm: event.target.value, tenGhepManual: '' }))}
                       className={`${productFieldClass} bg-white`}
                       placeholder="(đm 5.7 li)"
                     />
@@ -3251,7 +3258,7 @@ export function ProductEditModal({
                     <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Khổ rộng (m)</span>
                     <input
                       value={form.doDayM}
-                      onChange={event => setForm(prev => ({ ...prev, doDayM: event.target.value }))}
+                      onChange={event => setForm(prev => ({ ...prev, doDayM: event.target.value, tenGhepManual: '' }))}
                       className={`${productFieldClass} bg-white`}
                     />
                   </label>
@@ -3259,7 +3266,7 @@ export function ProductEditModal({
                     <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Mét dài</span>
                     <input
                       value={form.doDaiM}
-                      onChange={event => setForm(prev => ({ ...prev, doDaiM: event.target.value }))}
+                      onChange={event => setForm(prev => ({ ...prev, doDaiM: event.target.value, tenGhepManual: '' }))}
                       className={`${productFieldClass} bg-white`}
                       placeholder="Đặc: 8/9/20/30m; Sóng: theo tên SX"
                     />
@@ -3270,7 +3277,7 @@ export function ProductEditModal({
                       value={
                         FILM_OPTIONS.includes(form.mang as (typeof FILM_OPTIONS)[number]) ? form.mang : ''
                       }
-                      onChange={event => setForm(prev => ({ ...prev, mang: event.target.value }))}
+                      onChange={event => setForm(prev => ({ ...prev, mang: event.target.value, tenGhepManual: '' }))}
                       className={`${productFieldClass} bg-white`}
                     >
                       <option value="">— / tự nhập bên dưới</option>
@@ -3282,7 +3289,7 @@ export function ProductEditModal({
                     </select>
                     <input
                       value={form.mang}
-                      onChange={event => setForm(prev => ({ ...prev, mang: event.target.value }))}
+                      onChange={event => setForm(prev => ({ ...prev, mang: event.target.value, tenGhepManual: '' }))}
                       className={`${productFieldClass} mt-1 bg-white`}
                       placeholder="ECO / STD / SUN PC / HA hoặc nhập tay"
                     />
@@ -3291,7 +3298,7 @@ export function ProductEditModal({
                     <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Hàng phế</span>
                     <select
                       value={form.hangPhe}
-                      onChange={event => setForm(prev => ({ ...prev, hangPhe: event.target.value }))}
+                      onChange={event => setForm(prev => ({ ...prev, hangPhe: event.target.value, tenGhepManual: '' }))}
                       className={`${productFieldClass} bg-white`}
                     >
                       <option value="">—</option>
@@ -3304,13 +3311,29 @@ export function ProductEditModal({
                   </label>
                   <label className="space-y-1.5 sm:col-span-2 lg:col-span-3">
                     <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">
-                      Tên ghép (tự động)
+                      Tên ghép {form.tenGhepManual.trim() ? '(sửa tay)' : '(tự động)'}
                     </span>
-                    <input
-                      value={composedName}
-                      readOnly
-                      className={`${productFieldClass} bg-zinc-100 font-semibold text-zinc-800`}
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        value={form.tenGhepManual.trim() ? form.tenGhepManual : composedName}
+                        onChange={event => {
+                          const value = event.target.value;
+                          setForm(prev => ({ ...prev, tenGhepManual: value, productionName: value }));
+                        }}
+                        placeholder="Sửa tên ghép — Tên sản xuất đổi theo"
+                        className={`${productFieldClass} bg-white font-semibold text-zinc-800`}
+                      />
+                      {form.tenGhepManual.trim() ? (
+                        <button
+                          type="button"
+                          onClick={() => setForm(prev => ({ ...prev, tenGhepManual: '' }))}
+                          title="Về tự động"
+                          className="h-11 shrink-0 rounded-lg border border-zinc-200 px-3 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
+                        >
+                          Tự động
+                        </button>
+                      ) : null}
+                    </div>
                   </label>
                 </div>
               </section>
@@ -4989,7 +5012,6 @@ export function ProductsPanel({
                 <TableHeadCell>Tên sản phẩm</TableHeadCell>
                 <TableHeadCell>Tên sản xuất</TableHeadCell>
                 <TableHeadCell>ĐM</TableHeadCell>
-                <TableHeadCell>Tên ghép</TableHeadCell>
                 <TableHeadCell>Tính chất</TableHeadCell>
                 <TableHeadCell align="center">Nhóm</TableHeadCell>
                 <TableHeadCell align="center">Đơn vị</TableHeadCell>
@@ -5018,6 +5040,23 @@ export function ProductsPanel({
                             ? availableConvertedUnits(row.unit, conversion)
                             : [];
                   const rowSpan = 1 + convertedUnits.length;
+                  /** Cột Tên sản xuất hiển thị tên ghép (đã lưu, thiếu thì ghép lại, cuối cùng mới tên SX thô). */
+                  const displayProductionName =
+                    row.tenGhep ||
+                    composeProductionDisplayName(
+                      {
+                        tenGoc: row.tenGoc || row.productionName,
+                        doLi: row.doLi,
+                        doLiDm: row.doLiDm,
+                        doDayM: row.doDayM,
+                        doDaiM: row.doDaiM,
+                        mang: row.mang,
+                        hangPhe: row.hangPhe
+                      },
+                      row.group
+                    ) ||
+                    row.productionName ||
+                    '-';
                   const quantityFields = [
                     row.openingStock,
                     row.inbound,
@@ -5063,25 +5102,10 @@ export function ProductsPanel({
                           ) : null}
                         </td>
                         <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle font-bold text-zinc-700">
-                          {row.productionName || '-'}
+                          {displayProductionName}
                         </td>
                         <td rowSpan={rowSpan} className="px-3 py-3.5 align-middle font-mono text-xs font-bold text-amber-800">
                           {row.doLiDm || '-'}
-                        </td>
-                        <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle text-xs font-semibold text-zinc-700">
-                          {row.tenGhep ||
-                            composeProductionDisplayName(
-                              {
-                                tenGoc: row.tenGoc || row.productionName,
-                                doLi: row.doLi,
-                                doLiDm: row.doLiDm,
-                                doDayM: row.doDayM,
-                                doDaiM: row.doDaiM,
-                                mang: row.mang,
-                                hangPhe: row.hangPhe
-                              },
-                              row.group
-                            )}
                         </td>
                         <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle">
                           <StatusBadge label={row.nature} color="rose" />

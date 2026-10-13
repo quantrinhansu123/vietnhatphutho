@@ -5649,8 +5649,6 @@ export function AddProductionOrderModal({
   const [autofillProductOrderFilter, setAutofillProductOrderFilter] = useState('all');
   const [autofillProductSearch, setAutofillProductSearch] = useState('');
   const [autofillAppendMode, setAutofillAppendMode] = useState(false);
-  /** Ngày lọc riêng trong modal Tự điền — logic giống Ngày bắt đầu, độc lập với form. */
-  const [autofillDate, setAutofillDate] = useState('');
   const [showAddLine, setShowAddLine] = useState(false);
   const [lineDraftOrderRef, setLineDraftOrderRef] = useState('');
   const [lineDraftProductCode, setLineDraftProductCode] = useState('');
@@ -5669,7 +5667,6 @@ export function AddProductionOrderModal({
     setSelectedShifts([]);
     setFormError('');
     setShowAutofillOrders(false);
-    setAutofillDate('');
     setAutofillSearch('');
     setDragProductIndex(null);
     setDragOverProductIndex(null);
@@ -5727,28 +5724,7 @@ export function AddProductionOrderModal({
     return () => window.removeEventListener('dragend', handleGlobalDragEnd);
   }, []);
 
-  useEffect(() => {
-    setSelectedAutofillOrderCodes([]);
-    setSelectedAutofillProductKeys([]);
-    setAutofillProductOrderFilter('all');
-    setAutofillSearch('');
-    setAutofillProductSearch('');
-  }, [form.startDate]);
-
-  useEffect(() => {
-    setSelectedAutofillOrderCodes([]);
-    setSelectedAutofillProductKeys([]);
-    setAutofillProductOrderFilter('all');
-    setAutofillSearch('');
-    setAutofillProductSearch('');
-  }, [autofillDate]);
-
-  const ordersForSelectedDate = useMemo(
-    () => filterOrdersForProductionDate(orders, productionOrders, form.startDate),
-    [orders, productionOrders, form.startDate]
-  );
-
-  /** Đơn còn SL chưa lập lệnh — dùng chung cho Ngày bắt đầu và Ngày trong modal Tự điền. */
+  /** Đơn còn SL chưa lập lệnh — không lọc theo Ngày bắt đầu: hiện mọi đơn chưa đủ SX / chưa có lệnh. */
   const selectOrdersWithRemainingQty = (list: typeof orders) =>
     list.filter(order =>
       getOrderProductLines(order).some(line => {
@@ -5769,14 +5745,12 @@ export function AddProductionOrderModal({
     );
 
   const ordersWithProductionProducts = useMemo(
-    () => selectOrdersWithRemainingQty(ordersForSelectedDate),
-    [ordersForSelectedDate, orders, productionOrders]
+    () => selectOrdersWithRemainingQty(orders),
+    [orders, productionOrders]
   );
 
-  const ordersForAutofillDate = useMemo(
-    () => filterOrdersForProductionDate(orders, productionOrders, autofillDate),
-    [orders, productionOrders, autofillDate]
-  );
+  /** Modal Tự điền không lọc theo ngày: toàn bộ đơn, chỉ giữ đơn chưa đủ SX / chưa có lệnh. */
+  const ordersForAutofillDate = useMemo(() => orders, [orders]);
 
   const modalOrdersWithRemaining = useMemo(
     () => selectOrdersWithRemainingQty(ordersForAutofillDate),
@@ -5961,9 +5935,8 @@ export function AddProductionOrderModal({
     setSelectedAutofillProductKeys(prev => [...new Set([...prev, ...keys])]);
   };
 
-  /** Mở modal Tự điền: chốt ngày lọc riêng theo Ngày bắt đầu hiện tại rồi reset chọn. */
+  /** Mở modal Tự điền: hiện mọi đơn chưa đủ SX / chưa có lệnh, không lọc theo ngày. */
   const openAutofillModal = () => {
-    setAutofillDate(form.startDate);
     setAutofillSearch('');
     setSelectedAutofillOrderCodes([]);
     setSelectedAutofillProductKeys([]);
@@ -6079,7 +6052,7 @@ export function AddProductionOrderModal({
     }
 
     const selectedProduct = listProductOptionsForOrder(
-      ordersForSelectedDate,
+      orders,
       productionOrders,
       catalogProducts,
       orderRef
@@ -6132,7 +6105,7 @@ export function AddProductionOrderModal({
     if (currentLine && currentLine.orderRef.trim() === orderRef.trim()) {
       return;
     }
-    const options = listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef);
+    const options = listProductOptionsForOrder(orders, productionOrders, catalogProducts, orderRef);
     let patch: Partial<ProductionOrderEntryLine> = {
       orderRef,
       productCode: '',
@@ -6183,7 +6156,7 @@ export function AddProductionOrderModal({
       return;
     }
 
-    const options = listProductOptionsForOrder(ordersForSelectedDate, productionOrders, catalogProducts, orderRef);
+    const options = listProductOptionsForOrder(orders, productionOrders, catalogProducts, orderRef);
     const product = typeof productIdentifier === 'object'
       ? productIdentifier
       : options.find(item => item.optionKey === productIdentifier) ||
@@ -6555,7 +6528,7 @@ export function AddProductionOrderModal({
                       <button
                         type="button"
                         onClick={openAutofillModal}
-                        disabled={isLoadingLookups || ordersForSelectedDate.length === 0}
+                        disabled={isLoadingLookups || ordersWithProductionProducts.length === 0}
                         className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#ef1b2d]/25 bg-red-50 px-3 text-[11px] font-extrabold text-[#ef1b2d] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <ClipboardCheck className="h-3.5 w-3.5" />
@@ -6583,7 +6556,7 @@ export function AddProductionOrderModal({
                     const isDragged = dragProductIndex === index;
                     const isTarget = dragProductIndex !== null && dragOverProductIndex === index && dragProductIndex !== index;
                     const productOptions = listProductOptionsForOrder(
-                      ordersForSelectedDate,
+                      orders,
                       productionOrders,
                       catalogProducts,
                       line.orderRef
@@ -7009,9 +6982,7 @@ export function AddProductionOrderModal({
               <div>
                 <h4 className="text-sm font-black uppercase tracking-wider text-zinc-950">Tự điền từ đơn hàng</h4>
                 <p className="mt-0.5 text-xs font-semibold text-zinc-500">
-                  {autofillDate
-                    ? `Chọn đơn hàng cùng ngày ${autofillDate}, sau đó tick sản phẩm cần lập lệnh SX.`
-                    : 'Chọn ngày để lọc đơn hàng cùng ngày.'}
+                  Tick đơn chưa sản xuất / còn số lượng chưa lập lệnh, sau đó tick sản phẩm cần lập lệnh SX.
                 </p>
               </div>
               <button
@@ -7024,17 +6995,7 @@ export function AddProductionOrderModal({
             </div>
 
             <div className="shrink-0 border-b border-zinc-100 p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                <label className="space-y-1.5 sm:w-48 sm:shrink-0">
-                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày lập đơn hàng</span>
-                  <input
-                    type="date"
-                    value={autofillDate}
-                    onChange={event => setAutofillDate(event.target.value)}
-                    className={orderFieldClass}
-                  />
-                </label>
-                <label className="flex h-11 flex-1 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
+              <label className="flex h-11 flex-1 items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 focus-within:border-[#ef1b2d] focus-within:ring-2 focus-within:ring-[#ef1b2d]/10">
                 <Search className="h-4 w-4 text-zinc-400" />
                 <input
                   value={autofillSearch}
@@ -7043,16 +7004,13 @@ export function AddProductionOrderModal({
                   className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none"
                 />
               </label>
-              </div>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
               <div className="p-4">
                 {autofillOrderOptions.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-zinc-200 px-4 py-8 text-center text-sm font-bold text-zinc-400">
-                    {autofillDate
-                      ? `Không có đơn hàng phù hợp cho ngày ${autofillDate}.`
-                      : 'Chọn ngày để xem đơn hàng cùng ngày.'}
+                    Không còn đơn nào chưa sản xuất (mọi đơn đã đủ lệnh SX).
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -7278,7 +7236,7 @@ export function AddProductionOrderModal({
                   onChange={optionKey => {
                     setLineDraftProductCode(optionKey);
                     const product = listProductOptionsForOrder(
-                      ordersForSelectedDate,
+                      orders,
                       productionOrders,
                       catalogProducts,
                       lineDraftOrderRef
@@ -7286,7 +7244,7 @@ export function AddProductionOrderModal({
                     setLineDraftQuantity(product?.orderQty > 0 ? String(product.orderQty) : '');
                   }}
                   options={listProductOptionsForOrder(
-                    ordersForSelectedDate,
+                    orders,
                     productionOrders,
                     catalogProducts,
                     lineDraftOrderRef
