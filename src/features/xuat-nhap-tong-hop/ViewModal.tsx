@@ -4,7 +4,7 @@ import { X, Printer, FileText, Warehouse, Truck, MapPin, User, Calendar, Clock, 
 import { takePendingTongHopView, type TongHopHeader } from './model';
 import { formatTongHopDate, isNvlWarehouseName } from './model';
 import { roundKem, sumKemStored } from './chiPhiKemTheo';
-import { formatMoney as formatMoneyUs, formatNumber as formatNumberUs, parseLocalizedNumber } from '../../utils';
+import { formatMoney as formatMoneyUs, formatQty as formatQtyUs, parseLocalizedNumber } from '../../utils';
 
 function statusLabel(status: string) {
   if (status === 'huy') return 'Đã hủy';
@@ -23,7 +23,7 @@ function formatMoney(value: number | string) {
 function formatNumber(value: number | string, decimals = 3) {
   const n = typeof value === 'string' ? parseLocalizedNumber(value) : value;
   if (!Number.isFinite(n)) return '—';
-  return formatNumberUs(n, decimals);
+  return formatQtyUs(n);
 }
 
 function slipsFromRecord(row: TongHopHeader): WarehouseSlipPrintData[] {

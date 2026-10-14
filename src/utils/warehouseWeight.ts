@@ -1,4 +1,4 @@
-import { formatNumber, parseLocalizedNumber } from '../utils';
+import { formatQty, parseLocalizedNumber } from '../utils';
 
 export type WarehouseWeightKind = 'nvl' | 'san_pham';
 
@@ -248,7 +248,7 @@ export function convertWarehouseQuantityToKg(input: {
 
 export function formatWarehouseWeightKg(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return '—';
-  return `${formatNumber(value, 3)} kg`;
+  return `${formatQty(value)} kg`;
 }
 
 export function mapMaterialToWeightCatalogItem(material: {

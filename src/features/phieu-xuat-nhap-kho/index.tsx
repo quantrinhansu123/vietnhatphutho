@@ -29,7 +29,7 @@ import {
   Wrench,
   X
 } from 'lucide-react';
-import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput, parseLocalizedNumber } from '../../utils';
+import { formatNumber, formatMoney, formatPercent, formatQty, parseMoneyInput, parsePercentInput, sanitizeMoneyInput, parseLocalizedNumber } from '../../utils';
 import { useTabAccess } from '../../app/useTabAccess';
 import type { AuthUser } from '../../app/authUser';
 import { BackButton } from '../../components/layout/NavButtons';
@@ -706,9 +706,7 @@ function sumWarehouseRollQuantity(rows: Array<{ quantity: number; unit?: string 
 
 function formatWarehouseRollTotal(total: number): string {
   if (!(total > 0)) return '0 cuộn';
-  const rounded = Math.round(total * 100) / 100;
-  const digits = Number.isInteger(rounded) ? 0 : 2;
-  return `${formatNumber(rounded, digits)} cuộn`;
+  return `${formatQty(total)} cuộn`;
 }
 
 function normalizeWarehouseNameKey(value?: string | null) {
@@ -4295,13 +4293,13 @@ export function WarehouseSlipPanel({
     const unit = String(line.unit || '').trim();
     if (!unit || unit === '-') return undefined;
     if (isWarehouseWeightKgUnit(unit)) {
-      return `ĐVT kg → quy đổi = SL thực (${formatNumber(quantity, 3)} kg)`;
+      return `ĐVT kg → quy đổi = SL thực (${formatQty(quantity)} kg)`;
     }
     const tongKg = findMaterialTongKgPerUnit(line.code, weightCatalog);
     if (tongKg === null) {
       return `ĐVT ${unit}: chưa có Tổng kg trong kho NVL cho mã ${line.code || '—'} → không quy đổi`;
     }
-    return `ĐVT ${unit} → SL × Tổng kg kho = ${formatNumber(quantity, 3)} × ${formatNumber(tongKg, 6)} = ${formatWarehouseWeightKg(quantity * tongKg)}`;
+    return `ĐVT ${unit} → SL × Tổng kg kho = ${formatQty(quantity)} × ${formatQty(tongKg)} = ${formatWarehouseWeightKg(quantity * tongKg)}`;
   };
 
   const shiftLabel = formatWarehouseShiftSelection(selectedShifts);
@@ -4721,7 +4719,7 @@ export function WarehouseSlipPanel({
                           <span className="truncate text-slate-600">Người báo: <b>{report.weigher || '—'}</b></span>
                           <span className="truncate text-slate-600">Máy: <b>{report.machine || '—'}</b></span>
                           <span className="col-span-2 text-slate-600">
-                            {report.items.length} dòng vật tư · {report.items.map(item => `${item.name}: ${formatNumber(item.quantity)} ${item.unit}`).join('; ')}
+                            {report.items.length} dòng vật tư · {report.items.map(item => `${item.name}: ${formatQty(item.quantity)} ${item.unit}`).join('; ')}
                           </span>
                         </div>
                       </div>
@@ -7315,7 +7313,7 @@ export function WarehouseHistoryPanel({
                       {row.itemName || '—'}
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono font-bold text-zinc-800">
-                      {formatNumber(row.quantity, 2)}
+{formatQty(row.quantity)}
                     </td>
                     <td className="px-3 py-2.5 font-semibold text-zinc-600">{row.unit || '—'}</td>
                     <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-800">
@@ -7461,7 +7459,7 @@ export function WarehouseHistoryPanel({
                       {viewingRows[0].warehouseKind !== 'san_pham' ? (
                         <td className="py-2 pr-3 text-zinc-700">{row.itemProductionName || '-'}</td>
                       ) : null}
-                      <td className="py-2 pr-3 font-mono font-bold text-zinc-800">{formatNumber(row.quantity, 2)}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-zinc-800">{formatQty(row.quantity)}</td>
                       <td className="py-2 pr-3 text-zinc-700">{row.unit}</td>
                       <td className="py-2 pr-3 text-right font-mono font-bold text-emerald-800">
                         {formatWarehouseWeightKg(resolveWarehouseRowWeightKg(row))}

@@ -16,7 +16,7 @@ import {
   Upload,
   X
 } from 'lucide-react';
-import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
+import { formatNumber, formatMoney, formatPercent, formatQty, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { pickText, formatCell, filterDuplicateZeroWarehouseRows, parsePeriodQuantityValue } from '../_shared/recordHelpers';
@@ -68,9 +68,13 @@ type NvlPeriodBalance = {
 };
 
 function formatPeriodQty(value: number) {
-  if (!Number.isFinite(value)) return '0';
-  const rounded = Math.round(value * 100) / 100;
-  return String(rounded);
+  return formatQty(value);
+}
+
+/** Ô số lượng: trống → '—', có số → nghìn `,`, thập phân `.`, luôn 2 số (VD: 1,234.50). */
+function formatQtyCell(value: unknown) {
+  if (value === null || value === undefined || String(value).trim() === '') return '—';
+  return formatQty(parsePeriodQuantityValue(value) ?? NaN);
 }
 
 function periodIdentity(code: string, name: string, productionName: string, warehouse: string) {
@@ -143,7 +147,7 @@ export function computeClosingStock(opening: string, inbound: string, outbound: 
   if (openingVal === null) return '-';
   const inboundVal = parseInventoryNumber(inbound) ?? 0;
   const outboundVal = parseInventoryNumber(outbound) ?? 0;
-  return String(Math.round((openingVal + inboundVal - outboundVal) * 100) / 100);
+  return formatQty(openingVal + inboundVal - outboundVal);
 }
 
 export function normalizeMaterialsInventory(data: unknown): MaterialRow[] {
@@ -170,15 +174,15 @@ export function normalizeMaterialsInventory(data: unknown): MaterialRow[] {
         unit: formatCell(record.don_vi),
         warehouse: formatCell(record.ten_kho),
         loaiKho: String(record.loai_kho ?? '').trim(),
-        totalWeight: formatCell(record.tong_trong_luong),
-        plasticWeight: formatCell(record.trong_luong_nhua),
-        bagWeight: formatCell(record.trong_luong_tui),
-        coreWeight: formatCell(record.trong_luong_loi),
-        rollWidth: formatCell(record.kho_cuon),
-        unitLength: formatCell(record.chieu_dai_don_vi),
-        openingStock: formatCell(record.ton_dau_ky),
-        inbound: formatCell(record.nhap_trong_ky),
-        outbound: formatCell(record.xuat_trong_ky),
+        totalWeight: formatQtyCell(record.tong_trong_luong),
+        plasticWeight: formatQtyCell(record.trong_luong_nhua),
+        bagWeight: formatQtyCell(record.trong_luong_tui),
+        coreWeight: formatQtyCell(record.trong_luong_loi),
+        rollWidth: formatQtyCell(record.kho_cuon),
+        unitLength: formatQtyCell(record.chieu_dai_don_vi),
+        openingStock: formatQtyCell(record.ton_dau_ky),
+        inbound: formatQtyCell(record.nhap_trong_ky),
+        outbound: formatQtyCell(record.xuat_trong_ky),
         phanLoai: formatCell(record.phan_loai ?? record.kho_ngam_dinh),
         auxiliaryMaterialGroup: formatCell(
           record.nhom_vat_tu_phu === 'Bạt Dọc' ? 'Bạt Bọc' : record.nhom_vat_tu_phu
@@ -1389,7 +1393,7 @@ export function MaterialsInventoryPanel({
     };
     const apply = (material: MaterialRow, row: NvlPeriodBalance | undefined): MaterialRow => {
       if (!row) {
-        return { ...material, openingStock: '0', inbound: '0', outbound: '0' };
+        return { ...material, openingStock: '0.00', inbound: '0.00', outbound: '0.00' };
       }
       return {
         ...material,

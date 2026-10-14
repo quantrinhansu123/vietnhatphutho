@@ -34,7 +34,7 @@ import {
 } from './model';
 import { emptyXuatNvlFields, ChiPhiKemTheoPanel, XuatNvlDetail, type XuatNvlLine } from './xuatNvlDetail';
 import { kemDraftError, kemDraftFromStored, kemStoredFromDraft, roundKem, sumKemDraft } from './chiPhiKemTheo';
-import { formatMoney, formatNumber, parseLocalizedNumber } from '../../utils';
+import { formatMoney, formatNumber, formatQty, parseLocalizedNumber } from '../../utils';
 
 type Mode = TongHopMode;
 type Option = { id: string; label: string; kind: 'kho' | 'may' | 'ncc'; vatTu?: boolean; maKho?: string };
@@ -561,7 +561,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         const qty = parseLocalizedNumber(line.soLuong);
         if (mode === 'nhap' && (nguonLoai === 'ncc' || !nguonId)) continue;
         if (line.ton !== null && qty > line.ton + 1e-9) {
-          setError(`${line.maHang || 'Dòng'}: số lượng ${formatNumber(qty, 3)} vượt tồn ${line.ton === null ? '—' : formatNumber(line.ton, 3)}.`);
+          setError(`${line.maHang || 'Dòng'}: số lượng ${formatQty(qty)} vượt tồn ${line.ton === null ? '—' : formatQty(line.ton)}.`);
           return;
         }
       }
@@ -1611,7 +1611,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                         />
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2 align-middle tabular-nums">{line.ton === null ? '—' : formatNumber(line.ton, 3)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 align-middle tabular-nums">{line.ton === null ? '—' : formatQty(line.ton)}</td>
                     <td className="px-2 py-2 align-middle"><input value={line.soLuong} onChange={event => patchLine(index, { soLuong: event.target.value })} onBlur={event => {
                       if (!event.target.value.trim()) return;
                       const parsed = parseLocalizedNumber(event.target.value);
@@ -1673,7 +1673,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
           const tongNhapKho = roundKem(filled.reduce((sum, line) => sum + (lineImportAmount(line) || 0), 0));
           return (
             <div className="grid grid-cols-2 gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-bold text-zinc-800 sm:grid-cols-3">
-              <span>Tổng trọng lượng <strong className="font-mono">{formatNumber(tongKl, 3)}</strong></span>
+              <span>Tổng trọng lượng <strong className="font-mono">{formatQty(tongKl)}</strong></span>
               <span>Tổng chi phí đi kèm <strong className="font-mono">{formatMoney(tongKem, 0)}</strong></span>
               <span>Chi phí đi kèm/1 kg <strong className="font-mono">{formatMoney(kemPerKgAll, 0)}</strong></span>
               <span>Tổng thành tiền <strong className="font-mono">{formatMoney(tongCong, 0)}</strong></span>

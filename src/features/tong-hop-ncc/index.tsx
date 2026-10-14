@@ -4,7 +4,7 @@ import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { VnCalendarPicker } from '../so-che-do-may';
 import { LOAI_NHAP_OPTIONS, LOAI_XUAT_TRA_NCC, queueTongHopEdit, type TongHopHeader } from '../xuat-nhap-tong-hop/model';
 import { sumKemStored } from '../xuat-nhap-tong-hop/chiPhiKemTheo';
-import { formatMoney, formatNumber } from '../../utils';
+import { formatMoney, formatNumber, formatQty } from '../../utils';
 
 const LOAI_NHAP_NCC = LOAI_NHAP_OPTIONS[0];
 
@@ -358,7 +358,7 @@ export function TongHopNccPanel({ onBack, onEdit }: { onBack: () => void; onEdit
           <div className="border-b border-emerald-100 bg-emerald-50/70 p-3 md:border-b-0 md:border-r">
             <p className="text-[11px] font-black uppercase tracking-wide text-emerald-800">Nhập từ nhà cung cấp</p>
             <div className="mt-2 grid grid-cols-3 gap-3">
-              {stat('SL nhập', formatNumber(totals.slNhap, 3), 'text-emerald-800')}
+              {stat('SL nhập', formatQty(totals.slNhap), 'text-emerald-800')}
               {stat('Thành tiền', formatMoney(totals.thanhTienNhap, 0), 'text-zinc-900')}
               {stat('Tổng tiền theo giá nhập kho', formatMoney(totals.thanhTienNhapKho, 0), 'text-sky-800')}
             </div>
@@ -366,7 +366,7 @@ export function TongHopNccPanel({ onBack, onEdit }: { onBack: () => void; onEdit
           <div className="bg-rose-50/70 p-3">
             <p className="text-[11px] font-black uppercase tracking-wide text-rose-800">Trả lại nhà cung cấp</p>
             <div className="mt-2 grid grid-cols-2 gap-3">
-              {stat('SL trả', formatNumber(totals.slTra, 3), 'text-rose-800')}
+              {stat('SL trả', formatQty(totals.slTra), 'text-rose-800')}
               {stat('Thành tiền trả', formatMoney(totals.thanhTienTra, 0), 'text-zinc-900')}
             </div>
           </div>
@@ -571,11 +571,11 @@ export function TongHopNccPanel({ onBack, onEdit }: { onBack: () => void; onEdit
                           <td className={cell} />
                           <td className={`${cell} text-center`}>Tổng</td>
                           <td className={cell} />
-                          <td className={nhapNum}>{nhap && item.slNhap ? formatNumber(item.slNhap, 3) : ''}</td>
+                          <td className={nhapNum}>{nhap && item.slNhap ? formatQty(item.slNhap) : ''}</td>
                           <td className={nhapNum} />
                           <td className={nhapNum} />
                           <td className={nhapNum}>{nhap && item.thanhTienNhap ? formatMoney(item.thanhTienNhap, 0) : ''}</td>
-                          <td className={traNum}>{!nhap && item.slTra ? formatNumber(item.slTra, 3) : ''}</td>
+                          <td className={traNum}>{!nhap && item.slTra ? formatQty(item.slTra) : ''}</td>
                           <td className={traNum} />
                           <td className={traNum}>{!nhap && item.thanhTienTra ? formatMoney(item.thanhTienTra, 0) : ''}</td>
                         </tr>
@@ -598,11 +598,11 @@ export function TongHopNccPanel({ onBack, onEdit }: { onBack: () => void; onEdit
                         </td>
                         <td className={cell} />
                         <td className={cell} />
-                        <td className={nhapNum}>{nhap ? formatNumber(row.slNhap, 3) : ''}</td>
+                        <td className={nhapNum}>{nhap ? formatQty(row.slNhap) : ''}</td>
                         <td className={nhapNum}>{nhap ? formatMoney(row.donGiaNhap, 0) : ''}</td>
                         <td className={nhapNum}>{nhap ? formatMoney(row.giaNhapKho, 0) : ''}</td>
                         <td className={nhapNum}>{nhap ? formatMoney(row.thanhTienNhap, 0) : ''}</td>
-                        <td className={traNum}>{!nhap ? formatNumber(row.slTra, 3) : ''}</td>
+                        <td className={traNum}>{!nhap ? formatQty(row.slTra) : ''}</td>
                         <td className={traNum}>{!nhap ? formatMoney(row.donGiaTra, 0) : ''}</td>
                         <td className={traNum}>{!nhap ? formatMoney(row.thanhTienTra, 0) : ''}</td>
                       </tr>

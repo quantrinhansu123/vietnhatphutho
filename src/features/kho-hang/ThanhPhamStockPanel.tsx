@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { SoTronDatePicker } from '../so-tron/SoTronDatePicker';
+import { formatQty as formatQtyUs } from '../../utils';
 
 export type ThanhPhamStockMetric = {
   sl: number;
@@ -30,12 +31,12 @@ export type ThanhPhamStockRow = {
 
 function formatQty(value: number | undefined) {
   if (!Number.isFinite(value)) return '—';
-  return (value as number).toLocaleString('en-US', { maximumFractionDigits: 2 });
+  return formatQtyUs(value as number);
 }
 
 function formatKg(value: number | undefined) {
   if (!Number.isFinite(value)) return '—';
-  return (value as number).toLocaleString('en-US', { maximumFractionDigits: 3 });
+  return formatQtyUs(value as number);
 }
 
 type StockUnitKind = 'base' | 'm_dai' | 'm2' | 'kg';
