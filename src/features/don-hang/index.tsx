@@ -1397,7 +1397,15 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
           if (!isSouthOrder) {
             // SP có màng thì tự fill; không có thì để trống để tự nhập.
-            return { ...baseUpdated, mang: match.mang || extractMang(match.productionName) || '' };
+            // Dài m chuẩn của SP (danh mục, fallback bảng quy đổi); không có thì giữ số đang nhập.
+            const conversion = productConversions.find(item => item.sanPhamId === match.id);
+            const rawDaiM = match.doDaiM ? String(match.doDaiM).replace(/m\s*$/iu, '').trim() : '';
+            const autoDaiM = rawDaiM || (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '') || line.daiM;
+            return {
+              ...baseUpdated,
+              mang: match.mang || extractMang(match.productionName) || '',
+              daiM: orderDuplicateDecimalText(autoDaiM || '')
+            };
           }
 
           // Đối với đơn hàng miền nam, tự động fill các cột phía sau nếu có:
@@ -1640,6 +1648,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       productionName: match?.productionName || '',
       unit: 'Tấm',
       mang: extractedMang,
+      // Dài m chuẩn của SP (danh mục, fallback bảng quy đổi) — tự fill cho cả
+      // đơn theo quy cách / cắt lẻ / miền nam, người dùng sửa lại mét cắt khi cần.
+      daiM: orderDuplicateDecimalText(autoDaiM || ''),
       kho: orderDuplicateDecimalText(autoKho || ''),
       doLiDm: orderDuplicateDecimalText(rawDoLiDm || ''),
       tongKg: '',
@@ -1647,7 +1658,6 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       manualTongKg: false,
       ...(isSouthOrder ? {
         mang: extractedMang || 'SUN PC',
-        daiM: orderDuplicateDecimalText(autoDaiM || ''),
         doDaiTamTieuChuan: orderDuplicateDecimalText(autoDoDaiTamTieuChuan || ''),
         dinhMucTieuChuanKg: orderDuplicateDecimalText(autoDinhMucTieuChuanKg || ''),
         tem: autoTem,
