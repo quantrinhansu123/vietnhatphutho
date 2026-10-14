@@ -4,7 +4,7 @@ import SearchableMultiSelect from '../../components/SearchableMultiSelect';
 import { VnCalendarPicker } from '../so-che-do-may';
 import { queueTongHopEdit, type TongHopHeader } from '../xuat-nhap-tong-hop/model';
 import { sumKemStored } from '../xuat-nhap-tong-hop/chiPhiKemTheo';
-import { formatMoney, formatNumber } from '../../utils';
+import { formatMoney, formatNumber, formatQty } from '../../utils';
 import { normalizeWarehouseName } from '../kho-hang';
 
 type PickOption = { id: string; label: string };
@@ -541,7 +541,7 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
           <div className="border-b border-emerald-100 bg-emerald-50/70 p-3 md:border-b-0 md:border-r">
             <p className="text-[11px] font-black uppercase tracking-wide text-emerald-800">Nhập NVL</p>
             <div className="mt-2 grid grid-cols-3 gap-3">
-              {stat('SL nhập', formatNumber(totals.slNhap, 3), 'text-emerald-800')}
+              {stat('SL nhập', formatQty(totals.slNhap), 'text-emerald-800')}
               {stat('Thành tiền', formatMoney(totals.thanhTienNhap, 0), 'text-zinc-900')}
               {stat('Tổng tiền theo giá nhập kho', formatMoney(totals.thanhTienNhapKho, 0), 'text-sky-800')}
             </div>
@@ -549,7 +549,7 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
           <div className="bg-rose-50/70 p-3">
             <p className="text-[11px] font-black uppercase tracking-wide text-rose-800">Xuất NVL</p>
             <div className="mt-2 grid grid-cols-2 gap-3">
-              {stat('SL xuất', formatNumber(totals.slXuat, 3), 'text-rose-800')}
+              {stat('SL xuất', formatQty(totals.slXuat), 'text-rose-800')}
               {stat('Thành tiền xuất', formatMoney(totals.thanhTienXuat, 0), 'text-zinc-900')}
             </div>
           </div>
@@ -778,11 +778,11 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
                           <td className={cell} />
                           <td className={cell} />
                           <td className={cell} />
-                          <td className={nhapNum}>{nhap && item.slNhap ? formatNumber(item.slNhap, 3) : ''}</td>
+                          <td className={nhapNum}>{nhap && item.slNhap ? formatQty(item.slNhap) : ''}</td>
                           <td className={nhapNum} />
                           <td className={nhapNum} />
                           <td className={nhapNum}>{nhap && item.thanhTienNhap ? formatMoney(item.thanhTienNhap, 0) : ''}</td>
-                          <td className={xuatNum}>{!nhap && item.slXuat ? formatNumber(item.slXuat, 3) : ''}</td>
+                          <td className={xuatNum}>{!nhap && item.slXuat ? formatQty(item.slXuat) : ''}</td>
                           <td className={xuatNum} />
                           <td className={xuatNum}>{!nhap && item.thanhTienXuat ? formatMoney(item.thanhTienXuat, 0) : ''}</td>
                         </tr>
@@ -807,11 +807,11 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
                         <td className={`${cell} max-w-[16rem] truncate`} title={row.tenSx}>{row.tenSx}</td>
                         <td className={`${cell} whitespace-nowrap`}>{row.kho || '—'}</td>
                         <td className={`${cell} whitespace-nowrap`}>{row.may || '—'}</td>
-                        <td className={nhapNum}>{nhap ? formatNumber(row.slNhap, 3) : ''}</td>
+                        <td className={nhapNum}>{nhap ? formatQty(row.slNhap) : ''}</td>
                         <td className={nhapNum}>{nhap ? formatMoney(row.donGiaNhap, 0) : ''}</td>
                         <td className={nhapNum}>{nhap ? formatMoney(row.giaNhapKho, 0) : ''}</td>
                         <td className={nhapNum}>{nhap ? formatMoney(row.thanhTienNhap, 0) : ''}</td>
-                        <td className={xuatNum}>{!nhap ? formatNumber(row.slXuat, 3) : ''}</td>
+                        <td className={xuatNum}>{!nhap ? formatQty(row.slXuat) : ''}</td>
                         <td className={xuatNum}>{!nhap ? formatMoney(row.donGiaXuat, 0) : ''}</td>
                         <td className={xuatNum}>{!nhap ? formatMoney(row.thanhTienXuat, 0) : ''}</td>
                       </tr>

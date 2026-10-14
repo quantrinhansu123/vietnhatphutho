@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, Printer, X } from 'lucide-react';
 import { PRINT_COMPANY_NAME, COMPANY_BRANCH_NAME, vietNhatLogoUrl } from './layout/constants';
-import { formatMoney, formatNumber } from '../utils';
+import { formatMoney, formatNumber, formatQty } from '../utils';
 import { formatVietnameseMoneyWords } from '../utils/vietnameseMoneyWords';
 import { isWarehouseKgUnit } from '../utils/warehouseWeight';
 import { waitForPrintImagesReady } from '../utils/printReady';
@@ -66,7 +66,7 @@ function TongHopCostPrintBlock({ data }: { data: WarehouseSlipPrintData }) {
         </table>
       ) : null}
       <div className="warehouse-nhap-kho-print-footer">
-        <p><span>Tổng trọng lượng:</span> {formatNumber(data.totalKg || 0, 3)}</p>
+        <p><span>Tổng trọng lượng:</span> {formatQty(data.totalKg || 0)}</p>
         <p><span>Tổng chi phí đi kèm:</span> {formatMoney(totalKem, 0)}</p>
         <p><span>Tổng thành tiền:</span> {formatMoney(totalCong, 0)}</p>
       </div>
@@ -329,17 +329,13 @@ function formatSlipDateShort(value: string) {
 function formatPrintQty(value: number | null | undefined, fractionDigits = 2) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '';
   if (value === 0) return '';
-  return formatNumber(value, fractionDigits);
+  return formatQty(value);
 }
 
-/** Phiếu xuất NVL: số nguyên không hiện phần lẻ; số có phần lẻ làm tròn 2 chữ số. */
+/** Phiếu xuất NVL: luôn 2 số sau `.` (ngàn `,`, thập phân `.`). */
 function formatNvlExportNumber(value: number | null | undefined, fractionDigits = 2) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '';
-  if (Number.isInteger(value)) return formatNumber(value, 0);
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits
-  }).format(value);
+  return formatQty(value);
 }
 
 function formatNvlExportQty(value: number | null | undefined, fractionDigits = 2) {
@@ -530,7 +526,7 @@ function NhapKhoPrintBody({ data }: { data: WarehouseSlipPrintData }) {
               Cộng
             </td>
             <td className="warehouse-slip-print-right warehouse-nhap-kho-total-value">
-              {totalQuantity > 0 ? formatNumber(totalQuantity, 2) : ''}
+              {totalQuantity > 0 ? formatQty(totalQuantity) : ''}
             </td>
             <td />
             <td className="warehouse-slip-print-right warehouse-nhap-kho-total-value">
@@ -775,7 +771,7 @@ export function WarehouseSlipPrintSheet({ data }: { data: WarehouseSlipPrintData
                     <td>{line.code || '-'}</td>
                     <td className="warehouse-slip-print-name">{line.name || '-'}</td>
                     <td className="warehouse-slip-print-center">{line.unit || '-'}</td>
-                    <td className="warehouse-slip-print-right">{formatNumber(line.quantity, 2)}</td>
+                    <td className="warehouse-slip-print-right">{formatQty(line.quantity)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -785,7 +781,7 @@ export function WarehouseSlipPrintSheet({ data }: { data: WarehouseSlipPrintData
                     Tổng cộng
                   </td>
                   <td className="warehouse-slip-print-right warehouse-slip-print-total-value">
-                    {formatNumber(sumPrintQty(printData.lines), 2)}
+                    {formatQty(sumPrintQty(printData.lines))}
                   </td>
                 </tr>
               </tfoot>

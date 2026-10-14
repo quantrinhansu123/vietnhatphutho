@@ -101,6 +101,18 @@ export function formatMoney(val: number, fractionDigits: number = 0): string {
 }
 
 /**
+ * Số lượng tồn/phiếu: phần nghìn `,`, thập phân `.`, làm tròn 2 số,
+ * luôn hiện đủ 2 số sau `.` (VD: 1,234.50 / 22.58 / 0.00).
+ */
+export function formatQty(val: number): string {
+  if (!Number.isFinite(val)) return '0.00';
+  const rounded = Math.round(val * 100) / 100;
+  const [intPart, decPart = ''] = Math.abs(rounded).toFixed(2).split('.');
+  const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${rounded < 0 ? '-' : ''}${withCommas}.${decPart}`;
+}
+
+/**
  * Đọc số nhập tay theo chuẩn mới, vẫn chịu được số cũ.
  * Mới: 25,000 -> 25000, 1,250.5 -> 1250.5.
  * Cũ: 1.250.000 -> 1250000, 1.250,5 -> 1250.5 (cùng quy ước sổ trộn).
