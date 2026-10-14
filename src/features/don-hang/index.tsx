@@ -96,17 +96,17 @@ interface OrderRowExt extends OrderRow {
   khu_vuc?: string;
 }
 
-const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1340px]';
-const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1580px]';
-const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2360px]';
+const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1420px]';
+const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1660px]';
+const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2440px]';
 const ORDER_MIEN_NAM_TABLE_MIN_WIDTH = 'min-w-[2740px]';
 export const PRODUCTION_ORDER_TYPE = 'Đơn sản xuất';
 const orderProductGridClass =
-  'grid-cols-[7rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(12rem,1.35fr)_minmax(7rem,0.9fr)_5rem_5.5rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
+  'grid-cols-[7rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(12rem,1.35fr)_6rem_minmax(7rem,0.9fr)_5rem_5.5rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
 const orderProductionProductGridClass =
-  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(11rem,1.25fr)_minmax(6.5rem,0.85fr)_5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_5rem_5rem_5rem_6.5rem]';
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(11rem,1.25fr)_6rem_minmax(6.5rem,0.85fr)_5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_5rem_5rem_5rem_6.5rem]';
 const orderSouthProductGridClass =
-  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_6rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_6rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const orderMienNamProductGridClass =
   'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_6rem_8.5rem_6.5rem_7rem_5.5rem_4.5rem_5rem_6rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
@@ -231,7 +231,7 @@ export type OrderProductFormLine = {
   doLiDm?: string;
   kho?: string;
   daiM: string;
-  /** Màng: default SUN PC cho đơn miền nam (có thể sửa/xóa). */
+  /** Màng (vd SUN PC): đơn miền nam mặc định SUN PC; các loại đơn khác để trống nếu không có. Sửa ô này tự đổi màng trong tên sản xuất. */
   mang?: string;
   /** Đơn cắt lẻ + miền nam: loại tem + màu tem + 2 Đầu. */
   tem?: string;
@@ -657,6 +657,8 @@ export function orderProductLinesToPayload(
       const moTaTem = isCutLikeOrder
         ? buildSouthTemSuffix(temValue, mauTemValue, danTem2DauValue).trim()
         : '';
+      // Màng: miền nam luôn lưu (mặc định SUN PC); các loại đơn khác chỉ lưu khi người dùng nhập.
+      const trimmedMang = String(line.mang ?? '').trim();
       const specExtraFields = isCutLikeOrder
         ? {
             tem: temValue || undefined,
@@ -670,9 +672,9 @@ export function orderProductLinesToPayload(
                   do_dai_tam_tieu_chuan: parsePercentInput(String(line.doDaiTamTieuChuan ?? '')) || undefined,
                   dinh_muc_tieu_chuan_kg: parsePercentInput(String(line.dinhMucTieuChuanKg ?? '')) || undefined
                 }
-              : {})
+              : trimmedMang ? { mang: trimmedMang } : {})
           }
-        : {};
+        : trimmedMang ? { mang: trimmedMang } : {};
       const shouldRecalculateConversion = line.shouldRecalculateConversion !== false;
       const regionFields = isSouthOrder
         ? { so_luong_nam: namVal === null ? undefined : namVal }
@@ -768,7 +770,7 @@ export function orderProductLinesToPayload(
         const isMatchingCatalog = catalogTenGhep && (
           !tenSanXuat ||
           tenSanXuat === catalogProductionName ||
-          (isSouthOrder && replaceMangInName(tenSanXuat, '') === replaceMangInName(catalogProductionName, ''))
+          replaceMangInName(tenSanXuat, '') === replaceMangInName(catalogProductionName, '')
         );
         if (isMatchingCatalog) {
           let base = cutLength != null
@@ -785,17 +787,17 @@ export function orderProductLinesToPayload(
           if (doLiDmValue) {
             base = replaceDoLiDmInTenGhep(base, doLiDmValue, 'li');
           }
-          if (isSouthOrder && lineMang !== undefined) {
-            base = replaceMangInName(base, lineMang, variantSpecs?.mang);
+          if (isSouthOrder ? lineMang !== undefined : Boolean(lineMang)) {
+            base = replaceMangInName(base, String(lineMang), variantSpecs?.mang);
           }
           return isCutLikeOrder ? appendSouthTemToTenGhep(base, temValue, mauTemValue, danTem2DauValue) : base;
-        }
+        };
         let tenGhep = buildOrderTenGhep(tenSanXuat, {
           nhomVthh: selectedProduct?.group,
           maAmis: selectedProduct?.newCode,
           cutLengthM: cutLength,
           doLiDm: doLiDmValue || undefined,
-          mang: isSouthOrder ? lineMang : undefined
+          mang: lineMang || undefined
         });
         if (tenGhep && widthDiffersForCode) {
           tenGhep = replaceCutWidthMeters(
@@ -814,7 +816,8 @@ export function orderProductLinesToPayload(
           ?.filter(result => result.unit && Number.isFinite(result.value))
           .map(result => ({ don_vi: result.unit, gia_tri: result.value }));
         const rawTenSanXuat = line.productionName.trim() || '';
-        const tenSanXuat = isSouthOrder && lineMang !== undefined
+        const shouldReplaceMang = isSouthOrder ? lineMang !== undefined : Boolean(lineMang);
+        const tenSanXuat = shouldReplaceMang && lineMang !== undefined
           ? replaceMangInName(rawTenSanXuat, lineMang, variantSpecs?.mang)
           : rawTenSanXuat;
         const quyCachMDaiStored = Number.isFinite(daiM) && daiM > 0
@@ -951,7 +954,8 @@ export function orderProductLinesToPayload(
 
       const rawTenSanXuat =
         line.productionName.trim() || selectedProduct?.productionName || resolved.productionName || '';
-      const tenSanXuat = isSouthOrder && lineMang !== undefined
+      const shouldReplaceMangName = isSouthOrder ? lineMang !== undefined : Boolean(lineMang);
+      const tenSanXuat = shouldReplaceMangName && lineMang !== undefined
         ? replaceMangInName(rawTenSanXuat, lineMang, variantSpecs?.mang)
         : rawTenSanXuat;
       const tenGhep = resolveTenGhep(tenSanXuat, quyCachMDai);
@@ -1392,7 +1396,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
           };
 
           if (!isSouthOrder) {
-            return baseUpdated;
+            // SP có màng thì tự fill; không có thì để trống để tự nhập.
+            return { ...baseUpdated, mang: match.mang || extractMang(match.productionName) || '' };
           }
 
           // Đối với đơn hàng miền nam, tự động fill các cột phía sau nếu có:
@@ -1593,6 +1598,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       productCode,
       productName: match?.name || '',
       productionName: match?.productionName || '',
+      // SP có màng (field riêng hoặc trong tên) thì tự fill; không có thì để trống để tự nhập.
+      mang: match ? (match.mang || extractMang(match.productionName) || '') : '',
       unit: allowedOrderUnits(match)[0] || match?.unit || '',
       tongKg: '',
       manualTongKg: false
@@ -1611,7 +1618,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       : null;
     const autoTem = catalogTem || parsedTem?.tem || '';
     const autoMauTem = catalogMauTem || parsedTem?.mauTem || '';
-    const extractedMang = isSouthOrder && match ? (match.mang || extractMang(match.productionName)) : '';
+    // SP có màng (field riêng hoặc trong tên) thì tự fill; miền nam không có thì mặc định SUN PC,
+    // các loại đơn khác để trống để tự nhập.
+    const extractedMang = match ? (match.mang || extractMang(match.productionName)) : '';
 
     const rawDaiM = match?.doDaiM ? String(match.doDaiM).replace(/m\s*$/iu, '').trim() : '';
     const autoDaiM = rawDaiM || (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '');
@@ -1630,6 +1639,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       productName: match?.name || '',
       productionName: match?.productionName || '',
       unit: 'Tấm',
+      mang: extractedMang,
       kho: orderDuplicateDecimalText(autoKho || ''),
       doLiDm: orderDuplicateDecimalText(rawDoLiDm || ''),
       tongKg: '',
@@ -2270,6 +2280,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'nam', label: 'Nam' },
                         { key: 'qty', label: 'SL (tổng)', required: true },
                         { key: 'tongKg', label: 'Tổng KG (nhập)' },
+                        { key: 'mang', label: 'Màng' },
                         { key: 'tem', label: 'Tem' },
                         { key: 'mauTem', label: 'Màu tem' },
                         { key: 'haiDau', label: '2 Đầu' },
@@ -2283,6 +2294,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           { key: 'code', label: 'Mã AMIS', required: true },
                           { key: 'name', label: 'Tên sản phẩm' },
                           { key: 'productionName', label: 'Tên sản xuất' },
+                          { key: 'mang', label: 'Màng' },
                           { key: 'note', label: 'Ghi chú' },
                           { key: 'lsxQty', label: 'SL lệnh SX' },
                           { key: 'unit', label: 'ĐVT' },
@@ -2300,6 +2312,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'code', label: 'Mã AMIS', required: true },
                         { key: 'name', label: 'Tên sản phẩm' },
                         { key: 'productionName', label: 'Tên sản xuất' },
+                        { key: 'mang', label: 'Màng' },
                         { key: 'note', label: 'Ghi chú' },
                         { key: 'lsxQty', label: 'SL lệnh SX' },
                         { key: 'unit', label: 'ĐVT' },
@@ -2551,28 +2564,26 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             placeholder="Nhập KG"
                           />
                         </div>
-                        {isFormSouthOrder ? (
-                          <div className="col-span-1 min-w-0">
-                            <input
-                              type="text"
-                              value={line.mang ?? 'SUN PC'}
-                              onChange={e => {
-                                const nextMang = e.target.value;
-                                const currentMang = line.mang ?? 'SUN PC';
-                                const nextProductionName = line.productionName
-                                  ? replaceMangInName(line.productionName, nextMang, currentMang)
-                                  : line.productionName;
-                                updateConversionProductLine(line.key, {
-                                  mang: nextMang,
-                                  productionName: nextProductionName
-                                });
-                              }}
-                              className={orderFieldClass}
-                              placeholder="SUN PC"
-                              title="Màng (mặc định SUN PC, có thể xóa hoặc sửa)"
-                            />
-                          </div>
-                        ) : null}
+                        <div className="col-span-1 min-w-0">
+                          <input
+                            type="text"
+                            value={line.mang ?? (isFormSouthOrder ? 'SUN PC' : '')}
+                            onChange={e => {
+                              const nextMang = e.target.value;
+                              const currentMang = line.mang ?? (isFormSouthOrder ? 'SUN PC' : '');
+                              const nextProductionName = line.productionName
+                                ? replaceMangInName(line.productionName, nextMang, currentMang)
+                                : line.productionName;
+                              updateConversionProductLine(line.key, {
+                                mang: nextMang,
+                                productionName: nextProductionName
+                              });
+                            }}
+                            className={orderFieldClass}
+                            placeholder="SUN PC"
+                            title={isFormSouthOrder ? 'Màng (mặc định SUN PC, có thể xóa hoặc sửa)' : 'Màng (để trống nếu không có, tự đổi trong tên sản xuất)'}
+                          />
+                        </div>
                         <div className="min-w-0">
                           <SearchableSelect
                             value={line.tem || ''}
@@ -2713,6 +2724,26 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       </div>
                       <div className="min-w-0">
                         {renderProductionNameSelect(line)}
+                      </div>
+                      <div className="col-span-1 min-w-0">
+                        <input
+                          type="text"
+                          value={line.mang ?? ''}
+                          onChange={e => {
+                            const nextMang = e.target.value;
+                            const currentMang = line.mang ?? '';
+                            const nextProductionName = line.productionName
+                              ? replaceMangInName(line.productionName, nextMang, currentMang)
+                              : line.productionName;
+                            updateConversionProductLine(line.key, {
+                              mang: nextMang,
+                              productionName: nextProductionName
+                            });
+                          }}
+                          className={orderFieldClass}
+                          placeholder="Màng"
+                          title="Màng (để trống nếu không có, tự đổi trong tên sản xuất)"
+                        />
                       </div>
                       <div className="min-w-0">
                         <input
@@ -2908,6 +2939,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         {line.productCode || '-'} · {line.productName || '-'}
                       </p>
                       <p className="mt-0.5 text-xs font-semibold text-zinc-500">Tên sản xuất: {line.tenGhep || '-'}</p>
+                      {line.mang ? (
+                        <p className="mt-0.5 text-xs font-semibold text-zinc-500">Màng: {line.mang}</p>
+                      ) : null}
                       <p className="mt-0.5 text-xs font-semibold text-zinc-500">Ghi chú: {line.note || '-'}</p>
                       <p className="mt-0.5 text-xs font-bold text-amber-700">
                         SL lệnh SX: {formatNumber(getAllocatedQtyFromMap(allocatedQtyMap, viewingOrder.orderCode, {
