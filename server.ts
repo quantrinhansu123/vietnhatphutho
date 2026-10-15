@@ -23378,11 +23378,15 @@ async function loadKiemKhoLiveTongHopForDot(
 
       // Chọn dòng đơn theo tên: khớp tuyệt đối trước, chỉ khi duy nhất một
       // ứng viên chứa lẫn nhau mới nhận (tránh đoán bừa gây trùng ghi chú).
-      const pickByName = (candidates: Record<string, unknown>[], itemName: string): Record<string, unknown> | null => {
-        const exact = candidates.find(line => {
+      const pickByName = (candidates: Record<string, unknown>[], itemName: string, itemStt = 0): Record<string, unknown> | null => {
+        const exactAll = candidates.filter(line => {
           const lineName = lineDisplayName(line);
           return lineName !== '' && lineName === itemName;
         });
+        // Nhiều dòng đơn trùng hệt nhau: lấy đúng dòng theo STT để mỗi dòng giữ ghi chú riêng.
+        const exact = exactAll.length > 1 && itemStt > 0
+          ? exactAll.find(line => Number(line.stt) === itemStt) ?? exactAll[0]
+          : exactAll[0];
         if (exact) return exact;
         const partial = candidates.filter(line => {
           const lineName = lineDisplayName(line);
@@ -23408,7 +23412,7 @@ async function loadKiemKhoLiveTongHopForDot(
           const sameId = lines.filter(line => String(line.san_pham_id ?? '').trim() === spId);
           if (sameId.length > 0) {
             if (!itemName) return sameId.length === 1 ? (sameId[0] as Record<string, unknown>) : null;
-            return pickByName(sameId as Record<string, unknown>[], itemName);
+            return pickByName(sameId as Record<string, unknown>[], itemName, Number(item?.stt) || 0);
           }
         }
 
@@ -23418,7 +23422,7 @@ async function loadKiemKhoLiveTongHopForDot(
         );
         if (sameCode.length === 0) return null;
         // 2. Có tên thì bắt buộc khớp tên ghép (trùng mã khác tên phải khác dòng).
-        if (itemName) return pickByName(sameCode as Record<string, unknown>[], itemName);
+        if (itemName) return pickByName(sameCode as Record<string, unknown>[], itemName, Number(item?.stt) || 0);
         // 3. Dòng lệnh không tên + nhiều dòng cùng mã → không đoán bừa.
         return sameCode.length === 1 ? (sameCode[0] as Record<string, unknown>) : null;
       };

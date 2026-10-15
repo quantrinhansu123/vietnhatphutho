@@ -147,6 +147,8 @@ export interface AllocatedLenhSxLine {
   productCode: string;
   productionName: string;
   tenGhep: string;
+  /** STT dòng trong lệnh (0 = không có) — phân biệt các dòng đơn trùng hệt nhau. */
+  stt: number;
   quantity: number;
 }
 
@@ -208,6 +210,7 @@ export function normalizeAllocatedLenhSxLines(record: unknown): AllocatedLenhSxL
       productCode,
       productionName,
       tenGhep,
+      stt: Number(row.stt ?? row.STT) || 0,
       quantity
     });
   }
@@ -257,7 +260,10 @@ export function buildAllocatedQtyMap(lenhRows: unknown[]): Map<string, number> {
   for (const record of list) {
     for (const line of normalizeAllocatedLenhSxLines(record)) {
       if (line.productId) {
-        addAllocated(map, allocatedQtyKey(line.orderRef, line.productId, '', '', line.tenGhep), line.quantity);
+        const baseKey = allocatedQtyKey(line.orderRef, line.productId, '', '', line.tenGhep);
+        addAllocated(map, baseKey, line.quantity);
+        // Khóa riêng theo STT để các dòng đơn trùng hệt nhau không nhận chung tổng.
+        if (line.stt > 0) addAllocated(map, `${baseKey}||stt:${line.stt}`, line.quantity);
         continue;
       }
       addAllocated(map, allocatedQtyKey(line.orderRef, '', line.productCode, line.productionName, line.tenGhep), line.quantity);
@@ -274,11 +280,17 @@ export function buildAllocatedQtyMap(lenhRows: unknown[]): Map<string, number> {
 export function getAllocatedQtyFromMap(
   map: Map<string, number>,
   orderCode: string,
-  line: { productId?: string | null; productCode?: string | null; productionName?: string | null; tenGhep?: string | null }
+  line: { productId?: string | null; productCode?: string | null; productionName?: string | null; tenGhep?: string | null; stt?: number | null }
 ): number {
   const productId = String(line.productId || '').trim();
   if (productId) {
-    return map.get(allocatedQtyKey(orderCode, productId, '', '', line.tenGhep || '')) || 0;
+    const baseKey = allocatedQtyKey(orderCode, productId, '', '', line.tenGhep || '');
+    // `stt` chỉ truyền cho dòng đơn trùng hệt dòng khác (xem duplicateLineStt).
+    if (line.stt && line.stt > 0) {
+      const bySlot = map.get(`${baseKey}||stt:${line.stt}`);
+      if (bySlot !== undefined) return bySlot;
+    }
+    return map.get(baseKey) || 0;
   }
   // Parity `productLineMatches`: thiếu tên một bên thì khớp theo mã → cộng cả 2 khóa.
   // (dòng lệnh không-id đã ghi vào cả khóa full + khóa gộp nên lookup không đếm trùng.)
@@ -289,6 +301,24 @@ export function getAllocatedQtyFromMap(
   const full = map.get(allocatedQtyKey(orderCode, '', line.productCode || '', productionName, line.tenGhep || '')) || 0;
   const unnamed = map.get(allocatedCodeUnnamedKey(orderCode, line.productCode || '')) || 0;
   return Math.round((full + unnamed) * 1000) / 1000;
+}
+
+/**
+ * STT (1-based) của dòng đơn nếu có dòng khác trong cùng đơn trùng hệt (cùng sản phẩm + tên ghép);
+ * không trùng thì undefined → tra SL lệnh SX theo tổng như cũ.
+ */
+export function duplicateLineStt(
+  lines: Array<{ productId?: string | null; productCode?: string | null; tenGhep?: string | null }>,
+  index: number
+): number | undefined {
+  const keyOf = (line: { productId?: string | null; productCode?: string | null; tenGhep?: string | null }) =>
+    `${String(line.productId || line.productCode || '').trim().toLocaleLowerCase('vi')}||${normalizeTenGhepKey(line.tenGhep)}`;
+  const current = lines[index];
+  if (!current) return undefined;
+  const key = keyOf(current);
+  if (key.startsWith('||')) return undefined;
+  const hasTwin = lines.some((other, i) => i !== index && keyOf(other) === key);
+  return hasTwin ? index + 1 : undefined;
 }
 
 /** Mọi tên sản xuất của đúng mã AMIS (không lọc thêm theo Tên SP để không sót variant). */

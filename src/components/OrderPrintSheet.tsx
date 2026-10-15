@@ -1,7 +1,7 @@
 import React from 'react';
 import { formatNumber, parsePercentInput } from '../utils';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
-import { SOUTH_ORDER_TYPE, getAllocatedQtyFromMap, isRetailCutOrderType } from '../features/_shared/orderHelpers';
+import { SOUTH_ORDER_TYPE, duplicateLineStt, getAllocatedQtyFromMap, isRetailCutOrderType } from '../features/_shared/orderHelpers';
 import { getOrderProductLines, type OrderRow } from '../features/_shared/orderRecordHelpers';
 import { cutOrderPrintSize, cutOrderPrintTenHang, formatPhuThoDate } from './cutOrderPrint';
 
@@ -26,16 +26,17 @@ function displayCell(value: string | null | undefined) {
 export default function OrderPrintSheet({ order, allocatedQtyMap }: { order: OrderRow; allocatedQtyMap?: Map<string, number> }) {
   const productLines = getOrderProductLines(order);
   const totalQuantity = productLines.reduce((sum, item) => sum + parsePercentInput(item.quantity), 0);
-  const allocatedOf = (line: ReturnType<typeof getOrderProductLines>[number]) =>
+  const allocatedOf = (line: ReturnType<typeof getOrderProductLines>[number], index: number) =>
     allocatedQtyMap
       ? getAllocatedQtyFromMap(allocatedQtyMap, order.orderCode, {
           productId: line.productId,
           productCode: line.productCode,
           productionName: line.productionName,
-          tenGhep: line.tenGhep
+          tenGhep: line.tenGhep,
+          stt: duplicateLineStt(productLines, index)
         })
       : 0;
-  const totalAllocated = productLines.reduce((sum, line) => sum + allocatedOf(line), 0);
+  const totalAllocated = productLines.reduce((sum, line, index) => sum + allocatedOf(line, index), 0);
   const orderNote = displayCell(order.note);
   const isRetailCutOrder = isRetailCutOrderType(order.orderType);
   const isSouthOrder = order.orderType === SOUTH_ORDER_TYPE;
@@ -213,7 +214,7 @@ export default function OrderPrintSheet({ order, allocatedQtyMap }: { order: Ord
                   <td>{order.deliveryDate ? formatOrderCreatedAt(order.deliveryDate) : ''}</td>
                   <td>{displayCell(line.note)}</td>
                   <td className="order-print-center order-print-qty">
-                    {formatNumber(allocatedOf(line))}
+                    {formatNumber(allocatedOf(line, idx))}
                   </td>
                 </tr>
               ))
