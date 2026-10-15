@@ -271,6 +271,20 @@ export function setDinhMucKgInTenGhep(tenGhep: string, kg: string | number | nul
   return `${base} - ${segment}`;
 }
 
+/** Tên có ZEM (hàng sóng): định mức tính theo kg, không dùng độ li ĐM. */
+export function hasZemInName(...parts: Array<string | null | undefined>): boolean {
+  return parts.some(part => /zem/i.test(String(part || '')));
+}
+
+/** Bỏ đoạn `(đm n li)` khỏi tên ghép (giữ nguyên `(đm n kg)`). */
+export function stripDoLiDmLiSegment(tenGhep: string): string {
+  return String(tenGhep || '')
+    .replace(/\s*-\s*\(\s*đm\s*[\d.,]+\s*li\s*\)/giu, '')
+    .replace(/\s*\(\s*đm\s*[\d.,]+\s*li\s*\)/giu, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 export function replaceDoLiDmInTenGhep(
   tenGhep: string,
   doLiDm: string | null | undefined,
