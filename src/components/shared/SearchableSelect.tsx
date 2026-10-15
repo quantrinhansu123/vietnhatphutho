@@ -43,7 +43,8 @@ export function SearchableSelect({
   matchDropdownWidth = false,
   searchPlaceholder,
   selectedOptionClassName,
-  skipUnchangedBlurCommit: _skipUnchangedBlurCommit,
+  skipUnchangedBlurCommit = false,
+  title,
   showAllWhenQueryMatchesSelection = false,
   revertOnBlurMismatch = false
 }: {
@@ -79,8 +80,10 @@ export function SearchableSelect({
   searchPlaceholder?: string;
   /** Class riêng cho option đang được chọn trong dropdown (mặc định: nền đỏ/chữ đỏ). */
   selectedOptionClassName?: string;
-  /** Tương thích prop main — hiện chưa đổi hành vi blur. */
+  /** Rời ô mà giá trị không đổi thì không gọi onChange (tránh nạp lại thông số mặc định khi chỉ click vào ô). */
   skipUnchangedBlurCommit?: boolean;
+  /** Tooltip khi rê chuột vào ô (vd hiện đủ tên dài bị cắt). */
+  title?: string;
   /**
    * Khi ô đang hiện đúng giá trị đã chọn, dropdown liệt kê đủ option
    * (vd tên sản xuất cùng mã AMIS). Chỉ lọc sau khi người dùng sửa chữ tìm.
@@ -178,13 +181,23 @@ export function SearchableSelect({
     setOpen(false);
   };
 
+  /** Rời ô mà giá trị không đổi (vd chỉ click vào ô rồi click ra) thì không gọi onChange — tránh nạp lại thông số mặc định. */
+  const commitFromBlur = (nextValue: string, item: unknown | null = null) => {
+    if (skipUnchangedBlurCommit && nextValue.trim() === String(value ?? '').trim()) {
+      setQuery(selectedLabel);
+      setOpen(false);
+      return;
+    }
+    commitValue(nextValue, item);
+  };
+
   const handleBlur = () => {
     // Commit đồng bộ ngay khi blur: nút Lưu bấm ngay sau khi xóa ô vẫn đọc đúng state mới.
     // Không dùng setTimeout — click chọn option đã chặn blur bằng preventDefault nên không xung đột.
     const normalized = query.trim().toLowerCase();
     if (!normalized) {
       if (allowEmpty) {
-        commitValue('', null);
+        commitFromBlur('', null);
       } else {
         setQuery(selectedLabel);
         setOpen(false);
@@ -194,20 +207,20 @@ export function SearchableSelect({
 
     const exactValue = options.find(item => getValue(item).toLowerCase() === normalized);
     if (exactValue) {
-      commitValue(getValue(exactValue), exactValue);
+      commitFromBlur(getValue(exactValue), exactValue);
       return;
     }
 
     const exactLabel = matchExactLabel(normalized);
     if (exactLabel) {
-      commitValue(getValue(exactLabel), exactLabel);
+      commitFromBlur(getValue(exactLabel), exactLabel);
       return;
     }
 
     if (resolveSelectedItem) {
       const resolved = resolveSelectedItem(options, normalized);
       if (resolved) {
-        commitValue(getValue(resolved), resolved);
+        commitFromBlur(getValue(resolved), resolved);
         return;
       }
     }
@@ -219,12 +232,12 @@ export function SearchableSelect({
     }
 
     if (allowCustomValue) {
-      commitValue(query, null);
+      commitFromBlur(query, null);
       return;
     }
 
     if (filteredOptions.length === 1) {
-      commitValue(getValue(filteredOptions[0]), filteredOptions[0]);
+      commitFromBlur(getValue(filteredOptions[0]), filteredOptions[0]);
       return;
     }
 
@@ -566,6 +579,7 @@ export function SearchableSelect({
           onBlur={handleBlur}
           disabled={isDisabled}
           placeholder={emptyText}
+          title={title}
           className={fieldClass}
         />
       )}
