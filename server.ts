@@ -3812,6 +3812,10 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
         : String(product.san_pham_id ?? '').trim()
           ? [String(product.san_pham_id).trim()]
           : [];
+      // Biến thể (tên ghép + ghi chú) song song với san_pham_ids: cùng SP khác biến thể không bị coi là trùng.
+      const sanPhamVariants = Array.isArray(product.san_pham_variants)
+        ? product.san_pham_variants.map(value => String(value ?? '').trim())
+        : [];
       const ten_sp = String(product.ten_sp ?? product.tenSp ?? '').trim();
       const isSecondary = String(product.loai ?? '').trim() === 'nvl_phu';
       if (!ma_sp) return { error: `Sản phẩm #${index + 1} thiếu mã SP.` };
@@ -3821,7 +3825,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
       }
       const seenCodes = isSecondary ? seenSecondaryCodes : seenFormulaCodes;
       for (const [codeIndex, code] of codes.entries()) {
-        const productKey = sanPhamIds[codeIndex];
+        const productKey = `${sanPhamIds[codeIndex]}§${sanPhamVariants[codeIndex] || ''}`;
         if (seenCodes.has(productKey)) {
           return {
             error: isSecondary
@@ -3916,6 +3920,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
           : sanPhamIds.length > 1
             ? { san_pham_ids: sanPhamIds }
             : {}),
+        ...(sanPhamVariants.some(Boolean) ? { san_pham_variants: sanPhamVariants } : {}),
         ten_sp: ten_sp || null,
         tong_trong_luong,
         ty_le_hao_hut,

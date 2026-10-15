@@ -103,6 +103,8 @@ export type MixingNormProduct = {
   /** Stable catalog identity; ma_sp/ma_amis are display/search values only. */
   san_pham_id?: string;
   san_pham_ids?: string[];
+  /** Biến thể (tên ghép + ghi chú) song song với san_pham_ids — rỗng = SP không phân biệt biến thể. */
+  san_pham_variants?: string[];
   ten_sp: string;
   /** Tên ghép hiển thị trên phiếu in (ưu tiên hơn ten_san_xuat). */
   ten_ghep?: string;
@@ -159,6 +161,10 @@ type ProductOption = {
   wastePercent?: number;
   nhomVthh?: string;
   nplItems?: MixingBomItem[];
+  /** Khóa chọn: `san_pham_id` hoặc `san_pham_id§biến thể` khi cùng SP có nhiều tên ghép/ghi chú. */
+  selectionKey?: string;
+  /** Ghi chú dòng lệnh SX — hiện kèm nhãn khi SP có nhiều biến thể. */
+  variantNote?: string;
 };
 
 type MixingProductConversion = ProductConversionFactors & {
@@ -251,6 +257,31 @@ export function getSecondaryProductVthhGroups(
     if (v) set.add(v);
   }
   return [...set];
+}
+
+/** Khóa chọn SP = `san_pham_id` (SP chỉ có 1 biến thể) hoặc `san_pham_id§<biến thể>` (cùng SP khác tên ghép / ghi chú). */
+const VARIANT_SEP = '§';
+
+function splitSelectionKey(key: string): { id: string; variant: string } {
+  const text = String(key ?? '').trim();
+  const index = text.indexOf(VARIANT_SEP);
+  return index < 0 ? { id: text, variant: '' } : { id: text.slice(0, index), variant: text.slice(index + 1) };
+}
+
+function baseProductId(key: string): string {
+  return splitSelectionKey(key).id;
+}
+
+function hashVariantText(text: string): string {
+  let hash = 5381;
+  for (const ch of text) hash = ((hash * 33) ^ ch.charCodeAt(0)) >>> 0;
+  return hash.toString(36);
+}
+
+/** Biến thể của dòng lệnh SX = tên ghép + ghi chú (dòng giống hệt nhau thì cùng biến thể → gộp). */
+function orderLineVariant(line: { tenGhep?: string; ghiChu?: string }): string {
+  const norm = (value?: string) => String(value ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi');
+  return hashVariantText(`${norm(line.tenGhep)}|${norm(line.ghiChu)}`);
 }
 
 const emptyLine = (defaultNhomVthh = ''): LineForm => ({
@@ -399,11 +430,15 @@ function productToForm(
       .split(',')
       .map(code => code.trim())
       .filter(Boolean),
-    maSpIds: Array.isArray(product.san_pham_ids)
+    maSpIds: (Array.isArray(product.san_pham_ids)
       ? product.san_pham_ids.map(id => String(id).trim()).filter(Boolean)
       : product.san_pham_id
         ? [String(product.san_pham_id).trim()]
-        : [],
+        : []
+    ).map((id, index) => {
+      const variant = String(product.san_pham_variants?.[index] ?? '').trim();
+      return variant ? `${id}${VARIANT_SEP}${variant}` : id;
+    }),
     maSp: product.ma_sp,
     tenSp: product.ten_sp,
     tongTrongLuong:
@@ -792,9 +827,13 @@ function collectSavedSecondaryProducts(
     if (nvlPhu.length === 0) continue;
     const codes = product.ma_sp.split(',').map(code => code.trim()).filter(Boolean);
     if (codes.length === 0) continue;
-    const savedIds = Array.isArray(product.san_pham_ids)
+    const savedIds = (Array.isArray(product.san_pham_ids)
       ? product.san_pham_ids.map(id => String(id).trim())
-      : [String(product.san_pham_id ?? '').trim()];
+      : [String(product.san_pham_id ?? '').trim()]
+    ).map((id, index) => {
+      const variant = String(product.san_pham_variants?.[index] ?? '').trim();
+      return id && variant ? `${id}${VARIANT_SEP}${variant}` : id;
+    });
     const signature = nvlPhuSignature(nvlPhu);
     const existing = groups.get(signature);
     if (existing) {
@@ -896,6 +935,9 @@ function normalizeProductBlock(item: Record<string, unknown>): MixingNormProduct
     san_pham_id: String(item.san_pham_id ?? '').trim() || undefined,
     san_pham_ids: Array.isArray(item.san_pham_ids)
       ? item.san_pham_ids.map(id => String(id).trim()).filter(Boolean)
+      : undefined,
+    san_pham_variants: Array.isArray(item.san_pham_variants)
+      ? item.san_pham_variants.map(value => String(value ?? '').trim())
       : undefined,
     ten_sp,
     ten_ghep: String(item.ten_ghep ?? item.tenGhep ?? '').trim() || undefined,
@@ -1205,10 +1247,13 @@ export default function MixingNormMaterialsTab() {
     () => pickPreferredSecondaryMaterials(materials),
     [materials]
   );
-  const catalogProductsById = useMemo(
-    () => new Map(catalogProducts.map(product => [product.id, product])),
-    [catalogProducts]
-  );
+  const catalogProductsById = useMemo(() => {
+    const map = new Map(catalogProducts.map(product => [product.id, product]));
+    const baseGet = map.get.bind(map);
+    // Khóa chọn có thể là `id§biến thể` — luôn tra danh mục theo id gốc.
+    map.get = (key: string) => baseGet(baseProductId(key));
+    return map;
+  }, [catalogProducts]);
 
   const findMaterialForLine = (line: LineForm, pool?: MaterialOption[]) => {
     const source = pool ?? (
@@ -1415,7 +1460,17 @@ export default function MixingNormMaterialsTab() {
 
   const productOptions = useMemo((): ProductOption[] => {
     const byIdentity = new Map<string, ProductOption>();
-    const add = (code: string, name: string, productId = '', productionName = '', tenGhep = '', quyCachMDai?: number | null) => {
+    // Số biến thể (tên ghép + ghi chú) khác nhau của từng SP trong lệnh SX đã chọn.
+    const variantsByProductId = new Map<string, Set<string>>();
+    if (selectedOrder) {
+      for (const line of selectedOrder.productLines) {
+        const pid = line.productId?.trim() || findCatalogProductByAnyCode(catalogProducts, line.productCode)?.id?.trim() || '';
+        if (!pid) continue;
+        if (!variantsByProductId.has(pid)) variantsByProductId.set(pid, new Set());
+        variantsByProductId.get(pid)!.add(orderLineVariant(line));
+      }
+    }
+    const add = (code: string, name: string, productId = '', productionName = '', tenGhep = '', quyCachMDai?: number | null, ghiChu = '') => {
       const trimmedCode = code.trim();
       if (!trimmedCode) return;
       const catalog = productId
@@ -1429,7 +1484,13 @@ export default function MixingNormMaterialsTab() {
       // ID là identity. Không gộp các dòng chỉ vì trùng ma_sp/ma_amis.
       const identityKey = productId || catalog?.id || '';
       if (!identityKey) return;
-      if (byIdentity.has(identityKey)) return;
+      // Cùng SP nhưng khác tên ghép/ghi chú → mỗi biến thể một lựa chọn; dòng giống hệt nhau gộp 1.
+      const hasVariants = (variantsByProductId.get(identityKey)?.size ?? 0) > 1;
+      const selectionKey = hasVariants
+        ? `${identityKey}${VARIANT_SEP}${orderLineVariant({ tenGhep, ghiChu })}`
+        : identityKey;
+      if (byIdentity.has(selectionKey)) return;
+      const variantNote = hasVariants ? ghiChu.trim() : '';
       const resolvedTenSanXuat = productionName.trim() || catalog?.tenSanXuat || '';
       const resolvedTenGhep =
         tenGhep.trim() ||
@@ -1440,19 +1501,23 @@ export default function MixingNormMaterialsTab() {
           cutLengthM: quyCachMDai
         }) ||
         undefined;
-      byIdentity.set(identityKey, catalog
+      byIdentity.set(selectionKey, catalog
         ? {
             ...catalog,
             name: name.trim() || catalog.name,
             tenSanXuat: resolvedTenSanXuat || catalog.tenSanXuat,
-            tenGhep: resolvedTenGhep
+            tenGhep: resolvedTenGhep,
+            selectionKey,
+            ...(variantNote ? { variantNote } : {})
           }
         : {
             id: productId || '',
             code: trimmedCode,
             name: name.trim(),
             tenSanXuat: resolvedTenSanXuat,
-            tenGhep: resolvedTenGhep
+            tenGhep: resolvedTenGhep,
+            selectionKey,
+            ...(variantNote ? { variantNote } : {})
           });
     };
 
@@ -1465,13 +1530,15 @@ export default function MixingNormMaterialsTab() {
           line.productId,
           line.productionName,
           line.tenGhep || '',
-          line.quyCachMDai
+          line.quyCachMDai,
+          line.ghiChu || ''
         );
       }
       // Giữ lại sản phẩm đã chọn sẵn trong phiếu khi sửa, chỉ theo ID.
       for (const product of [...form.products, ...form.secondaryProducts]) {
         product.maSpIds.forEach((productId, index) => {
-          if (!productId || byIdentity.has(productId)) return;
+          // Khóa biến thể (id§...) không còn trong lệnh SX thì để chip tự tra theo mã.
+          if (!productId || byIdentity.has(productId) || productId.includes(VARIANT_SEP)) return;
           const code = product.maSpCodes[index] || '';
           const catalog = catalogProductsById.get(productId);
           add(
@@ -1507,7 +1574,7 @@ export default function MixingNormMaterialsTab() {
   }, [catalogProducts, catalogProductsById, productionOrders, selectedOrder, form.products, form.secondaryProducts]);
 
   const productLabel = (option: ProductOption) =>
-    `${option.amisCode || option.code} — ${option.tenGhep || option.tenSanXuat || option.name}`;
+    `${option.amisCode || option.code} — ${option.tenGhep || option.tenSanXuat || option.name}${option.variantNote ? ` (${option.variantNote})` : ''}`;
 
   const productSearchText = (option: ProductOption) =>
     `${option.code} ${option.amisCode ?? ''} ${option.newCode ?? ''} ${option.name} ${option.tenSanXuat ?? ''} ${option.tenGhep ?? ''}`;
@@ -1525,7 +1592,7 @@ export default function MixingNormMaterialsTab() {
     return map;
   }, [productOptions]);
   const productOptionsById = useMemo(
-    () => new Map(productOptions.map(option => [option.id, option])),
+    () => new Map(productOptions.map(option => [option.selectionKey || option.id, option])),
     [productOptions]
   );
 
@@ -1792,7 +1859,7 @@ export default function MixingNormMaterialsTab() {
     productId = ''
   ) => {
     if (!order) return [];
-    const id = productId.trim();
+    const { id, variant } = splitSelectionKey(productId);
     const codeKey = normalizeProductLookupKey(code);
     // ID là identity; khi dòng lệnh chưa gắn ID thì khớp theo mọi biến thể mã
     // (ma_sp/AMIS/mã mới) của SP đã chọn để không mất số liệu.
@@ -1805,6 +1872,8 @@ export default function MixingNormMaterialsTab() {
       });
     }
     return order.productLines.filter(line => {
+      // Khóa biến thể: chỉ lấy dòng đúng tên ghép + ghi chú đã chọn.
+      if (variant && orderLineVariant(line) !== variant) return false;
       const lineId = line.productId?.trim() || '';
       if (id) {
         // Dòng đã gắn ID khác thì loại (kể cả trùng mã/AMIS — khác SP).
@@ -1840,6 +1909,8 @@ export default function MixingNormMaterialsTab() {
 
   type OrderLineGroup = {
     key: string;
+    /** Khóa chọn (id hoặc id§biến thể) — dùng tra lựa chọn/chip. */
+    selKey?: string;
     spId: string;
     length: number | null;
     code: string;
@@ -1867,12 +1938,14 @@ export default function MixingNormMaterialsTab() {
           return true;
         });
         for (const line of lines) {
-          const spId = line.productId?.trim() || catalog?.id?.trim() || id;
+          const spId = line.productId?.trim() || catalog?.id?.trim() || baseProductId(id);
           const length = normalizeGroupLength(line.quyCachMDai);
-          const key = `${spId}__m:${length !== null ? length.toFixed(3) : 'none'}`;
+          // Biến thể đã chọn (id§...) tách nhóm riêng để mỗi tên ghép/ghi chú một dòng hao hụt.
+          const selKey = id.includes(VARIANT_SEP) ? id : spId;
+          const key = `${selKey}__m:${length !== null ? length.toFixed(3) : 'none'}`;
           let group = groups.get(key);
           if (!group) {
-            group = { key, spId, length, code: code || line.productCode, catalog, lines: [] };
+            group = { key, selKey, spId, length, code: code || line.productCode, catalog, lines: [] };
             groups.set(key, group);
           }
           if (!group.catalog && catalog) group.catalog = catalog;
@@ -1897,7 +1970,7 @@ export default function MixingNormMaterialsTab() {
    */
   const resolveWasteBreakdown = (codes: string[], ids: string[] = []) =>
     collectGroupedOrderLines(codes, ids).map(group => {
-      const selectedOption = (group.spId ? productOptionsById.get(group.spId) : undefined)
+      const selectedOption = ((group.selKey || group.spId) ? productOptionsById.get(group.selKey || group.spId) : undefined)
         || productOptionsByCode.get(normalizeProductLookupKey(group.code));
       const orderLine = group.lines[0];
       // Không quy đổi được ra kg → coi như 0 (null làm sai công thức tổng).
@@ -2186,7 +2259,7 @@ export default function MixingNormMaterialsTab() {
   /** Chọn nhiều mã SP trong ô "Mã sản phẩm" của 1 dòng SP — dùng chung 1 công thức trộn. */
   const updateProductCodes = (productKey: string, selected: ProductOption[]) => {
     const codes = selected.map(option => option.code.trim()).filter(Boolean);
-    const rawIds = selected.map(option => option.id?.trim() || '');
+    const rawIds = selected.map(option => (option.selectionKey || option.id)?.trim() || '');
     const ids = resolveValidProductIds(codes, rawIds);
     setForm(prev => ({
       ...prev,
@@ -2288,7 +2361,7 @@ export default function MixingNormMaterialsTab() {
 
   const updateSecondaryProductCodes = (productKey: string, selected: ProductOption[]) => {
     const codes = selected.map(option => option.code.trim()).filter(Boolean);
-    const rawIds = selected.map(option => option.id?.trim() || '');
+    const rawIds = selected.map(option => (option.selectionKey || option.id)?.trim() || '');
     const ids = resolveValidProductIds(codes, rawIds);
     setForm(prev => ({
       ...prev,
@@ -2677,7 +2750,8 @@ export default function MixingNormMaterialsTab() {
 
       const payloadProducts = products.map((product, pIndex) => {
         const validIds = resolveValidProductIds(product.maSpCodes, product.maSpIds);
-        const nonEmptyIds = validIds.filter(Boolean);
+        const nonEmptyIds = validIds.filter(Boolean).map(baseProductId);
+        const variantKeys = validIds.filter(Boolean).map(key => splitSelectionKey(key).variant);
         // Mét cắt của block = mét chung của các nhóm (san_pham_id, quy_cach_m_dai);
         // nhiều mét khác nhau thì lưu danh sách để không mất thông tin.
         const distinctLengths = [
@@ -2714,6 +2788,7 @@ export default function MixingNormMaterialsTab() {
           ma_sp: product.maSp.trim(),
           san_pham_id: nonEmptyIds[0] || undefined,
           ...(nonEmptyIds.length > 1 ? { san_pham_ids: nonEmptyIds } : {}),
+          ...(variantKeys.some(Boolean) ? { san_pham_variants: variantKeys } : {}),
           ...(uniformLength !== null ? { quy_cach_m_dai: uniformLength } : {}),
           ...(uniformLength === null && distinctLengths.length > 1 ? { quy_cach_m_dai_list: distinctLengths } : {}),
           ten_sp: product.tenSp.trim(),
@@ -2734,7 +2809,8 @@ export default function MixingNormMaterialsTab() {
         const codes = item.maSpCodes.map(code => code.trim()).filter(Boolean);
         if (codes.length === 0) continue;
         const validIds = resolveValidProductIds(codes, item.maSpIds);
-        const nonEmptyIds = validIds.filter(Boolean);
+        const nonEmptyIds = validIds.filter(Boolean).map(baseProductId);
+        const variantKeys = validIds.filter(Boolean).map(key => splitSelectionKey(key).variant);
         const distinctLengths = [
           ...new Set(
             collectGroupedOrderLines(codes, validIds)
@@ -2780,6 +2856,7 @@ export default function MixingNormMaterialsTab() {
           ma_sp: codes.join(', '),
           san_pham_id: nonEmptyIds[0] || undefined,
           ...(nonEmptyIds.length > 1 ? { san_pham_ids: nonEmptyIds } : {}),
+          ...(variantKeys.some(Boolean) ? { san_pham_variants: variantKeys } : {}),
           ...(uniformLength !== null ? { quy_cach_m_dai: uniformLength } : {}),
           ...(uniformLength === null && distinctLengths.length > 1 ? { quy_cach_m_dai_list: distinctLengths } : {}),
           ten_sp: '',
@@ -3296,7 +3373,7 @@ export default function MixingNormMaterialsTab() {
                   const takenHere = selectedLookupKeysByProduct.get(product.key) ?? new Set<string>();
                   const selectedCodes = new Set(productIdentityKeys(product));
                   const pickerOptions = productOptions.filter(option => {
-                    const identity = option.id;
+                    const identity = option.selectionKey || option.id;
                     if (takenByOthers.has(identity)) return false;
                     const selectedOnThisRow = selectedCodes.has(identity);
                     if (!selectedOnThisRow && takenHere.has(identity)) return false;
@@ -3337,7 +3414,7 @@ export default function MixingNormMaterialsTab() {
                             values={resolveProductOptionsForCodes(product.maSpCodes, product.maSpIds)}
                             onChange={selected => updateProductCodes(product.key, selected)}
                             options={pickerOptions}
-                            getValue={option => option.id || option.code}
+                            getValue={option => option.selectionKey || option.id || option.code}
                             getLabel={productLabel}
                             getSearchText={productSearchText}
                             allowCustomValues={false}
@@ -3604,7 +3681,7 @@ export default function MixingNormMaterialsTab() {
                       const takenHere = selectedLookupKeysBySecondaryProduct.get(product.key) ?? new Set<string>();
                       const selectedCodes = new Set(product.maSpIds.filter(Boolean));
                       const pickerOptions = productOptions.filter(option => {
-                        const identity = option.id;
+                        const identity = option.selectionKey || option.id;
                         if (takenByOthers.has(identity)) return false;
                         const selectedOnThisRow = selectedCodes.has(identity);
                         if (!selectedOnThisRow && takenHere.has(identity)) return false;
@@ -3645,7 +3722,7 @@ export default function MixingNormMaterialsTab() {
                               values={resolveProductOptionsForCodes(product.maSpCodes, product.maSpIds)}
                               onChange={selected => updateSecondaryProductCodes(product.key, selected)}
                               options={pickerOptions}
-                              getValue={option => option.id || option.code}
+                              getValue={option => option.selectionKey || option.id || option.code}
                               getLabel={productLabel}
                               getSearchText={productSearchText}
                               allowCustomValues={false}
