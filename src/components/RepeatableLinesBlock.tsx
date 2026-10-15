@@ -17,6 +17,8 @@ type RepeatableLinesBlockProps = {
   extraHeaderButtons?: React.ReactNode;
   showColumnHeaders?: boolean;
   alwaysShowColumnHeaders?: boolean;
+  /** Tiêu đề cột dính trên cùng khi cuộn danh sách (cần khung cha có chiều cao giới hạn + overflow-auto). */
+  stickyColumnHeaders?: boolean;
   actionsAtBottom?: boolean;
   gridTemplateClass?: string;
   columns: RepeatableLineColumn[];
@@ -36,6 +38,7 @@ export function RepeatableLinesBlock({
   extraHeaderButtons,
   showColumnHeaders = false,
   alwaysShowColumnHeaders = false,
+  stickyColumnHeaders = false,
   actionsAtBottom = false,
   gridTemplateClass,
   columns,
@@ -94,7 +97,7 @@ export function RepeatableLinesBlock({
 
         {columns.length > 0 && (
           <div
-            className={`items-end gap-2 border-b border-zinc-200/80 pb-1.5 ${headerLayout} ${headerVisibility} ${headerClassName || ''}`}
+            className={`items-end gap-2 border-b border-zinc-200/80 pb-1.5 ${stickyColumnHeaders ? 'sticky top-0 z-20 bg-zinc-50 pt-1 shadow-[0_1px_0_0_rgba(0,0,0,0.06)]' : ''} ${headerLayout} ${headerVisibility} ${headerClassName || ''}`}
           >
             {columns.map(column => (
               <span
