@@ -698,7 +698,9 @@ export function calculateCutOrderWeight(
   conversion: OrderProductConversion | null | undefined,
   unitText = 'Tấm',
   productCode = '',
-  productName = ''
+  productName = '',
+  enteredWidthText = '',
+  kgPerM2Scale: number | null = null
 ): CutOrderWeightResult | null {
   const length = parsePercentInput(lengthText);
   const quantity = parsePercentInput(quantityText);
@@ -712,8 +714,12 @@ export function calculateCutOrderWeight(
     return { kg1Sp, tongKg: round(kg1Sp * quantity), source: 'trong_luong_kg_m_dai' };
   }
 
-  const width = conversion.khoTamRongM || conversion.khoCuonRongM || extractProductWidth(productCode, productName);
-  const kgPerM2 = conversion.trongLuongKgM2;
+  // Khổ nhập trên dòng (hạ khổ) ưu tiên hơn khổ danh mục để Tổng KG đổi theo khổ.
+  const enteredWidth = parsePercentInput(enteredWidthText);
+  const width = (Number.isFinite(enteredWidth) && enteredWidth > 0 ? enteredWidth : null)
+    || conversion.khoTamRongM || conversion.khoCuonRongM || extractProductWidth(productCode, productName);
+  // Độ li ĐM nhập khác danh mục → kg/m² đổi theo tỉ lệ.
+  const kgPerM2 = conversion.trongLuongKgM2 && kgPerM2Scale ? conversion.trongLuongKgM2 * kgPerM2Scale : conversion.trongLuongKgM2;
   if (Number.isFinite(width) && (width as number) > 0 && Number.isFinite(kgPerM2) && (kgPerM2 as number) > 0) {
     const dienTich1SpM2 = length * (width as number);
     const rawKg1Sp = dienTich1SpM2 * (kgPerM2 as number);
