@@ -271,6 +271,20 @@ export function setDinhMucKgInTenGhep(tenGhep: string, kg: string | number | nul
   return `${base} - ${segment}`;
 }
 
+/**
+ * Đơn miền nam có nhập Tem: bỏ token độ li chính (vd `1.2li`) khỏi tên ghép để không lẫn với Tem.
+ * Chỉ bỏ đoạn đứng riêng `- 1.2li`; giữ `(đm 1.1 li)`, `(đm n kg)` và các số khác (11.2li, 1.22m...).
+ * Độ li phải được lưu riêng (`do_li`) trên dòng đơn trước khi gọi hàm này.
+ */
+export function stripDoLiTokenFromTenGhep(tenGhep: string, doLi: string | null | undefined): string {
+  const text = String(tenGhep || '').trim();
+  const match = String(doLi || '').trim().match(/(\d+(?:[.,]\d+)?)\s*li\b/iu);
+  if (!text || !match) return text;
+  const num = match[1].replace(',', '.').split('.').join('\\.');
+  const pattern = new RegExp(`\\s*-\\s*(?<![\\d.])${num}\\s*li\\b`, 'iu');
+  return text.replace(pattern, '').replace(/\s{2,}/g, ' ').trim();
+}
+
 /** Tên có ZEM (hàng sóng): định mức tính theo kg, không dùng độ li ĐM. */
 export function hasZemInName(...parts: Array<string | null | undefined>): boolean {
   return parts.some(part => /zem/i.test(String(part || '')));

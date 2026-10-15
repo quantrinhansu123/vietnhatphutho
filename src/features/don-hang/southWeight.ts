@@ -14,10 +14,38 @@ export function southDinhMucKgTotal(dinhMucKg: unknown, quantity: unknown): numb
   return Math.round(dm * qty * 100) / 100;
 }
 
-/** Miền nam: TL/tấm = kg/1m × Dài (2 số lẻ); Tổng KG = TL/tấm × SL (2 số lẻ) để tích khớp tuyệt đối. */
-export function southScaledTlAndTotal(kgPerMeter: number, daiM: number, quantity: number): { tl: number; total: number } {
-  const tl = Math.round(kgPerMeter * daiM * 100) / 100;
+/**
+ * Miền nam: TL/tấm = kg/1m × Dài × hệ số (khổ, độ li) làm tròn 2 số lẻ; Tổng KG = TL/tấm × SL (2 số lẻ)
+ * để tích khớp tuyệt đối. `scale` = hệ số khổ × hệ số độ li (mặc định 1 = đúng chuẩn danh mục).
+ */
+export function southScaledTlAndTotal(
+  kgPerMeter: number,
+  daiM: number,
+  quantity: number,
+  scale = 1
+): { tl: number; total: number } {
+  const tl = Math.round(kgPerMeter * daiM * scale * 100) / 100;
   return { tl, total: Math.round(tl * quantity * 100) / 100 };
+}
+
+/** Thiếu độ dài tấm tiêu chuẩn: TL/tấm = Định mức tiêu chuẩn × hệ số; Tổng = TL/tấm × SL (2 số lẻ). */
+export function southFallbackTlAndTotal(
+  dinhMucKg: unknown,
+  quantity: number,
+  scale = 1
+): { tl: number; total: number } | null {
+  const dm = parseSouthDinhMucKg(dinhMucKg);
+  if (dm === null || !Number.isFinite(quantity) || quantity <= 0) return null;
+  const tl = Math.round(dm * scale * 100) / 100;
+  return { tl, total: Math.round(tl * quantity * 100) / 100 };
+}
+
+/** Hệ số khổ = khổ nhập / khổ chuẩn của sản phẩm. Thiếu một trong hai → null (không điều chỉnh). */
+export function southKhoScale(enteredKho: unknown, standardKho: unknown): number | null {
+  const entered = parsePercentInput(String(enteredKho ?? ''));
+  const standard = parsePercentInput(String(standardKho ?? '').replace(/m\s*$/iu, ''));
+  if (!Number.isFinite(entered) || !Number.isFinite(standard) || entered <= 0 || standard <= 0) return null;
+  return entered / standard;
 }
 
 /** Tổng KG đơn hàng luôn lưu/hiển thị số nguyên (làm tròn). Không hợp lệ / <= 0 = null. */
@@ -49,7 +77,8 @@ export function southKgPerStandardMeter(
   const kg = parseSouthDinhMucKg(standardKg);
   const sheetLength = parsePercentInput(String(doDaiTamTieuChuan ?? ''));
   if (kg === null || !Number.isFinite(sheetLength) || sheetLength <= 0) return null;
-  return Math.round((kg / sheetLength) * 1000) / 1000;
+  // Không làm tròn trung gian: tránh lệch 0.01 kg khi nhân lại với Dài (hiển thị KG/1m làm tròn ở UI).
+  return kg / sheetLength;
 }
 
 /** Tổng trọng lượng miền nam = kg/1m × m dài × số lượng (làm tròn số nguyên). */
