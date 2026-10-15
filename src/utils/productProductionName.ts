@@ -242,6 +242,35 @@ export function extractDoLiDmNumber(value: string | null | undefined): string {
  * Đơn miền nam: thay segment định mức thực tế `(đm n li|kg)` trong tên ghép.
  * Không đụng token độ li (`0.8li`) hay tem `(Dán Tem 5li)`.
  */
+/**
+ * Đơn miền nam: đưa Định mức tiêu chuẩn của khách vào tên ghép dạng `(đm 4.8 kg)`.
+ * - Đã có `(đm n li)` (độ li đổi) → chèn ngay sau đó: `… - (đm 5.7 li) - (đm 4.8 kg) - 2.5m`.
+ * - Chưa có → chèn trước mét dài: `… - SUN PC - (đm 4.8 kg) - 2.5m`.
+ * - Đã có định mức kg cũ trong tên thì thay bằng số mới. kg rỗng / không hợp lệ → giữ nguyên tên.
+ */
+export function setDinhMucKgInTenGhep(tenGhep: string, kg: string | number | null | undefined): string {
+  const text = String(tenGhep || '').trim();
+  const token = normalizeDecimalToken(String(kg ?? ''));
+  const parsed = Number(token);
+  if (!text || !token || !Number.isFinite(parsed) || parsed <= 0) return text;
+  const segment = `(đm ${token} kg)`;
+  const base = text
+    .replace(/\s*-\s*\(\s*đm\s*[\d.,]+\s*kg\s*\)/giu, '')
+    .replace(/\s*\(\s*đm\s*[\d.,]+\s*kg\s*\)/giu, '')
+    .replace(/\s*-\s*đm\s*[\d.,]+\s*kg\b/giu, '')
+    .trim();
+  const liMatch = base.match(/\(\s*đm\s*[\d.,]+\s*li\s*\)/iu);
+  if (liMatch && liMatch.index != null) {
+    const end = liMatch.index + liMatch[0].length;
+    return `${base.slice(0, end)} - ${segment}${base.slice(end)}`.trim();
+  }
+  const meterMatch = base.match(/\s*-\s*[\d.,]+\s*m\b/iu);
+  if (meterMatch && meterMatch.index != null) {
+    return `${base.slice(0, meterMatch.index)} - ${segment}${base.slice(meterMatch.index)}`.trim();
+  }
+  return `${base} - ${segment}`;
+}
+
 export function replaceDoLiDmInTenGhep(
   tenGhep: string,
   doLiDm: string | null | undefined,

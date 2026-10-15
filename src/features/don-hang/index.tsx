@@ -48,7 +48,7 @@ import {
   type StaffOption,
   type CustomerOption
 } from '../_shared/orderHelpers';
-import { doLiDmWeightScale, extractDoLiDm, extractDoLiDmNumber, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, replaceMangInName, normalizeDoLiDm, seedProductionSpecs } from '../../utils/productProductionName';
+import { doLiDmWeightScale, extractDoLiDm, extractDoLiDmNumber, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, replaceMangInName, normalizeDoLiDm, seedProductionSpecs, setDinhMucKgInTenGhep } from '../../utils/productProductionName';
 import {
   orderDuplicateDecimalText,
   parseSouthDinhMucKg,
@@ -799,6 +799,8 @@ export function orderProductLinesToPayload(
           if (isSouthOrder ? lineMang !== undefined : Boolean(lineMang)) {
             base = replaceMangInName(base, String(lineMang), variantSpecs?.mang);
           }
+          // Đơn miền nam: đưa Định mức tiêu chuẩn của khách vào tên, vd (đm 4.8 kg).
+          if (isSouthOrder) base = setDinhMucKgInTenGhep(base, line.dinhMucTieuChuanKg);
           return isCutLikeOrder ? appendSouthTemToTenGhep(base, temValue, mauTemValue, danTem2DauValue) : base;
         };
         let tenGhep = buildOrderTenGhep(tenSanXuat, {
@@ -817,6 +819,7 @@ export function orderProductLinesToPayload(
           );
         }
         if (!tenGhep) return undefined;
+        if (isSouthOrder) tenGhep = setDinhMucKgInTenGhep(tenGhep, line.dinhMucTieuChuanKg);
         return isCutLikeOrder ? appendSouthTemToTenGhep(tenGhep, temValue, mauTemValue, danTem2DauValue) : tenGhep;
       };
 
