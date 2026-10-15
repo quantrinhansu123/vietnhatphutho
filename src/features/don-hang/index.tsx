@@ -913,12 +913,15 @@ export function orderProductLinesToPayload(
           : null;
         if (manualKgPerUnit !== null && isCuonProduct(unit)) {
           cutTlCuon = manualKgPerUnit;
+        } else if (isCuonProduct(unit) && cutWeight?.kg1Sp) {
+          // ĐVT Cuộn: TL/cuộn = TL tính theo Dài (m) đặt, không dùng số cố định của danh mục.
+          cutTlCuon = roundConversionValue(cutWeight.kg1Sp);
         } else if (conversion?.trongLuongKgCuon) {
           cutTlCuon = roundConversionValue(conversion.trongLuongKgCuon);
         }
         if (manualKgPerUnit !== null && isTamProduct(unit)) {
           cutTlTam = manualKgPerUnit;
-        } else if (cutWeight?.kg1Sp) {
+        } else if (cutWeight?.kg1Sp && !isCuonProduct(unit)) {
           cutTlTam = roundConversionValue(cutWeight.kg1Sp);
         } else if (conversion?.trongLuongKgTam) {
           cutTlTam = roundConversionValue(conversion.trongLuongKgTam);
@@ -1401,10 +1404,18 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             const conversion = productConversions.find(item => item.sanPhamId === match.id);
             const rawDaiM = match.doDaiM ? String(match.doDaiM).replace(/m\s*$/iu, '').trim() : '';
             const autoDaiM = rawDaiM || (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '') || line.daiM;
+            const rawKho = match.doDayM ? String(match.doDayM).replace(/m\s*$/iu, '').trim() : '';
+            const autoKho = rawKho || (conversion?.khoTamRongM ? String(conversion.khoTamRongM) : '') || line.kho;
+            const rawDoLiDm = extractDoLiDmNumber(match.doLiDm || '') || extractDoLiDmNumber(extractDoLiDm(match.productionName) || '');
             return {
               ...baseUpdated,
               mang: match.mang || extractMang(match.productionName) || '',
-              daiM: orderDuplicateDecimalText(autoDaiM || '')
+              daiM: orderDuplicateDecimalText(autoDaiM || ''),
+              kho: orderDuplicateDecimalText(autoKho || ''),
+              doLiDm: orderDuplicateDecimalText(rawDoLiDm || line.doLiDm || ''),
+              // Đổi SP/Dài tự fill → tính lại Tổng KG, không giữ số cũ.
+              tongKg: '',
+              manualTongKg: false
             };
           }
 
@@ -1449,6 +1460,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             doLiDm: orderDuplicateDecimalText(autoDoLiDm || ''),
             doDaiTamTieuChuan: orderDuplicateDecimalText(autoDoDaiTamTieuChuan || ''),
             dinhMucTieuChuanKg: orderDuplicateDecimalText(autoDinhMucTieuChuanKg || ''),
+            tongKg: '',
+            manualTongKg: false,
             tem: autoTemVal,
             mauTem: autoMauTemVal,
             danTem2Dau: (catalogTemVal || parsedTem.tem) ? parsedTem.danTem2Dau : (line.danTem2Dau ?? false)
@@ -2412,7 +2425,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           {matchedLineProduct && cutAllowedUnits.length > 1 ? (
                             <select
                               value={cutEffectiveUnit}
-                              onChange={e => updateConversionProductLine(line.key, { unit: e.target.value })}
+                              onChange={e => updateConversionProductLine(line.key, { unit: e.target.value, manualTongKg: false, tongKg: '' })}
                               className={orderFieldClass}
                               title="ĐVT — SP Đặc/Sóng chọn được Tấm hoặc Cuộn"
                             >
@@ -2429,7 +2442,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <div className="col-span-1 min-w-0">
                           <OrderNumberInput
                             value={line.daiM}
-                            onChange={e => updateConversionProductLine(line.key, { daiM: e.target.value })}
+                            onChange={e => updateConversionProductLine(line.key, { daiM: e.target.value, manualTongKg: false, tongKg: '' })}
                             className={orderFieldClass}
                             placeholder="2.8"
                           />

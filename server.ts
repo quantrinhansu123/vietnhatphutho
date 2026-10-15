@@ -7601,12 +7601,17 @@ async function enrichOrderProductsWithConversionData(
         const m2 = width && width > 0 && daiM && qty && daiM > 0 && qty > 0 ? round(daiM * width * qty) : (product.m2 ?? null);
         const mDai = daiM && qty && daiM > 0 && qty > 0 ? round(daiM * qty) : (product.m_dai ?? null);
 
+        // ĐVT Cuộn: kg1Sp (theo Dài đặt) là TL/cuộn; TL/tấm giữ theo danh mục.
         const tlCuon = manualKgPerUnit !== null && isRollUnit
           ? manualKgPerUnit
-          : product.tl_cuon ?? conversion?.trong_luong_kg_cuon ?? null;
+          : isRollUnit && cutWeight?.kg1Sp
+            ? cutWeight.kg1Sp
+            : product.tl_cuon ?? conversion?.trong_luong_kg_cuon ?? null;
         const tlTam = manualKgPerUnit !== null && isSheetUnit
           ? manualKgPerUnit
-          : kg1Sp ?? product.tl_tam ?? conversion?.trong_luong_kg_tam ?? null;
+          : isRollUnit
+            ? product.tl_tam ?? conversion?.trong_luong_kg_tam ?? null
+            : kg1Sp ?? product.tl_tam ?? conversion?.trong_luong_kg_tam ?? null;
 
         const quyCachMDai = product.quy_cach_m_dai ?? (daiM && daiM > 0 ? daiM : null);
 
