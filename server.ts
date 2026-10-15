@@ -23261,7 +23261,9 @@ async function loadKiemKhoLiveTongHopForDot(
     return null;
   }
 
-  function getLenhSxItemGroupKey(item: any, resolvedSpId: string): string {
+  // Mỗi dòng sản phẩm của lệnh là một dòng in (idx nằm trong khóa) — không gộp dòng trùng
+  // để số dòng bản in khớp số dòng đơn hàng.
+  function getLenhSxItemGroupKey(item: any, resolvedSpId: string, idx: number): string {
     const donVi = String(item?.don_vi ?? item?.unit ?? '')
       .trim()
       .toLowerCase()
@@ -23280,13 +23282,13 @@ async function loadKiemKhoLiveTongHopForDot(
       .toLowerCase();
 
     if (resolvedSpId) {
-      return `pid:${resolvedSpId}__ten:${tenGhepKey}__m:${mDaiKey}__u:${donVi}`;
+      return `pid:${resolvedSpId}__ten:${tenGhepKey}__m:${mDaiKey}__u:${donVi}__i:${idx}`;
     }
 
     const maSp = String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '')
       .trim()
       .toLowerCase();
-    return `code:${maSp}__ten:${tenGhepKey}__m:${mDaiKey}__u:${donVi}`;
+    return `code:${maSp}__ten:${tenGhepKey}__m:${mDaiKey}__u:${donVi}__i:${idx}`;
   }
 
   app.get('/api/lenh-sx/:id/print-preview', async (req, res) => {
@@ -23516,7 +23518,7 @@ async function loadKiemKhoLiveTongHopForDot(
       sanPhamArray.forEach((item, idx) => {
         const spId = resolveSanPhamId(item);
         const quyCachMDaiNum = extractLenhSxItemQuyCachMDai(item);
-        const groupKey = getLenhSxItemGroupKey(item, spId);
+        const groupKey = getLenhSxItemGroupKey(item, spId, idx);
         const soLuong = Number(item?.so_luong ?? item?.quantity) || 0;
         const maDonHang = String(item?.ma_don_hang ?? '').trim() || orderLevelMaDonHang.split(',')[0]?.trim() || '';
         const khuVuc = khuVucByMaDonHang.get(maDonHang) || defaultKhuVuc;
@@ -23726,7 +23728,7 @@ async function loadKiemKhoLiveTongHopForDot(
 
           sanPhamArray.forEach((item, idx) => {
             const spId = String(item?.san_pham_id ?? '').trim();
-            const groupKey = getLenhSxItemGroupKey(item, spId);
+            const groupKey = getLenhSxItemGroupKey(item, spId, idx);
             const soLuong = Number(item?.so_luong ?? item?.quantity) || 0;
 
             let grp = groupsMap.get(groupKey);

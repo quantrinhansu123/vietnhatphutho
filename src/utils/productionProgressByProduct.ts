@@ -163,17 +163,16 @@ export function buildProductionProgressForOrder(
 
   const merged = new Map<string, ProductionProgressLine>();
 
-  getProductionOrderProductLines(order).forEach(line => {
+  getProductionOrderProductLines(order).forEach((line, lineIndex) => {
     const rawProductCode = String(line.productCode || '').trim();
     const productCode = resolveActualProductCode(rawProductCode, line.productId, catalogProducts) || rawProductCode;
     const productName = String(line.productName || '').trim();
     const productionName = String(line.productionName || '').trim();
     const codeKey = normalizeProductCodeKey(productCode || productName || productionName);
     if (!codeKey) return;
-    // Gộp giống bản in: cùng mã + cùng ĐVT + cùng m dài quy cách mới là một dòng
-    // (cắt lẻ 8m vs 9m, Tấm vs Cuộn không gộp chung).
+    // Mỗi dòng sản phẩm của lệnh là một dòng (khớp bản in) — không gộp dòng trùng.
     const lengthM = resolveProgressLengthMeters(line);
-    const key = `${codeKey}__u:${normalizeProgressUnit(line.unit)}__m:${lengthM !== null ? lengthM.toFixed(3) : 'none'}`;
+    const key = `${codeKey}__u:${normalizeProgressUnit(line.unit)}__m:${lengthM !== null ? lengthM.toFixed(3) : 'none'}__i:${lineIndex}`;
 
     const plannedQty = parseProductionOrderQuantity(line.quantity) || 0;
     const lineTenGhep = String(line.tenGhep || '').trim() || undefined;
