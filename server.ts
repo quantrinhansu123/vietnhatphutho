@@ -39,7 +39,7 @@ import {
   resolveAuxiliaryWeightPerUnit,
   stripMixingNormRevisionSuffix
 } from './src/utils/mixingNormAuxiliary';
-import { buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, calculateDoLiDm, isDiscontinuedWhiteSuProduct, parseProductionNameParts, replaceCutLengthMeters, replaceDoLiDmInTenGhep, replaceMangInName, stripTrailingDuplicateCutAfterTem } from './src/utils/productProductionName';
+import { buildCutAmisCodeFull, doLiDmWeightScale, buildMaAmisMoi, buildOrderTenGhep, calculateDoLiDm, isDiscontinuedWhiteSuProduct, parseProductionNameParts, replaceCutLengthMeters, replaceDoLiDmInTenGhep, replaceMangInName, stripTrailingDuplicateCutAfterTem } from './src/utils/productProductionName';
 import { buildCatLeSanPhamLine, KHO_CAT_LE, KHO_TAI_CHE, KHO_THANH_PHAM, inferKhoChinhTuNhom, normalizeCatLeSanPhamList, resolveCatLeNhomVthh, type CatLeSanPhamLine } from './src/features/lenh-cat-le/logic';
 
 dotenv.config();
@@ -7133,7 +7133,9 @@ function calculateCutOrderWeightServer(
   unit: string,
   conversion: OrderProductConversionRecord | null,
   productCode = '',
-  productName = ''
+  productName = '',
+  enteredWidth: number | null = null,
+  kgPerM2Scale: number | null = null
 ) {
   if (!conversion || length === null || length <= 0 || quantity === null || quantity <= 0) return null;
 
@@ -7141,14 +7143,17 @@ function calculateCutOrderWeightServer(
   const kgPerMeter = conversion.trong_luong_kg_m_dai;
   if (kgPerMeter !== null && kgPerMeter > 0) {
     const rawKg1Sp = length * kgPerMeter;
-    return { kg1Sp: round(rawKg1Sp), tongKg: round(rawKg1Sp * quantity), source: 'trong_luong_kg_m_dai' };
+    const kg1Sp = round(rawKg1Sp);
+    return { kg1Sp, tongKg: round(kg1Sp * quantity), source: 'trong_luong_kg_m_dai' };
   }
 
-  const width = conversion.kho_tam_rong_m || conversion.kho_cuon_rong_m || extractProductWidthServer(productCode, productName);
-  const kgPerM2 = conversion.trong_luong_kg_m2;
+  const width = (enteredWidth !== null && Number.isFinite(enteredWidth) && enteredWidth > 0 ? enteredWidth : null)
+    || conversion.kho_tam_rong_m || conversion.kho_cuon_rong_m || extractProductWidthServer(productCode, productName);
+  const kgPerM2 = conversion.trong_luong_kg_m2 && kgPerM2Scale ? conversion.trong_luong_kg_m2 * kgPerM2Scale : conversion.trong_luong_kg_m2;
   if (width !== null && width > 0 && kgPerM2 !== null && kgPerM2 > 0) {
     const rawKg1Sp = length * width * kgPerM2;
-    return { kg1Sp: round(rawKg1Sp), tongKg: round(rawKg1Sp * quantity), source: 'trong_luong_kg_m2' };
+    const kg1Sp = round(rawKg1Sp);
+    return { kg1Sp, tongKg: round(kg1Sp * quantity), source: 'trong_luong_kg_m2' };
   }
 
   const normalizedUnit = unit.trim().toLocaleLowerCase('vi');
@@ -7160,7 +7165,7 @@ function calculateCutOrderWeightServer(
   if (perUnit !== null && perUnit > 0) {
     return {
       kg1Sp: round(perUnit),
-      tongKg: round(perUnit * quantity),
+      tongKg: round(round(perUnit) * quantity),
       source: normalizedUnit === 'tấm' || normalizedUnit === 'tam' ? 'trong_luong_kg_tam' : 'trong_luong_kg_cuon'
     };
   }
@@ -7570,6 +7575,13 @@ async function enrichOrderProductsWithConversionData(
       ? await fetchConversionMapBySanPhamIds(sanPhamIds)
       : new Map<string, OrderProductConversionRecord>();
 
+    // Độ li ĐM danh mục để tính hệ số kg/m² khi dòng đơn đổi Độ li ĐM.
+    const catalogDoLiDmById = new Map<string, string>();
+    if (sanPhamIds.length > 0 && isCutLikeOrderTypeServer(orderType)) {
+      const { data: dmRows } = await supabase.from(SUPABASE_PRODUCTS_TABLE).select('id, do_li_dm').in('id', sanPhamIds);
+      for (const row of dmRows || []) catalogDoLiDmById.set(String((row as any).id), String((row as any).do_li_dm || ''));
+    }
+
     return products.map(product => {
       const spId = String(product.san_pham_id || '').trim();
       const isCutOrder = isCutLikeOrderTypeServer(orderType);
@@ -7591,7 +7603,7 @@ async function enrichOrderProductsWithConversionData(
       const isRollUnit = normalizedUnit === 'cuon' || normalizedUnit === 'roll';
 
       if (isCutOrder) {
-        const cutWeight = calculateCutOrderWeightServer(product.dai_m ?? null, product.so_luong, product.don_vi, conversion || null, product.ma_sp, product.ten_sp);
+        const cutWeight = calculateCutOrderWeightServer(product.dai_m ?? null, product.so_luong, product.don_vi, conversion || null, product.ma_sp, product.ten_sp, Number(product.kho) || null, doLiDmWeightScale(product.do_li_dm, catalogDoLiDmById.get(spId)));
         const kg1Sp = manualKgPerUnit ?? cutWeight?.kg1Sp ?? product.kg_1_sp ?? null;
         const tongKg = isCustomerEnteredKg ? product.tong_kg ?? null : cutWeight?.tongKg ?? product.tong_kg ?? null;
 
@@ -23249,7 +23261,9 @@ async function loadKiemKhoLiveTongHopForDot(
     return null;
   }
 
-  function getLenhSxItemGroupKey(item: any, resolvedSpId: string): string {
+  // Mỗi dòng sản phẩm của lệnh là một dòng in (idx nằm trong khóa) — không gộp dòng trùng
+  // để số dòng bản in khớp số dòng đơn hàng.
+  function getLenhSxItemGroupKey(item: any, resolvedSpId: string, idx: number): string {
     const donVi = String(item?.don_vi ?? item?.unit ?? '')
       .trim()
       .toLowerCase()
@@ -23268,13 +23282,13 @@ async function loadKiemKhoLiveTongHopForDot(
       .toLowerCase();
 
     if (resolvedSpId) {
-      return `pid:${resolvedSpId}__ten:${tenGhepKey}__m:${mDaiKey}__u:${donVi}`;
+      return `pid:${resolvedSpId}__ten:${tenGhepKey}__m:${mDaiKey}__u:${donVi}__i:${idx}`;
     }
 
     const maSp = String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '')
       .trim()
       .toLowerCase();
-    return `code:${maSp}__ten:${tenGhepKey}__m:${mDaiKey}__u:${donVi}`;
+    return `code:${maSp}__ten:${tenGhepKey}__m:${mDaiKey}__u:${donVi}__i:${idx}`;
   }
 
   app.get('/api/lenh-sx/:id/print-preview', async (req, res) => {
@@ -23504,7 +23518,7 @@ async function loadKiemKhoLiveTongHopForDot(
       sanPhamArray.forEach((item, idx) => {
         const spId = resolveSanPhamId(item);
         const quyCachMDaiNum = extractLenhSxItemQuyCachMDai(item);
-        const groupKey = getLenhSxItemGroupKey(item, spId);
+        const groupKey = getLenhSxItemGroupKey(item, spId, idx);
         const soLuong = Number(item?.so_luong ?? item?.quantity) || 0;
         const maDonHang = String(item?.ma_don_hang ?? '').trim() || orderLevelMaDonHang.split(',')[0]?.trim() || '';
         const khuVuc = khuVucByMaDonHang.get(maDonHang) || defaultKhuVuc;
@@ -23714,7 +23728,7 @@ async function loadKiemKhoLiveTongHopForDot(
 
           sanPhamArray.forEach((item, idx) => {
             const spId = String(item?.san_pham_id ?? '').trim();
-            const groupKey = getLenhSxItemGroupKey(item, spId);
+            const groupKey = getLenhSxItemGroupKey(item, spId, idx);
             const soLuong = Number(item?.so_luong ?? item?.quantity) || 0;
 
             let grp = groupsMap.get(groupKey);

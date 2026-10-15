@@ -6,12 +6,18 @@ export function parseSouthDinhMucKg(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) / 100 : null;
 }
 
-/** Đơn cắt lẻ + miền nam: Tổng KG = Định mức KG × SL tổng (làm tròn số nguyên). Thiếu ĐM/SL = null. */
+/** Đơn cắt lẻ + miền nam: Tổng KG = Định mức KG (2 số lẻ) × SL tổng, làm tròn 2 số lẻ để khớp ĐM × SL. Thiếu ĐM/SL = null. */
 export function southDinhMucKgTotal(dinhMucKg: unknown, quantity: unknown): number | null {
   const dm = parseSouthDinhMucKg(dinhMucKg);
   const qty = Number(quantity);
   if (dm === null || !Number.isFinite(qty) || qty <= 0) return null;
-  return Math.round(dm * qty);
+  return Math.round(dm * qty * 100) / 100;
+}
+
+/** Miền nam: TL/tấm = kg/1m × Dài (2 số lẻ); Tổng KG = TL/tấm × SL (2 số lẻ) để tích khớp tuyệt đối. */
+export function southScaledTlAndTotal(kgPerMeter: number, daiM: number, quantity: number): { tl: number; total: number } {
+  const tl = Math.round(kgPerMeter * daiM * 100) / 100;
+  return { tl, total: Math.round(tl * quantity * 100) / 100 };
 }
 
 /** Tổng KG đơn hàng luôn lưu/hiển thị số nguyên (làm tròn). Không hợp lệ / <= 0 = null. */

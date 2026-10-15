@@ -213,6 +213,19 @@ export function normalizeDoLiDm(
  * Lấy số thuần từ `do_li_dm` để hiển thị trên form đơn miền nam
  * (`(đm 0.75 li)` / `0.75` → `0.75`). Trả '' khi không parse được.
  */
+/**
+ * Hệ số kg/m² khi Độ li ĐM trên dòng đơn khác Độ li ĐM danh mục (nhóm Đặc: kg/m² = đm li × 1.2).
+ * Chỉ áp dụng khi cả hai đều là "đm n li"; đm tính bằng kg (Sóng) hoặc thiếu số = null (giữ nguyên).
+ */
+export function doLiDmWeightScale(lineDoLiDm: string | null | undefined, catalogDoLiDm: string | null | undefined): number | null {
+  const isKg = (t: string | null | undefined) => /kg/i.test(String(t || ''));
+  if (isKg(lineDoLiDm) || isKg(catalogDoLiDm)) return null;
+  const line = Number(String(extractDoLiDmNumber(lineDoLiDm)).replace(',', '.'));
+  const catalog = Number(String(extractDoLiDmNumber(catalogDoLiDm)).replace(',', '.'));
+  if (!Number.isFinite(line) || !Number.isFinite(catalog) || line <= 0 || catalog <= 0) return null;
+  return line / catalog;
+}
+
 export function extractDoLiDmNumber(value: string | null | undefined): string {
   const t = String(value || '').trim();
   if (!t) return '';
