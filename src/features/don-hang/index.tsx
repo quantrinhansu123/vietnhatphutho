@@ -250,6 +250,8 @@ export type OrderProductFormLine = {
   dinhMucTieuChuanKg?: string;
   /** Tổng KG do khách hàng/người lập đơn nhập trực tiếp, được ưu tiên hơn định mức quy đổi. */
   manualTongKg?: boolean;
+  /** STT dòng khi đơn được lưu (1-based). Dòng thêm/nhân bản trong form không có → chưa có SL lệnh SX. */
+  savedStt?: number;
   conversionSource?: string;
   note: string;
   quyCach?: string;
@@ -1029,12 +1031,13 @@ export function orderToForm(order: OrderRow): OrderFormState {
     ? order.orderType
     : ORDER_TYPE_OPTIONS[0];
 
-  const productLines = getOrderProductLines(order).map(line => {
+  const productLines = getOrderProductLines(order).map((line, lineIndex) => {
     const fallbackTem = line.tem || line.mauTem || line.danTem2Dau ? null : parseSouthTemFromTenGhep(line.tenGhep);
     const keepRegionQty = positiveRegionTotal(line.soLuongBac, line.soLuongTrung, line.soLuongNam) !== null;
     return {
     key: `order-product-${line.productCode}-${Math.random().toString(36).slice(2, 7)}`,
     sourceProduct: line.sourceProduct ? { ...line.sourceProduct } : undefined,
+    savedStt: lineIndex + 1,
     shouldRecalculateConversion: false,
     productId: line.productId || '',
     productCode: orderCellToInput(line.productCode),
@@ -1569,7 +1572,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     const duplicated: OrderProductFormLine = {
       ...source,
       key: `order-product-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      sourceProduct: source.sourceProduct ? { ...source.sourceProduct } : undefined,
+      // Sản phẩm mới: không copy ghi chú và SL lệnh SX (chưa sản xuất, ghi chú khác).
+      sourceProduct: source.sourceProduct
+        ? { ...source.sourceProduct, ghi_chu: undefined, note: undefined, sl_sx: undefined }
+        : undefined,
+      savedStt: undefined,
+      note: '',
       conversionResults: source.conversionResults?.map(result => ({ ...result })),
       quantity: comma(source.quantity),
       slBac: comma(source.slBac),
@@ -2685,13 +2693,13 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             placeholder="Ghi chú"
                           />
                         </div>
-                        {renderAllocatedQtyCell(getAllocatedQtyFromMap(allocatedQtyMap, orderForm.orderCode, {
+                        {renderAllocatedQtyCell(line.savedStt ? getAllocatedQtyFromMap(allocatedQtyMap, orderForm.orderCode, {
                           productId: line.productId || matchedLineProduct?.id,
                           productCode: line.productCode,
                           productionName: line.productionName,
                           tenGhep: line.tenGhep,
-                          stt: duplicateLineStt(orderForm.productLines, index)
-                        }))}
+                          stt: duplicateLineStt(orderForm.productLines, index) ? line.savedStt : undefined
+                        }) : 0)}
                         </>
                       );
                     })
@@ -2808,13 +2816,13 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           placeholder="Ghi chú"
                         />
                       </div>
-                      {renderAllocatedQtyCell(getAllocatedQtyFromMap(allocatedQtyMap, orderForm.orderCode, {
+                      {renderAllocatedQtyCell(line.savedStt ? getAllocatedQtyFromMap(allocatedQtyMap, orderForm.orderCode, {
                         productId: line.productId || matchedLineProduct?.id,
                         productCode: line.productCode,
                         productionName: line.productionName,
                         tenGhep: line.tenGhep,
-                        stt: duplicateLineStt(orderForm.productLines, index)
-                      }))}
+                        stt: duplicateLineStt(orderForm.productLines, index) ? line.savedStt : undefined
+                      }) : 0)}
                       <div className="col-span-1 min-w-0">
                         {matchedLineProduct ? <select value={effectiveUnit} onChange={e => updateConversionProductLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateConversionProductLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
                       </div>
