@@ -48,7 +48,7 @@ import {
   type StaffOption,
   type CustomerOption
 } from '../_shared/orderHelpers';
-import { doLiDmWeightScale, extractDoLiDm, extractDoLiDmNumber, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, replaceMangInName, normalizeDoLiDm, seedProductionSpecs, setDinhMucKgInTenGhep } from '../../utils/productProductionName';
+import { doLiDmWeightScale, extractDoLiDm, extractDoLiDmNumber, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, replaceMangInName, normalizeDoLiDm, seedProductionSpecs, setDinhMucKgInTenGhep, hasZemInName, stripDoLiDmLiSegment } from '../../utils/productProductionName';
 import {
   orderDuplicateDecimalText,
   parseSouthDinhMucKg,
@@ -661,7 +661,9 @@ export function orderProductLinesToPayload(
       const mauTemValue = String(line.mauTem || '').trim();
       const danTem2DauValue = Boolean(line.danTem2Dau);
       // Form chỉ nhập số; khi lưu/ghép tên luôn hiểu là (đm n li).
-      const doLiDmValue = isCutLikeOrder ? normalizeDoLiDm(line.doLiDm, 'li') : '';
+      // Tên đã có ZEM (hàng sóng) thì không dùng định mức li.
+      const nameHasZem = hasZemInName(line.productionName, line.productName, line.productCode, line.tenGhep);
+      const doLiDmValue = isCutLikeOrder && !nameHasZem ? normalizeDoLiDm(line.doLiDm, 'li') : '';
       // Ghi đè stale trong sourceProduct khi user xóa tem/màu/bỏ tick 2 Đầu (undefined bị JSON.stringify loại bỏ).
       const moTaTem = isCutLikeOrder
         ? buildSouthTemSuffix(temValue, mauTemValue, danTem2DauValue).trim()
@@ -799,6 +801,7 @@ export function orderProductLinesToPayload(
           if (isSouthOrder ? lineMang !== undefined : Boolean(lineMang)) {
             base = replaceMangInName(base, String(lineMang), variantSpecs?.mang);
           }
+          if (nameHasZem || hasZemInName(base)) base = stripDoLiDmLiSegment(base);
           // Đơn miền nam: đưa Định mức tiêu chuẩn của khách vào tên, vd (đm 4.8 kg).
           if (isSouthOrder) base = setDinhMucKgInTenGhep(base, line.dinhMucTieuChuanKg);
           return isCutLikeOrder ? appendSouthTemToTenGhep(base, temValue, mauTemValue, danTem2DauValue) : base;
@@ -819,6 +822,7 @@ export function orderProductLinesToPayload(
           );
         }
         if (!tenGhep) return undefined;
+        if (nameHasZem || hasZemInName(tenGhep)) tenGhep = stripDoLiDmLiSegment(tenGhep);
         if (isSouthOrder) tenGhep = setDinhMucKgInTenGhep(tenGhep, line.dinhMucTieuChuanKg);
         return isCutLikeOrder ? appendSouthTemToTenGhep(tenGhep, temValue, mauTemValue, danTem2DauValue) : tenGhep;
       };
@@ -890,6 +894,12 @@ export function orderProductLinesToPayload(
           )
         : null;
       // Có độ dài tấm tiêu chuẩn: Tổng = kg/1m × Dài × SL. Thiếu thì Tổng = Định mức tiêu chuẩn (kg) × SL (tổng).
+      // TL/tấm (2 số lẻ) là nguồn duy nhất; Tổng KG = TL/tấm × SL (2 số lẻ) → hai số luôn khớp.
+      const southUnitTl = isSouthOrder
+        ? (southKgPerMeter !== null && Number.isFinite(daiM) && daiM > 0
+            ? Math.round(southKgPerMeter * daiM * 100) / 100
+            : parseSouthDinhMucKg(line.dinhMucTieuChuanKg))
+        : null;
       const southScaledTotalKg = isSouthOrder && Number.isFinite(quantity) && quantity > 0
         ? (southKgPerMeter !== null && Number.isFinite(daiM) && daiM > 0
             ? southScaledTlAndTotal(southKgPerMeter, daiM, quantity).total
@@ -944,7 +954,11 @@ export function orderProductLinesToPayload(
         // Định mức KG chính là TL/tấm, ghi đúng giá trị đã nhập.
         // Miền nam có độ dài tiêu chuẩn: TL/tấm = kg/1m × m dài đặt.
         // Số nhập tay đã ưu tiên ở trên (manualKgPerUnit) nên chỉ suy từ định mức khi không nhập tay.
-        if (effectiveManualTotalKg === null && southScaledTotalKg !== null && isTamProduct(unit) && Number.isFinite(quantity) && quantity > 0) {
+        if (manualTotalKg === null && southUnitTl !== null) {
+          // Miền nam: TL/tấm (hoặc TL/cuộn) = đúng số dùng để nhân SL ra Tổng KG.
+          if (isCuonProduct(unit)) cutTlCuon = southUnitTl;
+          else cutTlTam = southUnitTl;
+        } else if (effectiveManualTotalKg === null && southScaledTotalKg !== null && isTamProduct(unit) && Number.isFinite(quantity) && quantity > 0) {
           cutTlTam = roundConversionValue(southScaledTotalKg / quantity);
         } else if (effectiveManualTotalKg === null && dinhMucKgPerUnit !== null && isTamProduct(unit)) {
           cutTlTam = dinhMucKgPerUnit;
@@ -1450,7 +1464,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             const autoDaiM = rawDaiM || (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '') || line.daiM;
             const rawKho = match.doDayM ? String(match.doDayM).replace(/m\s*$/iu, '').trim() : '';
             const autoKho = rawKho || (conversion?.khoTamRongM ? String(conversion.khoTamRongM) : '') || line.kho;
-            const rawDoLiDm = extractDoLiDmNumber(match.doLiDm || '') || extractDoLiDmNumber(extractDoLiDm(match.productionName) || '');
+            const rawDoLiDm = hasZemInName(match?.productionName, match?.name, match?.code) ? '' : extractDoLiDmNumber(match.doLiDm || '') || extractDoLiDmNumber(extractDoLiDm(match.productionName) || '');
             return {
               ...baseUpdated,
               mang: match.mang || extractMang(match.productionName) || '',
@@ -1485,7 +1499,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
           const rawKho = match.doDayM ? String(match.doDayM).replace(/m\s*$/iu, '').trim() : '';
           const autoKho = rawKho || (conversion?.khoTamRongM ? String(conversion.khoTamRongM) : '') || line.kho;
 
-          const rawDoLiDm = extractDoLiDmNumber(match.doLiDm || '') || extractDoLiDmNumber(extractDoLiDm(match.productionName) || '');
+          const rawDoLiDm = hasZemInName(match?.productionName, match?.name, match?.code) ? '' : extractDoLiDmNumber(match.doLiDm || '') || extractDoLiDmNumber(extractDoLiDm(match.productionName) || '');
           const autoDoLiDm = rawDoLiDm || line.doLiDm;
 
           const autoDoDaiTamTieuChuan = (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '')
@@ -1719,7 +1733,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     const rawKho = String(match?.doDayM || '').replace(/m\s*$/iu, '').trim();
     const autoKho = rawKho || (conversion?.khoTamRongM ? String(conversion.khoTamRongM) : '');
 
-    const rawDoLiDm = extractDoLiDmNumber(match?.doLiDm || '') || (match?.productionName ? extractDoLiDmNumber(extractDoLiDm(match.productionName) || '') : '');
+    const rawDoLiDm = hasZemInName(match?.productionName, match?.name, match?.code) ? '' : extractDoLiDmNumber(match?.doLiDm || '') || (match?.productionName ? extractDoLiDmNumber(extractDoLiDm(match.productionName) || '') : '');
 
     const autoDoDaiTamTieuChuan = (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '') || rawDaiM;
     const autoDinhMucTieuChuanKg = (conversion?.trongLuongKgTam ? String(conversion.trongLuongKgTam) : '') || (match?.totalWeight ? String(match.totalWeight) : '');
