@@ -45,6 +45,8 @@ export type MixingProductionOrderProductLine = {
   quantity: number | null;
   convertedWeightKg: number | null;
   quyCachMDai?: number | null;
+  /** Ghi chú của dòng trong lệnh SX — cùng tên ghép nhưng khác ghi chú là sản phẩm khác nhau. */
+  ghiChu?: string;
 };
 
 export type MixingProductionOrder = {
@@ -341,6 +343,7 @@ function parseOrderProductLines(record: Record<string, unknown>) {
             productionName,
             ...(tenGhep ? { tenGhep } : {}),
             unit: pickText(row, ['don_vi', 'unit'], '-'),
+            ...(pickText(row, ['ghi_chu', 'ghiChu', 'note'], '') ? { ghiChu: pickText(row, ['ghi_chu', 'ghiChu', 'note'], '') } : {}),
             quantity: parsePercentInput(String(row.so_luong ?? row.quantity ?? '')),
             convertedWeightKg: parsePercentInput(String(
               (row.kq_quy_doi && typeof row.kq_quy_doi === 'object'

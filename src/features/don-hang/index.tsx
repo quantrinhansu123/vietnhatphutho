@@ -42,6 +42,7 @@ import {
   matchOrderProductByCodeAndProductionName,
   buildAllocatedQtyMap,
   getAllocatedQtyFromMap,
+  duplicateLineStt,
   type OrderProductOption,
   type OrderProductConversion,
   type StaffOption,
@@ -999,7 +1000,11 @@ export function orderProductLinesToPayload(
                 ? { kg_1_sp: roundConversionValue(cutWeight.kg1Sp) }
                 : {}),
               tong_kg: finalCutTotalKg,
-              ...(dinhMucKgPerUnit !== null ? { dinh_muc_kg: dinhMucKgPerUnit } : {}),
+              // Lưu luôn Định mức KG tự tính (TL/Tấm hoặc TL/Cuộn theo ĐVT) để DB có sẵn giá trị.
+              ...((): { dinh_muc_kg?: number } => {
+                const perUnit = dinhMucKgPerUnit ?? (isCuonProduct(unit) ? cutTlCuon : cutTlTam);
+                return perUnit !== undefined && perUnit !== null && perUnit > 0 ? { dinh_muc_kg: perUnit } : {};
+              })(),
               nguon_quy_doi: effectiveManualTotalKg !== null ? CUSTOMER_ENTERED_KG_SOURCE : cutWeight?.source,
               ket_qua_quy_doi: cutResults
             }
@@ -1420,6 +1425,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               doLiDm: orderDuplicateDecimalText(rawDoLiDm || line.doLiDm || ''),
               // Đổi SP/Dài tự fill → tính lại Tổng KG, không giữ số cũ.
               tongKg: '',
+              dinhMucKg: '',
               manualTongKg: false
             };
           }
@@ -1466,6 +1472,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             doDaiTamTieuChuan: orderDuplicateDecimalText(autoDoDaiTamTieuChuan || ''),
             dinhMucTieuChuanKg: orderDuplicateDecimalText(autoDinhMucTieuChuanKg || ''),
             tongKg: '',
+            dinhMucKg: '',
             manualTongKg: false,
             tem: autoTemVal,
             mauTem: autoMauTemVal,
@@ -2400,7 +2407,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           const manualTotal = positive(parsePercentInput(String(line.tongKg ?? '')));
                           return manualTotal !== null && qtyNum > 0 ? Math.round((manualTotal / qtyNum) * 100) / 100 : null;
                         }
-                        if (line.shouldRecalculateConversion) return positive(cutWeight?.kg1Sp ?? Number.NaN);
+                        if (line.shouldRecalculateConversion) {
+                          // TL/đơn vị không phụ thuộc SL → tính với SL = 1 để dòng mới (chưa nhập SL) vẫn tự fill.
+                          const perUnit = calculateCutOrderWeight(line.daiM, '1', matchedConversion, cutEffectiveUnit, line.productCode, matchedLineProduct?.name || line.productName, line.kho || '', doLiDmWeightScale(line.doLiDm, matchedLineProduct?.doLiDm));
+                          return positive(perUnit?.kg1Sp ?? Number.NaN);
+                        }
                         return positive(parsePercentInput(String(cutEffectiveUnit === 'Cuộn' ? line.tlCuon || '' : line.tlTam || '')));
                       })();
                       return renderProductLineShell(
@@ -2441,7 +2452,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           {matchedLineProduct && cutAllowedUnits.length > 1 ? (
                             <select
                               value={cutEffectiveUnit}
-                              onChange={e => updateConversionProductLine(line.key, { unit: e.target.value, manualTongKg: false, tongKg: '' })}
+                              onChange={e => updateConversionProductLine(line.key, { unit: e.target.value, manualTongKg: false, tongKg: '', dinhMucKg: '' })}
                               className={orderFieldClass}
                               title="ĐVT — SP Đặc/Sóng chọn được Tấm hoặc Cuộn"
                             >
@@ -2458,7 +2469,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <div className="col-span-1 min-w-0">
                           <OrderNumberInput
                             value={line.daiM}
-                            onChange={e => updateConversionProductLine(line.key, { daiM: e.target.value, manualTongKg: false, tongKg: '' })}
+                            onChange={e => updateConversionProductLine(line.key, { daiM: e.target.value, manualTongKg: false, tongKg: '', dinhMucKg: '' })}
                             className={orderFieldClass}
                             placeholder="2.8"
                           />
@@ -2466,7 +2477,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <div className="col-span-1 min-w-0">
                           <OrderNumberInput
                             value={line.kho || ''}
-                            onChange={e => updateConversionProductLine(line.key, { kho: e.target.value, manualTongKg: false, tongKg: '' })}
+                            onChange={e => updateConversionProductLine(line.key, { kho: e.target.value, manualTongKg: false, tongKg: '', dinhMucKg: '' })}
                             className={orderFieldClass}
                             placeholder="1.22"
                             title={isFormSouthOrder ? 'Khổ rộng (m) — ghi vào mã AMIS mới khi khác khổ danh mục' : 'Hạ khổ rộng (m) — ghi vào mã AMIS mới khi khác khổ tấm chính'}
@@ -2475,7 +2486,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <div className="col-span-1 min-w-0">
                           <OrderNumberInput
                             value={line.doLiDm || ''}
-                            onChange={e => updateConversionProductLine(line.key, { doLiDm: e.target.value, manualTongKg: false, tongKg: '' })}
+                            onChange={e => updateConversionProductLine(line.key, { doLiDm: e.target.value, manualTongKg: false, tongKg: '', dinhMucKg: '' })}
                             className={orderFieldClass}
                             placeholder="0.75"
                             title="Độ li định mức thực tế — chỉ nhập số, tự hiểu là (đm n li)"
@@ -2484,13 +2495,15 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         {!isFormSouthOrder ? (
                           <div className="col-span-1 min-w-0">
                             <OrderNumberInput
-                              value={line.dinhMucKg ?? ''}
-                              onChange={e => updateConversionProductLine(line.key, { dinhMucKg: e.target.value })}
-                              title={autoDinhMucKg !== null
-                                ? `Định mức KG/${cutEffectiveUnit === 'Cuộn' ? 'cuộn' : 'tấm'} tự tính = ${formatNumber(autoDinhMucKg, 2)} (đổi theo Dài, Khổ, Độ li ĐM). Nhập số để ghi đè: Tổng KG = Định mức × SL tổng`
-                                : 'Định mức KG/tấm — có giá trị thì Tổng KG = Định mức × SL tổng'}
-                              className={`${orderFieldClass} bg-white text-right placeholder:font-bold placeholder:text-zinc-700`}
-                              placeholder={autoDinhMucKg !== null ? formatNumber(autoDinhMucKg, 2) : 'ĐM KG'}
+                              // Tự fill TL/Tấm hoặc TL/Cuộn theo ĐVT đã chọn; nhập số để ghi đè (Tổng KG = số nhập × SL).
+                              // " " (1 dấu cách) = người dùng vừa xóa trống để gõ số mới; lưu đơn vẫn tính như tự tính.
+                              value={String(line.dinhMucKg ?? '') === '' && autoDinhMucKg !== null
+                                ? formatNumber(autoDinhMucKg, 2)
+                                : String(line.dinhMucKg ?? '').trim()}
+                              onChange={e => updateConversionProductLine(line.key, { dinhMucKg: e.target.value === '' ? ' ' : e.target.value })}
+                              title={`Định mức KG/${cutEffectiveUnit === 'Cuộn' ? 'cuộn' : 'tấm'} (= ${cutEffectiveUnit === 'Cuộn' ? 'TL/Cuộn' : 'TL/Tấm'} theo ĐVT đã chọn)${autoDinhMucKg !== null ? ` — tự tính ${formatNumber(autoDinhMucKg, 2)}, đổi theo Dài, Khổ, Độ li ĐM` : ''}. Nhập số để ghi đè: Tổng KG = số này × SL tổng`}
+                              className={`${orderFieldClass} bg-white text-right ${String(line.dinhMucKg ?? '').trim() === '' ? 'font-bold text-zinc-600' : ''}`}
+                              placeholder="ĐM KG"
                             />
                           </div>
                         ) : null}
@@ -2676,7 +2689,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           productId: line.productId || matchedLineProduct?.id,
                           productCode: line.productCode,
                           productionName: line.productionName,
-                          tenGhep: line.tenGhep
+                          tenGhep: line.tenGhep,
+                          stt: duplicateLineStt(orderForm.productLines, index)
                         }))}
                         </>
                       );
@@ -2798,7 +2812,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         productId: line.productId || matchedLineProduct?.id,
                         productCode: line.productCode,
                         productionName: line.productionName,
-                        tenGhep: line.tenGhep
+                        tenGhep: line.tenGhep,
+                        stt: duplicateLineStt(orderForm.productLines, index)
                       }))}
                       <div className="col-span-1 min-w-0">
                         {matchedLineProduct ? <select value={effectiveUnit} onChange={e => updateConversionProductLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateConversionProductLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
@@ -2989,7 +3004,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           productId: line.productId,
                           productCode: line.productCode,
                           productionName: line.productionName,
-                          tenGhep: line.tenGhep
+                          tenGhep: line.tenGhep,
+                          stt: duplicateLineStt(getOrderProductLines(viewingOrder), index)
                         }), 3)}
                       </p>
                       <p className="mt-0.5 text-zinc-600">
@@ -3198,7 +3214,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                                   productId: line.productId,
                                   productCode: line.productCode,
                                   productionName: line.productionName,
-                                  tenGhep: line.tenGhep
+                                  tenGhep: line.tenGhep,
+                                  stt: duplicateLineStt(getOrderProductLines(order), index)
                                 }), 3)}
                               </span>
                             </div>
