@@ -114,6 +114,8 @@ const orderMienNamProductGridClass =
   'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_6rem_8.5rem_6.5rem_7rem_5.5rem_4.5rem_5rem_6rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
 const CUSTOMER_ENTERED_KG_SOURCE = 'khach_hang_nhap_kg';
+/** Tổng KG tự tính từ Định mức (cắt lẻ / miền nam) — server giữ số nhưng FE không coi là nhập tay. */
+const DINH_MUC_KG_SOURCE = 'dinh_muc';
 /** Ô Tìm Mã AMIS: hiện tối đa 400 kết quả đã lọc. Các Select khác vẫn mặc định 50. */
 const ORDER_AMIS_SEARCH_MAX_RESULTS = 400;
 export {
@@ -250,6 +252,8 @@ export type OrderProductFormLine = {
   dinhMucTieuChuanKg?: string;
   /** Tổng KG do khách hàng/người lập đơn nhập trực tiếp, được ưu tiên hơn định mức quy đổi. */
   manualTongKg?: boolean;
+  /** Cờ nhập tay đọc từ dữ liệu đã lưu (không phải gõ trong phiên này) — đổi SL/Dài/ĐM thì tính lại thay vì giữ số cũ. */
+  manualFromSaved?: boolean;
   /** STT dòng khi đơn được lưu (1-based). Dòng thêm/nhân bản trong form không có → chưa có SL lệnh SX. */
   savedStt?: number;
   conversionSource?: string;
@@ -882,8 +886,11 @@ export function orderProductLinesToPayload(
             line.doDaiTamTieuChuan
           )
         : null;
-      const southScaledTotalKg = isSouthOrder && southKgPerMeter !== null && Number.isFinite(daiM) && daiM > 0 && Number.isFinite(quantity) && quantity > 0
-        ? southScaledTlAndTotal(southKgPerMeter, daiM, quantity).total
+      // Có độ dài tấm tiêu chuẩn: Tổng = kg/1m × Dài × SL. Thiếu thì Tổng = Định mức tiêu chuẩn (kg) × SL (tổng).
+      const southScaledTotalKg = isSouthOrder && Number.isFinite(quantity) && quantity > 0
+        ? (southKgPerMeter !== null && Number.isFinite(daiM) && daiM > 0
+            ? southScaledTlAndTotal(southKgPerMeter, daiM, quantity).total
+            : southDinhMucKgTotal(line.dinhMucTieuChuanKg, quantity))
         : null;
       const dinhMucTotalKg = southScaledTotalKg ?? (
         dinhMucKgPerUnit !== null && Number.isFinite(quantity) && quantity > 0
@@ -1007,7 +1014,12 @@ export function orderProductLinesToPayload(
                 const perUnit = dinhMucKgPerUnit ?? (isCuonProduct(unit) ? cutTlCuon : cutTlTam);
                 return perUnit !== undefined && perUnit !== null && perUnit > 0 ? { dinh_muc_kg: perUnit } : {};
               })(),
-              nguon_quy_doi: effectiveManualTotalKg !== null ? CUSTOMER_ENTERED_KG_SOURCE : cutWeight?.source,
+              // Chỉ số người dùng gõ mới là "khách nhập"; tổng tự tính từ định mức gắn nhãn riêng (server vẫn giữ số).
+              nguon_quy_doi: manualTotalKg !== null
+                ? CUSTOMER_ENTERED_KG_SOURCE
+                : dinhMucTotalKg !== null
+                  ? DINH_MUC_KG_SOURCE
+                  : cutWeight?.source,
               ket_qua_quy_doi: cutResults
             }
           : cutResults.length > 0
@@ -1038,7 +1050,19 @@ export function orderToForm(order: OrderRow): OrderFormState {
     key: `order-product-${line.productCode}-${Math.random().toString(36).slice(2, 7)}`,
     sourceProduct: line.sourceProduct ? { ...line.sourceProduct } : undefined,
     savedStt: lineIndex + 1,
-    shouldRecalculateConversion: false,
+    // Đơn miền nam: Tổng KG đã lưu lệch công thức (ĐM tiêu chuẩn × SL / KG/1m × Dài × SL) thì tính lại khi mở để không hiện số cũ.
+    shouldRecalculateConversion: (() => {
+      if (orderType !== SOUTH_ORDER_TYPE) return false;
+      const qty = parsePercentInput(String(line.soLuongNam || line.quantity || ''));
+      const stored = parsePercentInput(String(line.tongKg || ''));
+      if (!(qty > 0) || parseSouthDinhMucKg(line.dinhMucTieuChuanKg) === null) return false;
+      const perMeter = southOrderKgPerMeter(line.dinhMucTieuChuanKg, null, null, line.doDaiTamTieuChuan);
+      const daiM = parsePercentInput(String(line.daiM || ''));
+      const expected = perMeter !== null && daiM > 0
+        ? southScaledTlAndTotal(perMeter, daiM, qty).total
+        : southDinhMucKgTotal(line.dinhMucTieuChuanKg, qty);
+      return expected !== null && !(Math.abs(stored - expected) <= 0.5);
+    })(),
     productId: line.productId || '',
     productCode: orderCellToInput(line.productCode),
     productName: orderCellToInput(line.productName),
@@ -1062,7 +1086,11 @@ export function orderToForm(order: OrderRow): OrderFormState {
     kg1Sp: orderDuplicateDecimalText(line.kg1Sp || ''),
     tongKg: orderDuplicateDecimalText(line.tongKg || ''),
     dinhMucKg: orderDuplicateDecimalText(line.dinhMucKg || ''),
-    manualTongKg: line.conversionSource === CUSTOMER_ENTERED_KG_SOURCE,
+    // Đơn miền nam có Định mức tiêu chuẩn: Tổng KG = ĐM × SL tự tính, không đóng băng số cũ.
+    manualTongKg:
+      line.conversionSource === CUSTOMER_ENTERED_KG_SOURCE &&
+      !(orderType === SOUTH_ORDER_TYPE && parseSouthDinhMucKg(line.dinhMucTieuChuanKg) !== null),
+    manualFromSaved: line.conversionSource === CUSTOMER_ENTERED_KG_SOURCE,
     conversionSource: line.conversionSource || '',
     note: line.note || '',
     quyCach: line.quyCach || (line.quyCachMDai ? `Dài ${line.quyCachMDai}m` : ''),
@@ -1545,7 +1573,26 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   };
 
   const updateConversionProductLine = (key: string, patch: Partial<OrderProductFormLine>) => {
-    updateProductLine(key, { ...patch, shouldRecalculateConversion: true });
+    const weightKeys: Array<keyof OrderProductFormLine> = [
+      'slBac', 'slTrung', 'slNam', 'quantity', 'daiM', 'kho', 'doLiDm', 'unit',
+      'dinhMucKg', 'doDaiTamTieuChuan', 'dinhMucTieuChuanKg'
+    ];
+    setOrderForm(prev => ({
+      ...prev,
+      productLines: prev.productLines.map(line => {
+        if (line.key !== key) return line;
+        // Số "nhập tay" chỉ đọc từ dữ liệu đã lưu (chưa gõ trong phiên này) thì tính lại khi đổi SL/Dài/ĐM...
+        const resetSavedManual = Boolean(line.manualFromSaved) &&
+          patch.manualTongKg === undefined &&
+          weightKeys.some(weightKey => weightKey in patch);
+        return {
+          ...line,
+          ...patch,
+          ...(resetSavedManual ? { manualTongKg: false, tongKg: '', manualFromSaved: false } : {}),
+          shouldRecalculateConversion: true
+        };
+      })
+    }));
   };
 
   const changeOrderType = (orderType: string) => {
@@ -2268,13 +2315,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               </label>
 
               <div className="col-span-1 min-w-0 sm:col-span-2 xl:col-span-4">
-              <div className="overflow-x-auto">
+              <div className="max-h-[65vh] overflow-auto">
               <div className={isFormProductionOrder ? ORDER_PRODUCTION_TABLE_MIN_WIDTH : isFormSouthOrder ? ORDER_MIEN_NAM_TABLE_MIN_WIDTH : isFormCutLikeOrder ? ORDER_SOUTH_TABLE_MIN_WIDTH : ORDER_PRODUCT_TABLE_MIN_WIDTH}>
               <RepeatableLinesBlock
                 title="Sản phẩm"
                 required
                 showColumnHeaders
                 alwaysShowColumnHeaders
+                stickyColumnHeaders
                 linesClassName="flex flex-col gap-2"
                 gridTemplateClass={productGridClass}
                 onAdd={() =>
@@ -2393,8 +2441,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         : null;
                       const southLengthM = parsePercentInput(line.daiM);
                       const southQty = parsePercentInput(cutEffectiveQty);
-                      const southScaledTotal = isFormSouthOrder && kgPerStandardMeter !== null && southLengthM > 0 && southQty > 0
-                        ? southScaledTlAndTotal(kgPerStandardMeter, southLengthM, southQty).total
+                      const southScaledTotal = isFormSouthOrder && southQty > 0
+                        ? (kgPerStandardMeter !== null && southLengthM > 0
+                            ? southScaledTlAndTotal(kgPerStandardMeter, southLengthM, southQty).total
+                            : southDinhMucKgTotal(line.dinhMucTieuChuanKg, southQty))
                         : null;
                       const southDinhMucTotal = isFormSouthOrder
                         ? southScaledTotal
@@ -2603,6 +2653,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               updateProductLine(line.key, {
                               tongKg: e.target.value,
                               manualTongKg: e.target.value.trim() !== '',
+                              manualFromSaved: false,
                               shouldRecalculateConversion: true
                             });
                             }}
@@ -2612,6 +2663,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               updateProductLine(line.key, {
                                 tongKg: next,
                                 manualTongKg: next.trim() !== '',
+                                manualFromSaved: false,
                                 shouldRecalculateConversion: true
                               });
                             }}
@@ -2888,6 +2940,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           onChange={e => updateProductLine(line.key, {
                             tongKg: e.target.value,
                             manualTongKg: e.target.value.trim() !== '',
+                              manualFromSaved: false,
                             shouldRecalculateConversion: true
                           })}
                           onBlur={e => {
@@ -2896,6 +2949,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             updateProductLine(line.key, {
                               tongKg: next,
                               manualTongKg: next.trim() !== '',
+                                manualFromSaved: false,
                               shouldRecalculateConversion: true
                             });
                           }}

@@ -7592,7 +7592,8 @@ async function enrichOrderProductsWithConversionData(
       const isCutOrder = isCutLikeOrderTypeServer(orderType);
       const conversion = spId ? conversionMap.get(spId) : null;
       const round = (val: number) => Math.round((val + Number.EPSILON) * 100) / 100;
-      const isCustomerEnteredKg = product.nguon_quy_doi === 'khach_hang_nhap_kg' &&
+      // 'dinh_muc' = tổng tự tính từ Định mức ở FE (miền nam / cắt lẻ): server giữ số, không tính lại theo danh mục.
+      const isCustomerEnteredKg = (product.nguon_quy_doi === 'khach_hang_nhap_kg' || product.nguon_quy_doi === 'dinh_muc') &&
         Number.isFinite(product.tong_kg) && Number(product.tong_kg) > 0;
       const quantity = Number(product.so_luong);
       const manualKgPerUnit = isCustomerEnteredKg && Number.isFinite(quantity) && quantity > 0
@@ -7647,7 +7648,7 @@ async function enrichOrderProductsWithConversionData(
           ...(tlTam !== null ? { tl_tam: tlTam } : {}),
           ...(kg1Sp !== null && kg1Sp !== tlTam && kg1Sp !== tlCuon ? { kg_1_sp: kg1Sp } : {}),
           ...(isCustomerEnteredKg
-            ? { nguon_quy_doi: 'khach_hang_nhap_kg' }
+            ? { nguon_quy_doi: product.nguon_quy_doi === 'dinh_muc' ? 'dinh_muc' : 'khach_hang_nhap_kg' }
             : cutWeight?.source
               ? { nguon_quy_doi: cutWeight.source }
               : {}),
