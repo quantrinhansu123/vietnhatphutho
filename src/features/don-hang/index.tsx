@@ -53,7 +53,8 @@ import {
   parseSouthDinhMucKg,
   roundTotalKgInt,
   southDinhMucKgTotal,
-  southOrderKgPerMeter
+  southOrderKgPerMeter,
+  southScaledTlAndTotal
 } from './southWeight';
 export {
   orderDuplicateDecimalText,
@@ -62,7 +63,8 @@ export {
   southDinhMucKgTotal,
   southKgPerStandardMeter,
   southLengthScaledTotalKg,
-  southOrderKgPerMeter
+  southOrderKgPerMeter,
+  southScaledTlAndTotal
 } from './southWeight';
 import {
   parseOrderProductsFromRecord,
@@ -878,11 +880,11 @@ export function orderProductLinesToPayload(
           )
         : null;
       const southScaledTotalKg = isSouthOrder && southKgPerMeter !== null && Number.isFinite(daiM) && daiM > 0 && Number.isFinite(quantity) && quantity > 0
-        ? Math.round(southKgPerMeter * daiM * quantity)
+        ? southScaledTlAndTotal(southKgPerMeter, daiM, quantity).total
         : null;
       const dinhMucTotalKg = southScaledTotalKg ?? (
         dinhMucKgPerUnit !== null && Number.isFinite(quantity) && quantity > 0
-          ? Math.round(dinhMucKgPerUnit * quantity)
+          ? Math.round(dinhMucKgPerUnit * quantity * 100) / 100
           : null
       );
       // Số nhập tay luôn ưu tiên hơn số tự tính (kể cả đơn miền nam đã cho sửa Tổng KG).
@@ -944,7 +946,10 @@ export function orderProductLinesToPayload(
 
       const cutResults: Array<{ don_vi: string; gia_tri: number }> = [];
       // Tổng KG luôn lưu số nguyên (làm tròn).
-      const finalCutTotalKg = roundTotalKgInt(effectiveManualTotalKg) ?? (cutWeight?.tongKg ? roundTotalKgInt(cutWeight.tongKg) : null);
+      // Số nhập tay lưu số nguyên; số tự tính = TL đã làm tròn × SL (2 số lẻ) để tích luôn khớp.
+      const finalCutTotalKg = manualTotalKg !== null
+        ? roundTotalKgInt(manualTotalKg)
+        : (dinhMucTotalKg !== null && dinhMucTotalKg > 0 ? dinhMucTotalKg : (cutWeight?.tongKg && cutWeight.tongKg > 0 ? cutWeight.tongKg : null));
       if (finalCutTotalKg !== null && finalCutTotalKg > 0) {
         cutResults.push({ don_vi: 'kg', gia_tri: finalCutTotalKg });
       }
@@ -2374,7 +2379,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       const southLengthM = parsePercentInput(line.daiM);
                       const southQty = parsePercentInput(cutEffectiveQty);
                       const southScaledTotal = isFormSouthOrder && kgPerStandardMeter !== null && southLengthM > 0 && southQty > 0
-                        ? Math.round(kgPerStandardMeter * southLengthM * southQty)
+                        ? southScaledTlAndTotal(kgPerStandardMeter, southLengthM, southQty).total
                         : null;
                       const southDinhMucTotal = isFormSouthOrder
                         ? southScaledTotal
@@ -2556,9 +2561,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             value={line.manualTongKg
                               ? String(line.tongKg ?? '')
                               : isFormSouthOrder
-                              ? (southScaledTotal !== null ? orderDuplicateDecimalText(formatNumber(southScaledTotal, 0)) : '')
+                              ? (southScaledTotal !== null ? orderDuplicateDecimalText(formatNumber(southScaledTotal, 2)) : '')
                               : displayedCutWeight !== null && Number.isFinite(displayedCutWeight)
-                                ? formatNumber(Math.round(displayedCutWeight), 0)
+                                ? formatNumber(displayedCutWeight, 2)
                                 : ''}
                             onChange={e => {
                               updateProductLine(line.key, {

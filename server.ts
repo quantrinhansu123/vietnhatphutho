@@ -7141,14 +7141,16 @@ function calculateCutOrderWeightServer(
   const kgPerMeter = conversion.trong_luong_kg_m_dai;
   if (kgPerMeter !== null && kgPerMeter > 0) {
     const rawKg1Sp = length * kgPerMeter;
-    return { kg1Sp: round(rawKg1Sp), tongKg: round(rawKg1Sp * quantity), source: 'trong_luong_kg_m_dai' };
+    const kg1Sp = round(rawKg1Sp);
+    return { kg1Sp, tongKg: round(kg1Sp * quantity), source: 'trong_luong_kg_m_dai' };
   }
 
   const width = conversion.kho_tam_rong_m || conversion.kho_cuon_rong_m || extractProductWidthServer(productCode, productName);
   const kgPerM2 = conversion.trong_luong_kg_m2;
   if (width !== null && width > 0 && kgPerM2 !== null && kgPerM2 > 0) {
     const rawKg1Sp = length * width * kgPerM2;
-    return { kg1Sp: round(rawKg1Sp), tongKg: round(rawKg1Sp * quantity), source: 'trong_luong_kg_m2' };
+    const kg1Sp = round(rawKg1Sp);
+    return { kg1Sp, tongKg: round(kg1Sp * quantity), source: 'trong_luong_kg_m2' };
   }
 
   const normalizedUnit = unit.trim().toLocaleLowerCase('vi');
@@ -7160,7 +7162,7 @@ function calculateCutOrderWeightServer(
   if (perUnit !== null && perUnit > 0) {
     return {
       kg1Sp: round(perUnit),
-      tongKg: round(perUnit * quantity),
+      tongKg: round(round(perUnit) * quantity),
       source: normalizedUnit === 'tấm' || normalizedUnit === 'tam' ? 'trong_luong_kg_tam' : 'trong_luong_kg_cuon'
     };
   }
