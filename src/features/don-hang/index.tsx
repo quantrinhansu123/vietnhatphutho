@@ -48,7 +48,7 @@ import {
   type StaffOption,
   type CustomerOption
 } from '../_shared/orderHelpers';
-import { doLiDmWeightScale, extractDoLiDm, extractDoLiDmNumber, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, replaceMangInName, normalizeDoLiDm, seedProductionSpecs, setDinhMucKgInTenGhep, hasZemInName, stripDoLiDmLiSegment, stripDoLiTokenFromTenGhep } from '../../utils/productProductionName';
+import { doLiDmWeightScale, extractDoLiDm, extractDoLiDmNumber, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, replaceMangInName, normalizeDoLiDm, seedProductionSpecs, setDinhMucKgInTenGhep, stripDinhMucKgSegment, hasZemInName, stripDoLiDmLiSegment, stripDoLiTokenFromTenGhep } from '../../utils/productProductionName';
 import {
   orderDuplicateDecimalText,
   parseSouthDinhMucKg,
@@ -107,13 +107,13 @@ const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2440px]';
 const ORDER_MIEN_NAM_TABLE_MIN_WIDTH = 'min-w-[2740px]';
 export const PRODUCTION_ORDER_TYPE = 'Đơn sản xuất';
 const orderProductGridClass =
-  'grid-cols-[7rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(12rem,1.35fr)_6rem_minmax(7rem,0.9fr)_5rem_5.5rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
+  'grid-cols-[7rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(22rem,2.5fr)_6rem_minmax(7rem,0.9fr)_5rem_7rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
 const orderProductionProductGridClass =
-  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(11rem,1.25fr)_6rem_minmax(6.5rem,0.85fr)_5rem_5rem_4.5rem_4.5rem_4.5rem_5rem_5rem_5rem_5rem_6.5rem]';
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(22rem,2.5fr)_6rem_minmax(6.5rem,0.85fr)_5rem_7rem_4.5rem_4.5rem_4.5rem_5rem_5rem_5rem_5rem_6.5rem]';
 const orderSouthProductGridClass =
-  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_6rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(22rem,2.5fr)_7rem_5rem_6rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const orderMienNamProductGridClass =
-  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_4.5rem_5rem_6rem_8.5rem_6.5rem_7rem_5.5rem_4.5rem_5rem_6rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
+  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(22rem,2.5fr)_7rem_5rem_6rem_8.5rem_6.5rem_7rem_5.5rem_4.5rem_5rem_6rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
 const CUSTOMER_ENTERED_KG_SOURCE = 'khach_hang_nhap_kg';
 /** Tổng KG tự tính từ Định mức (cắt lẻ / miền nam) — server giữ số nhưng FE không coi là nhập tay. */
@@ -808,8 +808,8 @@ export function orderProductLinesToPayload(
           if (nameHasZem || hasZemInName(base)) base = stripDoLiDmLiSegment(base);
           // Đơn miền nam có Tem: bỏ token độ li chính khỏi tên (đã lưu riêng ở do_li).
           if (isSouthOrder && temValue && doLiStored) base = stripDoLiTokenFromTenGhep(base, doLiStored);
-          // Đơn miền nam: đưa Định mức tiêu chuẩn của khách vào tên, vd (đm 4.8 kg).
-          if (isSouthOrder) base = setDinhMucKgInTenGhep(base, line.dinhMucTieuChuanKg);
+          // Đơn miền nam: chỉ SP Sóng mới đưa Định mức tiêu chuẩn của khách vào tên, vd (đm 4.8 kg).
+          if (isSouthOrder) base = (pxGroup === 'song' || nameHasZem) ? setDinhMucKgInTenGhep(base, line.dinhMucTieuChuanKg) : stripDinhMucKgSegment(base);
           return isCutLikeOrder ? appendSouthTemToTenGhep(base, temValue, mauTemValue, danTem2DauValue) : base;
         };
         let tenGhep = buildOrderTenGhep(tenSanXuat, {
@@ -830,7 +830,7 @@ export function orderProductLinesToPayload(
         if (!tenGhep) return undefined;
         if (nameHasZem || hasZemInName(tenGhep)) tenGhep = stripDoLiDmLiSegment(tenGhep);
         if (isSouthOrder && temValue && doLiStored) tenGhep = stripDoLiTokenFromTenGhep(tenGhep, doLiStored);
-        if (isSouthOrder) tenGhep = setDinhMucKgInTenGhep(tenGhep, line.dinhMucTieuChuanKg);
+        if (isSouthOrder) tenGhep = (pxGroup === 'song' || nameHasZem) ? setDinhMucKgInTenGhep(tenGhep, line.dinhMucTieuChuanKg) : stripDinhMucKgSegment(tenGhep);
         return isCutLikeOrder ? appendSouthTemToTenGhep(tenGhep, temValue, mauTemValue, danTem2DauValue) : tenGhep;
       };
 

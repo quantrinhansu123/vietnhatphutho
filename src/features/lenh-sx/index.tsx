@@ -653,9 +653,9 @@ export function ProductionOrdersPanel({
                 </div>
               </div>
               <div className="hover-scrollbar max-h-[70vh] overflow-auto">
-                <table className="w-full min-w-[1080px] table-fixed border-collapse text-left text-sm">
+                <table className="w-full min-w-[1320px] table-fixed border-collapse text-left text-sm">
                   <colgroup>
-                    <col className="w-[7%]" /><col className="w-[5%]" /><col className="w-[28%]" />
+                    <col className="w-[7%]" /><col className="w-[5%]" /><col className="w-[38%]" />
                     <col className="w-[9%]" /><col className="w-[9%]" /><col className="w-[8%]" />
                     <col className="w-[9%]" /><col className="w-[9%]" /><col className="w-[6%]" />
                     <col className="w-[9%]" /><col className="w-[5%]" />

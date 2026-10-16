@@ -290,6 +290,16 @@ export function hasZemInName(...parts: Array<string | null | undefined>): boolea
   return parts.some(part => /zem/i.test(String(part || '')));
 }
 
+/** Bỏ đoạn `(đm n kg)` khỏi tên ghép (giữ nguyên `(đm n li)`). Dùng khi SP không phải Sóng. */
+export function stripDinhMucKgSegment(tenGhep: string): string {
+  return String(tenGhep || '')
+    .replace(/\s*-\s*\(\s*đm\s*[\d.,]+\s*kg\s*\)/giu, '')
+    .replace(/\s*\(\s*đm\s*[\d.,]+\s*kg\s*\)/giu, '')
+    .replace(/\s*-\s*đm\s*[\d.,]+\s*kg\b/giu, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 /** Bỏ đoạn `(đm n li)` khỏi tên ghép (giữ nguyên `(đm n kg)`). */
 export function stripDoLiDmLiSegment(tenGhep: string): string {
   return String(tenGhep || '')
