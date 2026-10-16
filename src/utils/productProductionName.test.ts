@@ -20,7 +20,9 @@ import {
   stripDuplicateLiFromTenGoc,
   parseDoDaiMLength,
   buildCutAmisCodeFull,
-  abbreviateProductionNameFacts
+  abbreviateProductionNameFacts,
+  extractAmisWidthM,
+  detectOrderLineWidthMismatch
 } from './productProductionName.ts';
 
 test('extractDoLiDm bắt (đm n li) và (đm n kg)', () => {
@@ -600,4 +602,40 @@ test('buildCutAmisCodeFull: không đổi thì ra mã chuẩn hóa (để caller
     buildCutAmisCodeFull({ baseMaAmis: 'STD06-0.75li*1.22m-TC-ECO-30m', cutLengthM: 12, mang: 'ECO', doLiDm: '0.75' }),
     'STD06-0.75li*1.22m-TC-ECO-12m'
   );
+});
+
+test('detectOrderLineWidthMismatch: bắt dòng lai mã 2.1m + tên 1.22m (vụ DH015)', () => {
+  const hit = detectOrderLineWidthMismatch(
+    'STD08-2li*2.1m',
+    'Tấm nhựa đặc màu XÁM - 2li ( đm 1.9 li ) - 30m - 1.22m - ECO'
+  );
+  assert.ok(hit);
+  assert.equal(hit?.codeWidthM, 2.1);
+  assert.deepEqual(hit?.nameWidthsM, [1.22]);
+  // Đúng khổ thì null.
+  assert.equal(detectOrderLineWidthMismatch(
+    'STD08-2li*2.1m',
+    'Tấm nhựa đặc màu XÁM - 2li ( đm 1.9 li ) - 30m - 2.1m - ECO'
+  ), null);
+  assert.equal(detectOrderLineWidthMismatch(
+    'STD08-2li*1.82m-NP',
+    'Tấm nhựa đặc màu XÁM - 2li ( đm 1.9 li ) - 1.82m - 30m - hàng chạy 100% phế - SUN PC'
+  ), null);
+  // Mã không ghi khổ / tên không có token mét / tên trống → không kết luận.
+  assert.equal(detectOrderLineWidthMismatch('STS02-11s-6zem', 'NHỰA 11 SÓNG XANH 6ZEM'), null);
+  assert.equal(detectOrderLineWidthMismatch('STD08-2li*2.1m', 'Hàng mẫu không ghi khổ'), null);
+  assert.equal(detectOrderLineWidthMismatch('STD08-2li*2.1m', ''), null);
+  assert.equal(extractAmisWidthM('STD08-2li*2.1m'), 2.1);
+  assert.equal(extractAmisWidthM('STD08-2li*1.82m-NP'), 1.82);
+  assert.equal(extractAmisWidthM('STS02-11s-6zem'), null);
+});
+
+test('detectOrderLineWidthMismatch: bỏ qua mét dài, không chặn nhầm hàng rỗng/cắt', () => {
+  // Rỗng: tên có 2.1m + 5.8m → chỉ đối chiếu 2.1m.
+  assert.equal(detectOrderLineWidthMismatch(
+    'ECR05-4li*2.1m-TC-5.8m',
+    'Tấm nhựa rỗng Economic màu trà 4li x 2.1m x 5.8m'
+  ), null);
+  // Tên chỉ ghi mét dài, không ghi khổ → không kết luận (tránh chặn nhầm).
+  assert.equal(detectOrderLineWidthMismatch('STD08-2li*2.1m', 'Hàng cắt lẻ 6m'), null);
 });

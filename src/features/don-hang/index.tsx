@@ -48,7 +48,7 @@ import {
   type StaffOption,
   type CustomerOption
 } from '../_shared/orderHelpers';
-import { doLiDmWeightScale, extractDoLiDm, extractDoLiDmNumber, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, replaceMangInName, normalizeDoLiDm, seedProductionSpecs, setDinhMucKgInTenGhep, stripDinhMucKgSegment, hasZemInName, stripDoLiDmLiSegment, stripDoLiTokenFromTenGhep } from '../../utils/productProductionName';
+import { detectOrderLineWidthMismatch, doLiDmWeightScale, extractDoLiDm, extractDoLiDmNumber, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, replaceMangInName, normalizeDoLiDm, seedProductionSpecs, setDinhMucKgInTenGhep, stripDinhMucKgSegment, hasZemInName, stripDoLiDmLiSegment, stripDoLiTokenFromTenGhep } from '../../utils/productProductionName';
 import {
   orderDuplicateDecimalText,
   parseSouthDinhMucKg,
@@ -1912,6 +1912,23 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
           setFormError(`Định mức KG phải lớn hơn 0 cho sản phẩm ${line.productCode || line.productName}.`);
           return;
         }
+      }
+    }
+    // Chặn dòng lai mã-vs-tên (vụ DH015: mã 2.1m đi với tên SX sót khổ 1.22m).
+    // Mã có khổ *Wm nhưng Tên SX không chứa khổ đó → tên sót của variant cũ, lưu sẽ ra ten_ghep sai.
+    for (const [lineIndex, line] of activeProductLines.entries()) {
+      const productionName = line.productionName.trim()
+        || resolveOrderLineProduct(productOptions, line)?.productionName
+        || '';
+      const mismatch = detectOrderLineWidthMismatch(line.productCode.trim(), productionName);
+      if (mismatch) {
+        const nameWidths = mismatch.nameWidthsM.map(value => `${String(value).replace('.', ',')}m`).join(', ');
+        setFormError(
+          `Dòng ${lineIndex + 1} (${line.productCode.trim() || line.productName.trim()}): ` +
+          `Tên sản xuất đang ghi khổ ${nameWidths} nhưng mã hàng khổ ${String(mismatch.codeWidthM).replace('.', ',')}m. ` +
+          `Hãy chọn lại Tên sản xuất đúng với mã rồi lưu.`
+        );
+        return;
       }
     }
     const products = orderProductLinesToPayload(activeProductLines, productOptions, orderForm.orderType, productConversions, orderForm.createdAt);

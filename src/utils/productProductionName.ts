@@ -1238,3 +1238,55 @@ export function buildCutAmisCodeFull(input: MaAmisMoiInput & { ensureWidthM?: nu
       .trim()
   );
 }
+
+/** Khổ rộng ghi trong mã AMIS (`*2.1m`). Không có thì null (không kiểm tra được). */
+export function extractAmisWidthM(maAmis?: string | null): number | null {
+  const match = String(maAmis || '').match(/\*\s*(\d+(?:[.,]\d+)?)\s*m\b/iu);
+  if (!match) return null;
+  const value = Number(match[1].replace(',', '.'));
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/** Mét dài thường gặp (phân biệt với khổ khi đối chiếu mã-vs-tên). */
+export const KNOWN_LENGTH_METERS = [5.8, 6, 8, 9, 11.7, 12, 15, 20, 30] as const;
+
+function isKnownLengthMeters(n: number): boolean {
+  return (KNOWN_LENGTH_METERS as readonly number[]).some(v => Math.abs(v - n) < 1e-9);
+}
+
+/** Mọi token mét trong tên (`Nm`, N < 10 để loại mét dài 30m...; 8m/9m giữ lại để đối chiếu). */
+function meterTokensUnder10(text: string): number[] {
+  const values: number[] = [];
+  const tokenRe = /(\d+(?:[.,]\d+)?)\s*m\b/giu;
+  let match: RegExpExecArray | null;
+  while ((match = tokenRe.exec(text)) !== null) {
+    const prev = match.index > 0 ? text[match.index - 1] : '';
+    if (prev && /[\d.,]/.test(prev)) continue;
+    const value = Number(match[1].replace(',', '.'));
+    if (!Number.isFinite(value) || value <= 0 || value >= 10) continue;
+    // Mét dài (5.8m/6m cuộn rỗng, 8m/9m tấm đặc...) không phải khổ → bỏ qua.
+    if (isKnownLengthMeters(value)) continue;
+    values.push(value);
+  }
+  return values;
+}
+
+/**
+ * Phát hiện dòng lai: mã AMIS có khổ `*Wm` nhưng Tên sản xuất không chứa khổ đó.
+ * (vd mã `STD08-2li*2.1m` đi với tên `... - 30m - 1.22m - ECO` — tên sót của variant cũ).
+ * Trả về khổ mã + khổ tìm thấy trong tên khi lệch; `null` khi không kết luận được
+ * (mã không ghi khổ, tên không có token mét, hoặc tên đã chứa đúng khổ).
+ */
+export function detectOrderLineWidthMismatch(
+  maAmis?: string | null,
+  tenSanXuat?: string | null
+): { codeWidthM: number; nameWidthsM: number[] } | null {
+  const codeWidth = extractAmisWidthM(maAmis);
+  if (codeWidth === null) return null;
+  const text = String(tenSanXuat || '').trim();
+  if (!text) return null;
+  const nameWidths = meterTokensUnder10(text);
+  if (nameWidths.length === 0) return null;
+  if (nameWidths.some(value => Math.abs(value - codeWidth) < 1e-9)) return null;
+  return { codeWidthM: codeWidth, nameWidthsM: nameWidths };
+}
