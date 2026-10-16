@@ -7132,6 +7132,57 @@ function extractProductWidthServer(
   return null;
 }
 
+/** Khổ rộng ghi trong mã AMIS (`*2.1m`). Không có thì null (không kiểm tra được). */
+function extractAmisWidthMServer(maAmis?: string | null): number | null {
+  const match = String(maAmis || '').match(/\*\s*(\d+(?:[.,]\d+)?)\s*m\b/iu);
+  if (!match) return null;
+  const value = Number(match[1].replace(',', '.'));
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/**
+ * Phát hiện dòng lai mã-vs-tên (vụ DH015: mã `STD08-2li*2.1m` đi với tên SX sót
+ * khổ `1.22m` của variant cũ → ten_ghep bị ghép sai khổ rồi in lệnh SX sai theo).
+ * Trả về thông báo lỗi khi mã có khổ `*Wm` nhưng Tên SX không chứa khổ đó;
+ * `null` khi không kết luận được (mã không ghi khổ, tên không có token mét,
+ * hoặc tên đã chứa đúng khổ).
+ */
+function detectOrderLineWidthMismatchServer(
+  maAmis?: string | null,
+  tenSanXuat?: string | null
+): { codeWidthM: number; nameWidthsM: number[] } | null {
+  const codeWidth = extractAmisWidthMServer(maAmis);
+  if (codeWidth === null) return null;
+  const text = String(tenSanXuat || '').trim();
+  if (!text) return null;
+  const KNOWN_LENGTHS = [5.8, 6, 8, 9, 11.7, 12, 15, 20, 30];
+  const nameWidths: number[] = [];
+  const tokenRe = /(\d+(?:[.,]\d+)?)\s*m\b/giu;
+  let match: RegExpExecArray | null;
+  while ((match = tokenRe.exec(text)) !== null) {
+    const prev = match.index > 0 ? text[match.index - 1] : '';
+    if (prev && /[\d.,]/.test(prev)) continue;
+    const value = Number(match[1].replace(',', '.'));
+    if (!Number.isFinite(value) || value <= 0 || value >= 10) continue;
+    // Mét dài (5.8m/6m cuộn rỗng, 8m/9m tấm đặc...) không phải khổ → bỏ qua.
+    if (KNOWN_LENGTHS.some(len => Math.abs(len - value) < 1e-9)) continue;
+    nameWidths.push(value);
+  }
+  if (nameWidths.length === 0) return null;
+  if (nameWidths.some(value => Math.abs(value - codeWidth) < 1e-9)) return null;
+  return { codeWidthM: codeWidth, nameWidthsM: nameWidths };
+}
+
+function formatWidthMismatchErrorServer(
+  maSp: string,
+  mismatch: { codeWidthM: number; nameWidthsM: number[] }
+): string {
+  const fmt = (value: number) => `${String(value).replace('.', ',')}m`;
+  return `Sản phẩm ${maSp || '(chưa có mã)'}: Tên sản xuất đang ghi khổ ` +
+    `${mismatch.nameWidthsM.map(fmt).join(', ')} nhưng mã hàng khổ ${fmt(mismatch.codeWidthM)}. ` +
+    `Hãy chọn lại Tên sản xuất đúng với mã rồi lưu.`;
+}
+
 function calculateCutOrderWeightServer(
   length: number | null,
   quantity: number | null,
@@ -7329,6 +7380,12 @@ function parseOrderProductsInput(
     }
     if (isCutLikeOrderTypeServer(String(source.orderType ?? '')) && (dai_m === null || dai_m <= 0)) {
       return { error: `Dài (m) phải lớn hơn 0 cho sản phẩm ${ma_sp || ten_sp}.` };
+    }
+    // Chặn dòng lai mã-vs-tên (vụ DH015: mã 2.1m đi với tên SX sót khổ 1.22m →
+    // ten_ghep bị ghép sai khổ rồi in lệnh SX sai theo).
+    const widthMismatch = detectOrderLineWidthMismatchServer(ma_sp, ten_san_xuat);
+    if (widthMismatch) {
+      return { error: formatWidthMismatchErrorServer(ma_sp, widthMismatch) };
     }
     if (!rawConversion || typeof rawConversion !== 'object') {
       products.push({ san_pham_id, ma_don_hang, ma_sp, ten_sp, ten_san_xuat, don_vi, so_luong, ...(stt ? { stt } : {}), ...extraFields, ...(so_luong_bac !== null ? { so_luong_bac: Math.max(0, so_luong_bac) } : {}), ...(so_luong_trung !== null ? { so_luong_trung: Math.max(0, so_luong_trung) } : {}), ...(so_luong_nam !== null ? { so_luong_nam: Math.max(0, so_luong_nam) } : {}), ...(conversionResults.length ? { ket_qua_quy_doi: conversionResults } : {}) });
@@ -8211,6 +8268,20 @@ function parseProductionOrderBody(
   }
 
   const source = body as Record<string, unknown>;
+  // Chặn dòng lai mã-vs-tên trước khi parse (vụ DH015: mã 2.1m đi với tên SX sót khổ 1.22m).
+  const rawItems = source.san_pham ?? source.products;
+  if (Array.isArray(rawItems)) {
+    for (const item of rawItems) {
+      if (!item || typeof item !== 'object') continue;
+      const row = item as Record<string, unknown>;
+      const rowMaSp = pickRowField(row, ['ma_sp', 'ma_hang', 'productCode', 'code']);
+      const rowTenSx = pickRowField(row, ['ten_san_xuat', 'productionName']);
+      const rowMismatch = detectOrderLineWidthMismatchServer(rowMaSp, rowTenSx);
+      if (rowMismatch) {
+        return { error: formatWidthMismatchErrorServer(rowMaSp, rowMismatch) };
+      }
+    }
+  }
   const parsedProducts = parseProductionOrderProductsInput(source);
   let products: OrderProductRecord[];
 
