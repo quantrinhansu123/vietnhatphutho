@@ -2644,15 +2644,26 @@ export function autoCalculateProductConversion(
     updated.trongLuongKgMDai = String(formulas.kgPerLinearM);
   }
 
-  // Trọng lượng (kg/Tấm) và (kg/Cuộn) cho phép nhập tay để chốt TL khi thiếu
-  // thông tin tính toán. Công thức chỉ tự điền khi ô đang trống (giống backend:
-  // giữ giá trị được cung cấp, chỉ điền các trường còn trống), không ghi đè/xóa số đã nhập.
+  // Trọng lượng (kg/Tấm) và (kg/Cuộn) tự động tính lại khi đổi khổ/trọng lượng
+  // nguồn. Nhập tay vẫn được khi chưa đủ dữ liệu; khi đủ dữ liệu thì công
+  // thức ghi đè để không còn số cũ (vd Khổ tấm dài=1 + kg/1m dài=1 → kg/Tấm=1).
+  const TAM_DEPS: Array<keyof ProductConversionForm> = [
+    'khoTamRongM', 'khoTamDaiM', 'khoCuonRongM', 'trongLuongKgMDai', 'trongLuongKgM2'
+  ];
+  const CUON_DEPS: Array<keyof ProductConversionForm> = [
+    'khoTamRongM', 'khoCuonRongM', 'khoCuonDaiM', 'dienTichM2', 'trongLuongKgMDai', 'trongLuongKgM2'
+  ];
   const applyCalculatedWeight = (
     key: 'trongLuongKgTam' | 'trongLuongKgCuon',
     value: number | null
   ) => {
     if (changedKey === key) return;
-    if (value !== null && !updated[key].trim()) updated[key] = String(value);
+    if (value !== null) {
+      updated[key] = String(value);
+      return;
+    }
+    const deps = key === 'trongLuongKgTam' ? TAM_DEPS : CUON_DEPS;
+    if (changedKey && deps.includes(changedKey)) updated[key] = '';
   };
 
   applyCalculatedWeight('trongLuongKgTam', formulas.kgPerSheet);
@@ -2663,13 +2674,13 @@ export function autoCalculateProductConversion(
 
 const emptyConversion = (): ProductConversionForm => ({ khoTamRongM: '', khoTamDaiM: '', khoCuonRongM: '', khoCuonDaiM: '', dienTichM2: '', trongLuongKgMDai: '', trongLuongKgM2: '', trongLuongKgTam: '', trongLuongKgCuon: '' });
 const conversionToForm = (item: ProductConversionFactors): ProductConversionForm => {
-  const base: ProductConversionForm = {
+  // Giữ nguyên số đã lưu khi mở form — chỉ tự tính lại khi người dùng sửa ô nguồn.
+  return {
     khoTamRongM: String(item.khoTamRongM ?? ''), khoTamDaiM: String(item.khoTamDaiM ?? ''),
     khoCuonRongM: String(item.khoCuonRongM ?? ''), khoCuonDaiM: String(item.khoCuonDaiM ?? ''), dienTichM2: String(item.dienTichM2 ?? ''),
     trongLuongKgMDai: String(item.trongLuongKgMDai ?? ''), trongLuongKgM2: String(item.trongLuongKgM2 ?? ''), trongLuongKgTam: String(item.trongLuongKgTam ?? ''),
     trongLuongKgCuon: String(item.trongLuongKgCuon ?? '')
   };
-  return autoCalculateProductConversion(base);
 };
 
 export function productCellToInput(value: string) {
@@ -3341,7 +3352,7 @@ export function ProductEditModal({
                 <div>
                   <h4 className="text-xs font-black uppercase text-zinc-700">Thông tin quy đổi sản phẩm</h4>
                   <p className="text-[10px] font-semibold text-zinc-500">
-                    Có thể nhập ngay. Mét dài trong Thông số sản xuất chính là Khổ tấm dài — đổi Mét dài sẽ đồng bộ và tính lại Trọng lượng (kg/Tấm) khi ô đang trống. Trọng lượng (kg/Tấm) và (kg/Cuộn) có thể nhập tay để chốt TL khi thiếu thông tin tính toán. Chọn SP chính theo AMIS để lấy sẵn quy đổi gốc.
+                    Có thể nhập ngay. Mét dài trong Thông số sản xuất chính là Khổ tấm dài — đổi Mét dài sẽ đồng bộ và tính lại Trọng lượng (kg/Tấm) tự động. Trọng lượng (kg/Tấm) và (kg/Cuộn) tự tính khi đủ khổ/trọng lượng nguồn; vẫn nhập tay được khi chưa đủ dữ liệu. Chọn SP chính theo AMIS để lấy sẵn quy đổi gốc.
                   </p>
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -3367,7 +3378,7 @@ export function ProductEditModal({
                           onChange={event => updateConversion(0, key, event.target.value)}
                           title={
                             key === 'trongLuongKgTam' || key === 'trongLuongKgCuon'
-                              ? 'Tự tính khi để trống — có thể nhập tay để chốt TL'
+                              ? 'Tự tính theo khổ/trọng lượng nguồn — nhập tay được khi chưa đủ dữ liệu'
                               : undefined
                           }
                           className={`${productFieldClass} bg-white`}
