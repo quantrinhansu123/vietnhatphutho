@@ -57,7 +57,8 @@ import {
   southOrderKgPerMeter,
   southScaledTlAndTotal,
   southFallbackTlAndTotal,
-  southKhoScale
+  southKhoScale,
+  inferSpecsFromProductionName
 } from './southWeight';
 export {
   orderDuplicateDecimalText,
@@ -1542,17 +1543,21 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
           const autoMang = extractedMang || line.mang || '';
           const autoUnit = match.unit || line.unit || 'Tấm';
 
+          // SP chưa có quy đổi/thông số danh mục: suy Dài, Khổ, Độ li ĐM từ tên sản xuất.
+          const inferred = inferSpecsFromProductionName(match.productionName, match.group);
           const rawDaiM = match.doDaiM ? String(match.doDaiM).replace(/m\s*$/iu, '').trim() : '';
-          const autoDaiM = rawDaiM || (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '') || line.daiM;
+          const autoDaiM = rawDaiM || (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '') || inferred.daiM || line.daiM;
 
           const rawKho = match.doDayM ? String(match.doDayM).replace(/m\s*$/iu, '').trim() : '';
-          const autoKho = rawKho || (conversion?.khoTamRongM ? String(conversion.khoTamRongM) : '') || line.kho;
+          const autoKho = rawKho || (conversion?.khoTamRongM ? String(conversion.khoTamRongM) : '') || inferred.kho || line.kho;
 
-          const rawDoLiDm = hasZemInName(match?.productionName, match?.name, match?.code) ? '' : extractDoLiDmNumber(match.doLiDm || '') || extractDoLiDmNumber(extractDoLiDm(match.productionName) || '');
+          const rawDoLiDm = hasZemInName(match?.productionName, match?.name, match?.code) ? '' : extractDoLiDmNumber(match.doLiDm || '') || extractDoLiDmNumber(extractDoLiDm(match.productionName) || '') || inferred.doLiDm;
           const autoDoLiDm = rawDoLiDm || line.doLiDm;
 
+          // Độ dài tấm tiêu chuẩn theo sản phẩm chọn (không theo Dài m đang nhập).
           const autoDoDaiTamTieuChuan = (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '')
             || rawDaiM
+            || inferred.daiM
             || line.doDaiTamTieuChuan;
 
           const autoDinhMucTieuChuanKg = (conversion?.trongLuongKgTam ? String(conversion.trongLuongKgTam) : '')
@@ -1641,8 +1646,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
   /**
    * Đơn miền nam: khi đổi Dài / Khổ rộng / Độ li ĐM thì tính lại Định mức tiêu chuẩn (kg) từ chuẩn danh mục:
-   *   ĐM tiêu chuẩn = (kg tấm chuẩn ÷ độ dài chuẩn) × Dài × (Khổ nhập ÷ Khổ chuẩn) × (Độ li ĐM nhập ÷ Độ li ĐM chuẩn)
-   * Độ dài tấm tiêu chuẩn = Dài mới → KG/1m = ĐM tiêu chuẩn ÷ Dài; Tổng KG = ĐM tiêu chuẩn × SL.
+   *   ĐM tiêu chuẩn = kg tấm chuẩn × (Khổ nhập ÷ Khổ chuẩn) × (Độ li ĐM nhập ÷ Độ li ĐM chuẩn)
+   * Độ dài tấm tiêu chuẩn = độ dài chuẩn của sản phẩm (không theo Dài nhập) → KG/1m = ĐM tiêu chuẩn ÷ độ dài chuẩn;
+   * Tổng KG = KG/1m × Dài × SL.
    * Tên có ZEM không dùng hệ số độ li. Thiếu chuẩn danh mục thì không đổi gì.
    */
   const recomputeSouthStandard = (line: OrderProductFormLine): Partial<OrderProductFormLine> | null => {
@@ -1660,11 +1666,13 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     const liScale = hasZemInName(line.productionName, line.productName, line.productCode)
       ? 1
       : (doLiDmWeightScale(line.doLiDm, product.doLiDm) ?? 1);
-    const nextDm = Math.round((stdKg / stdLen) * dai * khoScale * liScale * 100) / 100;
+    // Độ dài tấm tiêu chuẩn giữ theo sản phẩm; ĐM tiêu chuẩn = kg tấm chuẩn × hệ số khổ × hệ số độ li.
+    // Tổng KG tự nhân thêm Dài m qua KG/1m = ĐM tiêu chuẩn ÷ độ dài tấm tiêu chuẩn.
+    const nextDm = Math.round(stdKg * khoScale * liScale * 100) / 100;
     if (!(nextDm > 0)) return null;
     return {
       dinhMucTieuChuanKg: orderDuplicateDecimalText(String(nextDm)),
-      doDaiTamTieuChuan: orderDuplicateDecimalText(String(dai))
+      doDaiTamTieuChuan: orderDuplicateDecimalText(String(stdLen))
     };
   };
 
@@ -1815,15 +1823,18 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     // các loại đơn khác để trống để tự nhập.
     const extractedMang = match ? (match.mang || extractMang(match.productionName)) : '';
 
+    const inferred = isSouthOrder && match
+      ? inferSpecsFromProductionName(match.productionName, match.group)
+      : { daiM: '', kho: '', doLiDm: '' };
     const rawDaiM = match?.doDaiM ? String(match.doDaiM).replace(/m\s*$/iu, '').trim() : '';
-    const autoDaiM = rawDaiM || (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '');
+    const autoDaiM = rawDaiM || (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '') || inferred.daiM;
 
     const rawKho = String(match?.doDayM || '').replace(/m\s*$/iu, '').trim();
-    const autoKho = rawKho || (conversion?.khoTamRongM ? String(conversion.khoTamRongM) : '');
+    const autoKho = rawKho || (conversion?.khoTamRongM ? String(conversion.khoTamRongM) : '') || inferred.kho;
 
-    const rawDoLiDm = hasZemInName(match?.productionName, match?.name, match?.code) ? '' : extractDoLiDmNumber(match?.doLiDm || '') || (match?.productionName ? extractDoLiDmNumber(extractDoLiDm(match.productionName) || '') : '');
+    const rawDoLiDm = hasZemInName(match?.productionName, match?.name, match?.code) ? '' : extractDoLiDmNumber(match?.doLiDm || '') || (match?.productionName ? extractDoLiDmNumber(extractDoLiDm(match.productionName) || '') : '') || inferred.doLiDm;
 
-    const autoDoDaiTamTieuChuan = (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '') || rawDaiM;
+    const autoDoDaiTamTieuChuan = (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '') || rawDaiM || inferred.daiM;
     const autoDinhMucTieuChuanKg = (conversion?.trongLuongKgTam ? String(conversion.trongLuongKgTam) : '') || (match?.totalWeight ? String(match.totalWeight) : '');
 
     updateConversionProductLine(key, {
@@ -1887,7 +1898,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       }
     }
     for (const line of activeProductLines) {
-      if (!line.manualTongKg) continue;
+      if (!line.manualTongKg || isSouthOrder) continue;
       const enteredKg = parsePercentInput(String(line.tongKg ?? ''));
       if (!Number.isFinite(enteredKg) || enteredKg <= 0) {
         setFormError(`KG khách hàng nhập phải lớn hơn 0 cho sản phẩm ${line.productCode || line.productName}.`);
@@ -2047,7 +2058,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     // Tổng KG bắt buộc cho mọi dòng, mọi loại đơn: không cho tạo/cập nhật đơn khi để trống Tổng KG.
     // (Tổng KG nhập tay / Định mức / TL danh mục tự tính ra Tổng KG đều được.)
     // Kiểm tra trên dữ liệu cuối (bao cả dòng cũ mở sửa mà không chạm tới).
-    const missingTotalKg = productsWithConversion.find((item: any) => {
+    // Đơn miền nam: SP chưa có quy đổi vẫn được lưu với Tổng KG = 0 (bổ sung sau).
+    const missingTotalKg = isSouthOrder ? undefined : productsWithConversion.find((item: any) => {
       if (Number(item?.tong_kg) > 0) return false;
       const results = Array.isArray(item?.ket_qua_quy_doi) ? item.ket_qua_quy_doi : [];
       return !results.some((result: any) => result && String(result.don_vi || '') === 'kg' && Number(result.gia_tri) > 0);
