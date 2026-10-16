@@ -1,4 +1,24 @@
 import { formatNumber, parseLocalizedNumber, parsePercentInput } from '../../utils';
+import { extractDoLiDmNumber, hasZemInName, parseProductionNameParts } from '../../utils/productProductionName';
+
+/**
+ * SP chưa có quy đổi/thông số danh mục: suy Dài (m), Khổ rộng (m), Độ li ĐM (số) từ tên sản xuất.
+ * Tên ZEM không có độ li ĐM. Không suy được ô nào thì trả '' cho ô đó.
+ */
+export function inferSpecsFromProductionName(
+  productionName: string | null | undefined,
+  group = ''
+): { daiM: string; kho: string; doLiDm: string } {
+  const name = String(productionName ?? '').trim();
+  if (!name) return { daiM: '', kho: '', doLiDm: '' };
+  const parts = parseProductionNameParts(name, group);
+  const stripM = (value: string) => String(value || '').replace(/m\s*$/iu, '').trim();
+  return {
+    daiM: stripM(parts.doDaiM),
+    kho: stripM(parts.doDayM),
+    doLiDm: hasZemInName(name) ? '' : extractDoLiDmNumber(parts.doLiDm)
+  };
+}
 
 /** Đơn cắt lẻ + miền nam: chuẩn hóa Định mức KG/tấm (làm tròn 2 số lẻ). Không hợp lệ / <= 0 = null. */
 export function parseSouthDinhMucKg(value: unknown): number | null {

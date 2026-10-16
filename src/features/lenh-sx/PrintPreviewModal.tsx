@@ -112,6 +112,12 @@ function AutoGrowNoteTextarea({
   );
 }
 
+/** Bản in: số 0 (hoặc rỗng) để trống. */
+function blankIfZero(value: string): string {
+  const n = Number(value);
+  return value.trim() === '' || (Number.isFinite(n) && n === 0) ? '' : value;
+}
+
 function formatNum(value: number | null): string {
   return value !== null && Number.isFinite(value) ? value.toFixed(2) : '—';
 }
@@ -611,7 +617,7 @@ export function ProductionOrderPrintPreviewModal({
                       <tr>
                         <th className={`${numHeadCell} w-10`}>STT</th>
                         <th className={`${textHeadCell} min-w-28`}>Mã đơn hàng</th>
-                        <th className={`${textHeadCell} min-w-40`}>Tên sản xuất</th>
+                        <th className={`${textHeadCell} min-w-72`}>Tên sản xuất</th>
                         <th className={`${textHeadCell} min-w-48`}>Ghi chú</th>
                         <th className={`${numHeadCell} w-14`}>ĐVT</th>
                         <th className={`${numHeadCell} production-order-preview-th-stack w-16`}>
@@ -748,7 +754,7 @@ export function ProductionOrderPrintPreviewModal({
                                   className={`${row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS} print:hidden`}
                                 />
                                 <span className="hidden text-right tabular-nums text-zinc-900 print:block">
-                                  {edits[editKey]?.bac ?? '0'}
+                                  {blankIfZero(edits[editKey]?.bac ?? '0')}
                                 </span>
                               </td>
                               <td className={bodyCell}>
@@ -762,7 +768,7 @@ export function ProductionOrderPrintPreviewModal({
                                   className={`${row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS} print:hidden`}
                                 />
                                 <span className="hidden text-right tabular-nums text-zinc-900 print:block">
-                                  {edits[editKey]?.trung ?? '0'}
+                                  {blankIfZero(edits[editKey]?.trung ?? '0')}
                                 </span>
                               </td>
                               <td className={bodyCell}>
@@ -776,7 +782,7 @@ export function ProductionOrderPrintPreviewModal({
                                   className={`${row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS} print:hidden`}
                                 />
                                 <span className="hidden text-right tabular-nums text-zinc-900 print:block">
-                                  {edits[editKey]?.nam ?? '0'}
+                                  {blankIfZero(edits[editKey]?.nam ?? '0')}
                                 </span>
                               </td>
                               <td className={`${bodyCell} text-right tabular-nums text-zinc-700`}>
