@@ -6782,9 +6782,9 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
   );
 
   const selectFull =
-    'id, ma_phieu, ma_sp, ten_sp, ma_npl, ten_npl, don_vi, nhom_vthh, ten_kho, loai_phieu, ngay_phieu, so_luong, trong_luong_kg, so_m2, so_m_dai';
+    'id, ma_phieu, ma_sp, ten_sp, ma_npl, ten_npl, don_vi, nhom_vthh, ten_kho, loai_phieu, ngay_phieu, so_luong, trong_luong_kg, so_m2, so_m_dai, thanh_tien, don_gia';
   const selectCompat =
-    'id, ma_phieu, ma_sp, ten_sp, ma_npl, ten_npl, don_vi, nhom_vthh, ten_kho, loai_phieu, ngay_phieu, so_luong, trong_luong_kg';
+    'id, ma_phieu, ma_sp, ten_sp, ma_npl, ten_npl, don_vi, nhom_vthh, ten_kho, loai_phieu, ngay_phieu, so_luong, trong_luong_kg, thanh_tien, don_gia';
 
   // Phiếu NX: không .eq ten_kho (phiếu thường để trống ten_kho) — khớp tồn theo mã + tên.
   // Doc gop bang tach (nhap + xuat) + bang cu fallback, dedupe theo id.
@@ -6847,7 +6847,9 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
     so_luong: Number(row.so_luong) || 0,
     trong_luong_kg: Number(row.trong_luong_kg) || 0,
     so_m2: Number(row.so_m2) || 0,
-    so_m_dai: Number(row.so_m_dai) || 0
+    so_m_dai: Number(row.so_m_dai) || 0,
+    thanh_tien: Number(row.thanh_tien) || 0,
+    don_gia: Number(row.don_gia) || 0
   }));
 
   const periodBalances = computeThanhPhamPeriodBalances(mapped, {
