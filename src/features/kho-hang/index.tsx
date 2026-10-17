@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Upload } from 'lucide-react';
 import { useTabAccess } from '../../app/useTabAccess';
 import { FilterCombobox } from '../../components/shared/table';
 import { MaterialsInventoryPanel } from '../kho-nvl';
-import { ProductsPanel } from '../san-pham';
 import { getCatalogCache } from './catalogCache';
 import { ThanhPhamStockPanel } from './ThanhPhamStockPanel';
+import { TpOpeningStockImportModal } from './TpOpeningStockImportModal';
 
 export type InventoryCatalogKind = 'materials' | 'products';
 export {
@@ -46,6 +47,7 @@ export function warehouseCatalogKind(name: string): InventoryCatalogKind {
     normalized.includes('tai che') ||
     normalized === 'kho dac' ||
     normalized === 'kho song' ||
+    normalized === 'kho nep' ||
     normalized === 'kho rong'
     ? 'products'
     : 'materials';
@@ -113,6 +115,12 @@ export function InventoryCatalogPanel({ onBack }: { onBack: () => void }) {
   const productsAccess = useTabAccess('products');
   const [warehouses, setWarehouses] = useState<string[]>([]);
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
+  const [importOpen, setImportOpen] = useState(false);
+  const [importMessage, setImportMessage] = useState('');
+  const currentMonth = useMemo(() => {
+    const now = new Date();
+    return { thang: now.getMonth() + 1, nam: now.getFullYear() };
+  }, []);
 
   useEffect(() => {
     const loadWarehouses = async () => {
@@ -194,28 +202,42 @@ export function InventoryCatalogPanel({ onBack }: { onBack: () => void }) {
     );
   }
 
-  // Kho thành phẩm / sản phẩm / cắt lẻ / tái chế / Đặc / Sóng / Rỗng
-  // → một màn: SP từ nhap_kho + tồn kỳ từ phiếu NX.
-  const normalizedSelected = normalizeWarehouseName(selectedWarehouse);
-  const isFinishedGoods =
-    normalizedSelected.includes('thanh pham') ||
-    normalizedSelected.includes('san pham') ||
-    normalizedSelected.includes('cat le') ||
-    normalizedSelected.includes('tai che') ||
-    normalizedSelected === 'kho dac' ||
-    normalizedSelected === 'kho song' ||
-    normalizedSelected === 'kho rong';
-
-  if (isFinishedGoods) {
-    return <ThanhPhamStockPanel warehouseName={selectedWarehouse} topControls={warehousePicker} />;
-  }
-
+  // Mọi kho thành phẩm / sản phẩm / hàng hóa / cắt lẻ / tái chế / Đặc / Sóng / Rỗng / Nẹp
+  // → cùng một màn: chọn Từ ngày → Đến ngày + tìm kiếm, SP từ nhap_kho + tồn kỳ từ phiếu NX.
   return (
-    <ProductsPanel
-      onBack={onBack}
-      warehouseFilter={selectedWarehouse}
-      includeUnassigned
-      topControls={warehousePicker}
-    />
+    <>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        {warehousePicker}
+        {(productsAccess.canCreate || productsAccess.canEdit) && (
+          <button
+            type="button"
+            onClick={() => {
+              setImportMessage('');
+              setImportOpen(true);
+            }}
+            className="flex h-10 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
+          >
+            <Upload className="h-4 w-4" /> Import tồn đầu TP
+          </button>
+        )}
+      </div>
+      {importMessage ? (
+        <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+          {importMessage} Bấm “Tải lại” trong bảng bên dưới để xem số mới.
+        </div>
+      ) : null}
+      <ThanhPhamStockPanel warehouseName={selectedWarehouse} topControls={null} />
+      <TpOpeningStockImportModal
+        open={importOpen}
+        warehouseOptions={warehousePickerOptions.filter(name => warehouseCatalogKind(name) === 'products')}
+        defaultWarehouse={selectedWarehouse}
+        defaultMonth={currentMonth}
+        onClose={() => setImportOpen(false)}
+        onImported={message => {
+          setImportMessage(message);
+          setImportOpen(false);
+        }}
+      />
+    </>
   );
 }

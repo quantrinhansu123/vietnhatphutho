@@ -215,6 +215,8 @@ export interface WarehouseSlipLineDraft {
   code: string;
   name: string;
   productionName?: string;
+  /** Mã AMIS dòng TP (ma_sp trên phiếu chính là mã AMIS) — snapshot khi lập phiếu. */
+  amisCode?: string;
   unit: string;
   quantity: string;
   documentQuantity?: string;
@@ -848,8 +850,10 @@ export function generateWarehouseSlipPreviewCode(slipType: WarehouseSlipType) {
 export type WarehouseSlipPayloadItem = {
   code: string;
   name: string;
-  /** ten NVL san xuat SNAPSHOT vao phieu. */
+  /** ten NVL san xuat SNAPSHOT vao phieu (kho NVL) / ten SX TP (kho TP). */
   productionName?: string;
+  /** Mã AMIS dòng TP — snapshot khi lập phiếu (ma_sp đã là mã AMIS). */
+  amisCode?: string;
   unit: string;
   quantity: number;
   documentQuantity?: number;
@@ -951,6 +955,7 @@ export function parseWarehouseSlipPayloadItems(
         code: line.code.trim(),
         name: line.name.trim(),
         productionName: line.productionName?.trim() || undefined,
+        amisCode: line.amisCode?.trim() || undefined,
         unit: line.unit.trim(),
         quantity,
         documentQuantity:
@@ -1241,6 +1246,7 @@ export function createWarehouseLineDraft(): WarehouseSlipLineDraft {
     code: '',
     name: '',
     productionName: '',
+    amisCode: '',
     unit: '',
     quantity: '',
     documentQuantity: '',
@@ -1324,6 +1330,7 @@ export function createWarehouseLineDraftFromPrefill(
     | 'code'
     | 'name'
     | 'productionName'
+    | 'amisCode'
     | 'unit'
     | 'quantity'
     | 'documentQuantity'
@@ -1361,6 +1368,7 @@ export function createWarehouseLineDraftFromPrefill(
     code: line.code || '',
     name: line.name || '',
     productionName: line.productionName || '',
+    amisCode: (line as { amisCode?: string }).amisCode || '',
     unit: line.unit || '',
     quantity: line.quantity || '',
     documentQuantity: line.documentQuantity || line.suggestedQuantity || '',
@@ -1562,10 +1570,12 @@ export function mapWarehouseMovementsForShiftSummary(rows: WarehouseMovementRow[
 
 export type WarehouseProductionOrderLine = {
   code: string;
-  /** Tên danh mục (ten_sp). */
+  /** Tên bán hàng (ten_sp). */
   name: string;
-  /** Tên ghép / tên sản xuất hiển thị trên phiếu nhập TP. */
+  /** Tên sản xuất / tên ghép — ghi cột ten_san_xuat, KHÔNG ghi đè name. */
   productionName: string;
+  /** Mã AMIS của SP trong lệnh SX (ma_sp trên phiếu chính là mã AMIS). */
+  amisCode?: string;
   unit: string;
   quantity: number | null;
   weightKg: number | null;
@@ -1752,6 +1762,7 @@ function parseWarehouseProductionOrderLines(record: Record<string, unknown>): Wa
         code,
         name: catalogName || productionName,
         productionName: productionName || catalogName || code,
+        amisCode: pickText(row, ['ma_amis', 'maAmis', 'amisCode'], '') || undefined,
         unit: pickText(row, ['don_vi', 'unit'], ''),
         quantity,
         moTaTem: pickText(row, ['mo_ta_tem', 'moTaTem'], '') || undefined,
@@ -1775,6 +1786,7 @@ function parseWarehouseProductionOrderLines(record: Record<string, unknown>): Wa
       code,
       name: catalogName || productionName,
       productionName: productionName || catalogName || code,
+      amisCode: pickText(record, ['ma_amis', 'maAmis', 'amisCode'], '') || undefined,
       unit: pickText(record, ['don_vi'], ''),
       quantity,
       moTaTem: pickText(record, ['mo_ta_tem', 'moTaTem'], '') || undefined,
@@ -2355,6 +2367,8 @@ export function WarehouseSlipPanel({
             selectableProducts.map(product => ({
               code: product.code,
               name: product.name,
+              productionName: product.tenGhep || product.productionName || undefined,
+              amisCode: product.amisCode || undefined,
               unit: product.unit && product.unit !== '-' ? product.unit : ''
             }))
           );
@@ -2594,6 +2608,7 @@ export function WarehouseSlipPanel({
       code: canonicalCode,
       name: item?.name || '',
       productionName: item?.productionName || '',
+      amisCode: item?.amisCode || '',
       unit: item?.unit || '',
       auxiliaryGroup: nhomVatTuPhu || currentLine?.auxiliaryGroup || '',
       ...(isTapeOrStamp ? { nhomVthh: currentLine?.nhomVthh || '', warehouseClass: 'nvl_phu' as const } : {}),
@@ -2665,6 +2680,8 @@ export function WarehouseSlipPanel({
       updateLine(lineKey, {
         code: '',
         name: '',
+        productionName: '',
+        amisCode: '',
         unit: '',
         nhomVthh: '',
         documentQuantity: '',
@@ -3053,20 +3070,24 @@ export function WarehouseSlipPanel({
     );
     return products.map(product => {
       const catalog = byCode.get(normalizeMaterialKey(product.code));
-      const displayName = product.productionName || product.name;
+      // name = tên bán hàng, productionName = tên SX — tách riêng, không gộp.
+      const salesName = product.name || catalog?.name || product.productionName;
+      const sxName = product.productionName || salesName;
       if (catalog) {
         return {
           ...catalog,
-          name: displayName,
-          productionName: displayName,
+          name: salesName,
+          productionName: sxName,
+          amisCode: product.amisCode || (catalog as MaterialOption).amisCode,
           unit: catalog.unit || product.unit
         };
       }
       return {
         id: product.code,
         code: product.code,
-        name: displayName,
-        productionName: displayName,
+        name: salesName,
+        productionName: sxName,
+        amisCode: product.amisCode,
         unit: product.unit || ''
       } as MaterialOption;
     });
@@ -3101,7 +3122,8 @@ export function WarehouseSlipPanel({
       products.map(product => {
         const catalog = catalogByCode.get(normalizeMaterialKey(product.code));
         const qty = product.quantity > 0 ? product.quantity : 0;
-        const displayName = product.productionName || product.name || catalog?.name || '';
+        const salesName = product.name || catalog?.name || product.productionName;
+        const sxName = product.productionName || salesName;
         const kgPerUnit =
           product.kgPerUnit > 0
             ? product.kgPerUnit
@@ -3126,7 +3148,9 @@ export function WarehouseSlipPanel({
             : { weightKg: '', areaM2: '', lengthM: '' };
         return createWarehouseLineDraftFromPrefill({
           code: product.code,
-          name: displayName,
+          name: salesName,
+          productionName: sxName,
+          amisCode: product.amisCode,
           unit: product.unit || catalog?.unit || '',
           quantity: qty > 0 ? String(qty) : '',
           documentQuantity: qty > 0 ? String(qty) : '',
@@ -5721,9 +5745,14 @@ export function WarehouseSlipPanel({
                       value={line.name}
                       onChange={event => updateLine(line.key, { name: event.target.value })}
                       className={warehouseLineFieldClass}
-                      title={isTpInbound ? 'Tên sản xuất (tên ghép từ lệnh SX)' : undefined}
-                      placeholder={isTpInbound ? 'Tên ghép' : undefined}
+                      title={isTpInbound ? 'Tên sản phẩm (tên bán hàng)' : undefined}
+                      placeholder={isTpInbound ? 'Tên sản phẩm' : undefined}
                     />
+                    {warehouseKind === 'san_pham' && String(line.productionName || '').trim() ? (
+                      <div className="truncate text-[10px] font-semibold text-zinc-500" title={String(line.productionName || '').trim()}>
+                        SX: {String(line.productionName || '').trim()}
+                      </div>
+                    ) : null}
                   </div>
                   {isMaterialWarehouse ? (
                     <div className={`min-w-0 ${warehouseLineMobileHiddenClass}`}>

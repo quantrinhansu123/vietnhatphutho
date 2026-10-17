@@ -167,6 +167,8 @@ export type TpInboundLenhSxOption = {
     code: string;
     name: string;
     productionName?: string;
+    /** Mã AMIS (ma_sp trên phiếu chính là mã AMIS). */
+    amisCode?: string;
     unit: string;
     quantity: number | null;
     weightKg?: number | null;
@@ -243,13 +245,14 @@ export function tpInboundVariantKey(line: {
   ].join('|');
 }
 
-/** Gộp SP từ các lệnh SX đã chọn (khóa theo variant). Tên hiển thị ưu tiên tên ghép. */
+/** Gộp SP từ các lệnh SX đã chọn (khóa theo variant). name = tên bán hàng, productionName = tên SX. */
 export function mergeProductsFromLenhSx(
   orders: TpInboundLenhSxOption[]
 ): Array<{
   code: string;
   name: string;
   productionName: string;
+  amisCode?: string;
   unit: string;
   quantity: number;
   weightKg: number;
@@ -265,6 +268,7 @@ export function mergeProductsFromLenhSx(
       code: string;
       name: string;
       productionName: string;
+      amisCode?: string;
       unit: string;
       quantity: number;
       weightKg: number;
@@ -282,7 +286,9 @@ export function mergeProductsFromLenhSx(
       const qty = Number(line.quantity);
       const productionName =
         String(line.productionName || '').trim() || String(line.name || '').trim() || code;
+      // Tên bán hàng giữ ở name, tên SX giữ ở productionName — không gộp 2 ô làm một.
       const name = String(line.name || '').trim() || productionName;
+      const amisCode = String((line as { amisCode?: unknown }).amisCode || '').trim() || undefined;
       const unit = String(line.unit || '').trim();
       const weightKg = Number(line.weightKg) > 0 ? Number(line.weightKg) : 0;
       const areaM2 = Number(line.areaM2) > 0 ? Number(line.areaM2) : 0;
@@ -302,6 +308,7 @@ export function mergeProductsFromLenhSx(
           code,
           name,
           productionName,
+          amisCode,
           unit,
           quantity: Number.isFinite(qty) && qty > 0 ? qty : 0,
           weightKg,

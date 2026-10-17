@@ -5336,6 +5336,8 @@ type WarehouseSlipLineInput = {
   name: string;
   /** Ten NVL san xuat SNAPSHOT tai thoi diem lap phieu (module 1). */
   productionName?: string;
+  /** Mã AMIS dòng TP snapshot khi lập phiếu (ma_sp đã là mã AMIS). */
+  amisCode?: string;
   unit: string;
   quantity: number;
   documentQuantity?: number;
@@ -5681,6 +5683,7 @@ function parseWarehouseSlipLines(
     const productionName = String(
       record.productionName ?? record.ten_nvl_sx ?? record.tenSx ?? record.ten_sx ?? ''
     ).trim();
+    const amisCode = String(record.amisCode ?? record.ma_amis ?? '').trim();
     const quantity = parseOptionalMaterialNumber(record.quantity ?? record.so_luong);
     const documentQuantity = parseOptionalMaterialNumber(
       record.documentQuantity ?? record.so_luong_chung_tu ?? record.document_qty
@@ -5690,6 +5693,11 @@ function parseWarehouseSlipLines(
     );
     const unitPriceRaw = record.unitPrice ?? record.don_gia ?? record.price ?? record.gia;
     const unitPrice = parseOptionalMaterialNumber(unitPriceRaw) ?? 0;
+    // Cho phép gửi thẳng thành tiền (import/đối soát) để khớp giá trị tuyệt đối,
+    // tránh sai số do đơn giá làm tròn. FE thường không gửi → giữ nguyên hành vi cũ.
+    const explicitLineAmount = parseOptionalMaterialNumber(
+      record.lineAmount ?? record.thanh_tien ?? record.amount ?? record.tong_tien
+    );
     const sourceInboundLineId = String(
       record.sourceInboundLineId ?? record.id_dong_nhap_nguon ?? record.inboundLineId ?? ''
     ).trim();
@@ -5760,18 +5768,22 @@ function parseWarehouseSlipLines(
       code,
       name,
       ...(productionName ? { productionName } : {}),
+      ...(amisCode ? { amisCode } : {}),
       unit,
-      quantity: roundWarehouseMoney(quantity),
+      quantity: roundWarehouseQty(quantity),
       documentQuantity:
         documentQuantity !== null && documentQuantity > 0
-          ? roundWarehouseMoney(documentQuantity)
+          ? roundWarehouseQty(documentQuantity)
           : undefined,
       tonDauCaMay:
         tonDauCaMay !== null && Number.isFinite(tonDauCaMay) && tonDauCaMay >= 0
           ? roundWarehouseQty(tonDauCaMay)
           : undefined,
       unitPrice: roundWarehouseMoney(unitPrice),
-      lineAmount: roundWarehouseMoney(quantity * unitPrice),
+      lineAmount:
+        explicitLineAmount !== null && explicitLineAmount >= 0
+          ? roundWarehouseMoney(explicitLineAmount)
+          : roundWarehouseMoney(quantity * unitPrice),
       materialClass,
       ...(machine ? { machine } : {}),
       ...(weightKg !== null && weightKg > 0 ? { weightKg: roundWarehouseQty(weightKg) } : {}),
@@ -6037,6 +6049,9 @@ function buildWarehouseSlipInsertRecords(
       so_m_dai: parsed.loaiKho === 'san_pham' ? item.lengthM ?? null : null,
       nhom_vthh: item.nhomVthh || null,
       ten_nvl_sx: parsed.loaiKho === 'nvl' ? item.productionName || null : null,
+      // Dòng TP: ten_sp = tên bán hàng, ten_san_xuat = tên SX snapshot (cần migration
+      // supabase-phieu-nhap-xuat-ten-san-xuat.sql; thiếu cột thì resilient strip).
+      ten_san_xuat: parsed.loaiKho === 'san_pham' ? item.productionName || null : null,
       ton_dau_ca_may: parsed.loaiKho === 'nvl' ? item.tonDauCaMay ?? null : null
     };
 
@@ -6270,6 +6285,9 @@ const WAREHOUSE_SLIP_MODULE1_COLUMNS = [
   'link_anh_can_thuc_te_public_id'
 ];
 
+/** Tên sản xuất TP trên phiếu — strip nếu DB chưa chạy supabase-phieu-nhap-xuat-ten-san-xuat.sql. */
+const WAREHOUSE_SLIP_TEN_SX_COLUMNS = ['ten_san_xuat'];
+
 /** Cột phiếu TP — strip nếu DB chưa chạy supabase-phieu-xuat-nhap-kho-thanh-pham.sql. */
 const WAREHOUSE_SLIP_THANH_PHAM_COLUMNS = ['so_m2', 'so_m_dai', 'dia_chi', 'so_tron_ids'];
 
@@ -6290,6 +6308,7 @@ async function insertWarehouseSlipRecordsResilient(
     WAREHOUSE_SLIP_CHI_PHI_COLUMNS,
     WAREHOUSE_SLIP_CATALOG_REF_COLUMNS,
     WAREHOUSE_SLIP_THANH_PHAM_COLUMNS,
+    WAREHOUSE_SLIP_TEN_SX_COLUMNS,
     WAREHOUSE_SLIP_MODULE1_COLUMNS
   ];
   let attempt = records;
@@ -6547,6 +6566,9 @@ async function insertNhapKhoThanhPhamRows(parsed: {
       return {
         ma_sp: maSp,
         ten_sp: String(item.name || '').trim(),
+        // ten_sp = tên bán hàng; ten_san_xuat = tên SX snapshot từ phiếu (ưu tiên) —
+        // trước đây ten_sp thường hứng luôn tên SX vì form gộp 2 ô.
+        ...(item.productionName ? { ten_san_xuat: String(item.productionName).trim() || null } : {}),
         don_vi: String(item.unit || '').trim(),
         trong_luong_kg_mot_sp: perUnit(item.kgPerUnit, item.weightKg, quantity),
         so_m2_mot_sp: perUnit(item.m2PerUnit, item.areaM2, quantity),
@@ -6560,7 +6582,11 @@ async function insertNhapKhoThanhPhamRows(parsed: {
         ...(specs?.do_dai_m ? { do_dai_m: textOrNull(specs.do_dai_m) } : {}),
         ...(specs?.mang ? { mang: textOrNull(specs.mang) } : {}),
         ...(specs?.hang_phe ? { hang_phe: textOrNull(specs.hang_phe) } : {}),
-        ...(specs?.ma_amis ? { ma_amis: textOrNull(specs.ma_amis) } : {}),
+        ...(specs?.ma_amis
+          ? { ma_amis: textOrNull(specs.ma_amis) }
+          : item.amisCode
+            ? { ma_amis: String(item.amisCode).trim() || null }
+            : {}),
         ...(specs?.san_pham_id ? { san_pham_id: specs.san_pham_id } : {}),
         ...((item.moTaTem || specs?.mo_ta_tem) ? { mo_ta_tem: item.moTaTem || specs?.mo_ta_tem } : {})
       };
