@@ -54,6 +54,8 @@ export type TonKhoMetric = {
   kg: number;
   m_dai: number;
   m2: number;
+  /** Giá trị (thành tiền) = SL × đơn giá phiếu (hoặc thanh_tien trên phiếu). */
+  tien: number;
 };
 
 export type TonKhoThanhPhamPeriodRow = {
@@ -349,7 +351,7 @@ export function computeThanhPhamLineAmount(quantity: number, unitPrice: number):
 }
 
 export function emptyTonKhoMetric(): TonKhoMetric {
-  return { sl: 0, kg: 0, m_dai: 0, m2: 0 };
+  return { sl: 0, kg: 0, m_dai: 0, m2: 0, tien: 0 };
 }
 
 export function addTonKhoMetric(a: TonKhoMetric, b: TonKhoMetric): TonKhoMetric {
@@ -357,7 +359,8 @@ export function addTonKhoMetric(a: TonKhoMetric, b: TonKhoMetric): TonKhoMetric 
     sl: round3(a.sl + b.sl),
     kg: round3(a.kg + b.kg),
     m_dai: round3(a.m_dai + b.m_dai),
-    m2: round3(a.m2 + b.m2)
+    m2: round3(a.m2 + b.m2),
+    tien: round3(a.tien + b.tien)
   };
 }
 
@@ -366,7 +369,8 @@ export function subTonKhoMetric(a: TonKhoMetric, b: TonKhoMetric): TonKhoMetric 
     sl: round3(a.sl - b.sl),
     kg: round3(a.kg - b.kg),
     m_dai: round3(a.m_dai - b.m_dai),
-    m2: round3(a.m2 - b.m2)
+    m2: round3(a.m2 - b.m2),
+    tien: round3(a.tien - b.tien)
   };
 }
 
@@ -382,7 +386,22 @@ export type ThanhPhamMovementRow = {
   trong_luong_kg?: number | null;
   so_m2?: number | null;
   so_m_dai?: number | null;
+  /** Thành tiền trên phiếu (nếu có) — dùng cho cột Giá trị. */
+  thanh_tien?: number | null;
+  /** Đơn giá trên phiếu — dự phòng khi thanh_tien trống. */
+  don_gia?: number | null;
 };
+
+/** Giá trị 1 dòng phiếu: ưu tiên thành tiền trên phiếu, thiếu thì SL × đơn giá. */
+function movementLineValue(
+  row: Pick<ThanhPhamMovementRow, 'so_luong' | 'thanh_tien' | 'don_gia'>
+): number {
+  const amount = parseThanhPhamNumber(row.thanh_tien);
+  if (amount > 0) return amount;
+  const qty = Math.max(0, parseThanhPhamNumber(row.so_luong));
+  if (qty <= 0) return 0;
+  return computeThanhPhamLineAmount(qty, Math.max(0, parseThanhPhamNumber(row.don_gia)));
+}
 
 /**
  * Tính tồn kỳ từ danh sách phiếu.
@@ -440,7 +459,8 @@ export function computeThanhPhamPeriodBalances(
       sl: Math.max(0, parseThanhPhamNumber(row.so_luong)),
       kg: Math.max(0, parseThanhPhamNumber(row.trong_luong_kg)),
       m_dai: Math.max(0, parseThanhPhamNumber(row.so_m_dai)),
-      m2: Math.max(0, parseThanhPhamNumber(row.so_m2))
+      m2: Math.max(0, parseThanhPhamNumber(row.so_m2)),
+      tien: movementLineValue(row)
     };
     const seed = matchNhapKhoSeed(seedsByProduct.get(thanhPhamMergeKey(ma_sp, ten_sp)) || [], row);
     const key = seed

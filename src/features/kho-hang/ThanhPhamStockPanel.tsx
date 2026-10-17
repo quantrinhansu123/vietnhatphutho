@@ -1,12 +1,14 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { SoTronDatePicker } from '../so-tron/SoTronDatePicker';
-import { formatQty as formatQtyUs } from '../../utils';
+import { formatQty as formatQtyUs, formatMoney } from '../../utils';
 
 export type ThanhPhamStockMetric = {
   sl: number;
   kg: number;
   m_dai: number;
   m2: number;
+  /** Giá trị (thành tiền) từ phiếu nhập/xuất. */
+  tien?: number;
 };
 
 export type ThanhPhamStockRow = {
@@ -37,6 +39,11 @@ function formatQty(value: number | undefined) {
 function formatKg(value: number | undefined) {
   if (!Number.isFinite(value)) return '—';
   return formatQtyUs(value as number);
+}
+
+function formatTien(value: number | undefined) {
+  if (!Number.isFinite(value)) return '—';
+  return formatMoney(value as number, 0);
 }
 
 type StockUnitKind = 'base' | 'm_dai' | 'm2' | 'kg';
@@ -193,6 +200,17 @@ export function ThanhPhamStockPanel({ warehouseName, topControls, onBack }: Prop
     );
   }, [keyword, rows]);
 
+  const valueTotals = useMemo(() => {
+    const total = { ton_dau: 0, nhap: 0, xuat: 0, ton_cuoi: 0 };
+    for (const row of filtered) {
+      total.ton_dau += row.ton_dau?.tien ?? 0;
+      total.nhap += row.nhap?.tien ?? 0;
+      total.xuat += row.xuat?.tien ?? 0;
+      total.ton_cuoi += row.ton_cuoi?.tien ?? 0;
+    }
+    return total;
+  }, [filtered]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -241,6 +259,7 @@ export function ThanhPhamStockPanel({ warehouseName, topControls, onBack }: Prop
           {' · '}
           Danh sách SP lấy từ sổ nhập kho thành phẩm (không theo ngày). Chọn Từ ngày → Đến ngày để
           tính Tồn đầu / Nhập / Xuất từ phiếu nhập xuất kho. Có m² hoặc m dài thì hiện thêm dòng đơn vị, giống danh sách sản phẩm.
+          Cột <strong>Giá trị</strong> = thành tiền trên phiếu (SL × đơn giá), Tồn = Tồn đầu + Nhập − Xuất.
         </p>
       </div>
 
@@ -251,7 +270,7 @@ export function ThanhPhamStockPanel({ warehouseName, topControls, onBack }: Prop
       ) : null}
 
       <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <table className="w-full min-w-[1280px] text-left text-[12.5px]">
+        <table className="w-full min-w-[1560px] text-left text-[12.5px]">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50 text-[11px] uppercase tracking-wider text-zinc-500">
               <th className="px-3 py-2">Mã SP</th>
@@ -266,30 +285,34 @@ export function ThanhPhamStockPanel({ warehouseName, topControls, onBack }: Prop
               <th className="px-3 py-2 text-center">Nhập</th>
               <th className="px-3 py-2 text-center">Xuất</th>
               <th className="px-3 py-2 text-center">Tồn</th>
+              <th className="px-3 py-2 text-center">Giá trị tồn đầu</th>
+              <th className="px-3 py-2 text-center">Giá trị nhập</th>
+              <th className="px-3 py-2 text-center">Giá trị xuất</th>
+              <th className="px-3 py-2 text-center">Giá trị tồn</th>
             </tr>
           </thead>
           <tbody>
             {!canLoad ? (
               <tr>
-                <td colSpan={12} className="px-3 py-8 text-center font-semibold text-zinc-400">
+                <td colSpan={16} className="px-3 py-8 text-center font-semibold text-zinc-400">
                   Chọn Từ ngày và Đến ngày để hiển thị danh sách sản phẩm nhập kho thành phẩm.
                 </td>
               </tr>
             ) : loading ? (
               <tr>
-                <td colSpan={12} className="px-3 py-8 text-center font-semibold text-zinc-400">
+                <td colSpan={16} className="px-3 py-8 text-center font-semibold text-zinc-400">
                   Đang tải sổ nhập kho thành phẩm…
                 </td>
               </tr>
             ) : !hasLoaded ? (
               <tr>
-                <td colSpan={12} className="px-3 py-8 text-center font-semibold text-zinc-400">
+                <td colSpan={16} className="px-3 py-8 text-center font-semibold text-zinc-400">
                   Chọn khoảng ngày để tải dữ liệu.
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={12} className="px-3 py-8 text-center font-semibold text-zinc-400">
+                <td colSpan={16} className="px-3 py-8 text-center font-semibold text-zinc-400">
                   Không có sản phẩm trong sổ nhập kho thành phẩm (hoặc không khớp tìm kiếm).
                 </td>
               </tr>
@@ -347,6 +370,18 @@ export function ThanhPhamStockPanel({ warehouseName, topControls, onBack }: Prop
                         {formatKg(row.tong_tl_kg ?? row.ton_cuoi?.kg)}
                       </td>
                       {quantityCells(lines[0], false)}
+                      <td rowSpan={rowSpan} className="px-3 py-2.5 text-right font-mono font-bold tabular-nums text-zinc-800">
+                        {formatTien(row.ton_dau?.tien ?? 0)}
+                      </td>
+                      <td rowSpan={rowSpan} className="px-3 py-2.5 text-right font-mono font-bold tabular-nums text-emerald-700">
+                        {formatTien(row.nhap?.tien ?? 0)}
+                      </td>
+                      <td rowSpan={rowSpan} className="px-3 py-2.5 text-right font-mono font-bold tabular-nums text-rose-700">
+                        {formatTien(row.xuat?.tien ?? 0)}
+                      </td>
+                      <td rowSpan={rowSpan} className="px-3 py-2.5 text-right font-mono font-bold tabular-nums text-zinc-950">
+                        {formatTien(row.ton_cuoi?.tien ?? 0)}
+                      </td>
                     </tr>
                     {lines.slice(1).map(line => (
                       <tr key={`${groupKey}||${line.kind}`} className="border-t border-zinc-100 bg-zinc-50/70">
@@ -360,6 +395,27 @@ export function ThanhPhamStockPanel({ warehouseName, topControls, onBack }: Prop
               })
             )}
           </tbody>
+          <tfoot>
+            {canLoad && hasLoaded && filtered.length > 0 ? (
+              <tr className="border-t-2 border-zinc-300 bg-zinc-50">
+                <td colSpan={12} className="px-3 py-2.5 text-right font-black uppercase tracking-wide text-zinc-700">
+                  Tổng giá trị
+                </td>
+                <td className="px-3 py-2.5 text-right font-mono font-black tabular-nums text-zinc-800">
+                  {formatTien(valueTotals.ton_dau)}
+                </td>
+                <td className="px-3 py-2.5 text-right font-mono font-black tabular-nums text-emerald-700">
+                  {formatTien(valueTotals.nhap)}
+                </td>
+                <td className="px-3 py-2.5 text-right font-mono font-black tabular-nums text-rose-700">
+                  {formatTien(valueTotals.xuat)}
+                </td>
+                <td className="px-3 py-2.5 text-right font-mono font-black tabular-nums text-zinc-950">
+                  {formatTien(valueTotals.ton_cuoi)}
+                </td>
+              </tr>
+            ) : null}
+          </tfoot>
         </table>
       </div>
     </div>
