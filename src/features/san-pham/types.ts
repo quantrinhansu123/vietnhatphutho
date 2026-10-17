@@ -167,6 +167,8 @@ export interface MaterialOption {
   code: string;
   name: string;
   productionName?: string;
+  /** Mã AMIS (ma_sp trên phiếu TP chính là mã AMIS) — ghi snapshot khi lập phiếu. */
+  amisCode?: string;
   unit: string;
   /** Tổng khối lượng (kg/ĐVT) từ kho NVL — dùng để quy đổi số lượng sang kg khi ĐVT ≠ kg. */
   totalWeight?: string;
