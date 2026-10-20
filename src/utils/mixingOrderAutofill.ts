@@ -47,6 +47,10 @@ export type MixingProductionOrderProductLine = {
   quyCachMDai?: number | null;
   /** Ghi chú của dòng trong lệnh SX — cùng tên ghép nhưng khác ghi chú là sản phẩm khác nhau. */
   ghiChu?: string;
+  /** STT dòng trong lệnh SX — cùng lệnh + STT là khóa duy nhất của một dòng. */
+  stt?: number;
+  /** Mã lệnh SX chứa dòng (cần khi một phiếu chọn nhiều lệnh). */
+  orderCode?: string;
 };
 
 export type MixingProductionOrder = {
@@ -344,6 +348,7 @@ function parseOrderProductLines(record: Record<string, unknown>) {
             ...(tenGhep ? { tenGhep } : {}),
             unit: pickText(row, ['don_vi', 'unit'], '-'),
             ...(pickText(row, ['ghi_chu', 'ghiChu', 'note'], '') ? { ghiChu: pickText(row, ['ghi_chu', 'ghiChu', 'note'], '') } : {}),
+            ...(Number(row.stt ?? row.STT) > 0 ? { stt: Number(row.stt ?? row.STT) } : {}),
             quantity: parsePercentInput(String(row.so_luong ?? row.quantity ?? '')),
             convertedWeightKg: parsePercentInput(String(
               (row.kq_quy_doi && typeof row.kq_quy_doi === 'object'
@@ -417,7 +422,8 @@ export function normalizeMixingProductionOrders(data: unknown): MixingProduction
       if (!item || typeof item !== 'object') return null;
       const record = item as Record<string, unknown>;
       const orderCode = pickText(record, ['ma_lenh_sx', 'code', 'so_lenh'], '');
-      const productLines = parseOrderProductLines(record);
+      // Gắn mã lệnh lên từng dòng để phân biệt dòng cùng STT của các lệnh khác nhau.
+      const productLines = parseOrderProductLines(record).map(line => ({ ...line, orderCode }));
       if (!orderCode && productLines.length === 0) return null;
 
       return {
