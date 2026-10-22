@@ -1,5 +1,5 @@
 import type { AppTab } from '../routes';
-import { STAFF_MENU_VIEW_TREE } from '../features/nhan-su/menuViews';
+import { STAFF_MENU_VIEW_TREE, permissionScopeKey } from '../features/nhan-su/menuViews';
 
 /**
  * Form/create tabs map → list tab trong ma trận Phân quyền.
@@ -150,7 +150,11 @@ export function buildKnownPermissionTabSet(): Set<string> {
 }
 
 /** Hub menu cha: được vào nếu có quyền cha hoặc bất kỳ menu con. */
-export function hubHasAllowedChild(hubTab: string, allowed: Set<string>): boolean {
+export function hubHasAllowedChild(
+  hubTab: string,
+  allowed: Set<string>,
+  scoped?: Set<string>
+): boolean {
   if (allowed.has(hubTab)) return true;
   if (hubTab === 'inventory-catalog') {
     return ['materials', 'products'].some(tab => allowed.has(tab));
@@ -163,6 +167,10 @@ export function hubHasAllowedChild(hubTab: string, allowed: Set<string>): boolea
   }
   const group = STAFF_MENU_VIEW_TREE.find(item => item.menu === hubTab);
   if (group) {
+    if (scoped) {
+      // Cùng một tab có thể nằm ở nhiều menu → chỉ tính khi được cấp đúng menu này.
+      return group.children.some(child => scoped.has(permissionScopeKey(hubTab, String(child.tab))));
+    }
     return group.children.some(child => allowed.has(child.tab));
   }
   if (hubTab === 'factory') {
@@ -177,10 +185,37 @@ export function hubHasAllowedChild(hubTab: string, allowed: Set<string>): boolea
       'production-plan-history',
       'dot-san-xuat',
       'control-board'
-    ].some(tab => allowed.has(tab) || hubHasAllowedChild(tab, allowed));
+    ].some(tab => allowed.has(tab) || hubHasAllowedChild(tab, allowed, scoped));
   }
   if (HUB_IMPLIED_TABS[hubTab]) {
     return HUB_IMPLIED_TABS[hubTab].some(tab => allowed.has(tab));
   }
   return false;
+}
+
+let duplicatedPermissionTabs: Set<string> | null = null;
+
+/**
+ * Tab xuất hiện ở nhiều menu cha (vd. `products` ở Kinh doanh / QC / Kho / CSVC)
+ * → chỉ được hiển thị theo đúng menu đã cấp quyền, không dùng tập phẳng.
+ */
+export function getDuplicatedPermissionTabs(): Set<string> {
+  if (!duplicatedPermissionTabs) {
+    const seen = new Set<string>();
+    const duplicated = new Set<string>();
+    for (const group of STAFF_MENU_VIEW_TREE) {
+      for (const child of group.children) {
+        const tab = String(child.tab || '').trim();
+        if (!tab) continue;
+        if (seen.has(tab)) duplicated.add(tab);
+        else seen.add(tab);
+      }
+    }
+    duplicatedPermissionTabs = duplicated;
+  }
+  return duplicatedPermissionTabs;
+}
+
+export function isScopedPermissionTab(tab: string): boolean {
+  return getDuplicatedPermissionTabs().has(String(tab || '').trim());
 }

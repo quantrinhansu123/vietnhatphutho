@@ -43,6 +43,7 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
       { tab: 'customers', label: 'Khách hàng' },
       { tab: 'orders', label: 'Đơn đặt hàng' },
       { tab: 'shipping-orders', label: 'Lệnh giao / xuất hàng' },
+      { tab: 'products', label: 'Sản phẩm' },
       { tab: 'inventory-limits', label: 'Tồn kho tối thiểu - Tồn kho tối đa' },
       { tab: 'hang-loi-khach-hang', label: 'Báo cáo hàng lỗi hỏng' }
     ]
@@ -203,6 +204,33 @@ export function normalizeStaffViewPermissions(raw: unknown): StaffViewPermission
         children: tree.children.map(child => ({ ...child }))
       };
     });
+}
+
+export function permissionScopeKey(menu: string, tab: string): string {
+  return `${menu}::${tab}`;
+}
+
+/**
+ * Tập quyền có phạm vi menu — cần thiết vì cùng một tab (vd. `products`) xuất hiện
+ * ở nhiều menu (Kinh doanh / QC / Kho / CSVC). Set phẳng `buildAllowedTabSet`
+ * không phân biệt được quyền được cấp từ menu nào.
+ */
+export function buildAllowedScopedSet(permissions: StaffViewPermissions): Set<string> {
+  const scoped = new Set<string>();
+  permissions.forEach(group => {
+    if (!group?.menu) return;
+    const menu = String(group.menu);
+    const savedChildren = Array.isArray(group.children) ? group.children : [];
+    const children =
+      savedChildren.length > 0
+        ? savedChildren
+        : STAFF_MENU_VIEW_TREE.find(item => item.menu === menu)?.children ?? [];
+    children.forEach(child => {
+      const tab = String(child?.tab || '').trim();
+      if (tab) scoped.add(permissionScopeKey(menu, tab));
+    });
+  });
+  return scoped;
 }
 
 /** Tập hợp tab (menu cha + con) mà nhân sự được xem */
