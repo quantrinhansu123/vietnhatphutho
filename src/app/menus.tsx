@@ -59,7 +59,8 @@ import {
   ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, AlertTriangle, Coins, Scissors
 } from 'lucide-react';
 import type { AppTab } from '../routes';
-import { hubHasAllowedChild, resolveAccessTab } from './tabAccess';
+import { hubHasAllowedChild, isScopedPermissionTab, resolveAccessTab } from './tabAccess';
+import { permissionScopeKey } from '../features/nhan-su/menuViews';
 import { pathFromTab } from '../routes';
 import MachineDowntimeIcon from '../components/icons/MachineDowntimeIcon';
 
@@ -1256,28 +1257,40 @@ export function SubNav({
   activeTab,
   onNavigate,
   allowedTabs,
+  allowedScopedTabs,
   fullAccess = true
 }: {
   activeTab: AppTab;
   onNavigate: (tab: AppTab) => void;
   allowedTabs?: Set<string>;
+  allowedScopedTabs?: Set<string>;
   fullAccess?: boolean;
 }) {
-  const canSee = (tab: AppTab) => {
+  const canSee = (tab: AppTab, parentMenu?: string) => {
     if (fullAccess) return true;
     if (!allowedTabs) return false;
     const accessTab = resolveAccessTab(tab);
+    if (parentMenu && allowedScopedTabs) {
+      if (
+        allowedScopedTabs.has(permissionScopeKey(parentMenu, tab)) ||
+        allowedScopedTabs.has(permissionScopeKey(parentMenu, accessTab))
+      ) {
+        return true;
+      }
+      // Tab dùng chung nhiều menu (vd. products) → bắt buộc đúng menu, không suy từ tab phẳng.
+      if (isScopedPermissionTab(tab) || isScopedPermissionTab(accessTab)) return false;
+    }
     return (
       allowedTabs.has(tab) ||
       allowedTabs.has(accessTab) ||
-      hubHasAllowedChild(tab, allowedTabs) ||
-      hubHasAllowedChild(accessTab, allowedTabs)
+      hubHasAllowedChild(tab, allowedTabs, allowedScopedTabs) ||
+      hubHasAllowedChild(accessTab, allowedTabs, allowedScopedTabs)
     );
   };
   const visibleGroups = PRIMARY_NAV_GROUPS
     .map(group => ({
       ...group,
-      children: group.children.filter(child => canSee(child.tab))
+      children: group.children.filter(child => canSee(child.tab, group.tab))
     }))
     .filter(group => canSee(group.tab) || group.children.length > 0);
 

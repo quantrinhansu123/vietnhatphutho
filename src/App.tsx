@@ -45,7 +45,7 @@ import {
 import { readCachedReports, STORAGE_DRAFT_KEY, STORAGE_OFFLINE_KEY, STORAGE_REPORTS_CACHE_KEY, STORAGE_AUTH_KEY } from './features/_shared/storage';
 import LoginPage, { grantResolvedAccess, type AuthUser } from './components/LoginPage';
 import { AccessControlProvider } from './app/accessControl';
-import { buildAllowedTabSet, hasFullMenuAccess } from './features/nhan-su/menuViews';
+import { buildAllowedScopedSet, buildAllowedTabSet, hasFullMenuAccess } from './features/nhan-su/menuViews';
 import { refreshAuthUserPermissions } from './app/refreshAuthPermissions';
 import {
   buildKnownPermissionTabSet,
@@ -253,13 +253,14 @@ export default function App() {
         Boolean(authUser.fullAccess) || hasFullMenuAccess(authUser.role, authUser.username);
       if (!fullAccess && nextTab !== 'menu') {
         const allowed = expandImpliedHubTabs(buildAllowedTabSet(authUser.viewPermissions ?? []));
+        const allowedScoped = buildAllowedScopedSet(authUser.viewPermissions ?? []);
         const known = buildKnownPermissionTabSet();
         const accessTab = resolveAccessTab(nextTab);
         const allowedHere =
           allowed.has(accessTab) ||
           allowed.has(nextTab) ||
-          hubHasAllowedChild(accessTab, allowed) ||
-          hubHasAllowedChild(nextTab, allowed);
+          hubHasAllowedChild(accessTab, allowed, allowedScoped) ||
+          hubHasAllowedChild(nextTab, allowed, allowedScoped);
         const controlled = known.has(nextTab) || known.has(accessTab);
         if (controlled && !allowedHere) {
           nextTab = 'menu';
@@ -310,13 +311,14 @@ export default function App() {
       Boolean(authUser.fullAccess) || hasFullMenuAccess(authUser.role, authUser.username);
     if (fullAccess || activeTab === 'menu') return;
     const allowed = expandImpliedHubTabs(buildAllowedTabSet(authUser.viewPermissions ?? []));
+    const allowedScoped = buildAllowedScopedSet(authUser.viewPermissions ?? []);
     const known = buildKnownPermissionTabSet();
     const accessTab = resolveAccessTab(activeTab);
     const allowedHere =
       allowed.has(accessTab) ||
       allowed.has(activeTab) ||
-      hubHasAllowedChild(accessTab, allowed) ||
-      hubHasAllowedChild(activeTab, allowed);
+      hubHasAllowedChild(accessTab, allowed, allowedScoped) ||
+      hubHasAllowedChild(activeTab, allowed, allowedScoped);
     const controlled = known.has(activeTab) || known.has(accessTab);
     if (controlled && !allowedHere) {
       navigateToTab('menu', { replace: true });
@@ -596,6 +598,7 @@ export default function App() {
   // Kiểm tra cả vai trò và tài khoản để phiên admin cũ/khác cách ghi vai trò vẫn luôn có toàn quyền.
   const menuFullAccess = Boolean(authUser.fullAccess) || hasFullMenuAccess(authUser.role, authUser.username);
   const allowedMenuTabs = expandImpliedHubTabs(buildAllowedTabSet(authUser.viewPermissions ?? []));
+  const allowedMenuScoped = buildAllowedScopedSet(authUser.viewPermissions ?? []);
   const editableMenuTabs = expandImpliedHubTabs(buildAllowedTabSet(authUser.editPermissions ?? []));
   const deletableMenuTabs = expandImpliedHubTabs(buildAllowedTabSet(authUser.deletePermissions ?? []));
   const knownPermissionTabs = buildKnownPermissionTabSet();
@@ -605,8 +608,8 @@ export default function App() {
     if (
       allowedMenuTabs.has(accessTab) ||
       allowedMenuTabs.has(tab) ||
-      hubHasAllowedChild(accessTab, allowedMenuTabs) ||
-      hubHasAllowedChild(tab, allowedMenuTabs)
+      hubHasAllowedChild(accessTab, allowedMenuTabs, allowedMenuScoped) ||
+      hubHasAllowedChild(tab, allowedMenuTabs, allowedMenuScoped)
     ) {
       return true;
     }
@@ -779,6 +782,7 @@ export default function App() {
                 <SubNav
                   activeTab={activeTab}
                   allowedTabs={allowedMenuTabs}
+                  allowedScopedTabs={allowedMenuScoped}
                   fullAccess={menuFullAccess}
                   onNavigate={(tab) => {
                     navigateToTab(tab);
