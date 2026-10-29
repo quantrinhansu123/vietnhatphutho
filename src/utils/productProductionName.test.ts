@@ -106,9 +106,12 @@ test('Sóng: mét dài đúng theo tên SX (không max)', () => {
     maAmis: 'STS02-11s-6zem',
     nhomVthh: 'TP; PX Sóng'
   });
-  assert.equal(short.tenGoc, 'NHỰA 11 SÓNG XANH 6ZEM');
+  assert.equal(short.tenGoc, 'NHỰA 11 SÓNG XANH');
+  assert.equal(short.zem, '6ZEM', 'ZEM tách riêng khỏi tên gốc');
+  assert.equal(short.soSong, '11');
   assert.equal(short.doLi, '', 'ZEM không phải độ li');
   assert.equal(short.doDaiM, '2m');
+  assert.equal(short.tenGhep, 'NHỰA 11 SÓNG XANH 6ZEM - 2m');
 
   const kgName = parseProductionNameParts(
     'NHỰA SÓNG XDT - NP - 11 SÓNG 4,8KG - 3,5M ( GIÁ RẺ )',
@@ -162,11 +165,12 @@ test('compose: độ dày trước, mét dài luôn cuối', () => {
   );
   assert.ok(name.endsWith('9m'));
 
+  // Có ZEM trong tên gốc → không ghép thêm segment độ li (kể cả lỡ truyền doLi = ZEM).
   const song = composeProductionDisplayName(
     { tenGoc: 'NHỰA 11 SÓNG XANH 6ZEM', doLi: '6ZEM', doDaiM: '6m' },
     'TP; PX Sóng'
   );
-  assert.equal(song, 'NHỰA 11 SÓNG XANH 6ZEM - 6ZEM - 6m');
+  assert.equal(song, 'NHỰA 11 SÓNG XANH 6ZEM - 6m');
 });
 
 test('buildOrderTenGhep: cắt lẻ thay mét dài cuối', () => {
@@ -218,17 +222,17 @@ test('hàng phế: chỉ khi tên SX ghi rõ, không suy diễn từ NP/mã AMIS
   );
 });
 
-test('ZEM lẫn trong tên gốc thì không phải độ li — ưu tiên li tường minh', () => {
+test('ZEM trong tên: không lấy/ghép độ li và đm-li (kể cả AMIS có -0.8li)', () => {
   const seeded = seedProductionSpecs({
     tenSanXuat: 'Tấm nhựa đặc màu TRẮNG 8ZEM - hàng tiêu chuẩn - STD - 0.8li - 1.22m - 30m',
-    maAmis: '',
+    maAmis: 'STD06-0.8li*1.22m',
     nhomVthh: 'TP; PX Đặc'
   });
-  assert.equal(seeded.doLi, '0.8li');
-  assert.equal(seeded.doLiDm, '(đm 0.75 li)');
+  assert.equal(seeded.doLi, '');
+  assert.equal(seeded.doLiDm, '');
   assert.equal(
     seeded.tenGhep,
-    'Tấm nhựa đặc màu TRẮNG 8ZEM - hàng tiêu chuẩn - STD - 0.8li - (đm 0.75 li) - 1.22m - 30m'
+    'Tấm nhựa đặc màu TRẮNG 8ZEM - hàng tiêu chuẩn - STD - 1.22m - 30m'
   );
   // ZEM không bao giờ là độ li — kể cả khi không có li tường minh.
   assert.equal(
@@ -420,17 +424,17 @@ test('Đặc thiếu đm trong tên: tự tính, tên có sẵn thì giữ', () 
   assert.equal(autoFromUnitless.doLiDm, '(đm 1.1 li)');
 });
 
-test('ZEM chuẩn: 8ZEM + 0.8li + đm 0.75 theo mẫu chốt', () => {
+test('ZEM chuẩn: có 8ZEM thì tên không kèm 0.8li / đm (AMIS vẫn có -0.8li)', () => {
   const seeded = seedProductionSpecs({
     tenSanXuat: 'Tấm nhựa đặc màu XDT 8ZEM - 1.22m - 30m hàng nguyên phế - SUN PC',
     maAmis: 'STD02-0.8li*1.22m NP',
     nhomVthh: 'TP; PX Đặc'
   });
-  assert.equal(seeded.doLi, '0.8li');
-  assert.equal(seeded.doLiDm, '(đm 0.75 li)');
+  assert.equal(seeded.doLi, '');
+  assert.equal(seeded.doLiDm, '');
   assert.equal(
     seeded.tenGhep,
-    'Tấm nhựa đặc màu XDT 8ZEM - hàng nguyên phế - SUN PC - 0.8li - (đm 0.75 li) - 1.22m - 30m'
+    'Tấm nhựa đặc màu XDT 8ZEM - hàng nguyên phế - SUN PC - 1.22m - 30m'
   );
 });
 
@@ -465,16 +469,62 @@ test('isDiscontinuedWhiteSuProduct: chặn trắng sứ Đặc', () => {
   );
 });
 
-test('sóng đm-kg cuối tên được lưu doLiDm + tên ghép', () => {
+test('sóng đm-kg cuối tên được lưu dinhMucKg + tên ghép', () => {
   const seeded = seedProductionSpecs({
     tenSanXuat: 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG 1LI - 6M ( đm 7,8kg )',
     maAmis: '',
     nhomVthh: 'TP; PX Sóng'
   });
   assert.equal(seeded.doLi, '1li');
-  assert.equal(seeded.doLiDm, '(đm 7,8 kg)');
+  assert.equal(seeded.doLiDm, '', 'đm kg không còn nằm ở do_li_dm');
+  assert.equal(seeded.dinhMucKg, '(đm 7,8 kg)');
   assert.equal(seeded.doDaiM, '6m');
-  assert.equal(seeded.tenGhep, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG - 1li - (đm 7,8 kg) - 6m');
+  assert.equal(seeded.tenGhep, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG - 1li - (đm 7.8 kg) - 6m');
+});
+
+test('TCMB: tách khỏi tên gốc, ghép ngay sau màng', () => {
+  const seeded = seedProductionSpecs({
+    tenSanXuat: 'Tấm nhựa đặc màu XDT - STD - TCMB - 2li - (đm 1.8 li) - 1.22m - 30m',
+    maAmis: '',
+    nhomVthh: 'TP; PX Đặc'
+  });
+  assert.equal(seeded.tcmb, 'TCMB');
+  assert.equal(seeded.tenGoc, 'Tấm nhựa đặc màu XDT');
+  assert.equal(
+    seeded.tenGhep,
+    'Tấm nhựa đặc màu XDT - STD - TCMB - 2li - (đm 1.8 li) - 1.22m - 30m'
+  );
+});
+
+test('ZEM Đặc: tách khỏi tên gốc, ghép sau màu', () => {
+  const seeded = seedProductionSpecs({
+    tenSanXuat: 'Tấm nhựa đặc màu TRẮNG 8ZEM - STD - 1.22m - 30m',
+    maAmis: '',
+    nhomVthh: 'TP; PX Đặc'
+  });
+  assert.equal(seeded.zem, '8ZEM');
+  assert.equal(seeded.doLi, '');
+  assert.equal(seeded.tenGoc, 'Tấm nhựa đặc màu TRẮNG');
+  assert.equal(seeded.tenGhep, 'Tấm nhựa đặc màu TRẮNG 8ZEM - STD - 1.22m - 30m');
+});
+
+test('ZEM Sóng: giữ sau số sóng, đổi số sóng thay tại chỗ', () => {
+  const seeded = seedProductionSpecs({
+    tenSanXuat: 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG 6ZEM - ( ĐM 4,8KG ) - 2m',
+    maAmis: '',
+    nhomVthh: 'TP; PX Sóng'
+  });
+  assert.equal(seeded.zem, '6ZEM');
+  assert.equal(seeded.soSong, '11');
+  assert.equal(seeded.tenGoc, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG');
+  assert.equal(seeded.dinhMucKg, '(đm 4,8 kg)');
+  assert.equal(
+    seeded.tenGhep,
+    'NHỰA SÓNG TRẮNG - NP - 11 SÓNG 6ZEM - (đm 4.8 kg) - 2m'
+  );
+
+  const changed = composeProductionDisplayName({ ...seeded, soSong: '13' }, 'TP; PX Sóng');
+  assert.equal(changed, 'NHỰA SÓNG TRẮNG - NP - 13 SÓNG 6ZEM - (đm 4.8 kg) - 2m');
 });
 
 test('normalizeDoLiDm: nhận số trần hoặc chuỗi đm', () => {
@@ -515,7 +565,7 @@ test('replaceDoLiDmInTenGhep: chỉ thay (đm …), giữ token do_li', () => {
 });
 
 test('buildOrderTenGhep: ghi đè do_li_dm, không đổi do_li', () => {
-  const name = buildOrderTenGhep('Tấm nhựa đặc màu TRẮNG 8ZEM - hàng tiêu chuẩn - STD - 0.8li - 1.22m - 30m', {
+  const name = buildOrderTenGhep('Tấm nhựa đặc màu TRẮNG - hàng tiêu chuẩn - STD - 0.8li - 1.22m - 30m', {
     nhomVthh: 'TP; PX Đặc',
     cutLengthM: 15,
     doLiDm: '0.9'
@@ -524,6 +574,19 @@ test('buildOrderTenGhep: ghi đè do_li_dm, không đổi do_li', () => {
   assert.match(name, /\(đm 0\.9 li\)/);
   assert.match(name, /15m/);
   assert.doesNotMatch(name, /\(đm 0\.75 li\)/);
+});
+
+test('buildOrderTenGhep: hàng ZEM không ghép độ li / đm-li dù có override', () => {
+  const name = buildOrderTenGhep('Tấm nhựa đặc màu TRẮNG 8ZEM - hàng tiêu chuẩn - STD - 1.22m - 30m', {
+    nhomVthh: 'TP; PX Đặc',
+    maAmis: 'STD06-0.8li*1.22m',
+    cutLengthM: 15,
+    doLiDm: '0.9'
+  });
+  assert.doesNotMatch(name, /0\.8li/);
+  assert.doesNotMatch(name, /\(đm/);
+  assert.match(name, /8ZEM/);
+  assert.match(name, /15m/);
 });
 
 test('buildCutAmisCodeFull: mẫu đủ info TC-màng-dài cuối', () => {
@@ -638,4 +701,40 @@ test('detectOrderLineWidthMismatch: bỏ qua mét dài, không chặn nhầm hà
   ), null);
   // Tên chỉ ghi mét dài, không ghi khổ → không kết luận (tránh chặn nhầm).
   assert.equal(detectOrderLineWidthMismatch('STD08-2li*2.1m', 'Hàng cắt lẻ 6m'), null);
+});
+
+test('seedProductionSpecs: round-trip idempotent khi ten_san_xuat đã là tên canonical', () => {
+  const cases: Array<{ tenSanXuat: string; maAmis?: string; nhomVthh: string }> = [
+    {
+      tenSanXuat: 'NHỰA 11 SÓNG XANH 6ZEM -2M',
+      maAmis: 'STS02-11s-6zem',
+      nhomVthh: 'TP; PX Sóng'
+    },
+    {
+      tenSanXuat: 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG 5,8KG - 5M ( GIÁ RẺ )',
+      nhomVthh: 'TP; PX Sóng'
+    },
+    {
+      tenSanXuat: 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG 1LI - 6M ( đm 7,8kg )',
+      nhomVthh: 'TP; PX Sóng'
+    },
+    {
+      tenSanXuat: 'Tấm nhựa rỗng màu trà - 4.5li x 2.1m x 6m - màng ECO',
+      maAmis: 'ECR05-4.5li-6m',
+      nhomVthh: 'TP; PX Rỗng'
+    },
+    {
+      tenSanXuat: 'Tấm nhựa đặc màu XDT - 1.6li ( đm 1,5li ) - 1.52m - 30m - hàng chạy 100% phế - STD',
+      nhomVthh: 'TP; PX Đặc'
+    }
+  ];
+  for (const input of cases) {
+    const first = seedProductionSpecs(input);
+    const second = seedProductionSpecs({
+      tenSanXuat: first.tenGhep,
+      maAmis: input.maAmis,
+      nhomVthh: input.nhomVthh
+    });
+    assert.equal(second.tenGhep, first.tenGhep, `round-trip: ${input.tenSanXuat}`);
+  }
 });

@@ -321,6 +321,25 @@ export function duplicateLineStt(
   return hasTwin ? index + 1 : undefined;
 }
 
+function catalogProductionAliases(product: Pick<OrderProductOption, 'productionName' | 'tenGhep'>): string[] {
+  return [product.productionName, product.tenGhep]
+    .map(value => String(value || '').trim())
+    .filter(Boolean);
+}
+
+/** Khớp tên SX dòng đơn với productionName hoặc ten_ghep legacy trên danh mục. */
+export function catalogMatchesProductionName(
+  product: Pick<OrderProductOption, 'productionName' | 'tenGhep'>,
+  productionName: string
+): boolean {
+  const picked = String(productionName || '').trim();
+  if (!picked) return false;
+  const key = picked.replace(/\s+/g, ' ').toLocaleLowerCase('vi');
+  return catalogProductionAliases(product).some(
+    alias => alias.replace(/\s+/g, ' ').toLocaleLowerCase('vi') === key
+  );
+}
+
 /** Mọi tên sản xuất của đúng mã AMIS (không lọc thêm theo Tên SP để không sót variant). */
 export function listProductionNamesByCode(
   products: OrderProductOption[],
@@ -335,7 +354,9 @@ export function listProductionNamesByCode(
     direct.length > 0
       ? direct
       : siblingProductsByProductionName(products, productionName);
-  const names = source.map(product => product.productionName).filter(name => Boolean(name));
+  const names = source
+    .map(product => product.productionName.trim() || product.tenGhep.trim())
+    .filter(name => Boolean(name));
   return [...new Set(names)].sort((a, b) => a.localeCompare(b, 'vi'));
 }
 
@@ -349,7 +370,7 @@ function siblingProductsByProductionName(
 ): OrderProductOption[] {
   const picked = String(productionName || '').trim();
   if (!picked) return [];
-  const owners = products.filter(product => product.productionName.trim() === picked);
+  const owners = products.filter(product => catalogMatchesProductionName(product, picked));
   if (owners.length === 0) return [];
   const codes = new Set(
     owners.flatMap(product => [product.code.trim().toLocaleLowerCase('vi'), product.newCode.trim().toLocaleLowerCase('vi')].filter(Boolean))
@@ -378,7 +399,7 @@ export function matchOrderProductByCodeAndProductionName(
   const codeKey = String(productCode || '').trim().toLocaleLowerCase('vi');
   const exact = codeKey
     ? products.filter(product =>
-        matchOrderProductCode(product, codeKey) && product.productionName.trim() === picked
+        matchOrderProductCode(product, codeKey) && catalogMatchesProductionName(product, picked)
       )
     : [];
   // Mã trên dòng không còn khớp danh mục (mã cũ đã đổi): suy mã qua tên SX đang lưu,
@@ -386,8 +407,8 @@ export function matchOrderProductByCodeAndProductionName(
   const pool =
     exact.length > 0
       ? exact
-      : siblingProductsByProductionName(products, picked).filter(
-          product => product.productionName.trim() === picked
+      : siblingProductsByProductionName(products, picked).filter(product =>
+          catalogMatchesProductionName(product, picked)
         );
   if (pool.length === 0) return null;
   if (pool.length === 1) return pool[0];
@@ -438,6 +459,8 @@ export interface OrderProductOption {
   doDayM: string;
   /** Định mức thực tế trên danh mục SP (`do_li_dm`) — đơn miền nam prefills ô Độ li ĐM. */
   doLiDm: string;
+  /** Định mức kg (`dinh_muc_kg`) — tách khỏi `doLiDm` từ migration tcmb-zem-so-song. */
+  dinhMucKg?: string;
   /** Màng: ECO / STD / SUN PC / HA... */
   mang?: string;
   /** Trọng lượng tiêu chuẩn trên danh mục SP. */
@@ -529,23 +552,28 @@ export function normalizeCustomerOptions(data: unknown): CustomerOption[] {
 }
 
 export function normalizeOrderProducts(data: unknown): OrderProductOption[] {
-  return normalizeProducts(data).map(product => ({
-    id: product.id,
-    code: product.amisCode && product.amisCode !== '-' ? product.amisCode : '',
-    name: product.name,
-    productionName: product.productionName,
-    group: product.group,
-    unit: product.unit === '-' ? '' : product.unit,
-    newCode: product.newCode,
-    tenGhep: product.tenGhep || '',
-    doDaiM: product.doDaiM || '',
-    doDayM: product.doDayM || '',
-    doLiDm: product.doLiDm || '',
-    mang: product.mang || '',
-    totalWeight: product.totalWeight || '',
-    tem: product.tem || undefined,
-    mauTem: product.mauTem || undefined
-  })).filter(product => product.code);
+  return normalizeProducts(data).map(product => {
+    const productionName = String(product.productionName || product.tenGhep || '').trim();
+    const tenGhep = String(product.tenGhep || product.productionName || '').trim();
+    return {
+      id: product.id,
+      code: product.amisCode && product.amisCode !== '-' ? product.amisCode : '',
+      name: product.name,
+      productionName,
+      group: product.group,
+      unit: product.unit === '-' ? '' : product.unit,
+      newCode: product.newCode,
+      tenGhep,
+      doDaiM: product.doDaiM || '',
+      doDayM: product.doDayM || '',
+      doLiDm: product.doLiDm || product.dinhMucKg || '',
+      dinhMucKg: product.dinhMucKg || '',
+      mang: product.mang || '',
+      totalWeight: product.totalWeight || '',
+      tem: product.tem || undefined,
+      mauTem: product.mauTem || undefined
+    };
+  }).filter(product => product.code);
 }
 
 export function findOrderProductById(products: OrderProductOption[], id: string) {

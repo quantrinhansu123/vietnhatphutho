@@ -1,13 +1,13 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import os from 'os';
 import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
-    cacheDir: path.join(os.tmpdir(), 'vite-vietnhatipt-cache'),
+    // Avoid %TEMP% on Windows — Defender/AV often locks deps_temp_* ("Access is denied").
+    cacheDir: path.join(__dirname, 'node_modules', '.vite'),
     optimizeDeps: {
       include: ['react', 'react-dom', 'react/jsx-runtime', 'lucide-react', 'motion/react', 'recharts'],
     },

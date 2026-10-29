@@ -530,7 +530,7 @@ function motherFromCutLine(line: CutLine, catalog: ProductRow[]): CatLeMother | 
     group: sourceGroup,
     lengthText: String(length || ''),
     widthText: widthKnown ? String(width || '') : '',
-    doLiDm: product?.doLiDm || parts.doLiDm
+    doLiDm: product?.doLiDm || product?.dinhMucKg || parts.doLiDm || parts.dinhMucKg
   });
   return {
     maSp: code,
@@ -541,7 +541,7 @@ function motherFromCutLine(line: CutLine, catalog: ProductRow[]): CatLeMother | 
     l1: length,
     tenGoc: product?.tenGoc || parts.tenGoc,
     doLi: product?.doLi || parts.doLi,
-    doLiDm: product?.doLiDm || parts.doLiDm,
+    doLiDm: product?.doLiDm || product?.dinhMucKg || parts.doLiDm || parts.dinhMucKg,
     doDayM: widthKnown ? (doDayM || `${width}m`) : '',
     doDaiM: doDaiM || `${length}m`,
     mang: product?.mang || parts.mang,

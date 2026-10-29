@@ -343,7 +343,7 @@ export function ProductionOrderPrintPreviewModal({
 
       const tongTl = calculateTotalWeightByUnit(row);
 
-      const { name } = splitProductNameAndNote(row.ten_ghep || row.ten_san_xuat);
+      const { name } = splitProductNameAndNote(row.ten_san_xuat || row.ten_ghep);
 
       return {
         ...row,
@@ -354,7 +354,7 @@ export function ProductionOrderPrintPreviewModal({
         totalSlsx,
         overLimit,
         tongTl,
-        productName: name || row.ten_ghep || row.ten_san_xuat || row.ten_sp || '-'
+        productName: name || row.ten_san_xuat || row.ten_ghep || row.ten_sp || '-'
       };
     });
   }, [rows, edits]);
@@ -680,7 +680,7 @@ export function ProductionOrderPrintPreviewModal({
                                 {row.ma_don_hang || '—'}
                               </td>
                               <td className={`${bodyCell} break-words font-semibold text-zinc-900`}>
-                                {row.ten_ghep || row.ten_san_xuat || row.ten_sp || '—'}
+                                {row.ten_san_xuat || row.ten_ghep || row.ten_sp || '—'}
                               </td>
                               <td className={bodyCell}>
                                 <AutoGrowNoteTextarea
@@ -707,14 +707,14 @@ export function ProductionOrderPrintPreviewModal({
                                         extractBareNoteText(note.ghi_chu, {
                                           orderCode: note.ma_don_hang || row.ma_don_hang,
                                           productCode: note.ma_sp || row.ma_sp,
-                                          tenGhep: note.ten_ghep || row.ten_ghep || row.ten_san_xuat
+                                          tenGhep: note.ten_ghep || row.ten_san_xuat || row.ten_ghep
                                         })
                                       )
                                     : [
                                         extractBareNoteText(row.ghi_chu, {
                                           orderCode: row.ma_don_hang,
                                           productCode: row.ma_sp,
-                                          tenGhep: row.ten_ghep || row.ten_san_xuat
+                                          tenGhep: row.ten_san_xuat || row.ten_ghep
                                         })
                                       ];
                                   const uniqueBareNotes = [...new Set(bareNotes.map(line => line.trim()).filter(Boolean))];

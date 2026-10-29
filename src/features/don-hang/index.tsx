@@ -40,6 +40,7 @@ import {
   isTamProduct,
   listProductionNamesByCode,
   matchOrderProductByCodeAndProductionName,
+  catalogMatchesProductionName,
   buildAllocatedQtyMap,
   getAllocatedQtyFromMap,
   duplicateLineStt,
@@ -280,7 +281,7 @@ function resolveOrderLineProduct(products: OrderProductOption[], line: Pick<Orde
         (product.code.trim().toLocaleLowerCase('vi') === normalizedCode ||
           product.newCode.trim().toLocaleLowerCase('vi') === normalizedCode) &&
         (!normalizedName || product.name.trim() === normalizedName) &&
-        (!normalizedProductionName || product.productionName.trim() === normalizedProductionName)
+        (!normalizedProductionName || catalogMatchesProductionName(product, normalizedProductionName))
       )
     : [];
 
@@ -290,7 +291,7 @@ function resolveOrderLineProduct(products: OrderProductOption[], line: Pick<Orde
   const byId = findOrderProductById(products, line.productId);
   if (byId && (!normalizedCode || byId.code.toLocaleLowerCase('vi') === normalizedCode || byId.newCode.toLocaleLowerCase('vi') === normalizedCode) &&
       (!normalizedName || byId.name.trim() === normalizedName) &&
-      (!normalizedProductionName || byId.productionName.trim() === normalizedProductionName)) {
+      (!normalizedProductionName || catalogMatchesProductionName(byId, normalizedProductionName))) {
     return byId;
   }
   return null;
@@ -700,8 +701,13 @@ export function orderProductLinesToPayload(
             }
           : {};
 
-      const catalogTenGhep = String(selectedProduct?.tenGhep || '').trim();
-      const catalogProductionName = String(selectedProduct?.productionName || '').trim();
+      // Canonical: ten_san_xuat (= productionName) là nguồn; tenGhep legacy chỉ fallback.
+      const catalogProductionName = String(
+        selectedProduct?.productionName || selectedProduct?.tenGhep || ''
+      ).trim();
+      const catalogTenGhep = String(
+        selectedProduct?.tenGhep || selectedProduct?.productionName || ''
+      ).trim();
       const catalogMainLength = Number(String(selectedProduct?.doDaiM ?? '').replace(/m\s*$/iu, '').replace(',', '.'));
       const catalogWidth = Number(String(selectedProduct?.doDayM ?? '').replace(/m\s*$/iu, '').replace(',', '.'));
       const enteredWidth = parsePercentInput(line.kho || '');

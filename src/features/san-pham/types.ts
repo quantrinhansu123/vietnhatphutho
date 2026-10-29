@@ -115,6 +115,14 @@ export interface ProductRow {
   tenGoc?: string;
   doLi?: string;
   doLiDm?: string;
+  /** `(đm n kg)` — định mức kg, tách khỏi `doLiDm`. */
+  dinhMucKg?: string;
+  /** `6ZEM`, `8ZEM` — nối sau sóng (Sóng) / sau màu (Đặc). */
+  zem?: string;
+  /** Số sóng (`11` của `11 SÓNG`). */
+  soSong?: string;
+  /** Tiêu chuẩn miền bắc — chữ `TCMB` nối sau màng. */
+  tcmb?: boolean;
   doDayM?: string;
   doDaiM?: string;
   mang?: string;

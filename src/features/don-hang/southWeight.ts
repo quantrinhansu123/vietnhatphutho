@@ -16,7 +16,9 @@ export function inferSpecsFromProductionName(
   return {
     daiM: stripM(parts.doDaiM),
     kho: stripM(parts.doDayM),
-    doLiDm: hasZemInName(name) ? '' : extractDoLiDmNumber(parts.doLiDm)
+    doLiDm: hasZemInName(name)
+      ? ''
+      : extractDoLiDmNumber(parts.doLiDm) || extractDoLiDmNumber(parts.dinhMucKg)
   };
 }
 
