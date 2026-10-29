@@ -119,7 +119,8 @@ function blankIfZero(value: string): string {
 }
 
 function formatNum(value: number | null): string {
-  return value !== null && Number.isFinite(value) ? value.toFixed(2) : '—';
+  // Trọng lượng lưu 3 số lẻ (cắt số) → bản in hiển thị đủ 3 số lẻ.
+  return value !== null && Number.isFinite(value) ? value.toFixed(3) : '—';
 }
 
 /** Tổng TL luôn tính từ Tổng SX, không phụ thuộc phân bổ Bắc/Trung/Nam. */
@@ -792,7 +793,7 @@ export function ProductionOrderPrintPreviewModal({
                                 {isTam ? formatNum(row.tl_tam) : '—'}
                               </td>
                               <td className={`${bodyCell} text-right font-bold tabular-nums text-zinc-900`}>
-                                {row.tongTl.toFixed(2)}
+                                {row.tongTl.toFixed(3)}
                               </td>
                               <td className={`${bodyCell} bg-zinc-50/60 print:bg-transparent`} />
                             </tr>
@@ -810,7 +811,7 @@ export function ProductionOrderPrintPreviewModal({
                             Tổng trọng lượng
                           </td>
                           <td className="border-t-2 border-zinc-900 px-2.5 py-2 text-right text-sm font-black tabular-nums text-zinc-950 print:border-gray-600 print:text-black">
-                            {totalTongTl.toFixed(2)}
+                            {totalTongTl.toFixed(3)}
                           </td>
                           <td className="border-t-2 border-zinc-900 px-2.5 py-2 print:border-gray-600" />
                         </tr>

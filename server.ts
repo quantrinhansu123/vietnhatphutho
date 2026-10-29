@@ -20,6 +20,7 @@ import { aggregateSlipOwnsCode, registerXuatNhapTongHopRoutes } from './src/feat
 import { normalizeAssignablePositions } from './src/features/cai-dat-thoi-gian/staffAssignments';
 import { isExternalStaffCode, resolveScheduleStaffName } from './src/utils/externalStaff';
 import { calculateProductConversionFormulas, roundImportedConversionWeight } from './src/utils/productConversionCalculation';
+import { truncateTo3Decimals } from './src/utils/weightTruncate';
 import {
   aggregateNhapKhoProducts,
   computeThanhPhamPeriodBalances,
@@ -7510,7 +7511,8 @@ function calculateCutOrderWeightServer(
 ) {
   if (!conversion || length === null || length <= 0 || quantity === null || quantity <= 0) return null;
 
-  const round = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+  // Trọng lượng giữ 3 chữ số sau dấu phẩy bằng cách cắt số (không làm tròn) — mirror FE `calculateCutOrderWeight`.
+  const round = (value: number) => truncateTo3Decimals(value);
   const kgPerMeter = conversion.trong_luong_kg_m_dai;
   if (kgPerMeter !== null && kgPerMeter > 0) {
     const rawKg1Sp = length * kgPerMeter;
@@ -7978,12 +7980,14 @@ async function enrichOrderProductsWithConversionData(
       const isCutOrder = isCutLikeOrderTypeServer(orderType);
       const conversion = spId ? conversionMap.get(spId) : null;
       const round = (val: number) => Math.round((val + Number.EPSILON) * 100) / 100;
+      // Trọng lượng (kg): giữ 3 chữ số sau dấu phẩy bằng cách cắt số (không làm tròn).
+      const kg3 = (val: number) => truncateTo3Decimals(val);
       // 'dinh_muc' = tổng tự tính từ Định mức ở FE (miền nam / cắt lẻ): server giữ số, không tính lại theo danh mục.
       const isCustomerEnteredKg = (product.nguon_quy_doi === 'khach_hang_nhap_kg' || product.nguon_quy_doi === 'dinh_muc') &&
         Number.isFinite(product.tong_kg) && Number(product.tong_kg) > 0;
       const quantity = Number(product.so_luong);
       const manualKgPerUnitRaw = isCustomerEnteredKg && Number.isFinite(quantity) && quantity > 0
-        ? round(Number(product.tong_kg) / quantity)
+        ? kg3(Number(product.tong_kg) / quantity)
         : null;
       const normalizedUnit = String(product.don_vi || '')
         .trim()
@@ -7998,7 +8002,7 @@ async function enrichOrderProductsWithConversionData(
         ? Number(isRollUnit ? product.tl_cuon : product.tl_tam)
         : Number.NaN;
       const manualKgPerUnit = Number.isFinite(storedPerUnit) && storedPerUnit > 0
-        ? round(storedPerUnit)
+        ? kg3(storedPerUnit)
         : manualKgPerUnitRaw;
 
       if (isCutOrder) {
@@ -10282,7 +10286,7 @@ export function createApp() {
         const rowNumber = Number(body.rowNumber) || index + 1;
         if ('error' in parsed) errors.push({ rowNumber, error: parsed.error });
         else {
-          // Import chốt kg/Tấm + kg/Cuộn tối đa 2 chữ số (khớp số công thức tự suy ra).
+          // Import giữ nguyên độ chính xác file (`,` đã đổi `.` khi parse; không làm tròn).
           parsed.record.trong_luong_kg_tam = roundImportedConversionWeight(parsed.record.trong_luong_kg_tam) as number | null;
           parsed.record.trong_luong_kg_cuon = roundImportedConversionWeight(parsed.record.trong_luong_kg_cuon) as number | null;
           valid.push({ rowNumber, record: parsed.record });

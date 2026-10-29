@@ -1,4 +1,5 @@
 import { formatNumber, parseLocalizedNumber, parsePercentInput } from '../../utils';
+import { truncateTo3Decimals } from '../../utils/weightTruncate';
 import { extractDoLiDmNumber, hasZemInName, parseProductionNameParts } from '../../utils/productProductionName';
 
 /**
@@ -22,22 +23,22 @@ export function inferSpecsFromProductionName(
   };
 }
 
-/** Đơn cắt lẻ + miền nam: chuẩn hóa Định mức KG/tấm (làm tròn 2 số lẻ). Không hợp lệ / <= 0 = null. */
+/** Đơn cắt lẻ + miền nam: chuẩn hóa Định mức KG/tấm (giữ 3 số lẻ bằng cắt số, không làm tròn). Không hợp lệ / <= 0 = null. */
 export function parseSouthDinhMucKg(value: unknown): number | null {
   const parsed = parsePercentInput(String(value ?? ''));
-  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) / 100 : null;
+  return Number.isFinite(parsed) && parsed > 0 ? truncateTo3Decimals(parsed) : null;
 }
 
-/** Đơn cắt lẻ + miền nam: Tổng KG = Định mức KG (2 số lẻ) × SL tổng, làm tròn 2 số lẻ để khớp ĐM × SL. Thiếu ĐM/SL = null. */
+/** Đơn cắt lẻ + miền nam: Tổng KG = Định mức KG (3 số lẻ, cắt số) × SL tổng — cắt 3 số lẻ để khớp ĐM × SL. Thiếu ĐM/SL = null. */
 export function southDinhMucKgTotal(dinhMucKg: unknown, quantity: unknown): number | null {
   const dm = parseSouthDinhMucKg(dinhMucKg);
   const qty = Number(quantity);
   if (dm === null || !Number.isFinite(qty) || qty <= 0) return null;
-  return Math.round(dm * qty * 100) / 100;
+  return truncateTo3Decimals(dm * qty);
 }
 
 /**
- * Miền nam: TL/tấm = kg/1m × Dài × hệ số (khổ, độ li) làm tròn 2 số lẻ; Tổng KG = TL/tấm × SL (2 số lẻ)
+ * Miền nam: TL/tấm = kg/1m × Dài × hệ số, cắt 3 số lẻ; Tổng KG = TL/tấm × SL (cắt 3 số lẻ)
  * để tích khớp tuyệt đối. `scale` = hệ số khổ × hệ số độ li (mặc định 1 = đúng chuẩn danh mục).
  */
 export function southScaledTlAndTotal(
@@ -46,11 +47,11 @@ export function southScaledTlAndTotal(
   quantity: number,
   scale = 1
 ): { tl: number; total: number } {
-  const tl = Math.round(kgPerMeter * daiM * scale * 100) / 100;
-  return { tl, total: Math.round(tl * quantity * 100) / 100 };
+  const tl = truncateTo3Decimals(kgPerMeter * daiM * scale);
+  return { tl, total: truncateTo3Decimals(tl * quantity) };
 }
 
-/** Thiếu độ dài tấm tiêu chuẩn: TL/tấm = Định mức tiêu chuẩn × hệ số; Tổng = TL/tấm × SL (2 số lẻ). */
+/** Thiếu độ dài tấm tiêu chuẩn: TL/tấm = Định mức tiêu chuẩn × hệ số (cắt 3 số lẻ); Tổng = TL/tấm × SL (cắt 3 số lẻ). */
 export function southFallbackTlAndTotal(
   dinhMucKg: unknown,
   quantity: number,
@@ -58,8 +59,8 @@ export function southFallbackTlAndTotal(
 ): { tl: number; total: number } | null {
   const dm = parseSouthDinhMucKg(dinhMucKg);
   if (dm === null || !Number.isFinite(quantity) || quantity <= 0) return null;
-  const tl = Math.round(dm * scale * 100) / 100;
-  return { tl, total: Math.round(tl * quantity * 100) / 100 };
+  const tl = truncateTo3Decimals(dm * scale);
+  return { tl, total: truncateTo3Decimals(tl * quantity) };
 }
 
 /** Hệ số khổ = khổ nhập / khổ chuẩn của sản phẩm. Thiếu một trong hai → null (không điều chỉnh). */
@@ -70,10 +71,10 @@ export function southKhoScale(enteredKho: unknown, standardKho: unknown): number
   return entered / standard;
 }
 
-/** Tổng KG đơn hàng luôn lưu/hiển thị số nguyên (làm tròn). Không hợp lệ / <= 0 = null. */
-export function roundTotalKgInt(value: unknown): number | null {
+/** Tổng KG đơn hàng luôn lưu tối đa 3 số sau dấu phẩy bằng cắt số (không làm tròn). Không hợp lệ / <= 0 = null. */
+export function truncateTotalKg3(value: unknown): number | null {
   const parsed = parsePercentInput(String(value ?? ''));
-  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
+  return Number.isFinite(parsed) && parsed > 0 ? truncateTo3Decimals(parsed) : null;
 }
 
 /**
@@ -103,7 +104,7 @@ export function southKgPerStandardMeter(
   return kg / sheetLength;
 }
 
-/** Tổng trọng lượng miền nam = kg/1m × m dài × số lượng (làm tròn số nguyên). */
+/** Tổng trọng lượng miền nam = kg/1m × m dài × số lượng (giữ 3 số sau dấu phẩy bằng cắt số). */
 export function southLengthScaledTotalKg(
   standardKg: unknown,
   doDaiTamTieuChuan: unknown,
@@ -114,7 +115,7 @@ export function southLengthScaledTotalKg(
   const length = parsePercentInput(String(daiM ?? ''));
   const qty = parsePercentInput(String(quantity ?? ''));
   if (perMeter === null || !Number.isFinite(length) || length <= 0 || !Number.isFinite(qty) || qty <= 0) return null;
-  return Math.round(perMeter * length * qty);
+  return truncateTo3Decimals(perMeter * length * qty);
 }
 
 function orderDecimalFractionDigits(text: string): number {

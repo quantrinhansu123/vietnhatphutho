@@ -3,6 +3,7 @@ import { normalizeHrBranches } from './hr';
 import { normalizeProducts } from '../san-pham';
 import { availableConvertedUnits, convertProductQuantity, type ProductConvertedUnit } from '../../utils/productUnitConversion';
 import { parsePercentInput } from '../../utils';
+import { truncateTo3Decimals } from '../../utils/weightTruncate';
 
 export const ORDER_TYPE_OPTIONS = ['Đơn bán', 'Đơn sản xuất', 'Đơn theo quy cách của khách đặt', 'Đơn cắt lẻ', 'Đơn miền nam'] as const;
 export const CUT_ORDER_TYPE = 'Đơn theo quy cách của khách đặt';
@@ -763,7 +764,8 @@ export function calculateCutOrderWeight(
   const length = parsePercentInput(lengthText);
   const quantity = parsePercentInput(quantityText);
   if (!conversion || !Number.isFinite(length) || length <= 0 || !Number.isFinite(quantity) || quantity <= 0) return null;
-  const round = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+  // Quy đổi trọng lượng: giữ 3 chữ số sau dấu phẩy bằng cách cắt số (không làm tròn).
+  const round = (value: number) => truncateTo3Decimals(value);
 
   const kgPerMeter = conversion.trongLuongKgMDai;
   if (Number.isFinite(kgPerMeter) && (kgPerMeter as number) > 0) {
