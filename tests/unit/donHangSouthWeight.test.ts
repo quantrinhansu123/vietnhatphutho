@@ -5,6 +5,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  inferSpecsFromProductionName,
+  orderDoLiDmLiNumber,
   orderDuplicateDecimalText,
   southKgPerStandardMeter,
   southLengthScaledTotalKg,
@@ -27,7 +29,8 @@ describe('don-hang — phần nghìn phẩy, thập phân chấm', () => {
 
 describe('don-hang miền nam — kg/1m × dài × SL', () => {
   it('kg/1m = định mức tiêu chuẩn (kg) / độ dài tấm tiêu chuẩn', () => {
-    assert.equal(southKgPerStandardMeter('5.7', '10'), 0.57);
+    // KG/1m giữ nguyên kết quả chia (không làm tròn trung gian) → so bằng dung sai 1e-9.
+    assert.equal(Math.abs((southKgPerStandardMeter('5.7', '10') ?? 0) - 0.57) < 1e-9, true);
     assert.equal(southLengthScaledTotalKg('5.7', '10', '3', '6'), 10.26);
   });
 
@@ -37,8 +40,8 @@ describe('don-hang miền nam — kg/1m × dài × SL', () => {
   });
 
   it('ưu tiên kg nhập, không có thì lấy TL tấm hoặc kg/1m danh mục', () => {
-    assert.equal(southOrderKgPerMeter('5.7', 9, 1, '10'), 0.57);
-    assert.equal(southOrderKgPerMeter('', 5.7, 1, '10'), 0.57);
+    assert.equal(Math.abs((southOrderKgPerMeter('5.7', 9, 1, '10') ?? 0) - 0.57) < 1e-9, true);
+    assert.equal(Math.abs((southOrderKgPerMeter('', 5.7, 1, '10') ?? 0) - 0.57) < 1e-9, true);
     assert.equal(southOrderKgPerMeter('', '', 0.57, ''), 0.57);
   });
 });
@@ -148,6 +151,20 @@ describe('don-hang miền nam — cột Màng và trích xuất màng', () => {
       mang: ''
     });
     assert.ok(!cleared.includes('SUN PC'));
+  });
+});
+
+describe('Độ li ĐM không lấy (đm n kg)', () => {
+  it('sóng chỉ có (đm 9.5 kg) thì ô trống', () => {
+    const name = 'NHỰA 11 SÓNG XANH - NP - 1.2li - (đm 9.5 kg) - 3m';
+    assert.equal(orderDoLiDmLiNumber('(đm 9.5 kg)', name), '');
+    assert.equal(inferSpecsFromProductionName(name, 'TP; PX Sóng').doLiDm, '');
+  });
+
+  it('vẫn lấy số trong (đm n li)', () => {
+    const name = 'Tấm nhựa đặc màu TRẮNG - OFF - STD - 1.2li - (đm 1.1 li) - 1.22m - 30m';
+    assert.equal(orderDoLiDmLiNumber(name), '1.1');
+    assert.equal(inferSpecsFromProductionName(name, 'TP; PX Đặc').doLiDm, '1.1');
   });
 });
 

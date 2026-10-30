@@ -5,6 +5,11 @@ import {
   matchOrderProductByCodeAndProductionName,
   type OrderProductOption
 } from '../../src/features/_shared/orderHelpers';
+import {
+  buildOrderTenGhep,
+  replaceDoLiDmInTenGhep,
+  replaceDoLiTokenInTenGhep
+} from '../../src/utils/productProductionName';
 
 function option(partial: Partial<OrderProductOption> & { id: string }): OrderProductOption {
   return {
@@ -95,5 +100,41 @@ describe('don-hang — tên sản xuất theo mã AMIS', () => {
     );
     assert.equal(match?.id, 'np3');
     assert.equal(match?.code, 'STD06-0.8li*1.22m-NP');
+  });
+});
+
+describe('ô Độ li ĐM thay segment (đm n li), giữ độ li chính', () => {
+  it('đặc: 1.2li - (đm 1.1 li) đổi ô thành 0.9 → (đm 0.9 li), 1.2li giữ nguyên', () => {
+    const ten =
+      'Tấm nhựa đặc màu TRẮNG - OFF - STD - 1.2li - (đm 1.1 li) - 1.22m - 30m';
+    const tenGhep = buildOrderTenGhep(ten, {
+      nhomVthh: 'TP; PX Đặc',
+      doLiDm: '0.9',
+      cutLengthM: 30
+    });
+    assert.match(tenGhep, /1\.2li/);
+    assert.match(tenGhep, /\(đm 0\.9 li\)/);
+    assert.doesNotMatch(tenGhep, /\(đm 1\.1 li\)/);
+  });
+
+  it('Tem 1.5li đổi độ li chính, giữ (đm 1.1 li)', () => {
+    assert.equal(
+      replaceDoLiTokenInTenGhep(
+        'Tấm nhựa đặc màu TRẮNG - OFF - STD - 1.2li - (đm 1.1 li) - 1.22m - 30m',
+        '1.5li'
+      ),
+      'Tấm nhựa đặc màu TRẮNG - OFF - STD - 1.5li - (đm 1.1 li) - 1.22m - 30m'
+    );
+  });
+
+  it('replaceDoLiDmInTenGhep không đụng token độ li chính', () => {
+    assert.equal(
+      replaceDoLiDmInTenGhep(
+        'Tấm nhựa đặc màu TRẮNG - OFF - STD - 1.2li - (đm 1.1 li) - 1.22m - 30m',
+        '1.2',
+        'li'
+      ),
+      'Tấm nhựa đặc màu TRẮNG - OFF - STD - 1.2li - (đm 1.2 li) - 1.22m - 30m'
+    );
   });
 });

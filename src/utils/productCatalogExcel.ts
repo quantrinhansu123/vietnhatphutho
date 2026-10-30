@@ -1,7 +1,10 @@
 import * as XLSX from 'xlsx';
 import {
   composeProductionDisplayName,
-  extractDoLiDm,
+  extractDoLiDmLi,
+  extractZemToken,
+  normalizeDinhMucKg,
+  normalizeDoLiDm,
   normalizeDoLiToken,
   seedProductionSpecs,
   stripDuplicateLiFromTenGoc
@@ -18,6 +21,14 @@ export type ProductCatalogExcelRow = {
   tenGoc: string;
   doLi: string;
   doLiDm: string;
+  /** `6ZEM`, `8ZEM` — nối sau sóng (Sóng) / sau màu (Đặc). */
+  zem: string;
+  /** Số sóng (`11` của `11 SÓNG`). */
+  soSong: string;
+  /** `(đm n kg)` — định mức kg. */
+  dinhMucKg: string;
+  /** `x` / `1` / `TCMB` = có; trống = không. */
+  tcmb: string;
   doDayM: string;
   doDaiM: string;
   mang: string;
@@ -51,7 +62,11 @@ const HEADER_ALIASES: Record<keyof Omit<ProductCatalogExcelRow, 'rowNumber'>, st
   productionName: ['ten san xuat', 'ten_san_xuat', 'production name'],
   tenGoc: ['ten goc', 'ten_goc'],
   doLi: ['do li', 'do_li'],
-  doLiDm: ['dm n li', 'do li dm', 'do_li_dm', 'dinh muc dm', 'dm'],
+  doLiDm: ['dm dm n li', 'dm dm li', 'dm n li', 'do li dm', 'do_li_dm', 'dinh muc dm li', 'dinh muc li'],
+  zem: ['zem', 'do zem', 'so zem'],
+  soSong: ['so song', 'song'],
+  dinhMucKg: ['dm dm kg', 'dm kg', 'dinh muc kg', 'dm (kg)'],
+  tcmb: ['tcmb', 'tieu chuan mien bac', 'tc mien bac'],
   doDayM: ['kho rong m', 'kho rong', 'do day m', 'do_day_m', 'do day'],
   doDaiM: ['met dai', 'do dai m', 'do_dai_m', 'm dai'],
   mang: ['mang', 'mang eco'],
@@ -60,7 +75,7 @@ const HEADER_ALIASES: Record<keyof Omit<ProductCatalogExcelRow, 'rowNumber'>, st
   group: ['nhom vthh', 'nhom_vthh', 'nhom', 'group'],
   unit: ['don vi tinh', 'don_vi', 'don vi', 'unit'],
   totalWeight: ['tong tl kg', 'tong tl', 'tong trong luong', 'tong_trong_luong', 'total weight'],
-  wastePercent: ['% ty le hao hut', 'ty le hao hut', 'ty_le_hao_hut', 'hao hut', 'waste percent'],
+  wastePercent: ['% ty le hao hut', 'ty le hao hut', 'ty_le_hao_hut', 'hao hut', 'ty le hang hong', 'ty le hang hong %', 'waste percent'],
   rollWidth: ['kho cuon m', 'kho cuon', 'kho_cuon', 'roll width'],
   rollLength: ['chieu dai met cuon m', 'chieu dai met cuon', 'chieu_dai_cuon', 'roll length'],
   coreWeight: ['trong luong loi kg', 'trong luong loi', 'trong_luong_loi', 'core weight'],
@@ -92,7 +107,11 @@ export const PRODUCT_CATALOG_EXCEL_HEADERS = [
   'Tên sản xuất',
   'Tên gốc',
   'Độ li',
-  'ĐM (đm n li)',
+  'ZEM',
+  'Số sóng',
+  'ĐM (đm li)',
+  'ĐM (đm kg)',
+  'TCMB',
   'Khổ rộng (m)',
   'Mét dài',
   'Màng',
@@ -128,7 +147,8 @@ function normalizeHeader(value: unknown) {
     .replace(/đ/g, 'd')
     .replace(/[_/-]+/g, ' ')
     .replace(/[()]/g, ' ')
-    .replace(/\s+/g, ' ');
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function cellToText(value: unknown) {
@@ -189,6 +209,10 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
     tenGoc: findColumn(headers, HEADER_ALIASES.tenGoc),
     doLi: findColumn(headers, HEADER_ALIASES.doLi),
     doLiDm: findColumn(headers, HEADER_ALIASES.doLiDm),
+    zem: findColumn(headers, HEADER_ALIASES.zem),
+    soSong: findColumn(headers, HEADER_ALIASES.soSong),
+    dinhMucKg: findColumn(headers, HEADER_ALIASES.dinhMucKg),
+    tcmb: findColumn(headers, HEADER_ALIASES.tcmb),
     doDayM: findColumn(headers, HEADER_ALIASES.doDayM),
     doDaiM: findColumn(headers, HEADER_ALIASES.doDaiM),
     mang: findColumn(headers, HEADER_ALIASES.mang),
@@ -241,6 +265,10 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
         tenGoc: get('tenGoc'),
         doLi: get('doLi'),
         doLiDm: get('doLiDm'),
+        zem: get('zem'),
+        soSong: get('soSong'),
+        dinhMucKg: get('dinhMucKg'),
+        tcmb: get('tcmb'),
         doDayM: get('doDayM'),
         doDaiM: get('doDaiM'),
         mang: get('mang'),
@@ -271,17 +299,21 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
 export function downloadProductCatalogExcelTemplate() {
   const worksheet = XLSX.utils.aoa_to_sheet([
     [...PRODUCT_CATALOG_EXCEL_HEADERS],
-    // 1 dòng đủ mẫu (Đặc có đm)
+    // 1 dòng đủ mẫu (Đặc có TCMB + đm li)
     [
       'SP-001',
       'Tấm nhựa đặc Standart màu trắng sứ 2.5li',
-      'Tấm nhựa đặc màu trắng sứ - 2.5li x 1.22m ( đm 2.1 li ) - ECO',
+      'Tấm nhựa đặc màu trắng sứ - STD - TCMB - 2.5li - (đm 2.1 li) - 1.22m',
       'Tấm nhựa đặc màu trắng sứ',
       '2.5li',
+      '',
+      '',
       '(đm 2.1 li)',
+      '',
+      'x',
       '1.22m',
       '',
-      'ECO',
+      'STD',
       '',
       'Thành phẩm',
       'TP; PX Đặc',
@@ -308,33 +340,7 @@ export function downloadProductCatalogExcelTemplate() {
     [
       'SP-002',
       'Sản phẩm để trống các cột còn lại',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      '',
-      ''
+      ...Array(Math.max(0, PRODUCT_CATALOG_EXCEL_HEADERS.length - 2)).fill('')
     ]
   ]);
   worksheet['!cols'] = PRODUCT_CATALOG_EXCEL_HEADERS.map(header => ({
@@ -357,6 +363,30 @@ export function normalizeImportUnit(raw: string): string {
   return text;
 }
 
+/** Ô TCMB: `x`, `X`, `1`, `true`, `có`, `tcmb` → có. */
+export function parseTcmbCell(value: unknown): boolean {
+  const t = String(value ?? '').trim().toLocaleLowerCase('vi');
+  if (!t) return false;
+  return /^(x|1|true|yes|y|có|co|tcmb|✓|✔)$/iu.test(t);
+}
+
+/** Ô ZEM: `6`, `6zem`, `6 ZEM` → `6ZEM`. */
+export function normalizeZemCell(value: unknown): string {
+  const t = String(value ?? '').trim();
+  if (!t) return '';
+  const token = extractZemToken(t);
+  if (token) return token;
+  const n = t.match(/\d+/);
+  return n ? `${Number(n[0])}ZEM` : '';
+}
+
+/** Ô số sóng: `11`, `11 sóng` → `11`. */
+export function normalizeSoSongCell(value: unknown): string {
+  const t = String(value ?? '');
+  const m = t.match(/\d+/);
+  return m ? String(Number(m[0])) : '';
+}
+
 export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
   const productionName = row.productionName.trim();
   const group = row.group.trim();
@@ -370,21 +400,37 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
   // không phải độ li, bỏ qua để dùng giá trị suy từ tên SX.
   const rawDoLi = row.doLi.trim();
   const doLi = normalizeDoLiToken(rawDoLi) || seeded.doLi;
-  const doLiDm = row.doLiDm.trim() || extractDoLiDm(productionName) || seeded.doLiDm;
+  // Ô đm li / đm kg tách riêng; file cũ ghi `(đm n kg)` vào cột đm li vẫn nhận.
+  const rawDm = row.doLiDm.trim();
+  let doLiDm = '';
+  let dinhMucKg = '';
+  if (rawDm) {
+    if (/\bkg\b/iu.test(rawDm)) dinhMucKg = normalizeDinhMucKg(rawDm);
+    else doLiDm = normalizeDoLiDm(rawDm);
+  }
+  // Chỉ nhánh `(đm n li)`. `(đm n kg)` đã nằm ở dinhMucKg — gán vào doLiDm sẽ bị compose in hai lần.
+  doLiDm = doLiDm || extractDoLiDmLi(productionName) || seeded.doLiDm;
+  dinhMucKg =
+    normalizeDinhMucKg(String(row.dinhMucKg ?? '').trim()) ||
+    dinhMucKg ||
+    normalizeDinhMucKg(seeded.dinhMucKg);
+  const zem = normalizeZemCell(row.zem) || seeded.zem;
+  const soSong = normalizeSoSongCell(row.soSong) || seeded.soSong;
+  const tcmb = parseTcmbCell(row.tcmb) ? 'TCMB' : seeded.tcmb;
   // Tên gốc ghi tay đuôi li trùng độ li thì cắt (vd "...11 SÓNG 1,2LI" + 1.2li).
   const tenGoc = stripDuplicateLiFromTenGoc(row.tenGoc.trim() || seeded.tenGoc, doLi);
-  const doDayM = row.doDayM.trim() || seeded.doDayM;
-  const doDaiM = row.doDaiM.trim() || seeded.doDaiM;
+  // DB / hệ thống dùng `.` thập phân (`1,08` → `1.08`).
+  const doDayM = (row.doDayM.trim() || seeded.doDayM).replace(/,/g, '.');
+  const doDaiM = (row.doDaiM.trim() || seeded.doDaiM).replace(/,/g, '.');
   const mang = row.mang.trim() || seeded.mang;
   const hangPhe = row.hangPhe.trim() || seeded.hangPhe;
   const unit = normalizeImportUnit(row.unit);
-  // Tên ghép luôn tính từ tên SX (+ cột ghi tay nếu có), lưu DB để dùng chung.
+  // Canonical: ten_san_xuat = chuỗi đã ghép; ten_ghep mirror cùng giá trị (legacy).
   const tenGhep = composeProductionDisplayName(
-    { tenGoc, doLi, doLiDm, doDayM, doDaiM, mang, hangPhe },
+    { tenGoc, doLi, doLiDm, dinhMucKg, zem, soSong, tcmb, doDayM, doDaiM, mang, hangPhe },
     group
   );
   // Chuỗi rỗng vẫn gửi lên — API map thành null / bỏ trống, không chặn import.
-  // Không đổi ten_san_xuat khi import → tránh đụng unique AMIS+tên SP+tên SX.
   // Sóng: do_dai_m lấy đúng theo tên SX dòng (không max).
   return {
     code: row.code.trim(),
@@ -392,10 +438,14 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
     amisCode,
     amisOldCode: row.amisOldCode.trim(),
     name: row.name.trim(),
-    productionName,
+    productionName: tenGhep || productionName,
     tenGoc,
     doLi,
     doLiDm,
+    dinhMucKg,
+    zem,
+    soSong,
+    tcmb: tcmb ? true : false,
     doDayM,
     doDaiM,
     mang,

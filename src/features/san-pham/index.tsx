@@ -42,13 +42,18 @@ import {
 } from '../../utils/productConversionExcel';
 import { availableConvertedUnits, convertProductQuantity, type ProductConversionFactors, type ProductConvertedUnit } from '../../utils/productUnitConversion';
 import { calculateProductConversionFormulas } from '../../utils/productConversionCalculation';
+import { productApiHeaders } from '../../utils/productActorHeaders';
 import {
   FILM_OPTIONS,
   WASTE_GRADE_OPTIONS,
   calculateDoLiDm,
+  classifyProductPxGroup,
   composeProductionDisplayName,
   extractDoLiDm,
+  extractDoLiDmLi,
+  extractDoLiDmNumber,
   isDiscontinuedWhiteSuProduct,
+  normalizeDinhMucKg,
   parseDoDaiMLength,
   seedProductionSpecs
 } from '../../utils/productProductionName';
@@ -1641,8 +1646,10 @@ export function ProductViewModal({
           <div>
             <p className="text-xs font-black uppercase tracking-wider text-red-500">Xem sản phẩm</p>
             <h3 className="mt-1 text-lg font-black text-zinc-950">{product.name || product.code}</h3>
-            {product.tenGhep ? (
-              <p className="mt-0.5 text-sm font-semibold text-zinc-800">{product.tenGhep}</p>
+            {product.productionName || product.tenGhep ? (
+              <p className="mt-0.5 text-sm font-semibold text-zinc-800">
+                {product.productionName || product.tenGhep}
+              </p>
             ) : null}
             <p className="mt-0.5 text-xs font-semibold text-zinc-500">{product.code}{product.newCode ? ` · ${product.newCode}` : ''}</p>
           </div>
@@ -2501,6 +2508,10 @@ export function normalizeProducts(data: unknown): ProductRow[] {
         tenGoc: String(record.ten_goc ?? '').trim(),
         doLi: String(record.do_li ?? '').trim(),
         doLiDm: String(record.do_li_dm ?? '').trim(),
+        dinhMucKg: String(record.dinh_muc_kg ?? '').trim(),
+        zem: String(record.zem ?? '').trim(),
+        soSong: String(record.so_song ?? '').trim(),
+        tcmb: record.tcmb === true || record.tcmb === 'true' || record.tcmb === 'TCMB' || record.tcmb === 1,
         doDayM: String(record.do_day_m ?? '').trim(),
         doDaiM: String(record.do_dai_m ?? '').trim(),
         mang: String(record.mang ?? '').trim(),
@@ -2552,6 +2563,14 @@ export type ProductFormState = {
   tenGoc: string;
   doLi: string;
   doLiDm: string;
+  /** `(đm n kg)` — định mức kg (tách khỏi `doLiDm`). */
+  dinhMucKg: string;
+  /** `6ZEM`, `8ZEM` — nối sau sóng (Sóng) / sau màu (Đặc). */
+  zem: string;
+  /** Số sóng (`11` của `11 SÓNG`). */
+  soSong: string;
+  /** Tiêu chuẩn miền bắc — checkbox, ghép chữ `TCMB` sau màng. */
+  tcmb: boolean;
   doDayM: string;
   doDaiM: string;
   mang: string;
@@ -2716,6 +2735,10 @@ export function productToForm(product: ProductRow, conversions: ProductConversio
     tenGoc: productCellToInput(product.tenGoc),
     doLi: productCellToInput(product.doLi),
     doLiDm: productCellToInput(product.doLiDm),
+    dinhMucKg: productCellToInput(product.dinhMucKg),
+    zem: productCellToInput(product.zem),
+    soSong: productCellToInput(product.soSong),
+    tcmb: Boolean(product.tcmb),
     doDayM: productCellToInput(product.doDayM),
     doDaiM: productCellToInput(product.doDaiM),
     mang: productCellToInput(product.mang),
@@ -2754,6 +2777,10 @@ export function emptyProductForm(): ProductFormState {
     tenGoc: '',
     doLi: '',
     doLiDm: '',
+    dinhMucKg: '',
+    zem: '',
+    soSong: '',
+    tcmb: false,
     doDayM: '',
     doDaiM: '',
     mang: '',
@@ -2779,6 +2806,40 @@ export function emptyProductForm(): ProductFormState {
     description: '',
     conversions: [emptyConversion()]
   };
+}
+
+/**
+ * Chuỗi `ten_san_xuat` canonical ghép từ thông số form.
+ * Thứ tự: ten gốc (ZEM sau sóng/màu) - hàng phế - màng - TCMB - độ li - đm li - đm kg - khổ - mét dài.
+ */
+export function composeProductFormProductionName(form: ProductFormState): string {
+  // Ô "ĐM (đm li)" gõ nhầm `(đm n kg)` → tự route sang đm kg, không ghép trùng.
+  const rawDoLiDm = form.doLiDm.trim();
+  const doLiDmFromBox = /\bkg\b/iu.test(rawDoLiDm) ? '' : rawDoLiDm;
+  const dinhMucKg =
+    form.dinhMucKg.trim() ||
+    (/\bkg\b/iu.test(rawDoLiDm) ? normalizeDinhMucKg(rawDoLiDm) : '');
+  const doLiDm =
+    doLiDmFromBox ||
+    extractDoLiDmLi(form.productionName) ||
+    calculateDoLiDm(form.doLi, form.group) ||
+    '';
+  return composeProductionDisplayName(
+    {
+      tenGoc: form.tenGoc.trim(),
+      doLi: form.doLi.trim(),
+      doLiDm,
+      dinhMucKg,
+      zem: form.zem.trim(),
+      soSong: form.soSong.trim(),
+      tcmb: form.tcmb ? 'TCMB' : '',
+      doDayM: form.doDayM.trim(),
+      doDaiM: form.doDaiM.trim(),
+      mang: form.mang.trim(),
+      hangPhe: form.hangPhe.trim()
+    },
+    form.group.trim()
+  );
 }
 
 export function productFormToPayload(
@@ -2812,32 +2873,29 @@ export function productFormToPayload(
   };
   if (!includeProduction) return base;
 
+  // Ô "ĐM (đm li)" gõ nhầm `(đm n kg)` → tự route sang `dinh_muc_kg`.
+  const rawDoLiDm = form.doLiDm.trim();
   const doLiDm =
-    form.doLiDm.trim() ||
-    extractDoLiDm(form.productionName) ||
+    (/\bkg\b/iu.test(rawDoLiDm) ? '' : rawDoLiDm) ||
+    extractDoLiDmLi(form.productionName) ||
     calculateDoLiDm(form.doLi, form.group) ||
     '';
-  const tenGhep =
-    form.tenGhepManual.trim() ||
-    composeProductionDisplayName(
-      {
-        tenGoc: form.tenGoc.trim(),
-        doLi: form.doLi.trim(),
-        doLiDm,
-        doDayM: form.doDayM.trim(),
-        doDaiM: form.doDaiM.trim(),
-        mang: form.mang.trim(),
-        hangPhe: form.hangPhe.trim()
-      },
-      form.group.trim()
-    );
+  const dinhMucKg =
+    form.dinhMucKg.trim() ||
+    (/\bkg\b/iu.test(rawDoLiDm) ? normalizeDinhMucKg(rawDoLiDm) : '');
+  // Canonical: ten_san_xuat lưu chuỗi đã ghép; ten_ghep mirror cùng giá trị (legacy).
+  const tenGhep = form.tenGhepManual.trim() || composeProductFormProductionName(form);
   return {
     ...base,
     code: form.amisCode.trim() || form.code.trim(),
-    productionName: form.productionName.trim(),
+    productionName: tenGhep || form.productionName.trim(),
     tenGoc: form.tenGoc.trim(),
     doLi: form.doLi.trim(),
     doLiDm,
+    dinhMucKg,
+    zem: form.zem.trim(),
+    soSong: form.soSong.trim(),
+    tcmb: form.tcmb,
     doDayM: form.doDayM.trim(),
     doDaiM: form.doDaiM.trim(),
     mang: form.mang.trim(),
@@ -2896,6 +2954,18 @@ export function ProductEditModal({
   );
   const [amisOpen, setAmisOpen] = useState(false);
   const prevDoDaiMRef = useRef('');
+  const [auditLogs, setAuditLogs] = useState<
+    Array<{
+      id: number;
+      action: string;
+      actor_username?: string | null;
+      actor_name?: string | null;
+      changes?: Record<string, { old?: string; new?: string; label?: string }>;
+      created_at?: string;
+    }>
+  >([]);
+  const [auditWarning, setAuditWarning] = useState('');
+  const [isLoadingAudit, setIsLoadingAudit] = useState(false);
 
   useEffect(() => {
     const next =
@@ -2908,6 +2978,33 @@ export function ProductEditModal({
     setForm(next);
     prevDoDaiMRef.current = next.doDaiM;
   }, [defaultWarehouse, mode, product?.id, productConversions]);
+
+  useEffect(() => {
+    if (mode !== 'edit' || !product?.id) {
+      setAuditLogs([]);
+      setAuditWarning('');
+      return;
+    }
+    const controller = new AbortController();
+    setIsLoadingAudit(true);
+    setAuditWarning('');
+    void fetch(`/api/san-pham/${encodeURIComponent(product.id)}/audit-log?limit=30`, {
+      signal: controller.signal
+    })
+      .then(async res => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Không tải nhật ký.');
+        setAuditLogs(Array.isArray(data.items) ? data.items : []);
+        setAuditWarning(typeof data.warning === 'string' ? data.warning : '');
+      })
+      .catch(err => {
+        if (err?.name === 'AbortError') return;
+        setAuditLogs([]);
+        setAuditWarning(err?.message || 'Không tải nhật ký.');
+      })
+      .finally(() => setIsLoadingAudit(false));
+    return () => controller.abort();
+  }, [mode, product?.id]);
 
   useEffect(() => {
     if (!enableProductionFields) return;
@@ -2942,12 +3039,28 @@ export function ProductEditModal({
       ...next,
       tenGoc: seeded.tenGoc,
       doLi: seeded.doLi,
-      doLiDm: seeded.doLiDm || extractDoLiDm(productionName) || '',
+      doLiDm: seeded.doLiDm || extractDoLiDmLi(productionName) || '',
+      dinhMucKg: seeded.dinhMucKg || normalizeDinhMucKg(extractDoLiDm(productionName) || ''),
+      zem: seeded.zem,
+      soSong: seeded.soSong,
+      tcmb: Boolean(seeded.tcmb),
       doDayM: seeded.doDayM,
       doDaiM: seeded.doDaiM,
       mang: seeded.mang,
       hangPhe: seeded.hangPhe || base.hangPhe
     };
+  };
+
+  /** Đổi thông số → ten_san_xuat (= productionName) theo chuỗi canonical đã ghép. */
+  const patchProductionSpecs = (patch: Partial<ProductFormState>) => {
+    setForm(prev => {
+      const next = { ...prev, ...patch, tenGhepManual: '' };
+      const composed = composeProductFormProductionName(next);
+      return {
+        ...next,
+        productionName: composed || next.productionName
+      };
+    });
   };
 
   const updateConversion = (index: number, key: keyof ProductConversionForm, value: string) => {
@@ -2973,28 +3086,18 @@ export function ProductEditModal({
           }
         : { ...prev, group };
       const seeded = seedSpecsFromName({ group }, withGroup);
-      return { ...withGroup, ...seeded, tenGhepManual: '' };
+      const merged = { ...withGroup, ...seeded, tenGhepManual: '' };
+      const composed = composeProductFormProductionName(merged);
+      return {
+        ...merged,
+        productionName: composed || merged.productionName
+      };
     });
   };
 
   const updateCustomUnit = (unit: string) => setForm(prev => ({ ...prev, unit }));
 
-  const composedName = composeProductionDisplayName(
-    {
-      tenGoc: form.tenGoc.trim(),
-      doLi: form.doLi.trim(),
-      doLiDm:
-        form.doLiDm.trim() ||
-        extractDoLiDm(form.productionName) ||
-        calculateDoLiDm(form.doLi, form.group) ||
-        '',
-      doDayM: form.doDayM.trim(),
-      doDaiM: form.doDaiM.trim(),
-      mang: form.mang.trim(),
-      hangPhe: form.hangPhe.trim()
-    },
-    form.group.trim()
-  );
+  const composedName = composeProductFormProductionName(form);
 
   const amisOptions = products.filter(item => item.amisCode.trim());
   const filteredAmisOptions = amisOptions
@@ -3010,7 +3113,10 @@ export function ProductEditModal({
     : form.unit;
 
   const warehouseFields: Array<{
-    key: Exclude<keyof ProductFormState, 'conversions'>;
+    key: Exclude<
+      { [K in keyof ProductFormState]: ProductFormState[K] extends string ? K : never }[keyof ProductFormState],
+      'conversions'
+    >;
     label: string;
     required?: boolean;
     span?: boolean;
@@ -3125,6 +3231,10 @@ export function ProductEditModal({
                               tenGoc: seeded.tenGoc,
                               doLi: seeded.doLi,
                               doLiDm: seeded.doLiDm,
+                              dinhMucKg: seeded.dinhMucKg,
+                              zem: seeded.zem,
+                              soSong: seeded.soSong,
+                              tcmb: Boolean(seeded.tcmb) || Boolean(item.tcmb),
                               doDayM: seeded.doDayM,
                               doDaiM: seeded.doDaiM,
                               mang: seeded.mang,
@@ -3229,7 +3339,12 @@ export function ProductEditModal({
                     const productionName = event.target.value;
                     setForm(prev => {
                       const seeded = seedSpecsFromName({ productionName }, prev);
-                      return { ...prev, productionName, ...seeded, tenGhepManual: '' };
+                      return {
+                        ...prev,
+                        productionName,
+                        ...seeded,
+                        tenGhepManual: ''
+                      };
                     });
                   }}
                   className={productFieldClass}
@@ -3243,33 +3358,72 @@ export function ProductEditModal({
                     <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Tên gốc</span>
                     <input
                       value={form.tenGoc}
-                      onChange={event => setForm(prev => ({ ...prev, tenGoc: event.target.value, tenGhepManual: '' }))}
+                      onChange={event => patchProductionSpecs({ tenGoc: event.target.value })}
                       className={`${productFieldClass} bg-white`}
                     />
                   </label>
                   <label className="space-y-1.5">
-                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Độ li / ZEM</span>
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Độ li</span>
                     <input
                       value={form.doLi}
-                      onChange={event => setForm(prev => ({ ...prev, doLi: event.target.value, tenGhepManual: '' }))}
+                      onChange={event => patchProductionSpecs({ doLi: event.target.value })}
                       className={`${productFieldClass} bg-white`}
-                      placeholder="5.0li / 6ZEM"
+                      placeholder="5li"
                     />
                   </label>
                   <label className="space-y-1.5">
-                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">ĐM (đm li, đm kg)</span>
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">ZEM</span>
+                    <input
+                      value={form.zem}
+                      onChange={event => patchProductionSpecs({ zem: event.target.value })}
+                      className={`${productFieldClass} bg-white`}
+                      placeholder="6ZEM"
+                    />
+                  </label>
+                  <label className="space-y-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Số sóng</span>
+                    <input
+                      value={form.soSong}
+                      onChange={event => patchProductionSpecs({ soSong: event.target.value })}
+                      inputMode="numeric"
+                      className={`${productFieldClass} bg-white`}
+                      placeholder="11"
+                    />
+                  </label>
+                  <label className="space-y-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">ĐM (đm li)</span>
                     <input
                       value={form.doLiDm}
-                      onChange={event => setForm(prev => ({ ...prev, doLiDm: event.target.value, tenGhepManual: '' }))}
+                      onChange={event => patchProductionSpecs({ doLiDm: event.target.value })}
                       className={`${productFieldClass} bg-white`}
                       placeholder="(đm 5.7 li)"
                     />
                   </label>
                   <label className="space-y-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">ĐM (đm kg)</span>
+                    <input
+                      value={form.dinhMucKg}
+                      onChange={event => patchProductionSpecs({ dinhMucKg: event.target.value })}
+                      className={`${productFieldClass} bg-white`}
+                      placeholder="(đm 4.8 kg)"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={form.tcmb}
+                      onChange={event => patchProductionSpecs({ tcmb: event.target.checked })}
+                      className="h-4 w-4 accent-[#ef1b2d]"
+                    />
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-600">
+                      TCMB (tiêu chuẩn miền bắc)
+                    </span>
+                  </label>
+                  <label className="space-y-1.5">
                     <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Khổ rộng (m)</span>
                     <input
                       value={form.doDayM}
-                      onChange={event => setForm(prev => ({ ...prev, doDayM: event.target.value, tenGhepManual: '' }))}
+                      onChange={event => patchProductionSpecs({ doDayM: event.target.value })}
                       className={`${productFieldClass} bg-white`}
                     />
                   </label>
@@ -3277,7 +3431,7 @@ export function ProductEditModal({
                     <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Mét dài</span>
                     <input
                       value={form.doDaiM}
-                      onChange={event => setForm(prev => ({ ...prev, doDaiM: event.target.value, tenGhepManual: '' }))}
+                      onChange={event => patchProductionSpecs({ doDaiM: event.target.value })}
                       className={`${productFieldClass} bg-white`}
                       placeholder="Đặc: 8/9/20/30m; Sóng: theo tên SX"
                     />
@@ -3288,7 +3442,7 @@ export function ProductEditModal({
                       value={
                         FILM_OPTIONS.includes(form.mang as (typeof FILM_OPTIONS)[number]) ? form.mang : ''
                       }
-                      onChange={event => setForm(prev => ({ ...prev, mang: event.target.value, tenGhepManual: '' }))}
+                      onChange={event => patchProductionSpecs({ mang: event.target.value })}
                       className={`${productFieldClass} bg-white`}
                     >
                       <option value="">— / tự nhập bên dưới</option>
@@ -3300,7 +3454,7 @@ export function ProductEditModal({
                     </select>
                     <input
                       value={form.mang}
-                      onChange={event => setForm(prev => ({ ...prev, mang: event.target.value, tenGhepManual: '' }))}
+                      onChange={event => patchProductionSpecs({ mang: event.target.value })}
                       className={`${productFieldClass} mt-1 bg-white`}
                       placeholder="ECO / STD / SUN PC / HA hoặc nhập tay"
                     />
@@ -3309,7 +3463,7 @@ export function ProductEditModal({
                     <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Hàng phế</span>
                     <select
                       value={form.hangPhe}
-                      onChange={event => setForm(prev => ({ ...prev, hangPhe: event.target.value, tenGhepManual: '' }))}
+                      onChange={event => patchProductionSpecs({ hangPhe: event.target.value })}
                       className={`${productFieldClass} bg-white`}
                     >
                       <option value="">—</option>
@@ -3322,7 +3476,7 @@ export function ProductEditModal({
                   </label>
                   <label className="space-y-1.5 sm:col-span-2 lg:col-span-3">
                     <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">
-                      Tên sản xuất mới {form.tenGhepManual.trim() ? '(sửa tay)' : '(tự động)'}
+                      Tên sản xuất (canonical) {form.tenGhepManual.trim() ? '(sửa tay)' : '(tự động theo thông số)'}
                     </span>
                     <div className="flex gap-2">
                       <input
@@ -3331,13 +3485,19 @@ export function ProductEditModal({
                           const value = event.target.value;
                           setForm(prev => ({ ...prev, tenGhepManual: value, productionName: value }));
                         }}
-                        placeholder="Sửa tên sản xuất mới — Tên sản xuất đổi theo"
+                        placeholder="Sửa tên sản xuất — lưu vào ten_san_xuat"
                         className={`${productFieldClass} bg-white font-semibold text-zinc-800`}
                       />
                       {form.tenGhepManual.trim() ? (
                         <button
                           type="button"
-                          onClick={() => setForm(prev => ({ ...prev, tenGhepManual: '' }))}
+                          onClick={() =>
+                            setForm(prev => ({
+                              ...prev,
+                              tenGhepManual: '',
+                              productionName: composedName || prev.productionName
+                            }))
+                          }
                           title="Về tự động"
                           className="h-11 shrink-0 rounded-lg border border-zinc-200 px-3 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
                         >
@@ -3421,6 +3581,85 @@ export function ProductEditModal({
             ))
           )}
         </div>
+
+        {mode === 'edit' && product?.id ? (
+          <section className="mx-4 mb-3 space-y-2 rounded-xl border border-zinc-200 bg-zinc-50/80 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <h4 className="text-xs font-black uppercase tracking-wider text-zinc-600">Lịch sử thao tác</h4>
+              {isLoadingAudit ? <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-400" /> : null}
+            </div>
+            {auditWarning ? (
+              <p className="text-[11px] font-semibold text-amber-700">{auditWarning}</p>
+            ) : null}
+            {!isLoadingAudit && auditLogs.length === 0 && !auditWarning ? (
+              <p className="text-[11px] font-semibold text-zinc-500">Chưa có nhật ký tạo/sửa.</p>
+            ) : null}
+            <div className="max-h-48 space-y-2 overflow-y-auto">
+              {auditLogs.map(log => {
+                const actionLabel =
+                  log.action === 'create' || log.action === 'import_create'
+                    ? 'Tạo mới'
+                    : log.action === 'delete'
+                      ? 'Xóa'
+                      : log.action === 'import_update'
+                        ? 'Import cập nhật'
+                        : 'Sửa';
+                const when = log.created_at
+                  ? new Date(log.created_at).toLocaleString('vi-VN', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })
+                  : '—';
+                const who = log.actor_name || log.actor_username || 'Không rõ';
+                const changeEntries = Object.entries(log.changes || {}).filter(
+                  ([key]) => key !== 'id'
+                );
+                return (
+                  <div key={log.id} className="rounded-lg border border-zinc-200 bg-white px-2.5 py-2">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+                      <span className="text-[11px] font-black text-zinc-900">
+                        {actionLabel} · {who}
+                        {log.actor_username && log.actor_name && log.actor_username !== log.actor_name
+                          ? ` (@${log.actor_username})`
+                          : ''}
+                      </span>
+                      <span className="text-[10px] font-semibold text-zinc-500">{when}</span>
+                    </div>
+                    {changeEntries.length > 0 ? (
+                      <ul className="mt-1 space-y-0.5">
+                        {changeEntries.slice(0, 12).map(([key, change]) => (
+                          <li key={key} className="text-[10px] font-semibold leading-snug text-zinc-600">
+                            <span className="text-zinc-800">{change.label || key}</span>
+                            {log.action === 'update' || log.action === 'import_update' ? (
+                              <>
+                                : <span className="text-rose-600">{change.old || '∅'}</span>
+                                {' → '}
+                                <span className="text-emerald-700">{change.new || '∅'}</span>
+                              </>
+                            ) : (
+                              <>
+                                : <span className="text-emerald-700">{change.new || change.old || '∅'}</span>
+                              </>
+                            )}
+                          </li>
+                        ))}
+                        {changeEntries.length > 12 ? (
+                          <li className="text-[10px] font-semibold text-zinc-400">
+                            … và {changeEntries.length - 12} thay đổi khác
+                          </li>
+                        ) : null}
+                      </ul>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
+
         <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
           <BackButton onClick={onClose} className="h-10 rounded-lg bg-white" />
           <button
@@ -3731,7 +3970,7 @@ export function ProductsPanel({
     try {
       const res = await fetch('/api/san-pham', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: productApiHeaders(),
         body: JSON.stringify(productFormToPayload(form, { includeProduction: isSanPhamCatalog }))
       });
       const data = await res.json().catch(() => ({}));
@@ -3800,7 +4039,7 @@ export function ProductsPanel({
     try {
       const res = await fetch(`/api/san-pham/${editingProduct.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: productApiHeaders(),
         body: JSON.stringify(productFormToPayload(form, { includeProduction: isSanPhamCatalog }))
       });
       const data = await res.json().catch(() => ({}));
@@ -3834,7 +4073,7 @@ export function ProductsPanel({
     try {
       const res = await fetch('/api/san-pham', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: productApiHeaders(),
         body: JSON.stringify({ ids: [product.id] })
       });
       const data = await res.json().catch(() => ({}));
@@ -3867,7 +4106,7 @@ export function ProductsPanel({
     try {
       const res = await fetch(`/api/san-pham/${productId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: productApiHeaders(),
         body: JSON.stringify({ npl_phan_tram: productNplItemsToJson(items) })
       });
       const data = await res.json().catch(() => ({}));
@@ -3950,12 +4189,12 @@ export function ProductsPanel({
         const res = existing
           ? await fetch(`/api/san-pham/${existing.id}`, {
               method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
+              headers: productApiHeaders(),
               body: JSON.stringify(payload)
             })
           : await fetch('/api/san-pham', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: productApiHeaders(),
               body: JSON.stringify(payload)
             });
         const data = await res.json().catch(() => ({}));
@@ -4688,7 +4927,7 @@ export function ProductsPanel({
     try {
       const res = await fetch('/api/san-pham', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: productApiHeaders(),
         body: JSON.stringify({ ids: selectedProducts.map(product => product.id) })
       });
       const data = await res.json().catch(() => ({}));
@@ -4759,7 +4998,7 @@ export function ProductsPanel({
     try {
       const res = await fetch('/api/san-pham', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: productApiHeaders(),
         body: JSON.stringify({
           ids: productsToUpdate.map(product => product.id),
           warehouse: warehouseName
@@ -5051,14 +5290,19 @@ export function ProductsPanel({
                             ? availableConvertedUnits(row.unit, conversion)
                             : [];
                   const rowSpan = 1 + convertedUnits.length;
-                  /** Cột Tên sản xuất hiển thị tên ghép (đã lưu, thiếu thì ghép lại, cuối cùng mới tên SX thô). */
+                  /** Cột Tên sản xuất: ten_san_xuat canonical, fallback ten_ghep legacy / compose. */
                   const displayProductionName =
+                    row.productionName ||
                     row.tenGhep ||
                     composeProductionDisplayName(
                       {
                         tenGoc: row.tenGoc || row.productionName,
                         doLi: row.doLi,
                         doLiDm: row.doLiDm,
+                        dinhMucKg: row.dinhMucKg,
+                        zem: row.zem,
+                        soSong: row.soSong,
+                        tcmb: row.tcmb ? 'TCMB' : '',
                         doDayM: row.doDayM,
                         doDaiM: row.doDaiM,
                         mang: row.mang,
@@ -5066,7 +5310,6 @@ export function ProductsPanel({
                       },
                       row.group
                     ) ||
-                    row.productionName ||
                     '-';
                   const quantityFields = [
                     row.openingStock,
@@ -5116,7 +5359,14 @@ export function ProductsPanel({
                           {displayProductionName}
                         </td>
                         <td rowSpan={rowSpan} className="px-3 py-3.5 align-middle font-mono text-xs font-bold text-amber-800">
-                          {row.doLiDm || '-'}
+                          {row.doLiDm || row.dinhMucKg ? (
+                            <div className="space-y-0.5">
+                              {row.doLiDm ? <div>{row.doLiDm}</div> : null}
+                              {row.dinhMucKg ? <div className="text-emerald-700">{row.dinhMucKg}</div> : null}
+                            </div>
+                          ) : (
+                            '-'
+                          )}
                         </td>
                         <td rowSpan={rowSpan} className="px-4 py-3.5 align-middle">
                           <StatusBadge label={row.nature} color="rose" />

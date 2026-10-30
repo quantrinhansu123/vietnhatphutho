@@ -1,3 +1,5 @@
+import { truncateTo3Decimals } from '../../utils/weightTruncate';
+
 export type ProductionConversionRates = {
   kg?: number;
   m2?: number;
@@ -44,8 +46,9 @@ export function productionEntryConversionValue(
   return parsed > 0 ? parsed : null;
 }
 
-function roundEntryConversion(value: number) {
-  return Math.round((value + Number.EPSILON) * 1000) / 1000;
+/** Quy đổi trọng lượng: giữ 3 chữ số sau dấu phẩy bằng cách cắt số (không làm tròn). */
+function truncateEntryConversion(value: number) {
+  return truncateTo3Decimals(value);
 }
 
 /** Suất quy đổi 1 SP từ tổng của `basisQuantity` (số lượng mà KG/M2/M dài hiện đang tương ứng). */
@@ -84,7 +87,7 @@ export function scaleProductionEntryQuantity<T extends EntryConversionLine>(
   const keptMDai = manualText(flags.manualMDai, line.mDai);
   const scaled = (rate: number | undefined) => {
     if (!rate || qty <= 0) return '';
-    const value = roundEntryConversion(rate * qty);
+    const value = truncateEntryConversion(rate * qty);
     return value > 0 ? String(value) : '';
   };
   const kg = keptKg ?? scaled(rates.kg);
@@ -138,7 +141,7 @@ export function setManualEntryConversionValue<T extends EntryConversionLine & Ma
     const qty = parseQty(cleared.quantity);
     const rate = rates?.[rateKey];
     if (rate && qty > 0) {
-      const value = roundEntryConversion(rate * qty);
+      const value = truncateEntryConversion(rate * qty);
       const text = value > 0 ? String(value) : '';
       return {
         ...cleared,

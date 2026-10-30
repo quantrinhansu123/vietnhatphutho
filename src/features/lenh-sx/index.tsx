@@ -704,7 +704,7 @@ export function ProductionOrdersPanel({
                                             {formatProductionNameWithLength(
                                               product.productionName || product.productName,
                                               product.quyCachMDai,
-                                              { tenGhep: product.tenGhep }
+                                              { tenGhep: product.tenGhep || product.productionName }
                                             )}
                                           </td>
                                           <td className="w-[12%] whitespace-nowrap px-1.5 py-1.5 text-right font-mono font-bold text-zinc-900">
@@ -731,7 +731,7 @@ export function ProductionOrdersPanel({
                                             {formatProductionNameWithLength(
                                               product.productionName || product.productName,
                                               product.quyCachMDai,
-                                              { tenGhep: product.tenGhep }
+                                              { tenGhep: product.tenGhep || product.productionName }
                                             )}
                                           </td>
                                           <td

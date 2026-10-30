@@ -119,7 +119,17 @@ function blankIfZero(value: string): string {
 }
 
 function formatNum(value: number | null): string {
-  return value !== null && Number.isFinite(value) ? value.toFixed(2) : '—';
+  // Trọng lượng lưu 3 số lẻ (cắt số) → bản in hiển thị đủ 3 số lẻ.
+  return value !== null && Number.isFinite(value) ? value.toFixed(3) : '—';
+}
+
+/** Tổng TL / Tổng trọng lượng: phần nghìn `,`, thập phân `.`, đủ 3 số lẻ (VD: 1,234.567). */
+function formatTongTl(value: number): string {
+  if (!Number.isFinite(value)) return '0.000';
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3
+  }).format(value);
 }
 
 /** Tổng TL luôn tính từ Tổng SX, không phụ thuộc phân bổ Bắc/Trung/Nam. */
@@ -343,7 +353,7 @@ export function ProductionOrderPrintPreviewModal({
 
       const tongTl = calculateTotalWeightByUnit(row);
 
-      const { name } = splitProductNameAndNote(row.ten_ghep || row.ten_san_xuat);
+      const { name } = splitProductNameAndNote(row.ten_san_xuat || row.ten_ghep);
 
       return {
         ...row,
@@ -354,7 +364,7 @@ export function ProductionOrderPrintPreviewModal({
         totalSlsx,
         overLimit,
         tongTl,
-        productName: name || row.ten_ghep || row.ten_san_xuat || row.ten_sp || '-'
+        productName: name || row.ten_san_xuat || row.ten_ghep || row.ten_sp || '-'
       };
     });
   }, [rows, edits]);
@@ -680,7 +690,7 @@ export function ProductionOrderPrintPreviewModal({
                                 {row.ma_don_hang || '—'}
                               </td>
                               <td className={`${bodyCell} break-words font-semibold text-zinc-900`}>
-                                {row.ten_ghep || row.ten_san_xuat || row.ten_sp || '—'}
+                                {row.ten_san_xuat || row.ten_ghep || row.ten_sp || '—'}
                               </td>
                               <td className={bodyCell}>
                                 <AutoGrowNoteTextarea
@@ -707,14 +717,14 @@ export function ProductionOrderPrintPreviewModal({
                                         extractBareNoteText(note.ghi_chu, {
                                           orderCode: note.ma_don_hang || row.ma_don_hang,
                                           productCode: note.ma_sp || row.ma_sp,
-                                          tenGhep: note.ten_ghep || row.ten_ghep || row.ten_san_xuat
+                                          tenGhep: note.ten_ghep || row.ten_san_xuat || row.ten_ghep
                                         })
                                       )
                                     : [
                                         extractBareNoteText(row.ghi_chu, {
                                           orderCode: row.ma_don_hang,
                                           productCode: row.ma_sp,
-                                          tenGhep: row.ten_ghep || row.ten_san_xuat
+                                          tenGhep: row.ten_san_xuat || row.ten_ghep
                                         })
                                       ];
                                   const uniqueBareNotes = [...new Set(bareNotes.map(line => line.trim()).filter(Boolean))];
@@ -792,7 +802,7 @@ export function ProductionOrderPrintPreviewModal({
                                 {isTam ? formatNum(row.tl_tam) : '—'}
                               </td>
                               <td className={`${bodyCell} text-right font-bold tabular-nums text-zinc-900`}>
-                                {row.tongTl.toFixed(2)}
+                                {formatTongTl(row.tongTl)}
                               </td>
                               <td className={`${bodyCell} bg-zinc-50/60 print:bg-transparent`} />
                             </tr>
@@ -810,7 +820,7 @@ export function ProductionOrderPrintPreviewModal({
                             Tổng trọng lượng
                           </td>
                           <td className="border-t-2 border-zinc-900 px-2.5 py-2 text-right text-sm font-black tabular-nums text-zinc-950 print:border-gray-600 print:text-black">
-                            {totalTongTl.toFixed(2)}
+                            {formatTongTl(totalTongTl)}
                           </td>
                           <td className="border-t-2 border-zinc-900 px-2.5 py-2 print:border-gray-600" />
                         </tr>
