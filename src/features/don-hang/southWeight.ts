@@ -1,6 +1,24 @@
 import { formatNumber, parseLocalizedNumber, parsePercentInput } from '../../utils';
 import { truncateTo3Decimals } from '../../utils/weightTruncate';
-import { extractDoLiDmNumber, hasZemInName, parseProductionNameParts } from '../../utils/productProductionName';
+import { extractDoLiDmLi, extractDoLiDmNumber, hasZemInName, parseProductionNameParts } from '../../utils/productProductionName';
+
+/** Số cho ô Độ li ĐM. `(đm n kg)` không điền vào ô này. */
+export function orderDoLiDmLiNumber(...values: Array<string | null | undefined>): string {
+  for (const value of values) {
+    const text = String(value || '').trim();
+    if (!text) continue;
+    const li = extractDoLiDmLi(text);
+    if (li) {
+      const number = extractDoLiDmNumber(li);
+      if (number) return number;
+      continue;
+    }
+    if (/\bkg\b/iu.test(text)) continue;
+    const number = extractDoLiDmNumber(text);
+    if (number) return number;
+  }
+  return '';
+}
 
 /**
  * SP chưa có quy đổi/thông số danh mục: suy Dài (m), Khổ rộng (m), Độ li ĐM (số) từ tên sản xuất.
@@ -17,9 +35,7 @@ export function inferSpecsFromProductionName(
   return {
     daiM: stripM(parts.doDaiM),
     kho: stripM(parts.doDayM),
-    doLiDm: hasZemInName(name)
-      ? ''
-      : extractDoLiDmNumber(parts.doLiDm) || extractDoLiDmNumber(parts.dinhMucKg)
+    doLiDm: hasZemInName(name) ? '' : orderDoLiDmLiNumber(parts.doLiDm)
   };
 }
 

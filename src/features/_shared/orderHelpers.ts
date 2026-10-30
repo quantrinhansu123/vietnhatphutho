@@ -460,6 +460,8 @@ export interface OrderProductOption {
   doDayM: string;
   /** Định mức thực tế trên danh mục SP (`do_li_dm`) — đơn miền nam prefills ô Độ li ĐM. */
   doLiDm: string;
+  /** Độ li chính trên danh mục SP (`do_li`, vd `1.2li`). */
+  doLi?: string;
   /** Định mức kg (`dinh_muc_kg`) — tách khỏi `doLiDm` từ migration tcmb-zem-so-song. */
   dinhMucKg?: string;
   /** Màng: ECO / STD / SUN PC / HA... */
@@ -567,7 +569,8 @@ export function normalizeOrderProducts(data: unknown): OrderProductOption[] {
       tenGhep,
       doDaiM: product.doDaiM || '',
       doDayM: product.doDayM || '',
-      doLiDm: product.doLiDm || product.dinhMucKg || '',
+      doLiDm: /\bkg\b/iu.test(product.doLiDm || '') ? '' : (product.doLiDm || ''),
+      doLi: product.doLi || '',
       dinhMucKg: product.dinhMucKg || '',
       mang: product.mang || '',
       totalWeight: product.totalWeight || '',

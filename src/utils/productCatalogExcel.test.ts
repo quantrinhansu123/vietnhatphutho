@@ -169,6 +169,73 @@ test('import: cột ZEM / Số sóng / ĐM kg / TCMB ghép đúng vị trí', ()
   assert.equal(song.soSong, '13');
   assert.equal(song.dinhMucKg, '(đm 4.8 kg)');
   assert.equal(song.tenGhep, 'NHỰA SÓNG TRẮNG - NP - 13 SÓNG - (đm 4.8 kg) - 2m');
+
+  const duplicatedKg = productCatalogRowToPayload(
+    makeRow({
+      code: 'STS02-1.5li-NP',
+      amisCode: 'STS02-1.5li-NP',
+      name: 'Tấm nhựa sóng',
+      productionName: 'NHỰA SÓNG XDT - NP - 11 SÓNG - 1.5li - (đm 12 kg) - (đm 12 kg) - 2.5m',
+      group: 'TP; PX Sóng'
+    })
+  );
+  assert.equal(duplicatedKg.doLiDm, '');
+  assert.equal(duplicatedKg.dinhMucKg, '(đm 12 kg)');
+  assert.equal(
+    duplicatedKg.tenGhep,
+    'NHỰA SÓNG XDT - NP - 11 SÓNG - 1.5li - (đm 12 kg) - 2.5m'
+  );
+
+  const gluedKg = productCatalogRowToPayload(
+    makeRow({
+      code: 'STS02-1.5li-NP',
+      amisCode: 'STS02-1.5li-NP',
+      name: 'Tấm nhựa sóng',
+      productionName: 'NHỰA SÓNG XDT - NP - 11 SÓNG - 1.5li ( ĐM 12KG ) - 1.5li - (đm 12 kg) - (đm 12 kg) - 6m',
+      group: 'TP; PX Sóng'
+    })
+  );
+  assert.equal(gluedKg.doLiDm, '');
+  assert.equal(gluedKg.dinhMucKg, '(đm 12 kg)');
+  assert.equal(
+    gluedKg.tenGhep,
+    'NHỰA SÓNG XDT - NP - 11 SÓNG - 1.5li - (đm 12 kg) - 6m'
+  );
+
+  const midKg = productCatalogRowToPayload(
+    makeRow({
+      code: 'STS02-1li-NP',
+      amisCode: 'STS02-1li-NP',
+      name: 'Tấm nhựa sóng',
+      productionName: 'NHỰA SÓNG XDT - NP - 9 SÓNG - 1li - ( ĐM 7.8KG ) 2m - 1li - (đm 7.8 kg) - 2m',
+      group: 'TP; PX Sóng'
+    })
+  );
+  assert.equal(midKg.dinhMucKg, '(đm 7.8 kg)');
+  assert.equal(midKg.tenGhep, 'NHỰA SÓNG XDT - NP - 9 SÓNG - 1li - (đm 7.8 kg) - 2m');
+
+  const duplicateLi = productCatalogRowToPayload(
+    makeRow({
+      code: 'STS06-1.5li- NP',
+      amisCode: 'STS06-1.5li- NP',
+      name: 'Tấm nhựa sóng',
+      productionName: 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG - 1.5li - (đm 12 kg) - 1.5li - 2.4m',
+      group: 'TP; PX Sóng'
+    })
+  );
+  assert.equal(duplicateLi.tenGhep, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG - 1.5li - (đm 12 kg) - 2.4m');
+
+  const mixedLi = productCatalogRowToPayload(
+    makeRow({
+      code: 'STS02-1li-NP',
+      amisCode: 'STS02-1li-NP',
+      name: 'Tấm nhựa sóng',
+      productionName: 'NHỰA SÓNG XDT - NP - 9 SÓNG - 1.5li - 1li - (đm 12 kg) - 6m',
+      group: 'TP; PX Sóng'
+    })
+  );
+  assert.equal(mixedLi.doLi, '1li');
+  assert.equal(mixedLi.tenGhep, 'NHỰA SÓNG XDT - NP - 9 SÓNG - 1li - (đm 12 kg) - 6m');
 });
 
 test('import: đọc đúng header mới ĐM (đm li) / ĐM (đm kg) / ZEM / Số sóng / TCMB', async () => {

@@ -49,7 +49,7 @@ import {
   type StaffOption,
   type CustomerOption
 } from '../_shared/orderHelpers';
-import { detectOrderLineWidthMismatch, doLiDmWeightScale, extractDoLiDm, extractDoLiDmNumber, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, replaceMangInName, normalizeDoLiDm, seedProductionSpecs, setDinhMucKgInTenGhep, stripDinhMucKgSegment, hasZemInName, stripDoLiDmLiSegment, stripDoLiTokenFromTenGhep } from '../../utils/productProductionName';
+import { detectOrderLineWidthMismatch, doLiDmWeightScale, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, replaceDoLiTokenInTenGhep, replaceMangInName, normalizeDoLiDm, seedProductionSpecs, stripDinhMucKgSegment, hasZemInName, stripDoLiDmLiSegment } from '../../utils/productProductionName';
 import {
   orderDuplicateDecimalText,
   parseSouthDinhMucKg,
@@ -59,7 +59,8 @@ import {
   southScaledTlAndTotal,
   southFallbackTlAndTotal,
   southKhoScale,
-  inferSpecsFromProductionName
+  inferSpecsFromProductionName,
+  orderDoLiDmLiNumber
 } from './southWeight';
 export {
   orderDuplicateDecimalText,
@@ -681,6 +682,8 @@ export function orderProductLinesToPayload(
             mau_tem: mauTemValue || undefined,
             dan_tem_2_dau: danTem2DauValue ? 1 : undefined,
             do_li_dm: doLiDmValue || undefined,
+            // Nhóm VTHH dòng (Đặc/Sóng/Rỗng) — BE mirror dùng để ghép tên đúng luật nhóm.
+            nhom_vthh: selectedProduct?.group || undefined,
             mo_ta_tem: moTaTem || undefined,
             ...(isSouthOrder
               ? {
@@ -711,14 +714,21 @@ export function orderProductLinesToPayload(
       ).trim();
       const catalogMainLength = Number(String(selectedProduct?.doDaiM ?? '').replace(/m\s*$/iu, '').replace(',', '.'));
       const catalogWidth = Number(String(selectedProduct?.doDayM ?? '').replace(/m\s*$/iu, '').replace(',', '.'));
-      const enteredWidth = parsePercentInput(line.kho || '');
+      // Nhóm VTHH: Đặc / Sóng / Rỗng / khác.
+      const pxGroup = classifyProductPxGroup(selectedProduct?.group || '');
+      // Nhựa sóng: không cho sửa khổ trên đơn — luôn dùng khổ chuẩn danh mục,
+      // **vẫn lưu `kho` vào JSON thông tin** nhưng tên ghép / Mã AMIS mới không chứa khổ
+      // (compose tên ghép nhóm Sóng vốn bỏ segment `do_day_m`).
+      const isSongLine = pxGroup === 'song';
+      const enteredWidth = isSongLine
+        ? (Number.isFinite(catalogWidth) && catalogWidth > 0 ? catalogWidth : Number.NaN)
+        : parsePercentInput(line.kho || '');
       const widthDiffersForCode =
         Number.isFinite(enteredWidth) &&
         enteredWidth > 0 &&
         (!Number.isFinite(catalogWidth) || catalogWidth <= 0 || Math.abs(enteredWidth - catalogWidth) > 1e-9);
       // Chỉ nhóm Đặc/Sóng mới thay đúng token m dài chính (kể cả khi không đứng cuối);
       // các nhóm VTHH khác giữ luật cũ (thay mét cuối / thêm - Nm).
-      const pxGroup = classifyProductPxGroup(selectedProduct?.group || '');
       const mainForCut =
         (pxGroup === 'dac' || pxGroup === 'song') &&
         Number.isFinite(catalogMainLength) &&
@@ -745,7 +755,11 @@ export function orderProductLinesToPayload(
       const doLiDiffersForCode =
         Boolean(doLiLine && variantSpecs?.doLi) &&
         normalizeDoLiToken(doLiLine) !== normalizeDoLiToken(variantSpecs?.doLi || '');
-      // Đơn miền nam: lưu độ li riêng (do_li) để bỏ được `1.2li` khỏi tên ghép khi có Tem mà không mất thông tin.
+      // Tem (`1.5li`) thay token độ li chính trên tên; `(đm n li)` giữ nguyên.
+      const applyTemDoLi = (name: string) => {
+        if (!isCutLikeOrder || !temValue || nameHasZem || hasZemInName(name)) return name;
+        return replaceDoLiTokenInTenGhep(name, temValue);
+      };
       const doLiStored = isSouthOrder ? (doLiLine || variantSpecs?.doLi || '') : '';
       const lineMang = isSouthOrder
         ? (line.mang !== undefined ? line.mang.trim() : (variantSpecs?.mang || undefined))
@@ -814,10 +828,10 @@ export function orderProductLinesToPayload(
             base = replaceMangInName(base, String(lineMang), variantSpecs?.mang);
           }
           if (nameHasZem || hasZemInName(base)) base = stripDoLiDmLiSegment(base);
-          // Đơn miền nam có Tem: bỏ token độ li chính khỏi tên (đã lưu riêng ở do_li).
-          if (isSouthOrder && temValue && doLiStored) base = stripDoLiTokenFromTenGhep(base, doLiStored);
-          // Đơn miền nam: chỉ SP Sóng mới đưa Định mức tiêu chuẩn của khách vào tên, vd (đm 4.8 kg).
-          if (isSouthOrder) base = (pxGroup === 'song' || nameHasZem) ? setDinhMucKgInTenGhep(base, line.dinhMucTieuChuanKg) : stripDinhMucKgSegment(base);
+          base = applyTemDoLi(base);
+          // Sóng: giữ `(đm n kg)` gốc trên tên, không ghi theo ô Định mức tiêu chuẩn.
+          // Nhóm khác: bỏ segment kg khỏi tên ghép.
+          if (isSouthOrder && pxGroup !== 'song' && !nameHasZem) base = stripDinhMucKgSegment(base);
           return isCutLikeOrder ? appendSouthTemToTenGhep(base, temValue, mauTemValue, danTem2DauValue) : base;
         };
         let tenGhep = buildOrderTenGhep(tenSanXuat, {
@@ -837,8 +851,8 @@ export function orderProductLinesToPayload(
         }
         if (!tenGhep) return undefined;
         if (nameHasZem || hasZemInName(tenGhep)) tenGhep = stripDoLiDmLiSegment(tenGhep);
-        if (isSouthOrder && temValue && doLiStored) tenGhep = stripDoLiTokenFromTenGhep(tenGhep, doLiStored);
-        if (isSouthOrder) tenGhep = (pxGroup === 'song' || nameHasZem) ? setDinhMucKgInTenGhep(tenGhep, line.dinhMucTieuChuanKg) : stripDinhMucKgSegment(tenGhep);
+        tenGhep = applyTemDoLi(tenGhep);
+        if (isSouthOrder && pxGroup !== 'song' && !nameHasZem) tenGhep = stripDinhMucKgSegment(tenGhep);
         return isCutLikeOrder ? appendSouthTemToTenGhep(tenGhep, temValue, mauTemValue, danTem2DauValue) : tenGhep;
       };
 
@@ -848,9 +862,9 @@ export function orderProductLinesToPayload(
           .map(result => ({ don_vi: result.unit, gia_tri: result.value }));
         const rawTenSanXuat = line.productionName.trim() || '';
         const shouldReplaceMang = isSouthOrder ? lineMang !== undefined : Boolean(lineMang);
-        const tenSanXuat = shouldReplaceMang && lineMang !== undefined
+        const tenSanXuat = applyTemDoLi(shouldReplaceMang && lineMang !== undefined
           ? replaceMangInName(rawTenSanXuat, lineMang, variantSpecs?.mang)
-          : rawTenSanXuat;
+          : rawTenSanXuat);
         const quyCachMDaiStored = Number.isFinite(daiM) && daiM > 0
           ? daiM
           : Number.isFinite(Number(line.quyCachMDai)) && Number(line.quyCachMDai) > 0
@@ -942,7 +956,7 @@ export function orderProductLinesToPayload(
       // Số nhập tay luôn ưu tiên hơn số tự tính (kể cả đơn miền nam đã cho sửa Tổng KG).
       const effectiveManualTotalKg = manualTotalKg ?? dinhMucTotalKg;
       const cutWeight = isCutLikeOrder
-        ? calculateCutOrderWeight(line.daiM, String(quantity), conversion, unit, productCode, productName, line.kho || '', doLiDmWeightScale(line.doLiDm, selectedProduct?.doLiDm))
+        ? calculateCutOrderWeight(line.daiM, String(quantity), conversion, unit, productCode, productName, isSongLine ? '' : (line.kho || ''), doLiDmWeightScale(line.doLiDm, selectedProduct?.doLiDm))
         : null;
 
       let cutQuyCach: string | undefined;
@@ -1020,9 +1034,9 @@ export function orderProductLinesToPayload(
       const rawTenSanXuat =
         line.productionName.trim() || selectedProduct?.productionName || resolved.productionName || '';
       const shouldReplaceMangName = isSouthOrder ? lineMang !== undefined : Boolean(lineMang);
-      const tenSanXuat = shouldReplaceMangName && lineMang !== undefined
+      const tenSanXuat = applyTemDoLi(shouldReplaceMangName && lineMang !== undefined
         ? replaceMangInName(rawTenSanXuat, lineMang, variantSpecs?.mang)
-        : rawTenSanXuat;
+        : rawTenSanXuat);
       const tenGhep = resolveTenGhep(tenSanXuat, quyCachMDai);
 
       return {
@@ -1128,7 +1142,7 @@ export function orderToForm(order: OrderRow): OrderFormState {
     doDaiTamTieuChuan: orderDuplicateDecimalText(line.doDaiTamTieuChuan || ''),
     dinhMucTieuChuanKg: orderDuplicateDecimalText(line.dinhMucTieuChuanKg || ''),
     doLi: orderDuplicateDecimalText(line.doLi || ''),
-    doLiDm: orderDuplicateDecimalText(extractDoLiDmNumber(line.doLiDm || '')),
+    doLiDm: orderDuplicateDecimalText(orderDoLiDmLiNumber(line.doLiDm)),
     tem: orderCellToInput(line.tem || fallbackTem?.tem || ''),
     mauTem: orderCellToInput(line.mauTem || fallbackTem?.mauTem || ''),
     danTem2Dau: Boolean(line.danTem2Dau ?? fallbackTem?.danTem2Dau ?? false),
@@ -1524,7 +1538,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             const autoDaiM = rawDaiM || (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '') || line.daiM;
             const rawKho = match.doDayM ? String(match.doDayM).replace(/m\s*$/iu, '').trim() : '';
             const autoKho = rawKho || (conversion?.khoTamRongM ? String(conversion.khoTamRongM) : '') || line.kho;
-            const rawDoLiDm = hasZemInName(match?.productionName, match?.name, match?.code) ? '' : extractDoLiDmNumber(match.doLiDm || '') || extractDoLiDmNumber(extractDoLiDm(match.productionName) || '');
+            const rawDoLiDm = hasZemInName(match?.productionName, match?.name, match?.code) ? '' : orderDoLiDmLiNumber(match.doLiDm, match.productionName);
             return {
               ...baseUpdated,
               mang: match.mang || extractMang(match.productionName) || '',
@@ -1561,7 +1575,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
           const rawKho = match.doDayM ? String(match.doDayM).replace(/m\s*$/iu, '').trim() : '';
           const autoKho = rawKho || (conversion?.khoTamRongM ? String(conversion.khoTamRongM) : '') || inferred.kho || line.kho;
 
-          const rawDoLiDm = hasZemInName(match?.productionName, match?.name, match?.code) ? '' : extractDoLiDmNumber(match.doLiDm || '') || extractDoLiDmNumber(extractDoLiDm(match.productionName) || '') || inferred.doLiDm;
+          const rawDoLiDm = hasZemInName(match?.productionName, match?.name, match?.code) ? '' : orderDoLiDmLiNumber(match.doLiDm, match.productionName) || inferred.doLiDm;
           const autoDoLiDm = rawDoLiDm || line.doLiDm;
 
           // Độ dài tấm tiêu chuẩn theo sản phẩm chọn (không theo Dài m đang nhập).
@@ -1842,7 +1856,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     const rawKho = String(match?.doDayM || '').replace(/m\s*$/iu, '').trim();
     const autoKho = rawKho || (conversion?.khoTamRongM ? String(conversion.khoTamRongM) : '') || inferred.kho;
 
-    const rawDoLiDm = hasZemInName(match?.productionName, match?.name, match?.code) ? '' : extractDoLiDmNumber(match?.doLiDm || '') || (match?.productionName ? extractDoLiDmNumber(extractDoLiDm(match.productionName) || '') : '') || inferred.doLiDm;
+    const rawDoLiDm = hasZemInName(match?.productionName, match?.name, match?.code) ? '' : orderDoLiDmLiNumber(match?.doLiDm, match?.productionName) || inferred.doLiDm;
 
     const autoDoDaiTamTieuChuan = (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '') || rawDaiM || inferred.daiM;
     const autoDinhMucTieuChuanKg = (conversion?.trongLuongKgTam ? String(conversion.trongLuongKgTam) : '') || (match?.totalWeight ? String(match.totalWeight) : '');
@@ -2575,8 +2589,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       const cutEffectiveQty = cutRegionTotal !== null ? String(cutRegionTotal) : '0';
                       const cutAllowedUnits = allowedOrderUnits(matchedLineProduct);
                       const cutEffectiveUnit = resolveCutOrderLineUnit(matchedLineProduct, line.unit);
+                      // Nhựa sóng: khổ cố định theo danh mục — khóa ô Khổ rộng (vẫn lưu `kho` =
+                      // khổ chuẩn danh mục vào thông tin; không hiện trong tên ghép / Mã AMIS).
+                      const isSongOrderLine = classifyProductPxGroup(matchedLineProduct?.group || '') === 'song';
                       const cutWeight = line.shouldRecalculateConversion
-                        ? calculateCutOrderWeight(line.daiM, cutEffectiveQty, matchedConversion, cutEffectiveUnit, line.productCode, matchedLineProduct?.name || line.productName, line.kho || '', doLiDmWeightScale(line.doLiDm, matchedLineProduct?.doLiDm))
+                        ? calculateCutOrderWeight(line.daiM, cutEffectiveQty, matchedConversion, cutEffectiveUnit, line.productCode, matchedLineProduct?.name || line.productName, isSongOrderLine ? '' : (line.kho || ''), doLiDmWeightScale(line.doLiDm, matchedLineProduct?.doLiDm))
                         : null;
                       const kgPerStandardMeter = isFormSouthOrder
                         ? southOrderKgPerMeter(
@@ -2683,11 +2700,20 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         </div>
                         <div className="col-span-1 min-w-0">
                           <OrderNumberInput
-                            value={line.kho || ''}
+                            value={isSongOrderLine
+                              ? (matchedLineProduct?.doDayM
+                                  ? String(matchedLineProduct.doDayM).replace(/m\s*$/iu, '').trim()
+                                  : (matchedConversion?.khoTamRongM ? String(matchedConversion.khoTamRongM) : (line.kho || '')))
+                              : (line.kho || '')}
+                            disabled={isSongOrderLine}
                             onChange={e => updateConversionProductLine(line.key, { kho: e.target.value, manualTongKg: false, tongKg: '', dinhMucKg: '' })}
-                            className={orderFieldClass}
-                            placeholder="1.22"
-                            title={isFormSouthOrder ? 'Khổ rộng (m) — ghi vào mã AMIS mới khi khác khổ danh mục' : 'Hạ khổ rộng (m) — ghi vào mã AMIS mới khi khác khổ tấm chính'}
+                            className={isSongOrderLine ? `${orderFieldClass} bg-zinc-100 text-zinc-500` : orderFieldClass}
+                            placeholder=""
+                            title={isSongOrderLine
+                              ? 'Nhựa sóng: khổ cố định theo danh mục — lưu vào thông tin đơn nhưng không hiện trong tên ghép / Mã AMIS'
+                              : isFormSouthOrder
+                                ? 'Khổ rộng (m) — ghi vào mã AMIS mới khi khác khổ danh mục'
+                                : 'Hạ khổ rộng (m) — ghi vào mã AMIS mới khi khác khổ tấm chính'}
                           />
                         </div>
                         <div className="col-span-1 min-w-0">

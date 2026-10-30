@@ -123,6 +123,15 @@ function formatNum(value: number | null): string {
   return value !== null && Number.isFinite(value) ? value.toFixed(3) : '—';
 }
 
+/** Tổng TL / Tổng trọng lượng: phần nghìn `,`, thập phân `.`, đủ 3 số lẻ (VD: 1,234.567). */
+function formatTongTl(value: number): string {
+  if (!Number.isFinite(value)) return '0.000';
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3
+  }).format(value);
+}
+
 /** Tổng TL luôn tính từ Tổng SX, không phụ thuộc phân bổ Bắc/Trung/Nam. */
 function calculateTotalWeightByUnit(
   row: Pick<PreviewRow, 'don_vi' | 'kg_cuon' | 'tl_tam' | 'so_luong'>
@@ -793,7 +802,7 @@ export function ProductionOrderPrintPreviewModal({
                                 {isTam ? formatNum(row.tl_tam) : '—'}
                               </td>
                               <td className={`${bodyCell} text-right font-bold tabular-nums text-zinc-900`}>
-                                {row.tongTl.toFixed(3)}
+                                {formatTongTl(row.tongTl)}
                               </td>
                               <td className={`${bodyCell} bg-zinc-50/60 print:bg-transparent`} />
                             </tr>
@@ -811,7 +820,7 @@ export function ProductionOrderPrintPreviewModal({
                             Tổng trọng lượng
                           </td>
                           <td className="border-t-2 border-zinc-900 px-2.5 py-2 text-right text-sm font-black tabular-nums text-zinc-950 print:border-gray-600 print:text-black">
-                            {totalTongTl.toFixed(3)}
+                            {formatTongTl(totalTongTl)}
                           </td>
                           <td className="border-t-2 border-zinc-900 px-2.5 py-2 print:border-gray-600" />
                         </tr>

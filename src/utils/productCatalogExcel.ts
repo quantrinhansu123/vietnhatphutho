@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import {
   composeProductionDisplayName,
-  extractDoLiDm,
+  extractDoLiDmLi,
   extractZemToken,
   normalizeDinhMucKg,
   normalizeDoLiDm,
@@ -408,15 +408,20 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
     if (/\bkg\b/iu.test(rawDm)) dinhMucKg = normalizeDinhMucKg(rawDm);
     else doLiDm = normalizeDoLiDm(rawDm);
   }
-  doLiDm = doLiDm || extractDoLiDm(productionName) || seeded.doLiDm;
-  dinhMucKg = normalizeDinhMucKg(String(row.dinhMucKg ?? '').trim()) || dinhMucKg || seeded.dinhMucKg;
+  // Chỉ nhánh `(đm n li)`. `(đm n kg)` đã nằm ở dinhMucKg — gán vào doLiDm sẽ bị compose in hai lần.
+  doLiDm = doLiDm || extractDoLiDmLi(productionName) || seeded.doLiDm;
+  dinhMucKg =
+    normalizeDinhMucKg(String(row.dinhMucKg ?? '').trim()) ||
+    dinhMucKg ||
+    normalizeDinhMucKg(seeded.dinhMucKg);
   const zem = normalizeZemCell(row.zem) || seeded.zem;
   const soSong = normalizeSoSongCell(row.soSong) || seeded.soSong;
   const tcmb = parseTcmbCell(row.tcmb) ? 'TCMB' : seeded.tcmb;
   // Tên gốc ghi tay đuôi li trùng độ li thì cắt (vd "...11 SÓNG 1,2LI" + 1.2li).
   const tenGoc = stripDuplicateLiFromTenGoc(row.tenGoc.trim() || seeded.tenGoc, doLi);
-  const doDayM = row.doDayM.trim() || seeded.doDayM;
-  const doDaiM = row.doDaiM.trim() || seeded.doDaiM;
+  // DB / hệ thống dùng `.` thập phân (`1,08` → `1.08`).
+  const doDayM = (row.doDayM.trim() || seeded.doDayM).replace(/,/g, '.');
+  const doDaiM = (row.doDaiM.trim() || seeded.doDaiM).replace(/,/g, '.');
   const mang = row.mang.trim() || seeded.mang;
   const hangPhe = row.hangPhe.trim() || seeded.hangPhe;
   const unit = normalizeImportUnit(row.unit);

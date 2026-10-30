@@ -40,7 +40,7 @@ import {
   resolveAuxiliaryWeightPerUnit,
   stripMixingNormRevisionSuffix
 } from './src/utils/mixingNormAuxiliary';
-import { buildCutAmisCodeFull, doLiDmWeightScale, buildMaAmisMoi, buildOrderTenGhep, calculateDoLiDm, extractSoSong, extractZemToken, isDiscontinuedWhiteSuProduct, normalizeDinhMucKg, parseProductionNameParts, replaceCutLengthMeters, replaceDoLiDmInTenGhep, replaceMangInName, stripTrailingDuplicateCutAfterTem } from './src/utils/productProductionName';
+import { buildCutAmisCodeFull, doLiDmWeightScale, buildMaAmisMoi, buildOrderTenGhep, calculateDoLiDm, extractSoSong, extractZemToken, hasZemInName, isDiscontinuedWhiteSuProduct, normalizeDinhMucKg, parseProductionNameParts, replaceCutLengthMeters, replaceDoLiDmInTenGhep, replaceDoLiTokenInTenGhep, replaceMangInName, stripTrailingDuplicateCutAfterTem } from './src/utils/productProductionName';
 import { buildCatLeSanPhamLine, KHO_CAT_LE, KHO_TAI_CHE, KHO_THANH_PHAM, inferKhoChinhTuNhom, normalizeCatLeSanPhamList, resolveCatLeNhomVthh, type CatLeSanPhamLine } from './src/features/lenh-cat-le/logic';
 
 dotenv.config();
@@ -7387,6 +7387,8 @@ type OrderProductRecord = {
   do_li?: string | null;
   /** Định mức thực tế đơn miền nam: `(đm n li)` hoặc `(đm n kg)`. */
   do_li_dm?: string | null;
+  /** Nhóm VTHH dòng đơn (TP; PX Đặc/Sóng/Rỗng) — dùng để ghép ten_ghep đúng luật nhóm. */
+  nhom_vthh?: string | null;
   kho?: number | string | null;
   dai_m?: number | null;
   ghi_chu?: string | null;
@@ -7628,9 +7630,15 @@ function parseOrderProductsInput(
       }
       base_ten_ghep = replaceMangInName(base_ten_ghep, lineMang);
     }
-    // Đơn cắt lẻ / miền nam: thay segment (đm n li|kg) theo do_li_dm — không đụng token do_li.
+    // Đơn cắt lẻ / miền nam: thay segment `(đm n li)`, giữ token độ li chính.
+    const lineNhomVthh = pickRowField(row, ['nhom_vthh', 'nhomVthh', 'group']);
     if (isCutLikeSpecOrder && do_li_dm) {
       base_ten_ghep = replaceDoLiDmInTenGhep(base_ten_ghep, do_li_dm);
+    }
+    // Tem thay độ li chính trên tên; `(đm n li)` giữ nguyên.
+    if (isCutLikeSpecOrder && tem && !hasZemInName(base_ten_ghep, ten_san_xuat)) {
+      base_ten_ghep = replaceDoLiTokenInTenGhep(base_ten_ghep, tem);
+      if (ten_san_xuat) ten_san_xuat = replaceDoLiTokenInTenGhep(ten_san_xuat, tem);
     }
     const ten_ghep = isCutLikeSpecOrder
       ? appendSouthTemToTenGhepServer(base_ten_ghep, tem, mau_tem, dan_tem_2_dau)
@@ -7654,6 +7662,7 @@ function parseOrderProductsInput(
     const extraFields: Partial<OrderProductRecord> = {
       ...(do_li ? { do_li } : {}),
       ...(do_li_dm ? { do_li_dm } : {}),
+      ...(lineNhomVthh ? { nhom_vthh: lineNhomVthh } : {}),
       ...(kho !== null && kho > 0 ? { kho } : {}),
       ...(dai_m !== null && dai_m > 0 ? { dai_m } : {}),
       ...(ghi_chu ? { ghi_chu } : {}),

@@ -5,6 +5,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  inferSpecsFromProductionName,
+  orderDoLiDmLiNumber,
   orderDuplicateDecimalText,
   southKgPerStandardMeter,
   southLengthScaledTotalKg,
@@ -149,6 +151,20 @@ describe('don-hang miền nam — cột Màng và trích xuất màng', () => {
       mang: ''
     });
     assert.ok(!cleared.includes('SUN PC'));
+  });
+});
+
+describe('Độ li ĐM không lấy (đm n kg)', () => {
+  it('sóng chỉ có (đm 9.5 kg) thì ô trống', () => {
+    const name = 'NHỰA 11 SÓNG XANH - NP - 1.2li - (đm 9.5 kg) - 3m';
+    assert.equal(orderDoLiDmLiNumber('(đm 9.5 kg)', name), '');
+    assert.equal(inferSpecsFromProductionName(name, 'TP; PX Sóng').doLiDm, '');
+  });
+
+  it('vẫn lấy số trong (đm n li)', () => {
+    const name = 'Tấm nhựa đặc màu TRẮNG - OFF - STD - 1.2li - (đm 1.1 li) - 1.22m - 30m';
+    assert.equal(orderDoLiDmLiNumber(name), '1.1');
+    assert.equal(inferSpecsFromProductionName(name, 'TP; PX Đặc').doLiDm, '1.1');
   });
 });
 

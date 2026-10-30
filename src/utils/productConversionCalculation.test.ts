@@ -72,10 +72,11 @@ test('trả về rỗng khi không đủ dữ liệu nguồn', () => {
   });
 });
 
-test('import chốt kg/Tấm + kg/Cuộn tối đa 2 chữ số', () => {
-  assert.equal(roundImportedConversionWeight(4.925), 4.93);
+test('import quy đổi: giữ nguyên số file, không làm tròn', () => {
+  // Import không làm tròn — giữ nguyên giá trị file.
+  assert.equal(roundImportedConversionWeight(4.925), 4.925);
   assert.equal(roundImportedConversionWeight(6.3), 6.3);
-  assert.equal(roundImportedConversionWeight(0.125), 0.13);
+  assert.equal(roundImportedConversionWeight(0.125), 0.125);
   assert.equal(roundImportedConversionWeight(null), null);
   assert.equal(roundImportedConversionWeight(undefined), undefined);
   assert.equal(roundImportedConversionWeight('4.925'), '4.925');
