@@ -2241,7 +2241,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       const matchesType = selectedType === 'all' || order.orderType === selectedType;
       const matchesSearch =
         !normalizedSearch ||
-        `${order.orderCode} ${order.orderType} ${order.status} ${order.staffName} ${order.customer} ${formatOrderProductsSummary(getOrderProductLines(order))} ${order.note}`
+        `${order.orderCode} ${order.orderType} ${order.status} ${order.staffName} ${order.customer} ${formatOrderProductsSummary(getOrderProductLines(order))} ${order.note} ${getOrderProductLines(order).map(line => line.note).join(' ')}`
           .toLowerCase()
           .includes(normalizedSearch);
       return matchesType && matchesSearch;
@@ -3374,13 +3374,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         </TableToolbar>
 
         <TableShell
-          minWidthClassName="min-w-[1200px]"
+          minWidthClassName="min-w-[1480px]"
         >
           <TableHead>
             <TableHeadCell>Mã đơn</TableHeadCell>
             <TableHeadCell className="whitespace-nowrap">Ngày tạo</TableHeadCell>
             <TableHeadCell className="w-24 min-w-24 whitespace-nowrap">Loại đơn</TableHeadCell>
             <TableHeadCell>Trạng thái</TableHeadCell>
+            <TableHeadCell className="min-w-[140px]">Ghi chú chung</TableHeadCell>
             <TableHeadCell>Nhân viên</TableHeadCell>
             <TableHeadCell>Khách hàng</TableHeadCell>
             <TableHeadCell className="min-w-[520px]">
@@ -3393,7 +3394,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 <span className="text-right">SL LSX</span>
               </div>
             </TableHeadCell>
-            <TableHeadCell>Ghi chú</TableHeadCell>
+            <TableHeadCell className="min-w-[160px]">Ghi chú</TableHeadCell>
             <TableHeadCell className="w-28" align="center">Thao tác</TableHeadCell>
           </TableHead>
           <TableBody>
@@ -3410,6 +3411,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   <td className="px-3 py-2.5 align-top">
                     <StatusBadge label={order.status} color="amber" />
                   </td>
+                  <td className="min-w-[140px] px-3 py-2.5 align-top text-xs font-semibold text-zinc-600">{order.note || '-'}</td>
                   <td className="px-3 py-2.5 align-top font-semibold text-zinc-700">{order.staffName}</td>
                   <td className="px-3 py-2.5 align-top font-bold text-zinc-800">{order.customer}</td>
                   <td className="px-3 py-2.5 align-top">
@@ -3463,7 +3465,15 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       })}
                     </div>
                   </td>
-                  <td className="px-3 py-2.5 align-top font-semibold text-zinc-500">{order.note || '-'}</td>
+                  <td className="min-w-[160px] px-3 py-2.5 align-top">
+                    <div className="divide-y divide-zinc-100">
+                      {getOrderProductLines(order).map((line, index) => (
+                        <div key={`${order.id}-note-${line.productCode}-${index}`} className="py-1.5 text-xs font-semibold text-zinc-600 first:pt-0 last:pb-0">
+                          {line.note?.trim() || '-'}
+                        </div>
+                      ))}
+                    </div>
+                  </td>
                   <td className="px-3 py-2.5 align-top">
                     <RowActionsMenu label={`Thao tác ${order.orderCode || 'đơn hàng'}`}>
                     <div className="flex items-center justify-center gap-1">
