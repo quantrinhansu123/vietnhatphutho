@@ -9022,58 +9022,60 @@ function splitProductionProductCodes(raw: string): string[] {
     .filter(code => code && code !== '-');
 }
 
-async function getRemainingProductionQuantityForProduct(
-  orderRef: string,
-  productCode: string
-): Promise<{ ordered: number; allocated: number; remaining: number }> {
-  if (!supabase || !orderRef || !productCode) {
-    return { ordered: 0, allocated: 0, remaining: 0 };
-  }
+/**
+ * Kiểm tra sản phẩm có SL đặt trên đơn. Một query cho mọi mã đơn trong lệnh,
+ * không đọc lại toàn bộ `lenh_sx` theo từng dòng.
+ * Trả về thông báo lỗi, hoặc null nếu mọi dòng hợp lệ.
+ */
+async function findMissingOrderedProduct(
+  products: OrderProductRecord[],
+  fallbackOrderRef: string
+): Promise<string | null> {
+  if (!supabase) return null;
 
-  const { data: orderRowsByCode, error: orderRowsError } = await supabase
+  const checks: Array<{ code: string; orderRef: string }> = [];
+  for (const product of products) {
+    const code = String(product.ma_sp || '').trim();
+    const orderRef = String(product.ma_don_hang ?? '').trim() || fallbackOrderRef;
+    if (!code || !orderRef) continue;
+    checks.push({ code, orderRef });
+  }
+  if (checks.length === 0) return null;
+
+  const refs = [...new Set(checks.map(item => item.orderRef))];
+  const { data, error } = await supabase
     .from(SUPABASE_ORDERS_TABLE)
-    .select('san_pham')
-    .eq('ma_don_hang', orderRef);
+    .select('ma_don_hang, san_pham')
+    .in('ma_don_hang', refs);
 
-  if (orderRowsError) {
-    console.error('Supabase don_hang remaining qty error:', orderRowsError);
-    throw new Error(`Không thể đọc sản phẩm của đơn ${orderRef}. ${orderRowsError.message}`);
+  if (error) {
+    console.error('Supabase don_hang remaining qty error:', error);
+    throw new Error(`Không thể đọc sản phẩm của đơn hàng. ${error.message}`);
   }
 
-  const ordered = (orderRowsByCode || []).reduce((sum, row) => {
-    return sum + getOrderedQuantityFromOrderRow(row as Record<string, unknown>, productCode);
-  }, 0);
-
-  const { data: productionRows, error: productionError } = await supabase
-    .from(SUPABASE_PRODUCTION_ORDERS_TABLE)
-    .select('ma_don_hang, ma_hang, so_luong, san_pham');
-
-  if (productionError) {
-    console.error('Supabase lenh_sx remaining qty error:', productionError);
-    return { ordered, allocated: 0, remaining: ordered };
+  const qtyByRef = new Map<string, Map<string, number>>();
+  for (const row of data || []) {
+    const record = row as Record<string, unknown>;
+    const ref = String(record.ma_don_hang ?? '').trim();
+    if (!ref) continue;
+    let qtyByCode = qtyByRef.get(ref);
+    if (!qtyByCode) {
+      qtyByCode = new Map();
+      qtyByRef.set(ref, qtyByCode);
+    }
+    for (const item of parseOrderProductsFromRow(record)) {
+      if (!item.ma_sp) continue;
+      qtyByCode.set(item.ma_sp, (qtyByCode.get(item.ma_sp) ?? 0) + (item.so_luong ?? 0));
+    }
   }
 
-  const allocated = (productionRows || []).reduce((sum, row) => {
-    const productionRow = row as Record<string, unknown>;
-    const rowOrderRefs = String(productionRow.ma_don_hang ?? '')
-      .split(',')
-      .map(item => item.trim())
-      .filter(Boolean);
-
-    return (
-      sum +
-      parseOrderProductsFromRow(productionRow).reduce((innerSum, item) => {
-        const itemOrderRef = String(item.ma_don_hang ?? '').trim();
-        const matchesOrder = itemOrderRef
-          ? itemOrderRef === orderRef
-          : rowOrderRefs.length === 0 || rowOrderRefs.includes(orderRef);
-        if (!matchesOrder || item.ma_sp !== productCode) return innerSum;
-        return innerSum + (item.so_luong ?? 0);
-      }, 0)
-    );
-  }, 0);
-
-  return { ordered, allocated, remaining: Math.max(0, ordered - allocated) };
+  for (const check of checks) {
+    const ordered = qtyByRef.get(check.orderRef)?.get(check.code) ?? 0;
+    if (ordered <= 0) {
+      return `Sản phẩm ${check.code} không có trong đơn ${check.orderRef} hoặc chưa có số lượng đặt hàng.`;
+    }
+  }
+  return null;
 }
 
 async function getReportsFromLocalFile(): Promise<ProductionReport[]> {
@@ -11667,17 +11669,9 @@ export function createApp() {
         }
       }
 
-      for (const product of orderProducts) {
-        const productCode = product.ma_sp;
-        const productOrderRef = String(product.ma_don_hang ?? '').trim() || orderRef;
-        if (!productOrderRef || !productCode) continue;
-
-        const { ordered } = await getRemainingProductionQuantityForProduct(productOrderRef, productCode);
-        if (ordered <= 0) {
-          return res.status(400).json({
-            error: `Sản phẩm ${productCode} không có trong đơn ${productOrderRef} hoặc chưa có số lượng đặt hàng.`
-          });
-        }
+      const missingOrderedProduct = await findMissingOrderedProduct(orderProducts, orderRef);
+      if (missingOrderedProduct) {
+        return res.status(400).json({ error: missingOrderedProduct });
       }
 
       // Ghi chú chung của đơn hàng chưa chuyển sang lệnh SX trước đây:
