@@ -3398,83 +3398,85 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             <TableHeadCell className="w-28" align="center">Thao tác</TableHeadCell>
           </TableHead>
           <TableBody>
-            {filteredOrders.map(order => (
+            {filteredOrders.map(order => {
+              const productLines = getOrderProductLines(order);
+              const rowSpan = Math.max(productLines.length, 1);
+              const lineRows = productLines.length > 0 ? productLines : [null];
+              return (
               <React.Fragment key={order.id}>
-                <TableRow>
-                  <td className="px-3 py-2.5 align-top font-black text-zinc-950">{order.orderCode || '-'}</td>
-                  <td className="whitespace-nowrap px-3 py-2.5 align-top font-mono text-xs font-semibold text-zinc-600">
+                {lineRows.map((line, index) => {
+                  const sizeText = line?.kho && line.daiM
+                    ? `${line.kho} × ${line.daiM}m`
+                    : line?.kho || line?.daiM
+                      ? `${line.kho || line.daiM}m`
+                      : '';
+                  const specText = line?.quyCach
+                    ? line.quyCach
+                    : line?.daiM
+                      ? `Dài ${line.daiM}m`
+                      : [line?.doLi, sizeText].filter(Boolean).join(' · ');
+                  const lineNote = line?.note?.trim() || '';
+                  return (
+                <TableRow key={`${order.id}-line-${index}`}>
+                  {index === 0 ? (
+                    <>
+                  <td rowSpan={rowSpan} className="px-3 py-2.5 align-top font-black text-zinc-950">{order.orderCode || '-'}</td>
+                  <td rowSpan={rowSpan} className="whitespace-nowrap px-3 py-2.5 align-top font-mono text-xs font-semibold text-zinc-600">
                     {formatOrderCreatedAt(order.createdAt)}
                   </td>
-                  <td className="w-24 min-w-24 whitespace-nowrap px-3 py-2.5 align-top">
+                  <td rowSpan={rowSpan} className="w-24 min-w-24 whitespace-nowrap px-3 py-2.5 align-top">
                     <StatusBadge label={order.orderType} color="rose" />
                   </td>
-                  <td className="px-3 py-2.5 align-top">
+                  <td rowSpan={rowSpan} className="px-3 py-2.5 align-top">
                     <StatusBadge label={order.status} color="amber" />
                   </td>
-                  <td className="min-w-[140px] px-3 py-2.5 align-top text-xs font-semibold text-zinc-600">{order.note || '-'}</td>
-                  <td className="px-3 py-2.5 align-top font-semibold text-zinc-700">{order.staffName}</td>
-                  <td className="px-3 py-2.5 align-top font-bold text-zinc-800">{order.customer}</td>
+                  <td rowSpan={rowSpan} className="min-w-[140px] px-3 py-2.5 align-top text-xs font-semibold text-zinc-600">{order.note || '-'}</td>
+                  <td rowSpan={rowSpan} className="px-3 py-2.5 align-top font-semibold text-zinc-700">{order.staffName}</td>
+                  <td rowSpan={rowSpan} className="px-3 py-2.5 align-top font-bold text-zinc-800">{order.customer}</td>
+                    </>
+                  ) : null}
                   <td className="px-3 py-2.5 align-top">
-                    <div className="divide-y divide-zinc-100">
-                      {getOrderProductLines(order).map((line, index) => {
-                        const sizeText = line.kho && line.daiM
-                          ? `${line.kho} × ${line.daiM}m`
-                          : line.kho || line.daiM
-                            ? `${line.kho || line.daiM}m`
-                            : '';
-                        const specText = line.quyCach
-                          ? line.quyCach
-                          : line.daiM
-                            ? `Dài ${line.daiM}m`
-                            : [line.doLi, sizeText].filter(Boolean).join(' · ');
-                        return (
-                          <div key={`${order.id}-${line.productCode}-${line.productName}-${index}`} className="py-1.5 first:pt-0 last:pb-0">
-                            <div className="grid grid-cols-[2rem_minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px_64px] gap-2 text-xs font-semibold text-zinc-700">
-                              <span className="font-black tabular-nums text-zinc-500">{line.stt || index + 1}</span>
-                              <span className="font-black text-zinc-950">{line.productCode || '-'}</span>
-                              <span className="text-zinc-800">{line.tenGhep || '-'}</span>
-                              <span className="text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
-                              <span className="font-bold text-zinc-600">{line.unit || '-'}</span>
-                              <span className="text-right font-mono font-bold text-amber-700" title="Tổng SL đã lập lệnh sản xuất cho dòng này">
-                                {formatNumber(getAllocatedQtyFromMap(allocatedQtyMap, order.orderCode, {
-                                  productId: line.productId,
-                                  productCode: line.productCode,
-                                  productionName: line.productionName,
-                                  tenGhep: line.tenGhep,
-                                  stt: duplicateLineStt(getOrderProductLines(order), index)
-                                }), 3)}
-                              </span>
-                            </div>
-                            {specText ? <div className="mt-0.5 text-[11px] font-semibold text-zinc-400">{specText}</div> : null}
-                            {positiveRegionTotal(line.soLuongBac, line.soLuongTrung, line.soLuongNam) !== null ? (
-                              <div className="mt-0.5 text-[11px] font-bold text-sky-700">
-                                Bắc {line.soLuongBac || 0} · Trung {line.soLuongTrung || 0} · Nam {line.soLuongNam || 0}
-                              </div>
-                            ) : null}
-                            {line.conversionResults && line.conversionResults.length > 0 ? (
-                              <div className="mt-1 flex flex-wrap gap-1">
-                                {line.conversionResults.filter(r => r.unit !== 'kg/1 SP').map(r => (
-                                  <span key={r.unit} className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
-                                    {formatNumber(r.value, 3)} {r.unit}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </td>
-                  <td className="min-w-[160px] px-3 py-2.5 align-top">
-                    <div className="divide-y divide-zinc-100">
-                      {getOrderProductLines(order).map((line, index) => (
-                        <div key={`${order.id}-note-${line.productCode}-${index}`} className="py-1.5 text-xs font-semibold text-zinc-600 first:pt-0 last:pb-0">
-                          {line.note?.trim() || '-'}
+                    {line ? (
+                      <>
+                        <div className="grid grid-cols-[2rem_minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px_64px] gap-2 text-xs font-semibold text-zinc-700">
+                          <span className="font-black tabular-nums text-zinc-500">{line.stt || index + 1}</span>
+                          <span className="font-black text-zinc-950">{line.productCode || '-'}</span>
+                          <span className="text-zinc-800">{line.tenGhep || '-'}</span>
+                          <span className="text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
+                          <span className="font-bold text-zinc-600">{line.unit || '-'}</span>
+                          <span className="text-right font-mono font-bold text-amber-700" title="Tổng SL đã lập lệnh sản xuất cho dòng này">
+                            {formatNumber(getAllocatedQtyFromMap(allocatedQtyMap, order.orderCode, {
+                              productId: line.productId,
+                              productCode: line.productCode,
+                              productionName: line.productionName,
+                              tenGhep: line.tenGhep,
+                              stt: duplicateLineStt(productLines, index)
+                            }), 3)}
+                          </span>
                         </div>
-                      ))}
-                    </div>
+                        {specText ? <div className="mt-0.5 text-[11px] font-semibold text-zinc-400">{specText}</div> : null}
+                        {positiveRegionTotal(line.soLuongBac, line.soLuongTrung, line.soLuongNam) !== null ? (
+                          <div className="mt-0.5 text-[11px] font-bold text-sky-700">
+                            Bắc {line.soLuongBac || 0} · Trung {line.soLuongTrung || 0} · Nam {line.soLuongNam || 0}
+                          </div>
+                        ) : null}
+                        {line.conversionResults && line.conversionResults.length > 0 ? (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {line.conversionResults.filter(r => r.unit !== 'kg/1 SP').map(r => (
+                              <span key={r.unit} className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                                {formatNumber(r.value, 3)} {r.unit}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : '-'}
                   </td>
-                  <td className="px-3 py-2.5 align-top">
+                  <td className="min-w-[160px] px-3 py-2.5 align-top text-xs font-semibold text-zinc-600">
+                    {lineNote || '-'}
+                  </td>
+                  {index === 0 ? (
+                  <td rowSpan={rowSpan} className="px-3 py-2.5 align-top">
                     <RowActionsMenu label={`Thao tác ${order.orderCode || 'đơn hàng'}`}>
                     <div className="flex items-center justify-center gap-1">
                       <button
@@ -3551,12 +3553,16 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                     </div>
                     </RowActionsMenu>
                   </td>
+                  ) : null}
                 </TableRow>
+                  );
+                })}
               </React.Fragment>
-            ))}
+              );
+            })}
 
             {!isLoadingOrders && filteredOrders.length === 0 && (
-              <TableEmptyRow colSpan={9}>
+              <TableEmptyRow colSpan={10}>
                 {showDeleted
                   ? 'Không có đơn hàng đã xóa.'
                   : 'Bảng don_hang chưa có dữ liệu hoặc không có đơn phù hợp bộ lọc.'}
