@@ -859,8 +859,35 @@ export function resolveCutOrderLineUnit(
 ): string {
   const units = allowedOrderUnits(product);
   if (units.length > 1) {
-    const picked = lineUnit.trim();
-    return units.includes(picked) ? picked : units[0];
+    const picked = normalizeLookupText(lineUnit);
+    return units.find(unit => normalizeLookupText(unit) === picked) || units[0];
   }
   return 'Tấm';
+}
+
+/**
+ * SP dùng để chọn ĐVT khi sửa đơn. Tên sản xuất trên dòng có thể đã đổi (tem, độ li)
+ * nên không còn khớp danh mục — vẫn lấy nhóm theo id hoặc mã đã lưu.
+ */
+export function orderUnitProductFromCatalog(
+  products: OrderProductOption[],
+  line: { productId?: string; productCode?: string; productName?: string }
+): OrderProductOption | null {
+  const id = String(line.productId || '').trim();
+  if (id) {
+    const byId = products.find(product => product.id === id);
+    if (byId) return byId;
+  }
+  const code = String(line.productCode || '').trim().toLocaleLowerCase('vi');
+  if (!code) return null;
+  const name = String(line.productName || '').trim();
+  const same = products.filter(product =>
+    (product.code.trim().toLocaleLowerCase('vi') === code ||
+      product.newCode.trim().toLocaleLowerCase('vi') === code) &&
+    (!name || product.name.trim() === name)
+  );
+  if (same.length === 1) return same[0];
+  const kinds = new Set(same.map(product => classifyProductGroupKind(product.group)));
+  if (same.length > 1 && kinds.size === 1) return same[0];
+  return null;
 }

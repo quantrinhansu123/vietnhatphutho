@@ -35,6 +35,7 @@ import {
   extractProductWidth,
   conversionSupportsUnit,
   allowedOrderUnits,
+  orderUnitProductFromCatalog,
   resolveCutOrderLineUnit,
   isCuonProduct,
   isTamProduct,
@@ -124,6 +125,12 @@ const CUSTOMER_ENTERED_KG_SOURCE = 'khach_hang_nhap_kg';
 const DINH_MUC_KG_SOURCE = 'dinh_muc';
 /** Ô Tìm Mã AMIS: hiện tối đa 400 kết quả đã lọc. Các Select khác vẫn mặc định 50. */
 const ORDER_AMIS_SEARCH_MAX_RESULTS = 400;
+
+/** Ô Mã AMIS: mã + tên sản xuất (không hiện tên sản phẩm). */
+function orderAmisOptionLabel(product: OrderProductOption) {
+  const productionName = product.productionName.trim();
+  return productionName ? `${product.code} - ${productionName}` : product.code;
+}
 export {
   parseOrderProductsFromRecord,
   summarizeOrderProducts,
@@ -2587,8 +2594,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         ? (namQty !== null && namQty > 0 ? namQty : null)
                         : positiveRegionTotal(line.slBac, line.slTrung, line.slNam);
                       const cutEffectiveQty = cutRegionTotal !== null ? String(cutRegionTotal) : '0';
-                      const cutAllowedUnits = allowedOrderUnits(matchedLineProduct);
-                      const cutEffectiveUnit = resolveCutOrderLineUnit(matchedLineProduct, line.unit);
+                      const unitProduct = matchedLineProduct ?? orderUnitProductFromCatalog(productOptions, line);
+                      const cutAllowedUnits = allowedOrderUnits(unitProduct);
+                      const cutEffectiveUnit = resolveCutOrderLineUnit(unitProduct, line.unit);
                       // Nhựa sóng: khổ cố định theo danh mục — khóa ô Khổ rộng (vẫn lưu `kho` =
                       // khổ chuẩn danh mục vào thông tin; không hiện trong tên ghép / Mã AMIS).
                       const isSongOrderLine = classifyProductPxGroup(matchedLineProduct?.group || '') === 'song';
@@ -2658,14 +2666,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               const product = item as OrderProductOption;
                               return `${product.code} ${product.name} ${product.productionName}`;
                             }}
-                            getLabel={item => {
-                              const product = item as OrderProductOption;
-                              return product.code;
-                            }}
-                            getOptionLabel={item => {
-                              const product = item as OrderProductOption;
-                              return `${product.code}${product.name ? ` - ${product.name}` : ''}`;
-                            }}
+                            getLabel={item => orderAmisOptionLabel(item as OrderProductOption)}
+                            getOptionLabel={item => orderAmisOptionLabel(item as OrderProductOption)}
                             resolveSelectedItem={(options, value) => findOrderProductById(options as OrderProductOption[], value)}
                           />
                         </div>
@@ -2673,7 +2675,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           {renderProductionNameSelect(line)}
                         </div>
                         <div className="col-span-1 min-w-0">
-                          {matchedLineProduct && cutAllowedUnits.length > 1 ? (
+                          {unitProduct && cutAllowedUnits.length > 1 ? (
                             <select
                               value={cutEffectiveUnit}
                               onChange={e => updateConversionProductLine(line.key, { unit: e.target.value, manualTongKg: false, tongKg: '', dinhMucKg: '' })}
@@ -2684,7 +2686,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             </select>
                           ) : (
                             <input
-                              value="Tấm"
+                              value={cutEffectiveUnit || 'Tấm'}
                               readOnly
                               className={`${orderFieldClass} bg-zinc-100 text-center font-bold text-zinc-600`}
                             />
@@ -2983,14 +2985,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             const product = item as OrderProductOption;
                             return `${product.code} ${product.name} ${product.productionName}`;
                           }}
-                          getLabel={item => {
-                            const product = item as OrderProductOption;
-                            return product.code;
-                          }}
-                          getOptionLabel={item => {
-                            const product = item as OrderProductOption;
-                            return `${product.code}${product.name ? ` - ${product.name}` : ''}`;
-                          }}
+                          getLabel={item => orderAmisOptionLabel(item as OrderProductOption)}
+                          getOptionLabel={item => orderAmisOptionLabel(item as OrderProductOption)}
                           resolveSelectedItem={(options, value) => findOrderProductById(options as OrderProductOption[], value)}
                         />
                       </div>

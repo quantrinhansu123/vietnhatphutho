@@ -8,8 +8,10 @@ import {
   allowedOrderUnits,
   calculateOrderConversion,
   classifyProductGroupKind,
+  orderUnitProductFromCatalog,
   resolveCutOrderLineUnit,
-  type OrderProductConversion
+  type OrderProductConversion,
+  type OrderProductOption
 } from '../../src/features/_shared/orderHelpers';
 
 const conv: OrderProductConversion = {
@@ -64,12 +66,27 @@ describe('don-hang — ĐVT SP Đặc', () => {
 
   it('đơn cắt/miền nam: SP Đặc giữ Cuộn, còn lại về Tấm', () => {
     assert.equal(resolveCutOrderLineUnit({ group: 'TP; PX Đặc', unit: '' }, 'Cuộn'), 'Cuộn');
+    assert.equal(resolveCutOrderLineUnit({ group: 'TP; PX Đặc', unit: '' }, 'cuộn'), 'Cuộn');
     assert.equal(resolveCutOrderLineUnit({ group: 'TP; PX Đặc', unit: '' }, ''), 'Tấm');
     assert.equal(resolveCutOrderLineUnit({ group: 'TP; PX Đặc', unit: '' }, 'kg'), 'Tấm');
     assert.equal(resolveCutOrderLineUnit({ group: 'TP; PX Sóng', unit: '' }, 'Cuộn'), 'Cuộn');
     assert.equal(resolveCutOrderLineUnit({ group: 'TP; PX Rỗng', unit: '' }, 'Cuộn'), 'Tấm');
     assert.equal(resolveCutOrderLineUnit({ group: 'TP; PX Thường', unit: '' }, 'Cuộn'), 'Tấm');
     assert.equal(resolveCutOrderLineUnit(null, 'Cuộn'), 'Tấm');
+  });
+
+  it('sửa đơn vẫn nhận Đặc khi tên sản xuất đã đổi', () => {
+    const products = [
+      { id: 'dac-1', code: 'STD06', newCode: '', name: 'Tấm đặc', productionName: 'Tên gốc', tenGhep: '', group: 'TP; PX Đặc', unit: 'Tấm' },
+      { id: 'dac-2', code: 'STD06', newCode: '', name: 'Tấm đặc', productionName: 'Tên gốc ECO', tenGhep: '', group: 'TP; PX Đặc', unit: 'Tấm' }
+    ] as OrderProductOption[];
+    const found = orderUnitProductFromCatalog(products, {
+      productId: 'dac-2',
+      productCode: 'STD06',
+      productName: 'Tấm đặc'
+    });
+    assert.equal(found?.id, 'dac-2');
+    assert.deepEqual(allowedOrderUnits(found), ['Tấm', 'Cuộn']);
   });
 
   it('quy đổi nhóm Đặc ra kg/m2/m dài', () => {
