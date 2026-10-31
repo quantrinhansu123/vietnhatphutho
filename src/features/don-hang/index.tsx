@@ -640,17 +640,20 @@ export function orderProductLinesToPayload(
     .filter(line => line.productCode.trim() || line.productName.trim())
     .map((line, index) => {
       const selectedProduct = resolveOrderLineProduct(productOptions, line);
+      // Tên sản xuất trên dòng sửa thường không còn khớp danh mục. ĐVT vẫn lấy nhóm theo id/mã
+      // để lựa chọn Cuộn không bị ghi lại thành Tấm.
+      const unitProduct = selectedProduct ?? (isCutLikeOrder ? orderUnitProductFromCatalog(productOptions, line) : null);
       const resolved = resolveOrderProductFields(productOptions, line.productCode, {
         productName: line.productName,
         unit: line.unit
       });
       const productCode = line.productCode.trim();
       const productName = selectedProduct?.name || resolved.productName || line.productName.trim();
-      const allowedUnits = selectedProduct ? allowedOrderUnits(selectedProduct) : [];
+      const allowedUnits = unitProduct ? allowedOrderUnits(unitProduct) : [];
       // Đơn cắt/miền nam: mặc định Tấm; SP Đặc/Sóng giữ lựa chọn Tấm/Cuộn trên form.
       const unit = isCutLikeOrder
-        ? resolveCutOrderLineUnit(selectedProduct, line.unit)
-        : selectedProduct
+        ? resolveCutOrderLineUnit(unitProduct, line.unit)
+        : unitProduct
           ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
           : line.unit.trim() || resolved.unit;
       const bacVal = readOptionalRegionQty(line.slBac);
@@ -886,7 +889,7 @@ export function orderProductLinesToPayload(
           ten_sp: line.productName.trim(),
           ten_san_xuat: tenSanXuat,
           ...(tenGhep ? { ten_ghep: tenGhep } : {}),
-          don_vi: line.unit.trim() || resolved.unit,
+          don_vi: unit,
           so_luong: Number.isFinite(quantity) && quantity > 0 ? quantity : null,
           ghi_chu: note || undefined,
           stt: index + 1,

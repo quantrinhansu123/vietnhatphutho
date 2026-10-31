@@ -852,15 +852,19 @@ export function findCutOrderLineMissingKg(
 /**
  * ĐVT dòng đơn cắt/miền nam: mặc định `Tấm`; SP có nhiều ĐVT (Đặc/Sóng →
  * `Tấm`/`Cuộn`) thì giữ lựa chọn trên form, sai thì về `Tấm`.
+ * Chưa khớp được danh mục thì giữ Tấm/Cuộn người dùng đã chọn, không ép về Tấm.
  */
 export function resolveCutOrderLineUnit(
   product: Pick<OrderProductOption, 'group' | 'unit'> | null,
   lineUnit: string
 ): string {
   const units = allowedOrderUnits(product);
+  const picked = normalizeLookupText(lineUnit);
   if (units.length > 1) {
-    const picked = normalizeLookupText(lineUnit);
     return units.find(unit => normalizeLookupText(unit) === picked) || units[0];
+  }
+  if (!product && (picked === 'cuon' || picked === 'tam')) {
+    return picked === 'cuon' ? 'Cuộn' : 'Tấm';
   }
   return 'Tấm';
 }

@@ -72,7 +72,8 @@ describe('don-hang — ĐVT SP Đặc', () => {
     assert.equal(resolveCutOrderLineUnit({ group: 'TP; PX Sóng', unit: '' }, 'Cuộn'), 'Cuộn');
     assert.equal(resolveCutOrderLineUnit({ group: 'TP; PX Rỗng', unit: '' }, 'Cuộn'), 'Tấm');
     assert.equal(resolveCutOrderLineUnit({ group: 'TP; PX Thường', unit: '' }, 'Cuộn'), 'Tấm');
-    assert.equal(resolveCutOrderLineUnit(null, 'Cuộn'), 'Tấm');
+    assert.equal(resolveCutOrderLineUnit(null, 'Cuộn'), 'Cuộn');
+    assert.equal(resolveCutOrderLineUnit(null, 'Tấm'), 'Tấm');
   });
 
   it('sửa đơn vẫn nhận Đặc khi tên sản xuất đã đổi', () => {
@@ -87,6 +88,7 @@ describe('don-hang — ĐVT SP Đặc', () => {
     });
     assert.equal(found?.id, 'dac-2');
     assert.deepEqual(allowedOrderUnits(found), ['Tấm', 'Cuộn']);
+    assert.equal(resolveCutOrderLineUnit(found, 'Cuộn'), 'Cuộn');
   });
 
   it('quy đổi nhóm Đặc ra kg/m2/m dài', () => {
