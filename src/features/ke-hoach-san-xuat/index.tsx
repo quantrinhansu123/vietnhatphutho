@@ -4953,6 +4953,49 @@ export function getOrderProductQuantity(
     }, 0);
 }
 
+type AllocatedProductionLine = {
+  productCode: string;
+  productId: string;
+  productionName: string;
+  quantity: number;
+};
+
+/** Gom SL đã lập lệnh theo mã đơn, một lần duyệt — tránh quét lại toàn bộ lệnh theo từng sản phẩm. */
+function buildAllocatedLinesByOrder(productionOrders: ProductionOrderRow[]) {
+  const map = new Map<string, AllocatedProductionLine[]>();
+  for (const po of productionOrders) {
+    const fallbackRef = String(po.orderRef || '').trim();
+    for (const line of getProductionOrderProductLines(po)) {
+      const orderRef = String(line.orderRef || fallbackRef).trim();
+      if (!orderRef) continue;
+      const entry: AllocatedProductionLine = {
+        productCode: line.productCode,
+        productId: line.productId || '',
+        productionName: line.productionName || '',
+        quantity: parseRowQuantity(line.quantity)
+      };
+      const bucket = map.get(orderRef);
+      if (bucket) bucket.push(entry);
+      else map.set(orderRef, [entry]);
+    }
+  }
+  return map;
+}
+
+function sumAllocatedLines(
+  lines: AllocatedProductionLine[] | undefined,
+  productCode: string,
+  productId = '',
+  productionName = ''
+) {
+  if (!lines || lines.length === 0) return 0;
+  let sum = 0;
+  for (const line of lines) {
+    if (productLineMatches(line, productCode, productId, productionName)) sum += line.quantity;
+  }
+  return sum;
+}
+
 export function getAllocatedProductionQuantity(
   productionOrders: ProductionOrderRow[],
   orderRef: string,
@@ -4960,19 +5003,12 @@ export function getAllocatedProductionQuantity(
   productId = '',
   productionName = ''
 ): number {
-  return productionOrders
-    .reduce((sum, po) => {
-      return (
-        sum +
-        getProductionOrderProductLines(po)
-          .filter(
-            line =>
-              (line.orderRef || po.orderRef) === orderRef &&
-              productLineMatches(line, productCode, productId, productionName)
-          )
-          .reduce((lineSum, line) => lineSum + parseRowQuantity(line.quantity), 0)
-      );
-    }, 0);
+  return sumAllocatedLines(
+    buildAllocatedLinesByOrder(productionOrders).get(orderRef.trim()),
+    productCode,
+    productId,
+    productionName
+  );
 }
 
 export function getRemainingProductionQuantity(
@@ -5325,21 +5361,25 @@ export function listProductOptionsForOrder(
     });
   }
 
+  const catalogById = new Map<string, ProductRow>();
+  for (const product of catalogProducts) {
+    if (product.id) catalogById.set(product.id, product);
+  }
+  const allocatedLines = buildAllocatedLinesByOrder(productionOrders).get(orderRef.trim()) ?? [];
   const orderedBeforeByProduct = new Map<string, number>();
   return fromOrders.map(meta => {
       const sourceProductId = meta.productId?.trim() || '';
       const catalogProduct = sourceProductId
-        ? catalogProducts.find(product => product.id === sourceProductId)
-        : (isUuidLike(meta.code) ? catalogProducts.find(product => product.id === meta.code) : undefined);
+        ? catalogById.get(sourceProductId)
+        : (isUuidLike(meta.code) ? catalogById.get(meta.code) : undefined);
       const code = resolveActualProductCode(meta.code, sourceProductId, catalogProducts) || meta.code;
       const productIdentity = sourceProductId
         ? `id:${sourceProductId}`
         : `code:${normalizeProductCodeKey(code)}::${meta.productionName.trim().toLowerCase()}`;
       const orderQty = parseRowQuantity(meta.line.quantity);
       const orderedBefore = orderedBeforeByProduct.get(productIdentity) ?? 0;
-      const allocatedQty = getAllocatedProductionQuantity(
-        productionOrders,
-        orderRef,
+      const allocatedQty = sumAllocatedLines(
+        allocatedLines,
         code,
         sourceProductId,
         meta.productionName
@@ -5370,6 +5410,21 @@ export function listProductOptionsForOrder(
         }
       };
     });
+}
+
+function productOptionsForOrderRefs(
+  orderRefs: string[],
+  orders: OrderRow[],
+  productionOrders: ProductionOrderRow[],
+  catalogProducts: ProductRow[]
+) {
+  const map = new Map<string, ReturnType<typeof listProductOptionsForOrder>>();
+  for (const raw of orderRefs) {
+    const ref = raw.trim();
+    if (!ref || map.has(ref)) continue;
+    map.set(ref, listProductOptionsForOrder(orders, productionOrders, catalogProducts, ref));
+  }
+  return map;
 }
 
 export type ProductionOrderEntryLine = {
@@ -5725,24 +5780,33 @@ export function AddProductionOrderModal({
   }, []);
 
   /** Đơn còn SL chưa lập lệnh — không lọc theo Ngày bắt đầu: hiện mọi đơn chưa đủ SX / chưa có lệnh. */
-  const selectOrdersWithRemainingQty = (list: typeof orders) =>
-    list.filter(order =>
-      getOrderProductLines(order).some(line => {
+  const selectOrdersWithRemainingQty = (list: typeof orders) => {
+    const allocatedByOrder = buildAllocatedLinesByOrder(productionOrders);
+    const linesByCode = new Map<string, ReturnType<typeof getOrderProductLines>>();
+    for (const order of orders) {
+      if (!order.orderCode) continue;
+      const lines = getOrderProductLines(order);
+      const existing = linesByCode.get(order.orderCode);
+      if (existing) existing.push(...lines);
+      else linesByCode.set(order.orderCode, [...lines]);
+    }
+    return list.filter(order => {
+      const lines = linesByCode.get(order.orderCode) ?? [];
+      const allocated = allocatedByOrder.get(order.orderCode);
+      return lines.some(line => {
         const productCode = line.productCode?.trim();
-        return (
-          Boolean(productCode) &&
-          productCode !== '-' &&
-          getOrderProductQuantity(orders, order.orderCode, productCode, line.productId) > 0 &&
-          getRemainingProductionQuantity(
-            orders,
-            productionOrders,
-            order.orderCode,
-            productCode,
-            line.productId
-          ) > 0
-        );
-      })
-    );
+        if (!productCode || productCode === '-') return false;
+        let ordered = 0;
+        for (const item of lines) {
+          if (productLineMatches(item, productCode, line.productId || '')) {
+            ordered += parseRowQuantity(item.quantity);
+          }
+        }
+        if (ordered <= 0) return false;
+        return ordered - sumAllocatedLines(allocated, productCode, line.productId || '') > 0;
+      });
+    });
+  };
 
   const ordersWithProductionProducts = useMemo(
     () => selectOrdersWithRemainingQty(orders),
@@ -5771,6 +5835,17 @@ export function AddProductionOrderModal({
         form.entryLines.map(line => line.orderRef)
       ),
     [orders, form.entryLines]
+  );
+
+  const entryOrderRefKey = form.entryLines.map(line => line.orderRef.trim()).join('\n');
+  const productOptionsByOrderRef = useMemo(
+    () => productOptionsForOrderRefs(
+      [...entryOrderRefKey.split('\n'), lineDraftOrderRef],
+      orders,
+      productionOrders,
+      catalogProducts
+    ),
+    [entryOrderRefKey, lineDraftOrderRef, orders, productionOrders, catalogProducts]
   );
 
   const shiftOptions = useMemo(() => {
@@ -6555,12 +6630,7 @@ export function AddProductionOrderModal({
                   {form.entryLines.map((line, index) => {
                     const isDragged = dragProductIndex === index;
                     const isTarget = dragProductIndex !== null && dragOverProductIndex === index && dragProductIndex !== index;
-                    const productOptions = listProductOptionsForOrder(
-                      orders,
-                      productionOrders,
-                      catalogProducts,
-                      line.orderRef
-                    );
+                    const productOptions = productOptionsByOrderRef.get(line.orderRef.trim()) ?? [];
                     const resolvedLineProductCode = resolveActualProductCode(
                       line.productCode,
                       line.productId,
@@ -7235,20 +7305,11 @@ export function AddProductionOrderModal({
                   value={lineDraftProductCode}
                   onChange={optionKey => {
                     setLineDraftProductCode(optionKey);
-                    const product = listProductOptionsForOrder(
-                      orders,
-                      productionOrders,
-                      catalogProducts,
-                      lineDraftOrderRef
-                    ).find(item => item.optionKey === optionKey);
+                    const product = (productOptionsByOrderRef.get(lineDraftOrderRef.trim()) ?? [])
+                      .find(item => item.optionKey === optionKey);
                     setLineDraftQuantity(product?.orderQty > 0 ? String(product.orderQty) : '');
                   }}
-                  options={listProductOptionsForOrder(
-                    orders,
-                    productionOrders,
-                    catalogProducts,
-                    lineDraftOrderRef
-                  )}
+                  options={productOptionsByOrderRef.get(lineDraftOrderRef.trim()) ?? []}
                   placeholder={lineDraftOrderRef ? 'Gõ để tìm mã hàng' : 'Chọn đơn trước'}
                   disabled={!lineDraftOrderRef}
                   isLoading={isLoadingLookups}
@@ -8201,6 +8262,17 @@ export function EditProductionOrderModal({
     setDragOverProductIndex(null);
   };
 
+  const editEntryOrderRefKey = form.entryLines.map(line => line.orderRef.trim()).join('\n');
+  const productOptionsByOrderRef = useMemo(
+    () => productOptionsForOrderRefs(
+      editEntryOrderRefKey.split('\n'),
+      orders,
+      productionOrders,
+      catalogProducts
+    ),
+    [editEntryOrderRefKey, orders, productionOrders, catalogProducts]
+  );
+
   if (!open || !row) return null;
 
   const handleSubmit = async () => {
@@ -8407,12 +8479,7 @@ export function EditProductionOrderModal({
                   {form.entryLines.map((line, index) => {
                     const isDragged = dragProductIndex === index;
                     const isTarget = dragProductIndex !== null && dragOverProductIndex === index && dragProductIndex !== index;
-                    const productOptions = listProductOptionsForOrder(
-                      orders,
-                      productionOrders,
-                      catalogProducts,
-                      line.orderRef
-                    );
+                    const productOptions = productOptionsByOrderRef.get(line.orderRef.trim()) ?? [];
                     const resolvedLineProductCode = resolveActualProductCode(
                       line.productCode,
                       line.productId,
