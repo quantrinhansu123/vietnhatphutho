@@ -126,7 +126,7 @@ const DINH_MUC_KG_SOURCE = 'dinh_muc';
 /** Ô Tìm Mã AMIS: hiện tối đa 400 kết quả đã lọc. Các Select khác vẫn mặc định 50. */
 const ORDER_AMIS_SEARCH_MAX_RESULTS = 400;
 
-/** Ô Mã AMIS: mã + tên sản xuất (không hiện tên sản phẩm). */
+/** Danh sách tìm Mã AMIS: mã + tên sản xuất; ô đã chọn chỉ hiện mã. */
 function orderAmisOptionLabel(product: OrderProductOption) {
   const productionName = product.productionName.trim();
   return productionName ? `${product.code} - ${productionName}` : product.code;
@@ -2669,7 +2669,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               const product = item as OrderProductOption;
                               return `${product.code} ${product.name} ${product.productionName}`;
                             }}
-                            getLabel={item => orderAmisOptionLabel(item as OrderProductOption)}
+                            getLabel={item => (item as OrderProductOption).code}
                             getOptionLabel={item => orderAmisOptionLabel(item as OrderProductOption)}
                             resolveSelectedItem={(options, value) => findOrderProductById(options as OrderProductOption[], value)}
                           />
@@ -2988,7 +2988,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             const product = item as OrderProductOption;
                             return `${product.code} ${product.name} ${product.productionName}`;
                           }}
-                          getLabel={item => orderAmisOptionLabel(item as OrderProductOption)}
+                          getLabel={item => (item as OrderProductOption).code}
                           getOptionLabel={item => orderAmisOptionLabel(item as OrderProductOption)}
                           resolveSelectedItem={(options, value) => findOrderProductById(options as OrderProductOption[], value)}
                         />
