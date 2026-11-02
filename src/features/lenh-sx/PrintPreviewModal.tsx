@@ -7,7 +7,6 @@ import {
   formatProductionOrderPrintDate,
   type ProductionOrderRow
 } from '../ke-hoach-san-xuat';
-import { splitProductNameAndNote } from '../ke-hoach-san-xuat/PrintPreviewModal';
 import { isCuonProduct, isTamProduct } from '../_shared/orderHelpers';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from '../../components/layout/constants';
 import { buildOrderGeneralNotesText } from '../_shared/orderRecordHelpers';
@@ -352,8 +351,7 @@ export function ProductionOrderPrintPreviewModal({
       const overLimit = totalSlsx > row.so_luong + 0.0001;
 
       const tongTl = calculateTotalWeightByUnit(row);
-
-      const { name } = splitProductNameAndNote(row.ten_san_xuat || row.ten_ghep);
+      const productName = String(row.ten_ghep || row.ten_san_xuat || row.ten_sp || '').trim() || '-';
 
       return {
         ...row,
@@ -364,7 +362,7 @@ export function ProductionOrderPrintPreviewModal({
         totalSlsx,
         overLimit,
         tongTl,
-        productName: name || row.ten_san_xuat || row.ten_ghep || row.ten_sp || '-'
+        productName
       };
     });
   }, [rows, edits]);
@@ -690,7 +688,7 @@ export function ProductionOrderPrintPreviewModal({
                                 {row.ma_don_hang || '—'}
                               </td>
                               <td className={`${bodyCell} break-words font-semibold text-zinc-900`}>
-                                {row.ten_san_xuat || row.ten_ghep || row.ten_sp || '—'}
+                                {row.productName || row.ten_ghep || row.ten_san_xuat || row.ten_sp || '—'}
                               </td>
                               <td className={bodyCell}>
                                 <AutoGrowNoteTextarea
@@ -717,14 +715,14 @@ export function ProductionOrderPrintPreviewModal({
                                         extractBareNoteText(note.ghi_chu, {
                                           orderCode: note.ma_don_hang || row.ma_don_hang,
                                           productCode: note.ma_sp || row.ma_sp,
-                                          tenGhep: note.ten_ghep || row.ten_san_xuat || row.ten_ghep
+                                          tenGhep: note.ten_ghep || row.ten_ghep || row.ten_san_xuat
                                         })
                                       )
                                     : [
                                         extractBareNoteText(row.ghi_chu, {
                                           orderCode: row.ma_don_hang,
                                           productCode: row.ma_sp,
-                                          tenGhep: row.ten_san_xuat || row.ten_ghep
+                                          tenGhep: row.ten_ghep || row.ten_san_xuat
                                         })
                                       ];
                                   const uniqueBareNotes = [...new Set(bareNotes.map(line => line.trim()).filter(Boolean))];
