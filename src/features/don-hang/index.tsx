@@ -2163,7 +2163,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         if (line.unit.trim()) saveUnitSuggestion(line.unit.trim());
       });
 
-      closeForm();
+      if (!isEdit) closeForm();
       setActionMessage(isEdit ? 'Đã cập nhật đơn hàng.' : 'Đã thêm đơn hàng mới.');
       await loadOrders();
     } catch (error: any) {
