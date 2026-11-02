@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTabAccess } from '../../app/useTabAccess';
 import { AlertTriangle, Loader2, Printer, Save, X } from 'lucide-react';
-import { formatProductionNameWithLength } from '../_shared/productionProductHelpers';
 import { isCuonProduct, isTamProduct } from '../_shared/orderHelpers';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from '../../components/layout/constants';
 
@@ -147,11 +146,9 @@ export function ProductionPlanPrintPreviewModal({
           san_pham_id: r.san_pham_id || null,
           item_index: Number(r.item_index) || idx,
           ten_sp: String(r.ten_sp || '').trim(),
-          ten_san_xuat: formatProductionNameWithLength(
-            String(r.ten_san_xuat || r.productionName || r.ten_sp || r.ten_hang || r.ten_san_pham || r.productName || '').trim(),
-            Number(r.quy_cach_m_dai) > 0 ? Number(r.quy_cach_m_dai) : undefined,
-            { tenGhep: String(r.ten_ghep || r.tenGhep || '').trim() || undefined }
-          ),
+          ten_san_xuat: String(
+            r.ten_ghep || r.tenGhep || r.ten_san_xuat || r.productionName || r.ten_sp || r.ten_hang || r.ten_san_pham || r.productName || ''
+          ).trim(),
           don_vi: String(r.don_vi || '').trim(),
           slsx_bac: Number(r.slsx_bac) || 0,
           slsx_trung: Number(r.slsx_trung) || 0,
@@ -208,10 +205,7 @@ export function ProductionPlanPrintPreviewModal({
         totalSlsx,
         overLimit,
         tongTl,
-        productName: formatProductionNameWithLength(
-          row.ten_san_xuat || row.ten_sp || '',
-          row.quy_cach_m_dai ?? undefined
-        )
+        productName: row.ten_san_xuat || row.ten_sp || '—'
       };
     });
   }, [rows, edits]);
