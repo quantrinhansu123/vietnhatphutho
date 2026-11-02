@@ -21,6 +21,7 @@ import { normalizeAssignablePositions } from './src/features/cai-dat-thoi-gian/s
 import { isExternalStaffCode, resolveScheduleStaffName } from './src/utils/externalStaff';
 import { calculateProductConversionFormulas, roundImportedConversionWeight } from './src/utils/productConversionCalculation';
 import { truncateTo3Decimals } from './src/utils/weightTruncate';
+import { readProductActor, type ProductActor } from './src/utils/productActor';
 import {
   aggregateNhapKhoProducts,
   computeThanhPhamPeriodBalances,
@@ -2891,28 +2892,6 @@ function parseProductPatchBody(
   }
 
   return { record };
-}
-
-type ProductActor = { id: string; username: string; name: string };
-
-function readProductActor(req: { headers?: Record<string, unknown> }): ProductActor {
-  const headers = req.headers || {};
-  const pick = (key: string) => {
-    const raw = headers[key] ?? headers[key.toLowerCase()];
-    if (Array.isArray(raw)) return String(raw[0] ?? '').trim();
-    return String(raw ?? '').trim();
-  };
-  const id = pick('x-actor-id');
-  const username = pick('x-actor-username');
-  const name = pick('x-actor-name');
-  if (!id && !username && !name) {
-    return { id: '', username: 'unknown', name: 'Không rõ' };
-  }
-  return {
-    id,
-    username: username || id || 'unknown',
-    name: name || username || id || 'Không rõ'
-  };
 }
 
 const PRODUCT_AUDIT_FIELD_LABELS: Record<string, string> = {

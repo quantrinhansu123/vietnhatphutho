@@ -19,7 +19,7 @@
 | DELETE | `/api/san-pham` | ~7626 |
 | POST | `/api/kiem-kho/dong-bo-ton-dau` | Đồng bộ phiếu kiểm kho vào `ton_dau_ky` |
 
-**Audit log:** client gửi header `X-Actor-Id` / `X-Actor-Username` / `X-Actor-Name` (`src/utils/productActorHeaders.ts`). Server ghi `san_pham_audit_log` (action + `changes` jsonb field→`{old,new,label}`) và stamp `created_by_*` / `updated_by_*` trên `san_pham` nếu đã chạy migration. UI form sửa SP: khối **Lịch sử thao tác**.
+**Audit log:** client gửi header `X-Actor-Id` / `X-Actor-Username` / `X-Actor-Name` được mã hóa `encodeURIComponent`, kèm `X-Actor-Encoding: uri-component` (`src/utils/productActorHeaders.ts`). Server giải mã bằng `src/utils/productActor.ts` (vẫn đọc header cũ), ghi `san_pham_audit_log` (action + `changes` jsonb field→`{old,new,label}`) và stamp `created_by_*` / `updated_by_*` trên `san_pham` nếu đã chạy migration. UI form sửa SP: khối **Lịch sử thao tác**.
 
 ## Frontend
 

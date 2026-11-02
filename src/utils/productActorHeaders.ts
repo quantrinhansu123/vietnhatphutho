@@ -11,9 +11,10 @@ export function productActorHeaders(): Record<string, string> {
       name?: string;
     };
     const headers: Record<string, string> = {};
-    if (user.id) headers['X-Actor-Id'] = String(user.id);
-    if (user.username) headers['X-Actor-Username'] = String(user.username);
-    if (user.name) headers['X-Actor-Name'] = String(user.name);
+    if (user.id) headers['X-Actor-Id'] = encodeURIComponent(String(user.id));
+    if (user.username) headers['X-Actor-Username'] = encodeURIComponent(String(user.username));
+    if (user.name) headers['X-Actor-Name'] = encodeURIComponent(String(user.name));
+    if (Object.keys(headers).length) headers['X-Actor-Encoding'] = 'uri-component';
     return headers;
   } catch {
     return {};
