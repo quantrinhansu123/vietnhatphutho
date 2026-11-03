@@ -19,7 +19,6 @@ import {
   SOUTH_ORDER_TYPE,
   SOUTH_TEM_OPTIONS,
   SOUTH_TEM_COLOR_OPTIONS,
-  SOUTH_TEM_COLOR_DEFAULT,
   southTemColorLabel,
   appendSouthTemToTenGhep,
   buildSouthTemSuffix,
@@ -1571,7 +1570,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             ? parseSouthTemFromTenGhep(match.tenGhep || match.productionName)
             : { tem: '', mauTem: '', danTem2Dau: false };
           const autoTemVal = catalogTemVal || parsedTem.tem || line.tem || '';
-          const autoMauTemVal = catalogMauTemVal || parsedTem.mauTem || line.mauTem || SOUTH_TEM_COLOR_DEFAULT;
+          const autoMauTemVal = catalogMauTemVal || parsedTem.mauTem || line.mauTem || '';
           const extractedMang = match.mang || extractMang(match.productionName);
 
           const autoMang = extractedMang || line.mang || '';
@@ -1891,7 +1890,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         doDaiTamTieuChuan: orderDuplicateDecimalText(autoDoDaiTamTieuChuan || ''),
         dinhMucTieuChuanKg: orderDuplicateDecimalText(autoDinhMucTieuChuanKg || ''),
         tem: autoTem,
-        mauTem: autoMauTem || (autoTem ? SOUTH_TEM_COLOR_DEFAULT : ''),
+        mauTem: autoMauTem,
         danTem2Dau: Boolean(parsedTem?.danTem2Dau)
       } : {})
     });
@@ -2887,7 +2886,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             value={line.mauTem || ''}
                             onChange={mauTem => updateConversionProductLine(line.key, { mauTem })}
                             options={[...SOUTH_TEM_COLOR_OPTIONS]}
-                            placeholder={`Màu (${SOUTH_TEM_COLOR_DEFAULT})`}
+                            placeholder="Màu tem"
                             getLabel={item => String(item)}
                             getValue={item => String(item)}
                             getOptionLabel={item => southTemColorLabel(String(item)) || String(item)}
