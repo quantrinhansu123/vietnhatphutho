@@ -4,6 +4,7 @@ import { normalizeProducts } from '../san-pham';
 import { availableConvertedUnits, convertProductQuantity, type ProductConvertedUnit } from '../../utils/productUnitConversion';
 import { parsePercentInput } from '../../utils';
 import { truncateTo3Decimals } from '../../utils/weightTruncate';
+import { extractDoLiDmNumber, normalizeDecimalToken, normalizeDoLiToken, parseAmisSpecs } from '../../utils/productProductionName';
 
 export const ORDER_TYPE_OPTIONS = ['Đơn bán', 'Đơn sản xuất', 'Đơn theo quy cách của khách đặt', 'Đơn cắt lẻ', 'Đơn miền nam'] as const;
 export const CUT_ORDER_TYPE = 'Đơn theo quy cách của khách đặt';
@@ -445,6 +446,8 @@ export interface CustomerOption {
 }
 
 export interface OrderProductOption {
+  savedVariant?: boolean;
+  baseAmisCode?: string;
   id: string;
   code: string;
   name: string;
@@ -560,6 +563,8 @@ export function normalizeOrderProducts(data: unknown): OrderProductOption[] {
     const tenGhep = String(product.tenGhep || product.productionName || '').trim();
     return {
       id: product.id,
+      savedVariant: product.code.startsWith('VAR-'),
+      baseAmisCode: product.amisOldCode || undefined,
       code: product.amisCode && product.amisCode !== '-' ? product.amisCode : '',
       name: product.name,
       productionName,
@@ -584,6 +589,52 @@ export function findOrderProductById(products: OrderProductOption[], id: string)
   const normalized = id.trim();
   if (!normalized) return null;
   return products.find(product => product.id === normalized) ?? null;
+}
+
+/**
+ * Số độ li từ token: `1.2li`, `(đm 1.1 li)`, `1,2` → `1.2`.
+ * Định mức kg (`(đm 4.8 kg)`) hoặc không parse được → ''.
+ */
+export function doLiTokenNumber(value: string | null | undefined): string {
+  const text = String(value ?? '').trim();
+  if (!text || /\bkg\b/iu.test(text)) return '';
+  const fromDm = extractDoLiDmNumber(text);
+  const bareMatch = text.match(/^([\d.,]+)\s*l?i?\s*$/iu);
+  const raw = fromDm || (bareMatch ? normalizeDecimalToken(bareMatch[1]) : '');
+  if (!raw) return '';
+  // `2.0` → `2`, `1.20` → `1.2`: so sánh/ghép token không lệch vì số 0 thừa.
+  const number = Number(raw);
+  return Number.isFinite(number) ? String(number) : '';
+}
+
+/**
+ * Nhóm Đặc: ô "Độ li ĐM" mang nghĩa **độ li thực** (token độ li chính của tên ghép,
+ * vd `2li` → `2`) — load/prefill hiện số độ li, KHÔNG lấy số đm trong `(đm …)`.
+ * Nguồn theo thứ tự: `do_li` đã lưu → token li đầu tiên ngoài ngoặc của tên
+ * (bỏ `(đm …)`, `(Dán Tem nli)`) → token li trên mã AMIS → số đm cũ (dữ liệu legacy).
+ */
+export function orderDacDoLiRealNumber(input: {
+  doLi?: string | null;
+  tenSanXuat?: string | null;
+  tenGhep?: string | null;
+  maAmis?: string | null;
+  savedDoLiDm?: string | null;
+}): string {
+  const fromDoLi = doLiTokenNumber(input.doLi);
+  if (fromDoLi) return fromDoLi;
+  const ten = String(input.tenSanXuat || input.tenGhep || '');
+  // Bỏ `(đm …)` và `(Dán Tem …)` — chỉ lấy token độ li chính của tên ghép.
+  const withoutSpecSegments = ten
+    .replace(/\(\s*đm[^()]*\)/giu, ' ')
+    .replace(/\(\s*dán\s*tem[^()]*\)/giu, ' ');
+  const liInTen = withoutSpecSegments.match(/(\d+(?:[.,]\d+)?)\s*l?i\b/iu);
+  if (liInTen) {
+    const token = normalizeDoLiToken(`${liInTen[1]}li`);
+    if (token) return token.replace(/li$/iu, '');
+  }
+  const amis = parseAmisSpecs(String(input.maAmis || ''));
+  if (amis.doLi) return amis.doLi.replace(/li$/iu, '');
+  return extractDoLiDmNumber(input.savedDoLiDm || '');
 }
 
 export function findOrderProductByCode(products: OrderProductOption[], code: string) {

@@ -54,8 +54,10 @@ import {
   extractDoLiDmNumber,
   isDiscontinuedWhiteSuProduct,
   normalizeDinhMucKg,
+  normalizeDoLiDm,
   parseDoDaiMLength,
-  seedProductionSpecs
+  seedProductionSpecs,
+  stripParsedSegmentsFromTenGoc
 } from '../../utils/productProductionName';
 import { showAppToast } from '../../lib/appToast';
 import { matchesWarehouseFilter, normalizeWarehouseName, type InventoryBalanceRow } from '../kho-hang';
@@ -663,17 +665,26 @@ function findDuplicateProductIdentity(
 ) {
   const amisCode = normalizeProductIdentity(form.amisCode);
   const name = normalizeProductIdentity(form.name);
-  const productionName = normalizeProductIdentity(form.productionName);
-  if (!amisCode || !name || !productionName) return '';
-
-  const duplicate = products.find(product =>
-    product.id !== currentProductId &&
-    normalizeProductIdentity(product.amisCode) === amisCode &&
-    normalizeProductIdentity(product.name) === name &&
-    normalizeProductIdentity(product.productionName || '') === productionName
+  // ten_san_xuat / ten_ghep cùng nội dung (khác cột) — trùng nếu khớp một trong hai.
+  const identityNames = new Set(
+    [form.productionName, form.tenGhepManual]
+      .map(value => normalizeProductIdentity(value || ''))
+      .filter(Boolean)
   );
+  if (!amisCode || !name || identityNames.size === 0) return '';
+
+  const duplicate = products.find(product => {
+    if (product.id === currentProductId) return false;
+    if (normalizeProductIdentity(product.amisCode) !== amisCode) return false;
+    if (normalizeProductIdentity(product.name) !== name) return false;
+    const existingNames = [
+      normalizeProductIdentity(product.productionName || ''),
+      normalizeProductIdentity(product.tenGhep || '')
+    ].filter(Boolean);
+    return existingNames.some(existing => identityNames.has(existing));
+  });
   return duplicate
-    ? 'Trùng bộ Mã AMIS, Tên sản phẩm và Tên sản xuất. Vui lòng nhập giá trị khác.'
+    ? 'Trùng bộ Mã AMIS + Tên sản phẩm + (Tên sản xuất hoặc Tên ghép). Vui lòng nhập giá trị khác.'
     : '';
 }
 
@@ -2598,7 +2609,7 @@ export type ProductFormState = {
   conversions: ProductConversionForm[];
 };
 
-type ProductConversionForm = {
+export type ProductConversionForm = {
   khoTamRongM: string;
   khoTamDaiM: string;
   khoCuonRongM: string;
@@ -2610,7 +2621,7 @@ type ProductConversionForm = {
   trongLuongKgCuon: string;
 };
 
-const PRODUCT_GROUP_RULES = {
+export const PRODUCT_GROUP_RULES = {
   'TP; PX Rỗng': { units: ['Tấm'], primaryUnit: 'Tấm', wastePercent: '13' },
   'TP; PX Đặc': { units: ['Tấm', 'Cuộn'], primaryUnit: 'Tấm', wastePercent: '13' },
   'TP; PX Sóng': { units: ['Tấm', 'Cuộn'], primaryUnit: 'Tấm', wastePercent: '2' },
@@ -2621,6 +2632,11 @@ const PRODUCT_GROUP_RULES = {
 
 type ProductGroup = keyof typeof PRODUCT_GROUP_RULES;
 const PRODUCT_GROUPS = Object.keys(PRODUCT_GROUP_RULES) as ProductGroup[];
+
+/** Tỷ lệ hàng hỏng (%) mặc định theo nhóm VTHH. */
+export function defaultProductWastePercent(group: string): string {
+  return PRODUCT_GROUP_RULES[group as ProductGroup]?.wastePercent || '';
+}
 export function autoCalculateProductConversion(
   rawForm: ProductConversionForm,
   changedKey?: keyof ProductConversionForm
@@ -2762,7 +2778,7 @@ export function productToForm(product: ProductRow, conversions: ProductConversio
     minStock: productCellToInput(product.minStock),
     origin: productCellToInput(product.origin),
     description: productCellToInput(product.description),
-    conversions: conversions.length > 0 ? [conversionToForm(conversions[0])] : [emptyConversion()]
+    conversions: conversions.length > 0 ? conversions.map(conversionToForm) : [emptyConversion()]
   };
 }
 
@@ -2811,35 +2827,40 @@ export function emptyProductForm(): ProductFormState {
 /**
  * Chuỗi `ten_san_xuat` canonical ghép từ thông số form.
  * Thứ tự: ten gốc (ZEM sau sóng/màu) - hàng phế - màng - TCMB - độ li - đm li - đm kg - khổ - mét dài.
+ * Ghép thuần từ ô thông số — không neo theo `productionName` cũ (tránh đổi ĐM/khổ/mét mà tên không đổi).
  */
 export function composeProductFormProductionName(form: ProductFormState): string {
   // Ô "ĐM (đm li)" gõ nhầm `(đm n kg)` → tự route sang đm kg, không ghép trùng.
+  // Số trần `2.7` (từ đơn) chuẩn hóa thành `(đm 2.7 li)` — tránh mất ngoặc khi tick TCMB.
   const rawDoLiDm = form.doLiDm.trim();
-  const doLiDmFromBox = /\bkg\b/iu.test(rawDoLiDm) ? '' : rawDoLiDm;
-  const dinhMucKg =
-    form.dinhMucKg.trim() ||
-    (/\bkg\b/iu.test(rawDoLiDm) ? normalizeDinhMucKg(rawDoLiDm) : '');
+  const doLiDmFromBox = /\bkg\b/iu.test(rawDoLiDm) ? '' : normalizeDoLiDm(rawDoLiDm, 'li');
+  const pxGroup = classifyProductPxGroup(form.group);
+  const dinhMucKg = pxGroup === 'dac' || pxGroup === 'rong'
+    ? ''
+    : (
+      form.dinhMucKg.trim() ||
+      (/\bkg\b/iu.test(rawDoLiDm) ? normalizeDinhMucKg(rawDoLiDm) : '')
+    );
   const doLiDm =
     doLiDmFromBox ||
-    extractDoLiDmLi(form.productionName) ||
     calculateDoLiDm(form.doLi, form.group) ||
     '';
-  return composeProductionDisplayName(
-    {
-      tenGoc: form.tenGoc.trim(),
-      doLi: form.doLi.trim(),
-      doLiDm,
-      dinhMucKg,
-      zem: form.zem.trim(),
-      soSong: form.soSong.trim(),
-      tcmb: form.tcmb ? 'TCMB' : '',
-      doDayM: form.doDayM.trim(),
-      doDaiM: form.doDaiM.trim(),
-      mang: form.mang.trim(),
-      hangPhe: form.hangPhe.trim()
-    },
-    form.group.trim()
-  );
+  const parts = {
+    tenGoc: form.tenGoc.trim(),
+    doLi: form.doLi.trim(),
+    doLiDm,
+    dinhMucKg,
+    zem: form.zem.trim(),
+    soSong: form.soSong.trim(),
+    tcmb: form.tcmb ? 'TCMB' : '',
+    doDayM: form.doDayM.trim(),
+    doDaiM: form.doDaiM.trim(),
+    mang: form.mang.trim(),
+    hangPhe: form.hangPhe.trim()
+  };
+  // ten_goc chỉ giữ phần gốc — bỏ segment thuộc field (kể cả mét/li cũ còn dính) rồi ghép lại.
+  const tenGoc = stripParsedSegmentsFromTenGoc(parts.tenGoc, parts);
+  return composeProductionDisplayName({ ...parts, tenGoc }, form.group.trim());
 }
 
 export function productFormToPayload(
@@ -2876,13 +2897,16 @@ export function productFormToPayload(
   // Ô "ĐM (đm li)" gõ nhầm `(đm n kg)` → tự route sang `dinh_muc_kg`.
   const rawDoLiDm = form.doLiDm.trim();
   const doLiDm =
-    (/\bkg\b/iu.test(rawDoLiDm) ? '' : rawDoLiDm) ||
-    extractDoLiDmLi(form.productionName) ||
+    (/\bkg\b/iu.test(rawDoLiDm) ? '' : normalizeDoLiDm(rawDoLiDm, 'li')) ||
     calculateDoLiDm(form.doLi, form.group) ||
     '';
-  const dinhMucKg =
-    form.dinhMucKg.trim() ||
-    (/\bkg\b/iu.test(rawDoLiDm) ? normalizeDinhMucKg(rawDoLiDm) : '');
+  const pxGroup = classifyProductPxGroup(form.group);
+  const dinhMucKg = pxGroup === 'dac' || pxGroup === 'rong'
+    ? ''
+    : (
+      form.dinhMucKg.trim() ||
+      (/\bkg\b/iu.test(rawDoLiDm) ? normalizeDinhMucKg(rawDoLiDm) : '')
+    );
   // Canonical: ten_san_xuat lưu chuỗi đã ghép; ten_ghep mirror cùng giá trị (legacy).
   const tenGhep = form.tenGhepManual.trim() || composeProductFormProductionName(form);
   return {
@@ -2924,6 +2948,13 @@ export function ProductEditModal({
   defaultWarehouse,
   enableProductionFields = false,
   productConversions = [],
+  initialForm,
+  overlayClassName,
+  transformProductionForm,
+  calculateConversion = autoCalculateProductConversion,
+  hideAmisOldCode = false,
+  isReadOnly = false,
+  saveLabel,
   isSaving,
   formError,
   onClose,
@@ -2937,6 +2968,14 @@ export function ProductEditModal({
   /** Chỉ bật trên `/san-pham` (giống main). Kho hàng giữ form đơn giản. */
   enableProductionFields?: boolean;
   productConversions?: ProductConversionFactors[];
+  initialForm?: ProductFormState;
+  overlayClassName?: string;
+  transformProductionForm?: (next: ProductFormState, previous: ProductFormState) => ProductFormState;
+  calculateConversion?: (row: ProductConversionForm, key?: keyof ProductConversionForm) => ProductConversionForm;
+  /** Modal thêm SP từ đơn hàng: không hiện / không bắt Mã AMIS cũ. */
+  hideAmisOldCode?: boolean;
+  isReadOnly?: boolean;
+  saveLabel?: string;
   isSaving: boolean;
   formError: string;
   onClose: () => void;
@@ -2948,12 +2987,13 @@ export function ProductEditModal({
       : [];
 
   const [form, setForm] = useState<ProductFormState>(() =>
-    mode === 'edit' && product
+    initialForm ? structuredClone(initialForm) : mode === 'edit' && product
       ? productToForm(product, productConversionForEdit)
       : { ...emptyProductForm(), warehouse: defaultWarehouse || '' }
   );
   const [amisOpen, setAmisOpen] = useState(false);
   const prevDoDaiMRef = useRef('');
+  const prevDoDayMRef = useRef('');
   const [auditLogs, setAuditLogs] = useState<
     Array<{
       id: number;
@@ -2969,7 +3009,7 @@ export function ProductEditModal({
 
   useEffect(() => {
     const next =
-      mode === 'edit' && product
+      initialForm ? structuredClone(initialForm) : mode === 'edit' && product
         ? productToForm(
             product,
             productConversions.filter(item => item.sanPhamId === product.id)
@@ -2977,7 +3017,10 @@ export function ProductEditModal({
         : { ...emptyProductForm(), warehouse: defaultWarehouse || '' };
     setForm(next);
     prevDoDaiMRef.current = next.doDaiM;
-  }, [defaultWarehouse, mode, product?.id, productConversions]);
+    prevDoDayMRef.current = next.doDayM;
+    // Thêm mới: không phụ thuộc productConversions — tránh reset form khi bảng quy đổi reload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- conversions chỉ seed lại khi sửa SP.
+  }, [defaultWarehouse, mode, product?.id, initialForm, mode === 'edit' ? productConversions : null]);
 
   useEffect(() => {
     if (mode !== 'edit' || !product?.id) {
@@ -3007,7 +3050,7 @@ export function ProductEditModal({
   }, [mode, product?.id]);
 
   useEffect(() => {
-    if (!enableProductionFields) return;
+    if (!enableProductionFields || transformProductionForm) return;
     if (prevDoDaiMRef.current === form.doDaiM) return;
     prevDoDaiMRef.current = form.doDaiM;
     const meters = parseDoDaiMLength(form.doDaiM);
@@ -3024,7 +3067,34 @@ export function ProductEditModal({
         ]
       };
     });
-  }, [enableProductionFields, form.doDaiM]);
+  }, [enableProductionFields, form.doDaiM, transformProductionForm]);
+
+  // Đổi Khổ rộng (doDayM) → đồng bộ khổ tấm/cuộn rộng và tính lại kg/Tấm, kg/Cuộn.
+  useEffect(() => {
+    if (!enableProductionFields || transformProductionForm) return;
+    if (prevDoDayMRef.current === form.doDayM) return;
+    prevDoDayMRef.current = form.doDayM;
+    const meters = parseDoDaiMLength(form.doDayM);
+    if (meters === null) return;
+    const nextValue = String(meters);
+    setForm(prev => {
+      const conv = prev.conversions[0] || emptyConversion();
+      const widthSame = conv.khoTamRongM.trim() === nextValue;
+      const rollSame = !conv.khoCuonRongM.trim() || conv.khoCuonRongM.trim() === nextValue;
+      if (widthSame && rollSame) return prev;
+      return {
+        ...prev,
+        conversions: [
+          autoCalculateProductConversion({
+            ...conv,
+            khoTamRongM: nextValue,
+            ...(conv.khoCuonRongM.trim() ? { khoCuonRongM: nextValue } : {})
+          }, 'khoTamRongM'),
+          ...prev.conversions.slice(1)
+        ]
+      };
+    });
+  }, [enableProductionFields, form.doDayM, transformProductionForm]);
 
   const seedSpecsFromName = (next: Partial<ProductFormState>, base: ProductFormState = form) => {
     const productionName = next.productionName ?? base.productionName;
@@ -3040,7 +3110,9 @@ export function ProductEditModal({
       tenGoc: seeded.tenGoc,
       doLi: seeded.doLi,
       doLiDm: seeded.doLiDm || extractDoLiDmLi(productionName) || '',
-      dinhMucKg: seeded.dinhMucKg || normalizeDinhMucKg(extractDoLiDm(productionName) || ''),
+      dinhMucKg: classifyProductPxGroup(group) === 'dac' || classifyProductPxGroup(group) === 'rong'
+        ? ''
+        : (seeded.dinhMucKg || normalizeDinhMucKg(extractDoLiDm(productionName) || '')),
       zem: seeded.zem,
       soSong: seeded.soSong,
       tcmb: Boolean(seeded.tcmb),
@@ -3055,7 +3127,23 @@ export function ProductEditModal({
   const patchProductionSpecs = (patch: Partial<ProductFormState>) => {
     setForm(prev => {
       const next = { ...prev, ...patch, tenGhepManual: '' };
+      // Chuẩn hóa ô ĐM (đm li) khi còn số trần — giữ `(đm n li)` sau khi tick TCMB / đổi thông số.
+      if ('doLiDm' in patch || next.doLiDm.trim()) {
+        const raw = next.doLiDm.trim();
+        if (raw && !/\bkg\b/iu.test(raw)) next.doLiDm = normalizeDoLiDm(raw, 'li') || raw;
+      }
+      // Giữ ten_goc sạch (không còn mét/li/đm cũ) trước khi ghép tên.
+      next.tenGoc = stripParsedSegmentsFromTenGoc(next.tenGoc, {
+        hangPhe: next.hangPhe,
+        mang: next.mang,
+        doLi: next.doLi,
+        doLiDm: next.doLiDm,
+        dinhMucKg: next.dinhMucKg,
+        doDayM: next.doDayM,
+        doDaiM: next.doDaiM
+      });
       const composed = composeProductFormProductionName(next);
+      if (transformProductionForm) return transformProductionForm({ ...next, productionName: composed || next.productionName }, prev);
       return {
         ...next,
         productionName: composed || next.productionName
@@ -3064,13 +3152,19 @@ export function ProductEditModal({
   };
 
   const updateConversion = (index: number, key: keyof ProductConversionForm, value: string) => {
-    setForm(prev => ({
+    setForm(prev => {
+      const next = {
       ...prev,
       conversions: prev.conversions.map((item, itemIndex) => {
         if (itemIndex !== index) return item;
-        return autoCalculateProductConversion({ ...item, [key]: value }, key);
+        return calculateConversion({ ...item, [key]: value }, key);
       })
-    }));
+      };
+      if (transformProductionForm && (key === 'khoTamRongM' || key === 'khoTamDaiM')) {
+        return transformProductionForm({ ...next, [key === 'khoTamRongM' ? 'doDayM' : 'doDaiM']: value }, prev);
+      }
+      return next;
+    });
   };
 
   const applyGroup = (group: string) => {
@@ -3088,6 +3182,7 @@ export function ProductEditModal({
       const seeded = seedSpecsFromName({ group }, withGroup);
       const merged = { ...withGroup, ...seeded, tenGhepManual: '' };
       const composed = composeProductFormProductionName(merged);
+      if (transformProductionForm) return transformProductionForm({ ...merged, productionName: composed || merged.productionName }, prev);
       return {
         ...merged,
         productionName: composed || merged.productionName
@@ -3138,7 +3233,7 @@ export function ProductEditModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <div className={overlayClassName || 'fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4'}>
       <div
         className={`max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl ${
           enableProductionFields ? 'max-w-3xl' : 'max-w-2xl'
@@ -3162,7 +3257,7 @@ export function ProductEditModal({
             {formError}
           </div>
         )}
-        <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+        <fieldset disabled={isSaving || isReadOnly} className="grid min-w-0 grid-cols-1 gap-3 p-4 sm:grid-cols-2">
           {enableProductionFields ? (
             <>
               <label className="relative block space-y-1.5">
@@ -3211,22 +3306,18 @@ export function ProductEditModal({
                             const storedWaste =
                               item.wastePercent && item.wastePercent !== '-' ? item.wastePercent : '';
                             const wastePercent = storedWaste || rule?.wastePercent || prev.wastePercent;
-                            const nextBase = {
-                              ...prev,
-                              amisCode: item.amisCode,
-                              name: item.name,
-                              productionName: item.productionName || '',
-                              group: nextGroup,
-                              unit,
-                              wastePercent
-                            };
                             const seeded = seedProductionSpecs({
                               tenSanXuat: item.productionName || '',
                               maAmis: item.amisCode,
                               nhomVthh: item.group || prev.group
                             });
-                            return {
-                              ...nextBase,
+                            const seededForm = {
+                              ...prev,
+                              amisCode: item.amisCode,
+                              name: item.name,
+                              group: nextGroup,
+                              unit,
+                              wastePercent,
                               ...(seededBaseConversion ? { conversions: [seededBaseConversion] } : {}),
                               tenGoc: seeded.tenGoc,
                               doLi: seeded.doLi,
@@ -3240,6 +3331,11 @@ export function ProductEditModal({
                               mang: seeded.mang,
                               hangPhe: seeded.hangPhe || item.hangPhe || '',
                               tenGhepManual: ''
+                            };
+                            const composed = composeProductFormProductionName(seededForm);
+                            return {
+                              ...seededForm,
+                              productionName: composed || item.productionName || ''
                             };
                           });
                           setAmisOpen(false);
@@ -3322,15 +3418,17 @@ export function ProductEditModal({
                   className={productFieldClass}
                 />
               </label>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã AMIS cũ (truy vết)</span>
-                <input
-                  value={form.amisOldCode}
-                  onChange={event => setForm(prev => ({ ...prev, amisOldCode: event.target.value }))}
-                  placeholder="Mã gốc của biến thể"
-                  className={productFieldClass}
-                />
-              </label>
+              {!hideAmisOldCode ? (
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã AMIS cũ (truy vết)</span>
+                  <input
+                    value={form.amisOldCode}
+                    onChange={event => setForm(prev => ({ ...prev, amisOldCode: event.target.value }))}
+                    placeholder="Mã gốc của biến thể"
+                    className={productFieldClass}
+                  />
+                </label>
+              ) : null}
               <label className="block space-y-1.5 sm:col-span-2">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tên sản xuất *</span>
                 <input
@@ -3580,7 +3678,7 @@ export function ProductEditModal({
               </label>
             ))
           )}
-        </div>
+        </fieldset>
 
         {mode === 'edit' && product?.id ? (
           <section className="mx-4 mb-3 space-y-2 rounded-xl border border-zinc-200 bg-zinc-50/80 p-3">
@@ -3669,7 +3767,7 @@ export function ProductEditModal({
             className="flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {isSaving ? 'Đang lưu...' : mode === 'add' ? 'Thêm mới' : 'Cập nhật'}
+            {isSaving ? 'Đang lưu...' : saveLabel || (mode === 'add' ? 'Thêm mới' : 'Cập nhật')}
           </button>
         </div>
       </div>

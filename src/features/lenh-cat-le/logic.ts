@@ -794,17 +794,6 @@ export function variantCodeForCatPiece(args: {
 }): string {
   const base = String(args.baseMaAmis || '').trim();
   if (!base) return '';
-  
-  // --- XÁC ĐỊNH TIÊNG PREFIX THEO NHÓM VTHH ---
-  // Quy tắc: DAC→DAC, SONG→SONG, RONG→RONG, mặc định STD
-  let filmPrefix = 'STD'; // Mặc định giữ STD cho backward compatibility
-  if (args.nhomVthh) {
-    const group = classifyProductPxGroup(args.nhomVthh);
-    if (group === 'dac') filmPrefix = 'DAC';
-    if (group === 'song') filmPrefix = 'SONG';
-    if (group === 'rong') filmPrefix = 'RONG';
-  }
-  // ------------------------------------------------
 
   const lCon = parseMeterLabel(args.pieceDaiM);
   const lMe = parseMeterLabel(args.motherDaiM);
@@ -821,7 +810,6 @@ export function variantCodeForCatPiece(args: {
   const shared = {
     baseMaAmis: base,
     nhomVthh: args.nhomVthh,
-    // --- TRÊN ĐÃ THÊM filmPrefix ---
     cutLengthM: lCon != null && lCon > 0 ? lCon : undefined,
     cutWidthM: widthDiffers ? wCon : undefined,
     doLi: liDiffers ? String(args.pieceLi || '') : undefined,

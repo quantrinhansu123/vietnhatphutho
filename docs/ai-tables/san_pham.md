@@ -12,6 +12,7 @@
 |--------|------|------|
 | GET | `/api/san-pham` | ~7394 |
 | POST | `/api/san-pham` | ~7460 |
+| GET | `/api/san-pham/:id/with-conversions` | Đọc bản ghi SP và đầy đủ quy đổi theo ID để tạo/chọn biến thể từ đơn hàng |
 | POST | `/api/san-pham/import-batch` | batch insert `creates` + upsert `updates` (chunk phía client ~150) |
 | PATCH | `/api/san-pham/:id` | ~7663 |
 | GET | `/api/san-pham/:id/phieu-kho?loai=nhap\|xuat` | Nhật ký phiếu SP — khối Tồn kho + tab Nhập/Xuất kho trên `/kho-hang` & `/san-pham` |
@@ -22,6 +23,8 @@
 **Audit log:** client gửi header `X-Actor-Id` / `X-Actor-Username` / `X-Actor-Name` được mã hóa `encodeURIComponent`, kèm `X-Actor-Encoding: uri-component` (`src/utils/productActorHeaders.ts`). Server giải mã bằng `src/utils/productActor.ts` (vẫn đọc header cũ), ghi `san_pham_audit_log` (action + `changes` jsonb field→`{old,new,label}`) và stamp `created_by_*` / `updated_by_*` trên `san_pham` nếu đã chạy migration. UI form sửa SP: khối **Lịch sử thao tác**.
 
 ## Frontend
+
+`POST /api/san-pham` hỗ trợ `createOrReuse: true` cho đơn hàng: bắt buộc đủ mã/tên/tên SX + quy đổi theo ĐVT; trùng nhận diện (`ma_amis+ten_sp+ten_sx` hoặc `ma_amis+ten_sp+ten_ghep`) trả `{reused: true, product: {id}}`, không ghi đè. SP mới cấp `ma_sp = VAR-<hash bộ nhận diện>` độc lập `ma_amis`, tồn kho bằng 0. Lỗi lưu quy đổi xóa quy đổi mới trước rồi hoàn tác SP mới. Client phải đọc lại `with-conversions` trước khi chọn sản phẩm vào đơn.
 
 | File | Nội dung |
 |------|----------|
@@ -36,19 +39,19 @@
 
 `ma_sp`, `ten_sp`, `ten_san_xuat`, `don_vi` (`m`, `m2`, `Tấm`), `nhom_vthh`, `ton_dau_ky`, `npl_phan_tram` (JSON NPL, mỗi dòng lưu thêm `ten_nvl_sx` tương ứng từ Kho NVL).
 
-**Mã AMIS mới (lệnh cắt lẻ kho):** `ma_amis` của dòng biến thể CHÍNH LÀ mã mới (hạ khổ/hạ li/hạ mét/dán tem, sinh bằng `buildMaAmisMoi` trong `src/utils/productProductionName.ts`, mỗi biến thể một dòng SP) + `ma_amis_cu` (mã chuẩn gốc để truy vết/tổng hợp). Migration `supabase-san-pham-ma-amis-cu.sql`. Lookup mã nhận `ma_sp/ma_amis/ma_sp_moi/ma_amis_cu`. Unique giữ bộ `ma_amis + ten_sp + ten_san_xuat`.
+**Mã AMIS mới (lệnh cắt lẻ kho):** `ma_amis` của dòng biến thể CHÍNH LÀ mã mới (hạ khổ/hạ li/hạ mét/dán tem, sinh bằng `buildMaAmisMoi` trong `src/utils/productProductionName.ts`, mỗi biến thể một dòng SP) + `ma_amis_cu` (mã chuẩn gốc để truy vết/tổng hợp). Migration `supabase-san-pham-ma-amis-cu.sql`. Lookup mã nhận `ma_sp/ma_amis/ma_sp_moi/ma_amis_cu`. Unique: `ma_amis + ten_sp + ten_san_xuat` **hoặc** `ma_amis + ten_sp + ten_ghep`.
 
 Thông số sản xuất (migration `supabase-san-pham-thong-so-sx.sql` + `supabase-san-pham-tcmb-zem-so-song.sql`): `ten_goc`, `do_li`, `do_li_dm` (**chỉ** `(đm n li)`), `dinh_muc_kg` (`(đm n kg)`), `zem`, `so_song`, `tcmb` (boolean), `do_day_m`, `do_dai_m`, `mang`, `hang_phe`.  
 **`do_li`**: chỉ nhận token `…li` tường minh (từ mã AMIS `- Nli` hoặc tên SX, chấp nhận dạng `10i` → chuẩn hóa `10li` qua `normalizeDoLiToken`); chứa KG hay ZEM thì không phải độ li (bỏ, suy tiếp hoặc để trống). **Tên có ZEM** (`6ZEM`, `8ZEM`…): không lấy `do_li`/`do_li_dm` (đm-li); ZEM tách sang cột `zem` và ghép **sau số sóng** (Sóng) hoặc **sau màu** (Đặc) — tức là token cuối của `ten_goc` trong tên canonical. Sửa dữ liệu cũ: `supabase-san-pham-xoa-do-li-zem.sql`.
 **`do_li_dm` tự tính (Đặc)**: li < 1 → −0.05; li < 2.8 → −0.1; li < 5 → −0.2; còn lại → −0.3 (vd 0.8→0.75, 2.8→2.6, 5→4.7). Tên có sẵn thì giữ. Rỗng/Sóng không tự tính. `(đm n kg)` **không** nằm ở `do_li_dm` nữa mà ở `dinh_muc_kg` (API tự route khi client cũ gửi kg vào `do_li_dm`).
 **`tcmb`** (checkbox form): `true` → chèn chữ `TCMB` ngay **sau màng** (`… - STD - TCMB - 2li …`). **`so_song`**: số sóng (`11` của `11 SÓNG`) — đổi số thì thay tại chỗ trong `ten_goc` (`11 SÓNG` → `13 SÓNG`), chưa có thì nối `- N SÓNG`.
 **`ten_goc`**: cắt đuôi li trùng `do_li` (`stripDuplicateLiFromTenGoc`, trừ khi trong ngoặc). Sửa dữ liệu cũ: `supabase-san-pham-sua-ten-goc-trung-li.sql`.
-**`ten_san_xuat` canonical:** lưu **chuỗi đã ghép** (thứ tự ten_goc (ZEM nối sau sóng/màu) - hàng phế - màng - TCMB - độ li - đm li - đm kg - khổ - mét dài). Đổi Độ li / Khổ rộng / Mét dài trên form → cập nhật `ten_san_xuat`. Import Excel cũng ghi `productionName` = chuỗi đã compose. **`ten_ghep`** (cột legacy, migration `supabase-san-pham-ten-ghep.sql`): mirror cùng giá trị khi thêm/sửa; reader dual-format (`ten_san_xuat` trước, fallback `ten_ghep`). Danh sách `/san-pham` cột **Tên sản xuất** hiện `ten_san_xuat` (fallback `ten_ghep`). **Rỗng: bỏ khổ 2.1m mặc định khỏi tên** (`DEFAULT_RONG_WIDTH_M`, khổ khác vẫn giữ) **nhưng DB vẫn lưu `do_day_m`**. **Sóng: không hiện khổ rộng trong tên SX** (DB vẫn lưu `do_day_m`); **mét dài luôn có hậu tố `m`** (`2` → `2m`). **Thập phân trong tên SX / `do_day_m` / `do_dai_m`:** dấu `,` → `.` (`4,8` → `4.8`). Form gọi ô khổ **Khổ rộng (m)** (cột DB vẫn `do_day_m`).
+**`ten_san_xuat` canonical:** lưu **chuỗi đã ghép** (thứ tự ten_goc (ZEM nối sau sóng/màu) - hàng phế - màng - TCMB - độ li - đm li - đm kg - khổ - mét dài). Đổi Độ li / Khổ rộng / Mét dài trên form → cập nhật `ten_san_xuat`. Import Excel cũng ghi `productionName` = chuỗi đã compose. **`ten_ghep`** (cột legacy, migration `supabase-san-pham-ten-ghep.sql`): mirror cùng giá trị khi thêm/sửa; reader dual-format (`ten_san_xuat` trước, fallback `ten_ghep`). Danh sách `/san-pham` cột **Tên sản xuất** hiện `ten_san_xuat` (fallback `ten_ghep`). **Rỗng: bỏ khổ 2.1m mặc định khỏi tên** (`DEFAULT_RONG_WIDTH_M`, khổ khác vẫn giữ) **nhưng DB vẫn lưu `do_day_m`**. **Đặc và Rỗng: không có ĐM kg** — không ghép `(đm n kg)` vào tên SX và không tự điền cột `dinh_muc_kg` khi thêm mới. **Sóng: không hiện khổ rộng trong tên SX** (DB vẫn lưu `do_day_m`); **mét dài luôn có hậu tố `m`** (`2` → `2m`). **Thập phân trong tên SX / `do_day_m` / `do_dai_m`:** dấu `,` → `.` (`4,8` → `4.8`). Form gọi ô khổ **Khổ rộng (m)** (cột DB vẫn `do_day_m`).
 **Trắng sứ ngừng kinh doanh**: Đặc có AMIS `STD01*` hoặc tên chứa `trắng sứ` → form thêm/sửa chặn, import bỏ qua (báo số dòng), API thêm/sửa/import-batch chặn 400; xóa dữ liệu cũ bằng `supabase-san-pham-xoa-trang-su.sql` (chạy tay, có SELECT preview).
 **`hang_phe` chỉ khi `ten_san_xuat` ghi rõ** (`hàng 100% NS Off` / `hàng chạy 100% phế` / `hàng 100% phế` / `chạy 100% phế` / `hàng nguyên phế` / `hàng tiêu chuẩn` / `100%NS`→chuẩn hóa `100% NS` / `(GIÁ RẺ)` sóng NP2 → chuẩn hóa `(GIÁ RẺ)`); không suy diễn từ mã AMIS hay token `NP`. Form chỉ tự đổi Hàng phế khi tên có marker, còn lại giữ giá trị đang có. Sửa dữ liệu cũ: `supabase-san-pham-fix-hang-phe.sql`; cập nhật riêng hàng nguyên phế: `supabase-san-pham-cap-nhat-hang-nguyen-phe.sql`; dropdown thêm `(GIÁ RẺ)`, `100% NS`, `hàng chạy 100% NS Off`; dropdown màng thêm `LUX`. Đơn cắt lẻ (`replaceCutLengthMeters`): marker `(GIÁ RẺ)` cuối tên được giữ ở cuối khi thay mét cắt.
 **Import Excel** (`productCatalogExcel.ts`): cột mới `ZEM`, `Số sóng`, `ĐM (đm li)`, `ĐM (đm kg)`, `TCMB` (`x`/`1`/`có`); Độ li ghi tay chứa KG thì bỏ, dùng suy từ tên SX; ĐVT `CUỘN, TẤM` chuẩn hóa về `Tấm`; luôn tính `ten_ghep` từ tên SX (+ cột ghi tay) và lưu DB. File cũ ghi `(đm n kg)` vào cột đm-li vẫn được tự route sang `dinh_muc_kg`.
 **Form SP (cắt lẻ):** `Mét dài` (`doDaiM`, parse qua `parseDoDaiMLength`) **chính là** `Khổ tấm dài (m dài/tấm)` — đổi Mét dài thì Khổ tấm dài luôn đồng bộ theo (kể cả ô đã gõ tay), các thông tin gốc (khổ tấm rộng, khổ cuộn rộng/dài, diện tích, kg/1 m dài, kg/m2) giữ nguyên rồi tính lại `Trọng lượng (kg/Tấm)`, kg/cuộn theo `autoCalculateProductConversion`. Dữ liệu đã lưu lúc mở form không bị tự sửa (chỉ đồng bộ khi `doDaiM` đổi). Thêm mới: chọn SP chính theo AMIS → lấy sẵn toàn bộ quy đổi gốc nếu khối đang trống.
-**Unique không đổi:** API vẫn chặn trùng bộ `ma_amis + ten_sp + ten_san_xuat`. Không tạo unique mới trên các cột thông số.
+**Unique:** API chặn trùng nếu khớp `ma_amis + ten_sp + ten_san_xuat` **hoặc** `ma_amis + ten_sp + ten_ghep` (`findDuplicateProductIdentity` so khớp tên gửi lên với cả hai cột trên bản ghi cũ). Không tạo unique constraint DB mới trên các cột thông số.
 
 Utils ghép tên: `src/utils/productProductionName.ts` (Đặc/Rỗng/Sóng; Sóng `do_dai_m` đúng theo tên SX của dòng; Đặc ưu tiên 8/9/20/30m làm m dài).
 
@@ -64,7 +67,7 @@ Danh sách chỉ hiển thị `Thành phẩm`; mỗi sản phẩm là nhóm dòn
 - Nút **Tải mẫu Excel** / **Tải Excel lên** (và **Tải mẫu Excel SP**) — `src/utils/productCatalogExcel.ts`
 - Cột khớp bảng UI trước: Mã SP, Tên, Tính chất, Nhóm, Đơn vị, Tổng TL, Tồn đầu, Nhập, Xuất, Tồn, Tồn TT + thêm định mức (AMIS, khổ cuộn, TL lõi/túi/nhựa…)
 - **Ô trống vẫn đẩy lên** (chỉ bắt buộc có Mã SP hoặc Tên)
-- Upsert theo `ma_sp` — API chặn trùng bộ `ma_amis + ten_sp + ten_san_xuat` bằng truy vấn tồn tại trực tiếp trong DB
+- Upsert theo `ma_sp` — API chặn trùng `ma_amis + ten_sp + (ten_san_xuat hoặc ten_ghep)` bằng truy vấn tồn tại trực tiếp trong DB
 - Nếu DB còn unique `ma_amis`: chạy `supabase-san-pham-ma-amis-khong-unique.sql`
 - File mẫu cũ kiểu Tên NVL/Loại/Giá trị → báo lỗi hướng dẫn dùng mẫu danh mục
 - Định mức NVL riêng: **Mẫu định mức NVL** / **Nhập định mức NVL**
