@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Loader2, Search } from 'lucide-react';
 import { orderFieldClass } from '../../features/_shared/orderHelpers';
@@ -302,7 +302,7 @@ export function SearchableSelect({
     setMenuStyle({ top: rect.bottom + 4, left, width });
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) {
       setMenuStyle(null);
       return;

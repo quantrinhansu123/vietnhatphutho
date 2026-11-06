@@ -38,7 +38,7 @@ describe('mã AMIS mới — buildMaAmisMoi', () => {
         nhomVthh: 'TP; PX Rỗng',
         cutLengthM: 6
       }),
-      'ECR02-5li-6m-NP'
+      'ECR02-5.0li-6m-NP'
     );
   });
 
@@ -61,7 +61,19 @@ describe('mã AMIS mới — buildMaAmisMoi', () => {
         doLi: '8li',
         cutLengthM: 3
       }),
-      'STD06-8li*2.10m-3m'
+      'STD06-8.0li*2.10m-3m'
+    );
+  });
+
+  it('giữ họ mã gốc khi nhóm Đặc, không đổi STD08 thành DAC', () => {
+    assert.equal(
+      buildMaAmisMoi({
+        baseMaAmis: 'STD08-3.5li*1.82m-NP',
+        nhomVthh: 'TP; PX Đặc',
+        mang: 'SUN PC',
+        ngayCat: '2026-11-03'
+      }),
+      'STD08-3.5li*1.82m-NP-SUNPC (03.11.2026)'
     );
   });
 

@@ -144,7 +144,7 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     label: 'Danh mục sản phẩm',
     sql: ['supabase-san-pham.sql', 'supabase-san-pham-dinh-muc.sql', 'supabase-san-pham-dinh-muc-seed.sql', 'supabase-san-pham-npl-phan-tram.sql', 'supabase-san-pham-nhom-vthh-kinh-doanh.sql', 'supabase-san-pham-nhom-vthh-them-khac.sql', 'supabase-san-pham-ton-dau-ky.sql', 'supabase-san-pham-kiem-kho-dong-bo.sql', 'supabase-san-pham-thong-so-sx.sql', 'supabase-san-pham-audit-log.sql'],
     apiPrefix: '/api/san-pham',
-    serverLines: 'POST/PATCH/DELETE /api/san-pham + GET /api/san-pham/:id/audit-log + import-batch',
+    serverLines: 'POST/PATCH/DELETE /api/san-pham (createOrReuse) + GET /api/san-pham/:id/with-conversions + audit-log + import-batch',
     appTab: 'products',
     appLines: 'src/features/san-pham/index.tsx, src/features/san-pham/types.ts, src/features/san-pham/productFieldClass.ts',
     components: ['src/components/ProductQrScanner.tsx', 'src/components/LineEditorSheet.tsx'],
@@ -217,8 +217,8 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     serverLines: '4781–5083, 6946–7093',
     appTab: 'orders',
     appLines: 'src/features/don-hang/index.tsx, src/features/_shared/orderHelpers.ts',
-    components: ['src/components/shared/Select2.tsx', 'src/components/shared/SearchableSelect.tsx', 'src/components/OrderPrintSheet.tsx'],
-    utils: []
+    components: ['src/components/shared/Select2.tsx', 'src/components/shared/SearchableSelect.tsx', 'src/components/OrderPrintSheet.tsx', 'src/features/don-hang/OrderProductCreateModal.tsx'],
+    utils: ['src/features/don-hang/variantConversions.ts', 'src/features/don-hang/dacDoLiDm.ts']
   },
   khach_hang: {
     table: 'khach_hang',

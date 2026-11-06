@@ -1,5 +1,7 @@
 /** Suy luận thông số + ghép tên sản xuất theo nhóm VTHH (Đặc / Sóng / Rỗng). */
 
+import { truncateTo3Decimals } from './weightTruncate';
+
 export type ProductPxGroup = 'dac' | 'song' | 'rong' | 'other';
 
 export const FILM_OPTIONS = ['ECO', 'STD', 'SUN PC', 'HA', 'LUX'] as const;
@@ -263,6 +265,26 @@ export function normalizeDoLiToken(value: string): string {
 }
 
 /**
+ * Token độ li trên mã AMIS mới: số nguyên nhỏ hơn 10 ghi `.0` (`4li` → `4.0li`).
+ * `10li`, `2.5li`, `4.0li` giữ nguyên. Nhận cả số trần (`1` → `1.0li`).
+ */
+export function formatAmisDoLiToken(value: string): string {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const withUnit = /l?i$/iu.test(text) ? text : `${text}li`;
+  const token = normalizeDoLiToken(withUnit);
+  if (!token) return '';
+  const number = token.replace(/li$/iu, '');
+  if (/^\d+$/u.test(number) && Number(number) < 10) return `${number}.0li`;
+  return token;
+}
+
+/** Trong mã AMIS mới: mọi `Nli` (N = 0–9, chưa có thập phân) → `N.0li`. */
+export function ensureAmisIntegerLiDot0(code: string): string {
+  return String(code || '').replace(/(^|[^0-9.])([0-9])li\b/giu, '$1$2.0li');
+}
+
+/**
  * Nhận `(đm 0.75 li)`, `đm 0.75 li`, `0.75` hoặc `7,8 kg` → `(đm n li|kg)`.
  * Ô đơn miền nam lưu đúng cột `do_li_dm`, không phải `do_li`.
  */
@@ -296,19 +318,66 @@ export function normalizeDinhMucKg(value: string | null | undefined): string {
   return `(đm ${number} kg)`;
 }
 
+/** Sóng: kg ghi trong tên là định mức của tấm dài 6m, không phải kg của mét dài đang cắt. */
+export const SONG_STANDARD_LENGTH_M = 6;
+
+/** Tên có token kg (`12kg`, `12 kg`, `(đm 12 kg)`). */
+export function productionNameHasKg(text: string): boolean {
+  return /[\d.,]\s*kg\b/iu.test(String(text || ''));
+}
+
+/**
+ * Đm chuẩn Sóng = (kg/Tấm của mét dài hiện tại / mét dài) × 6.
+ * Kết quả là `(đm n kg)` của tấm 6m. Thiếu kg hoặc mét dài thì trả ''.
+ */
+export function songStandardDinhMucKg(kgPerSheet: unknown, lengthM: unknown): string {
+  const kg = Number(String(kgPerSheet ?? '').replace(',', '.').replace(/m\s*$/iu, '').trim());
+  const length = Number(String(lengthM ?? '').replace(',', '.').replace(/m\s*$/iu, '').trim());
+  if (!Number.isFinite(kg) || !Number.isFinite(length) || kg <= 0 || length <= 0) return '';
+  const standard = truncateTo3Decimals((kg / length) * SONG_STANDARD_LENGTH_M);
+  if (!(standard > 0)) return '';
+  return normalizeDinhMucKg(String(standard));
+}
+
+/** Bỏ `12kg` đứng ngoài ngoặc. Giữ `(đm 12 kg)`. */
+export function stripBareKgToken(text: string): string {
+  const cleaned = String(text || '')
+    .split(/(\([^()]*\))/g)
+    .map(part => (
+      part.startsWith('(')
+        ? part
+        : part.replace(/(?:^|\s*[-–—]\s*|\s+)[\d.,]+\s*kg\b/giu, ' ')
+    ))
+    .join('');
+  return cleaned
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s*[-–—]\s*(?:[-–—]\s*)+/g, ' - ')
+    .replace(/\s*[-–—]\s*$/u, '')
+    .replace(/^\s*[-–—]\s*/u, '')
+    .trim();
+}
+
 /**
  * Lấy số thuần từ `do_li_dm` để hiển thị trên form đơn miền nam
  * (`(đm 0.75 li)` / `0.75` → `0.75`). Trả '' khi không parse được.
  */
 /**
- * Hệ số kg/m² khi Độ li ĐM trên dòng đơn khác Độ li ĐM danh mục (nhóm Đặc: kg/m² = đm li × 1.2).
- * Chỉ áp dụng khi cả hai đều là "đm n li"; đm tính bằng kg (Sóng) hoặc thiếu số = null (giữ nguyên).
+ * Hệ số kg/m² khi Độ li trên dòng đơn khác chuẩn danh mục.
+ * - Nhóm khác: so `(đm n li)` của dòng với danh mục.
+ * - Nhóm Đặc (ô = độ li thực): caller truyền token độ li chính (`2li`) làm chuẩn.
+ * Số trần / token `nli` / `(đm n li)` đều đọc được; đm kg hoặc thiếu số = null (giữ nguyên).
  */
 export function doLiDmWeightScale(lineDoLiDm: string | null | undefined, catalogDoLiDm: string | null | undefined): number | null {
   const isKg = (t: string | null | undefined) => /kg/i.test(String(t || ''));
   if (isKg(lineDoLiDm) || isKg(catalogDoLiDm)) return null;
-  const line = Number(String(extractDoLiDmNumber(lineDoLiDm)).replace(',', '.'));
-  const catalog = Number(String(extractDoLiDmNumber(catalogDoLiDm)).replace(',', '.'));
+  const numOf = (t: string | null | undefined): number => {
+    const fromDm = extractDoLiDmNumber(t);
+    if (fromDm) return Number(fromDm.replace(',', '.'));
+    const bare = String(t || '').trim().match(/^([\d.,]+)\s*l?i?\s*$/iu);
+    return bare ? Number(normalizeDecimalToken(bare[1])) : Number.NaN;
+  };
+  const line = numOf(lineDoLiDm);
+  const catalog = numOf(catalogDoLiDm);
   if (!Number.isFinite(line) || !Number.isFinite(catalog) || line <= 0 || catalog <= 0) return null;
   return line / catalog;
 }
@@ -745,6 +814,14 @@ export function stripParsedSegmentsFromTenGoc(
       stripTail(new RegExp(`(?:^|\\s*[-–—]\\s*|\\s+)${num.replace('\\.', '[,.]')}\\s*m\\s*$`, 'iu'));
     }
 
+    // Bỏ mọi mét / li / (đm) / màng còn dính cuối ten_goc (kể cả giá trị cũ khác field hiện tại)
+    // để đổi khổ / mét dài / ĐM / màng luôn ghép lại đúng từ thông số.
+    stripTail(/(?:^|\s*[-–—]\s*|\s+)[\d.,]+\s*m\s*$/iu);
+    stripTail(/(?:^|\s*[-–—]\s*)\(\s*đm\s*[\d.,]+\s*(?:li|kg)\s*\)\s*$/iu);
+    stripTail(/\s*\(\s*đm\s*[\d.,]+\s*(?:li|kg)\s*\)\s*$/iu);
+    stripTail(/(?:^|\s*[-–—]\s*)[\d.,]+\s*l?i\s*$/iu);
+    stripTail(/(?:^|\s*[-–—]\s*)(?:màng\s+)?(?:ECO|STD|SUN\s*PC|LUX|HA)\s*$/iu);
+
     if (text === before) break;
   }
 
@@ -803,7 +880,9 @@ export function parseProductionNameParts(
   const text = String(tenSanXuat || '').trim();
   const amis = parseAmisSpecs(maAmis);
   let doLiDm = extractDoLiDmLi(text);
-  const dinhMucKg = extractDinhMucKg(text);
+  const parsedDinhMucKg = extractDinhMucKg(text);
+  // Đặc / Rỗng không có ĐM kg — không điền ô từ tên.
+  const dinhMucKg = group === 'dac' || group === 'rong' ? '' : parsedDinhMucKg;
   const zem = extractZemToken(text) || amis.zem;
   const tcmb = extractTcmb(text);
   const soSong = extractSoSong(text);
@@ -868,6 +947,7 @@ export function parseProductionNameParts(
       mang,
       doLi,
       doLiDm,
+      dinhMucKg: parsedDinhMucKg,
       doDayM,
       doDaiM
     });
@@ -903,6 +983,7 @@ export function parseProductionNameParts(
     mang,
     doLi: doLiForStrip,
     doLiDm: doLiDm || extractDoLiDm(text) || '',
+    dinhMucKg: parsedDinhMucKg,
     doDayM: dacDoDayM,
     doDaiM: dacDoDaiM
   });
@@ -989,6 +1070,7 @@ export function stripDuplicateLiFromTenGoc(tenGoc: string, doLi: string): string
 /**
  * Ghép tên hiển thị.
  * Thứ tự: ten_goc (ZEM nối sau sóng/màu) - hàng phế - màng - TCMB - độ li - đm li - đm kg - độ dày - mét dài.
+ * TP; PX Đặc và Rỗng: không ghép `(đm n kg)` vào tên (cột `dinh_muc_kg` vẫn lưu).
  * TP; PX Rỗng: bỏ khổ 2.1m mặc định khỏi tên ghép (DB vẫn lưu do_day_m).
  * Có ZEM: không ghép độ li / đm-li (ZEM đã thay độ li trên tên).
  */
@@ -1027,8 +1109,11 @@ export function composeProductionDisplayName(
   const rawDoLiDm = String(parts.doLiDm || '').trim();
   // ZEM: bỏ đm-li; đm-kg vẫn giữ (Sóng ZEM có định mức kg).
   const doLiDm = zem ? '' : rawDoLiDm;
-  const dinhMucKg = normalizeDinhMucKg(String(parts.dinhMucKg || '').trim());
   const group = classifyProductPxGroup(nhomVthh);
+  // Đặc và Rỗng: đm kg không hiện trên tên sản xuất.
+  const hideDinhMucKg = group === 'dac' || group === 'rong';
+  const dinhMucKg = hideDinhMucKg ? '' : normalizeDinhMucKg(String(parts.dinhMucKg || '').trim());
+  if (hideDinhMucKg) tenGoc = stripDinhMucKgSegment(tenGoc);
   const rawDayM = String(parts.doDayM || '').trim();
   const dayMNum = Number(normalizeDecimalToken(rawDayM.replace(/\s*m\s*$/iu, '')));
   // Sóng: không hiện khổ rộng trong tên (vẫn lưu DB). Rỗng mặc định 2.1m: cũng bỏ khỏi tên.
@@ -1353,6 +1438,24 @@ export function abbreviateHangPhe(value: string | null | undefined): string {
   return '';
 }
 
+/** Nhãn tường minh trong tên: OFF/off hoặc NP2 → NP2; NP → NP. */
+export function productionNameAmisGrade(value: string | null | undefined): string {
+  const text = String(value || '');
+  if (/\b(?:OFF|NP2)\b|GIÁ\s*RẺ/iu.test(text)) return 'NP2';
+  return /\bNP\b/iu.test(text) ? 'NP' : '';
+}
+
+function applyProductionNameGrade(base: string, suffix: string, input: MaAmisMoiInput) {
+  const nameGrade = productionNameAmisGrade(input.tenSanXuat) || productionNameAmisGrade(input.hangPhe);
+  // NP trong tên không hạ cấp mã NP2 đã có; OFF luôn nâng NP thành NP2.
+  const grade = nameGrade === 'NP' && /\bNP2\b/iu.test(`${base}${suffix}`) ? 'NP2' : nameGrade;
+  if (!grade) return { base, suffix };
+  // Mã cũ có thể đã chứa NP ở giữa. Bóc trước để OFF đổi thành NP2 và không nối lặp.
+  const cleaned = base.replace(/(^|[\s-])(?:NP2?|OFF)(?=[\s-]|$)/giu, '$1')
+    .replace(/-+/g, '-').replace(/^-+|-+$/g, '').trim();
+  return { base: cleaned, suffix: `-${grade}` };
+}
+
 /** `(đm 6.7 li)` / `6,7` → `6.7li` để thay token li trong mã. Định mức kg không đổi token li. */
 function doLiTokenFromDm(value: string): string {
   const normalized = normalizeDoLiDm(value, 'li');
@@ -1480,32 +1583,14 @@ export function buildMaAmisMoi(input: MaAmisMoiInput): string {
     npSuffix = `-${npMatch[1].toUpperCase()}`;
     base = base.slice(0, npMatch.index).trim().replace(/-+$/, '');
   }
+  ({ base, suffix: npSuffix } = applyProductionNameGrade(base, npSuffix, input));
 
   const group = classifyProductPxGroup(input.nhomVthh || '');
 
-// --- XÁC ĐỊNH TIÊNG PREFIX THEO NHÓM VTHH ---
-  // Quy tắc: DAC→DAC, SONG→SONG, RONG→RONG, mặc định STD
-  let filmPrefix = 'STD'; // Mặc định giữ STD cho backward compatibility
-  if (group === 'dac') filmPrefix = 'DAC';
-  if (group === 'song') filmPrefix = 'SONG';
-  if (group === 'rong') filmPrefix = 'RONG';
-  // ------------------------------------------------
-
   // Độ li ĐM thay token li (`6li` → `6.7li`). Không có đm thì mới dùng độ li hạ thật.
-  const doLiNew = doLiTokenFromDm(input.doLiDm || '') || normalizeDoLiToken(input.doLi || '');
+  // Giữ nguyên họ mã gốc (`STD08`, `STS06`). Không đổi thành DAC/SONG/RONG.
+  const doLiNew = formatAmisDoLiToken(doLiTokenFromDm(input.doLiDm || '') || input.doLi || '');
   if (doLiNew) base = replaceLiToken(base, doLiNew);
-
-  // --- THÊM PHÍM PREFIX MỚI NẾU ĐÃ THAY ĐỔI NHÓM ---
-  // Trích xuất prefix hiện tại (từ STD, STS, ECO, HA, LUX, SUNPC,...)
-  const currentPrefixMatch = base.match(/^[A-Za-z]+\d+/);
-  if (currentPrefixMatch && currentPrefixMatch[0]) {
-    const currentPrefix = currentPrefixMatch[0];
-    // Nếu prefix hiện tại khác prefix mới theo nhóm, thay thế
-    if (currentPrefix.toUpperCase() !== filmPrefix) {
-      base = base.replace(currentPrefix, filmPrefix);
-    }
-  }
-  // ------------------------------------------------
 
   const width = Number(String(input.cutWidthM ?? '').replace(',', '.'));
   if (Number.isFinite(width) && width > 0) base = applyCutWidthToAmis(base, width);
@@ -1538,7 +1623,7 @@ export function buildMaAmisMoi(input: MaAmisMoiInput): string {
   const dateToken = formatAmisDateToken(input.ngayCat);
   const dateSuffix = dateToken ? ` ${dateToken}` : '';
 
-  return (
+  return ensureAmisIntegerLiDot0(
     `${base}${npSuffix}${pheSuffix}${mang ? `-${mang}` : ''}${temSuffix ? ` ${temSuffix}` : ''}${dateSuffix}`
       .replace(/\s+/g, ' ')
       .trim()
@@ -1549,7 +1634,7 @@ export function buildMaAmisMoi(input: MaAmisMoiInput): string {
  * Mã biến thể cắt lẻ ĐỦ THÔNG TIN (mẫu: `STD06-0.75li*1.22m-TC-ECO-30m - TEM1.2li-MVKH-2DAU (09.10.2026)`):
  * `{gốc}-{TC|phế}-{MÀNG}-{dài}m`, mét dài luôn cuối (trước hậu tố tem).
  * `-TC-` cho hàng chuẩn (không phế); giữ `-NP-…` cho hàng phế.
- * Chỉ dùng cho luồng cắt lẻ (mới). Đơn miền nam giữ `buildMaAmisMoi` cũ.
+ * Dùng cho đơn cắt lẻ kho và đơn miền nam. Giữ họ mã gốc (`STD08`, `STS06`), không đổi thành DAC/SONG/RONG.
  */
 export function buildCutAmisCodeFull(input: MaAmisMoiInput & { ensureWidthM?: number | string | null }): string {
   const raw = stripAmisDateToken(String(input.baseMaAmis || '').trim().replace(/\s+/g, ' '));
@@ -1565,9 +1650,10 @@ export function buildCutAmisCodeFull(input: MaAmisMoiInput & { ensureWidthM?: nu
     npSuffix = `-${npMatch[1].toUpperCase()}`;
     base = base.slice(0, npMatch.index).trim().replace(/-+$/, '');
   }
+  ({ base, suffix: npSuffix } = applyProductionNameGrade(base, npSuffix, input));
 
   // Độ li ĐM thay token li; không có đm thì dùng độ li hạ thật.
-  const doLiNew = doLiTokenFromDm(input.doLiDm || '') || normalizeDoLiToken(input.doLi || '');
+  const doLiNew = formatAmisDoLiToken(doLiTokenFromDm(input.doLiDm || '') || input.doLi || '');
   if (doLiNew) base = replaceLiToken(base, doLiNew);
 
   const width = Number(String(input.cutWidthM ?? '').replace(',', '.'));
@@ -1618,11 +1704,187 @@ export function buildCutAmisCodeFull(input: MaAmisMoiInput & { ensureWidthM?: nu
   const dateToken = formatAmisDateToken(input.ngayCat);
   const dateSuffix = dateToken ? ` ${dateToken}` : '';
 
-  return (
+  return ensureAmisIntegerLiDot0(
     `${base}${midBlock}${mangPart}${lenPart}${temSuffix ? ` ${temSuffix}` : ''}${dateSuffix}`
       .replace(/\s+/g, ' ')
       .trim()
   );
+}
+
+/**
+ * Mã AMIS khi tạo sản phẩm mới từ đơn miền nam.
+ * Giữ họ mã (`STD05`, `ECR06`, `STS02`) và hậu tố `NP`/`NP2`/`NS`.
+ * - Đặc: độ li = tem (`2.5li`), khổ rộng = ô khổ (`*1.52m`). Không thêm mét dài.
+ * - Rỗng: độ li = tem (`4.0li`), khổ rộng = ô khổ (`*1.22m`), mét dài = ô m dài (`-5.8m`).
+ * - Sóng: độ li = tem (`1.0li`). Không thêm khổ hay mét dài.
+ * Độ li số nguyên dưới 10 luôn ghi `.0` trên mã mới (`4li` → `4.0li`).
+ * Hàng ZEM và nhóm khác chưa có công thức: trả mã gốc, không sửa token.
+ */
+export function buildSouthOrderProductAmis(input: {
+  baseMaAmis: string;
+  nhomVthh?: string | null;
+  tenSanXuat?: string | null;
+  /** Ô dán tem (`2.5li`, `4.0`, `1`). Trống thì giữ token độ li trong mã. */
+  tem?: string | null;
+  cutWidthM?: number | string | null;
+  cutLengthM?: number | string | null;
+}): string {
+  const raw = stripAmisDateToken(String(input.baseMaAmis || '').trim().replace(/\s+/g, ' '))
+    .replace(/\s*-+\s*/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!raw) return '';
+  const group = classifyProductPxGroup(input.nhomVthh || '');
+  if (hasZemInName(raw, input.tenSanXuat) || (group !== 'dac' && group !== 'rong' && group !== 'song')) {
+    return raw;
+  }
+
+  const npMatch = raw.match(/-?(NP2|NP|NS)\s*$/iu);
+  let npSuffix = '';
+  let base = raw;
+  if (npMatch && npMatch.index != null) {
+    npSuffix = `-${npMatch[1].toUpperCase()}`;
+    base = raw.slice(0, npMatch.index).trim().replace(/-+$/, '');
+  }
+
+  const temToken = formatAmisDoLiToken(String(input.tem || ''));
+  if (temToken) base = replaceLiToken(base, temToken);
+
+  const width = Number(String(input.cutWidthM ?? '').replace(/m\s*$/iu, '').replace(',', '.'));
+  const length = Number(String(input.cutLengthM ?? '').replace(/m\s*$/iu, '').replace(',', '.'));
+  if (group === 'dac' && Number.isFinite(width) && width > 0) {
+    base = applyCutWidthToAmis(base, width);
+  }
+  if (group === 'rong' && Number.isFinite(length) && length > 0) {
+    const label = formatMetersLabel(length);
+    base = /-\d[\d.,]*\s*m\s*$/iu.test(base)
+      ? base.replace(/-\d[\d.,]*\s*m\s*$/iu, `-${label}`)
+      : `${base}-${label}`;
+  }
+  // Rỗng: khổ `*Nm` đứng trước mét dài (`ECR06-4.0li*1.22m-6m`).
+  if (group === 'rong' && Number.isFinite(width) && width > 0) {
+    base = applyCutWidthToAmis(base, width);
+  }
+
+  return ensureAmisIntegerLiDot0(`${base}${npSuffix}`.replace(/-+/g, '-').replace(/-\*/g, '*'));
+}
+
+function isKnownLengthMeter(value: number): boolean {
+  return (KNOWN_LENGTH_METERS as readonly number[]).some(item => Math.abs(item - value) < 1e-9);
+}
+
+/** Rỗng không viết `li x khổ x dài`: sửa token li đầu và mét cuối (`- 2.1m - 5.8m` hoặc chỉ `- 5.8m`). */
+function rewriteRongDashProductName(
+  name: string,
+  liDisplay: (matched: string) => string,
+  widthLabel: string,
+  lengthLabel: string
+): string {
+  let next = name;
+  const liMatch = next.match(/([\d.,]+)\s*l?i\b/iu);
+  if (liMatch && liMatch.index != null) {
+    next = `${next.slice(0, liMatch.index)}${liDisplay(liMatch[0])}${next.slice(liMatch.index + liMatch[0].length)}`;
+  }
+  const meters = [...next.matchAll(/([\d.,]+)\s*m\b/giu)];
+  if (!meters.length) return next;
+  const last = meters[meters.length - 1];
+  if (last.index == null) return next;
+  const lastNum = Number(normalizeDecimalToken(last[1]));
+  if (meters.length >= 2 && (widthLabel || lengthLabel)) {
+    const prev = meters[meters.length - 2];
+    if (prev.index == null) return next;
+    const nextWidth = widthLabel || `${normalizeDecimalToken(prev[1])}m`;
+    const nextLength = lengthLabel || `${normalizeDecimalToken(last[1])}m`;
+    return `${next.slice(0, prev.index)}${nextWidth}${next.slice(prev.index + prev[0].length, last.index)}${nextLength}${next.slice(last.index + last[0].length)}`;
+  }
+  if (isKnownLengthMeter(lastNum) && widthLabel) {
+    const length = lengthLabel || formatMetersLabel(lastNum);
+    return `${next.slice(0, last.index)}${widthLabel} x ${length}${next.slice(last.index + last[0].length)}`;
+  }
+  if (lengthLabel) {
+    return `${next.slice(0, last.index)}${lengthLabel}${next.slice(last.index + last[0].length)}`;
+  }
+  return next;
+}
+
+/**
+ * Đổi độ li / khổ / mét dài trong **tên sản phẩm** (ten_sp) khi tạo biến thể từ đơn.
+ * - Đặc: `3.5li x 1.22m` hoặc `10i khổ 1.52m` (độ li + khổ rộng).
+ * - Rỗng: `4.5li x 2.1m x 5.8m`, hoặc chỉ `5li x 5.8m` (thiếu khổ), hoặc `4.5li - 2.1m - 5.8m`.
+ */
+export function rewriteOrderVariantProductName(input: {
+  name: string;
+  group?: string | null;
+  doLi?: string | null;
+  widthM?: string | number | null;
+  lengthM?: string | number | null;
+}): string {
+  const name = String(input.name || '').trim();
+  if (!name) return '';
+  const group = classifyProductPxGroup(input.group || '');
+  const liToken = normalizeDoLiToken(String(input.doLi || '')) || formatAmisDoLiToken(String(input.doLi || ''));
+  const widthN = Number(String(input.widthM ?? '').replace(/m\s*$/iu, '').replace(',', '.'));
+  const lengthN = Number(String(input.lengthM ?? '').replace(/m\s*$/iu, '').replace(',', '.'));
+  const widthLabel = Number.isFinite(widthN) && widthN > 0 ? formatMetersLabel(widthN) : '';
+  const lengthLabel = Number.isFinite(lengthN) && lengthN > 0 ? formatMetersLabel(lengthN) : '';
+
+  const liDisplay = (matched: string) => {
+    if (!liToken) return matched;
+    const number = liToken.replace(/li$/iu, '');
+    const usedBareI = /(?<!l)i\b/iu.test(matched) && !/li\b/iu.test(matched);
+    return usedBareI ? `${number}i` : `${number}li`;
+  };
+
+  if (group === 'rong') {
+    const triple = /([\d.,]+)\s*l?i\s*x\s*([\d.,]+\s*m)\s*x\s*([\d.,]+\s*m)/iu;
+    if (triple.test(name)) {
+      return name.replace(triple, (full, _li, widthPart, lengthPart) => {
+        const li = liDisplay(full);
+        const width = widthLabel || String(widthPart).replace(/\s+/g, '');
+        const length = lengthLabel || String(lengthPart).replace(/\s+/g, '');
+        return `${li} x ${width} x ${length}`;
+      });
+    }
+    // `5li x 5.8m`: mét là mét dài (thiếu khổ) khi nằm trong danh sách mét dài thường gặp.
+    const pair = /([\d.,]+)\s*l?i\s*x\s*([\d.,]+)\s*m\b/iu;
+    const pairMatch = name.match(pair);
+    if (pairMatch) {
+      const meter = Number(normalizeDecimalToken(pairMatch[2]));
+      const meterIsLength = (KNOWN_LENGTH_METERS as readonly number[]).some(value => Math.abs(value - meter) < 1e-9);
+      const li = liDisplay(pairMatch[0]);
+      const written = meterIsLength
+        ? (widthLabel
+          ? `${li} x ${widthLabel} x ${lengthLabel || formatMetersLabel(meter)}`
+          : `${li} x ${lengthLabel || formatMetersLabel(meter)}`)
+        : (lengthLabel
+          ? `${li} x ${widthLabel || formatMetersLabel(meter)} x ${lengthLabel}`
+          : `${li} x ${widthLabel || formatMetersLabel(meter)}`);
+      return name.replace(pair, written);
+    }
+    return rewriteRongDashProductName(name, liDisplay, widthLabel, lengthLabel);
+  }
+
+  if (group === 'dac') {
+    const withKho = name.replace(
+      /([\d.,]+)\s*l?i\s+khổ\s+([\d.,]+\s*m)/iu,
+      (full, _li, widthPart) => {
+        const li = liDisplay(full);
+        const width = widthLabel || String(widthPart).replace(/\s+/g, '');
+        return `${li} khổ ${width}`;
+      }
+    );
+    if (withKho !== name) return withKho;
+    return name.replace(
+      /([\d.,]+)\s*l?i\s*x\s*([\d.,]+\s*m)/iu,
+      (full, _li, widthPart) => {
+        const li = liDisplay(full);
+        const width = widthLabel || String(widthPart).replace(/\s+/g, '');
+        return `${li} x ${width}`;
+      }
+    );
+  }
+
+  return name;
 }
 
 /** Khổ rộng ghi trong mã AMIS (`*2.1m`). Không có thì null (không kiểm tra được). */

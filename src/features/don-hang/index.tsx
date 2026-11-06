@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { startTransition, useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowDown, ArrowUp, Archive, Eye, GripVertical, Loader2, Pencil, Plus, Printer, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Archive, Eye, GripVertical, Loader2, PackagePlus, Pencil, Plus, Printer, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { useTabAccess } from '../../app/useTabAccess';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { convertProductQuantity } from '../../utils/productUnitConversion';
@@ -10,16 +10,15 @@ import { BackButton } from '../../components/layout/NavButtons';
 import { RepeatableLineRow, RepeatableLinesBlock } from '../../components/RepeatableLinesBlock';
 import { pickText, fileToDataUrl, uploadImage, formatCell } from '../_shared/recordHelpers';
 import { SearchableSelect, SimpleSelect } from '../../components/shared/SearchableSelect';
+import { SouthOrderTemCells } from './SouthOrderTemCells';
 import { Select2 } from '../../components/shared/Select2';
 import {
   ORDER_TYPE_OPTIONS,
   ORDER_STATUS_OPTIONS,
   ORDER_STATUS_DEFAULT,
   isCutOrderType,
+  isRetailCutOrderType,
   SOUTH_ORDER_TYPE,
-  SOUTH_TEM_OPTIONS,
-  SOUTH_TEM_COLOR_OPTIONS,
-  southTemColorLabel,
   appendSouthTemToTenGhep,
   buildSouthTemSuffix,
   parseSouthTemFromTenGhep,
@@ -44,12 +43,14 @@ import {
   buildAllocatedQtyMap,
   getAllocatedQtyFromMap,
   duplicateLineStt,
+  orderDacDoLiRealNumber,
   type OrderProductOption,
   type OrderProductConversion,
   type StaffOption,
   type CustomerOption
 } from '../_shared/orderHelpers';
-import { detectOrderLineWidthMismatch, doLiDmWeightScale, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, replaceDoLiTokenInTenGhep, replaceMangInName, normalizeDoLiDm, seedProductionSpecs, stripDinhMucKgSegment, hasZemInName, stripDoLiDmLiSegment } from '../../utils/productProductionName';
+import { catalogWeightLi, resolveOrderDoLiDmField } from './dacDoLiDm';
+import { detectOrderLineWidthMismatch, doLiDmWeightScale, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, buildSouthOrderProductAmis, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, replaceDoLiTokenInTenGhep, replaceMangInName, seedProductionSpecs, stripDinhMucKgSegment, hasZemInName, stripDoLiDmLiSegment } from '../../utils/productProductionName';
 import {
   orderDuplicateDecimalText,
   parseSouthDinhMucKg,
@@ -73,6 +74,7 @@ export {
   southScaledTlAndTotal
 } from './southWeight';
 import { truncateTo3Decimals } from '../../utils/weightTruncate';
+import { productionNameAmisGrade } from '../../utils/productProductionName';
 import {
   parseOrderProductsFromRecord,
   summarizeOrderProducts,
@@ -98,6 +100,8 @@ import {
   RowActionsMenu
 } from '../../components/shared/table';
 import { showAppToast } from '../../lib/appToast';
+import { OrderProductCreateModal, fetchProductSnapshot, type ProductSnapshot } from './OrderProductCreateModal';
+import type { ProductFormState } from '../san-pham';
 
 export type { OrderProductLine, OrderRow };
 
@@ -111,13 +115,13 @@ const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2440px]';
 const ORDER_MIEN_NAM_TABLE_MIN_WIDTH = 'min-w-[2740px]';
 export const PRODUCTION_ORDER_TYPE = 'Đơn sản xuất';
 const orderProductGridClass =
-  'grid-cols-[7rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(22rem,2.5fr)_6rem_minmax(7rem,0.9fr)_5rem_7rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
+  'grid-cols-[9.5rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(22rem,2.5fr)_6rem_minmax(7rem,0.9fr)_5rem_7rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
 const orderProductionProductGridClass =
-  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(22rem,2.5fr)_6rem_minmax(6.5rem,0.85fr)_5rem_7rem_4.5rem_4.5rem_4.5rem_5rem_5rem_5rem_5rem_6.5rem]';
+  'grid-cols-[9.5rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(22rem,2.5fr)_6rem_minmax(6.5rem,0.85fr)_5rem_7rem_4.5rem_4.5rem_4.5rem_5rem_5rem_5rem_5rem_6.5rem]';
 const orderSouthProductGridClass =
-  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(22rem,2.5fr)_7rem_5rem_6rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
+  'grid-cols-[9.5rem_minmax(9rem,1fr)_minmax(22rem,2.5fr)_7rem_5rem_6rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const orderMienNamProductGridClass =
-  'grid-cols-[7rem_minmax(9rem,1fr)_minmax(22rem,2.5fr)_7rem_5rem_6rem_8.5rem_6.5rem_7rem_5.5rem_4.5rem_5rem_6rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
+  'grid-cols-[9.5rem_minmax(9rem,1fr)_minmax(22rem,2.5fr)_7rem_5rem_6rem_8.5rem_6.5rem_7rem_5.5rem_4.5rem_5rem_6rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
 const CUSTOMER_ENTERED_KG_SOURCE = 'khach_hang_nhap_kg';
 /** Tổng KG tự tính từ Định mức (cắt lẻ / miền nam) — server giữ số nhưng FE không coi là nhập tay. */
@@ -468,6 +472,8 @@ function OrderProductLineShell({
   onMoveUp,
   onMoveDown,
   onDuplicate,
+  onCreateProduct,
+  createProductDisabled,
   moveButtonsInStt = false,
   onDragStart,
   onDragOver,
@@ -485,6 +491,8 @@ function OrderProductLineShell({
   onMoveUp: () => void;
   onMoveDown: () => void;
   onDuplicate?: () => void;
+  onCreateProduct?: () => void;
+  createProductDisabled?: boolean;
   moveButtonsInStt?: boolean;
   onDragStart: (event: React.DragEvent<HTMLDivElement>) => void;
   onDragOver: (event: React.DragEvent<HTMLDivElement>) => void;
@@ -499,7 +507,9 @@ function OrderProductLineShell({
         event.preventDefault();
         onDrop();
       }}
-      onClick={onSelect}
+      onClick={() => {
+        startTransition(() => onSelect());
+      }}
       className={`group rounded-lg ${selected ? 'bg-red-50/70' : ''} ${dragging ? 'opacity-70' : ''}`}
     >
       <RepeatableLineRow gridTemplateClass={gridTemplateClass} className="!py-2 first:!pt-2 last:!pb-2">
@@ -540,6 +550,21 @@ function OrderProductLineShell({
                 <ArrowDown className="h-3 w-3" />
               </button>
             </span>
+          ) : null}
+          {onCreateProduct ? (
+            <button
+              type="button"
+              title="Thêm sản phẩm mới từ thông số của dòng này"
+              disabled={createProductDisabled}
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-sky-300 bg-sky-50 text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={event => {
+                event.stopPropagation();
+                onCreateProduct();
+              }}
+            >
+              <PackagePlus className="h-4 w-4" />
+              <span className="sr-only">Thêm sản phẩm</span>
+            </button>
           ) : null}
           {moveButtonsInStt && onDuplicate ? (
             <button
@@ -675,10 +700,22 @@ export function orderProductLinesToPayload(
       // Riêng hậu tố tên chỉ ghép khi có tem (buildSouthTemSuffix).
       const mauTemValue = String(line.mauTem || '').trim();
       const danTem2DauValue = Boolean(line.danTem2Dau);
-      // Form chỉ nhập số; khi lưu/ghép tên luôn hiểu là (đm n li).
+      // Ô "Độ li ĐM" là độ li định mức `(đm n li)` với mọi nhóm, kể cả Đặc. Không lấy độ li thực.
       // Tên đã có ZEM (hàng sóng) thì không dùng định mức li.
       const nameHasZem = hasZemInName(line.productionName, line.productName, line.productCode, line.tenGhep);
-      const doLiDmValue = isCutLikeOrder && !nameHasZem ? normalizeDoLiDm(line.doLiDm, 'li') : '';
+      const doLiFields = resolveOrderDoLiDmField({
+        isCutLikeOrder,
+        group: selectedProduct?.group || String(line.sourceProduct?.nhom_vthh ?? ''),
+        nameHasZem,
+        fieldText: line.doLiDm,
+        savedDoLi: String(line.sourceProduct?.do_li ?? '') || line.doLi || selectedProduct?.doLi || '',
+        productionName: line.productionName,
+        tenGhep: line.tenGhep,
+        maAmis: selectedProduct?.code || productCode,
+        savedDoLiDm: String(line.sourceProduct?.do_li_dm ?? '')
+      });
+      const { isDacField: isDacLiField, fieldToken: dacDoLiFieldToken, changed: dacDoLiChanged } = doLiFields;
+      const doLiDmValue = doLiFields.doLiDmValue;
       // Ghi đè stale trong sourceProduct khi user xóa tem/màu/bỏ tick 2 Đầu (undefined bị JSON.stringify loại bỏ).
       const moTaTem = isCutLikeOrder
         ? buildSouthTemSuffix(temValue, mauTemValue, danTem2DauValue).trim()
@@ -744,8 +781,8 @@ export function orderProductLinesToPayload(
         catalogMainLength > 0
           ? catalogMainLength
           : undefined;
-      // Mã AMIS mới: miền nam dùng buildMaAmisMoi. Cắt lẻ dùng buildCutAmisCodeFull
-      // (viết tắt từ tên sản xuất + khổ + mét cắt + đm + màng + tem). ma_amis_cu = mã gốc.
+      // Mã AMIS mới: miền nam và cắt lẻ kho dùng mã đủ thông tin (họ mã gốc + khổ/dài/màng/tem/ngày).
+      // Không đổi STD08/STS06 thành DAC/SONG/RONG. Đơn theo quy cách chỉ sửa token trên mã gốc.
       const cutLengthForCode = Number.isFinite(daiM) && daiM > 0 ? daiM : undefined;
       const cutDiffersForCode =
         cutLengthForCode != null &&
@@ -762,21 +799,39 @@ export function orderProductLinesToPayload(
           : null;
       const doLiLine = String(line.doLi || '').trim();
       const doLiDiffersForCode =
-        Boolean(doLiLine && variantSpecs?.doLi) &&
-        normalizeDoLiToken(doLiLine) !== normalizeDoLiToken(variantSpecs?.doLi || '');
+        Boolean(doLiLine && (selectedProduct?.doLi || variantSpecs?.doLi)) &&
+        normalizeDoLiToken(doLiLine) !== normalizeDoLiToken(selectedProduct?.doLi || variantSpecs?.doLi || '');
       // Tem (`1.5li`) thay token độ li chính trên tên; `(đm n li)` giữ nguyên.
       const applyTemDoLi = (name: string) => {
         if (!isCutLikeOrder || !temValue || nameHasZem || hasZemInName(name)) return name;
         return replaceDoLiTokenInTenGhep(name, temValue);
       };
-      const doLiStored = isSouthOrder ? (doLiLine || variantSpecs?.doLi || '') : '';
+      // Nhóm Đặc: ô "Độ li ĐM" = độ li thực → sửa ô thì đổi token độ li chính của tên.
+      const applyDacDoLi = (name: string) => {
+        if (!isDacLiField || !dacDoLiChanged || !dacDoLiFieldToken) return name;
+        return replaceDoLiTokenInTenGhep(name, dacDoLiFieldToken);
+      };
+      // Đặc: lưu độ li thực vào `do_li` (cả đơn cắt lẻ) để lần sau load/mirror trọng lượng đọc đúng.
+      const doLiStored = isDacLiField
+        ? (doLiFields.doLiStored || doLiLine || selectedProduct?.doLi || variantSpecs?.doLi || '')
+        : isSouthOrder ? (doLiLine || selectedProduct?.doLi || variantSpecs?.doLi || '') : '';
       const lineMang = isSouthOrder
         ? (line.mang !== undefined ? line.mang.trim() : (variantSpecs?.mang || undefined))
         : (line.mang?.trim() || variantSpecs?.mang || undefined);
+      const expectedGrade = productionNameAmisGrade(line.productionName || catalogProductionName);
+      const needsGradeCorrection = Boolean(expectedGrade && !new RegExp(`(^|[\\s-])${expectedGrade === 'NP' ? 'NP2?' : expectedGrade}(?=[\\s-]|$)`, 'iu').test(selectedProduct?.code || productCode));
       const maAmisMoiValue =
         isCutLikeOrder &&
+        !(selectedProduct?.savedVariant && !needsGradeCorrection && !cutDiffersForCode && !widthDiffersForCode && !doLiDiffersForCode
+          && (isDacLiField
+            ? dacDoLiFieldToken === normalizeDoLiToken(selectedProduct.doLi || '')
+            : orderDoLiDmLiNumber(line.doLiDm) === orderDoLiDmLiNumber(selectedProduct.doLiDm))
+          && (lineMang || '') === (selectedProduct.mang || '')
+          && temValue === (parseSouthTemFromTenGhep(catalogTenGhep)?.tem || '')
+          && mauTemValue === (parseSouthTemFromTenGhep(catalogTenGhep)?.mauTem || '')
+          && danTem2DauValue === Boolean(parseSouthTemFromTenGhep(catalogTenGhep)?.danTem2Dau)) &&
         (selectedProduct?.code || productCode) &&
-        (cutDiffersForCode ||
+        (needsGradeCorrection || cutDiffersForCode ||
           widthDiffersForCode ||
           doLiDiffersForCode ||
           doLiDmValue ||
@@ -786,26 +841,36 @@ export function orderProductLinesToPayload(
           danTem2DauValue ||
           lineMang ||
           variantSpecs?.mang)
-          ? (isSouthOrder ? buildMaAmisMoi : buildCutAmisCodeFull)({
-              baseMaAmis: selectedProduct?.code || productCode,
+          ? ((isSouthOrder || isRetailCutOrderType(orderType)) ? buildCutAmisCodeFull : buildMaAmisMoi)({
+              baseMaAmis: selectedProduct?.savedVariant ? selectedProduct.baseAmisCode || selectedProduct.code : selectedProduct?.code || productCode,
               nhomVthh: selectedProduct?.group,
-              cutLengthM: cutDiffersForCode ? cutLengthForCode : undefined,
-              cutWidthM: widthDiffersForCode ? enteredWidth : undefined,
-              doLi: doLiDiffersForCode ? doLiLine : undefined,
-              doLiDm: doLiDmValue || undefined,
+              cutLengthM: isSouthOrder
+                ? cutLengthForCode
+                : (cutDiffersForCode || selectedProduct?.savedVariant ? cutLengthForCode : undefined),
+              cutWidthM: isSongLine
+                ? undefined
+                : isSouthOrder
+                  ? (Number.isFinite(enteredWidth) && enteredWidth > 0 ? enteredWidth : undefined)
+                  : (widthDiffersForCode || selectedProduct?.savedVariant ? enteredWidth : undefined),
+              ...(isSouthOrder && !isSongLine && Number.isFinite(enteredWidth) && enteredWidth > 0
+                ? { ensureWidthM: enteredWidth }
+                : {}),
+              doLi: isDacLiField ? (dacDoLiFieldToken || undefined) : (doLiDiffersForCode ? doLiLine : undefined),
+              // Nhóm Đặc: mã AMIS dùng độ li thực (ô), không dùng số đm `(đm …)`.
+              doLiDm: isDacLiField ? undefined : (doLiDmValue || undefined),
               hangPhe: variantSpecs?.hangPhe || undefined,
               mang: lineMang || variantSpecs?.mang || undefined,
               tem: temValue || undefined,
               mauTem: mauTemValue || undefined,
               danTem2Dau: danTem2DauValue || undefined,
-              tenSanXuat: isSouthOrder ? undefined : line.productionName.trim() || catalogProductionName,
+              tenSanXuat: line.productionName.trim() || catalogProductionName,
               ngayCat: ngayCat || undefined
             })
           : '';
       const variantExtraFields = maAmisMoiValue
         ? {
             ma_amis: maAmisMoiValue,
-            ...(selectedProduct?.code || productCode ? { ma_amis_cu: selectedProduct?.code || productCode } : {})
+            ...(selectedProduct?.code || productCode ? { ma_amis_cu: selectedProduct?.baseAmisCode || selectedProduct?.code || productCode } : {})
           }
         : {};
       const resolveTenGhep = (tenSanXuat: string, cutLength?: number) => {
@@ -837,6 +902,7 @@ export function orderProductLinesToPayload(
             base = replaceMangInName(base, String(lineMang), variantSpecs?.mang);
           }
           if (nameHasZem || hasZemInName(base)) base = stripDoLiDmLiSegment(base);
+          base = applyDacDoLi(base);
           base = applyTemDoLi(base);
           // Sóng: giữ `(đm n kg)` gốc trên tên, không ghi theo ô Định mức tiêu chuẩn.
           // Nhóm khác: bỏ segment kg khỏi tên ghép.
@@ -860,6 +926,7 @@ export function orderProductLinesToPayload(
         }
         if (!tenGhep) return undefined;
         if (nameHasZem || hasZemInName(tenGhep)) tenGhep = stripDoLiDmLiSegment(tenGhep);
+        tenGhep = applyDacDoLi(tenGhep);
         tenGhep = applyTemDoLi(tenGhep);
         if (isSouthOrder && pxGroup !== 'song' && !nameHasZem) tenGhep = stripDinhMucKgSegment(tenGhep);
         return isCutLikeOrder ? appendSouthTemToTenGhep(tenGhep, temValue, mauTemValue, danTem2DauValue) : tenGhep;
@@ -871,9 +938,9 @@ export function orderProductLinesToPayload(
           .map(result => ({ don_vi: result.unit, gia_tri: result.value }));
         const rawTenSanXuat = line.productionName.trim() || '';
         const shouldReplaceMang = isSouthOrder ? lineMang !== undefined : Boolean(lineMang);
-        const tenSanXuat = applyTemDoLi(shouldReplaceMang && lineMang !== undefined
+        const tenSanXuat = applyTemDoLi(applyDacDoLi(shouldReplaceMang && lineMang !== undefined
           ? replaceMangInName(rawTenSanXuat, lineMang, variantSpecs?.mang)
-          : rawTenSanXuat);
+          : rawTenSanXuat));
         const quyCachMDaiStored = Number.isFinite(daiM) && daiM > 0
           ? daiM
           : Number.isFinite(Number(line.quyCachMDai)) && Number(line.quyCachMDai) > 0
@@ -965,7 +1032,7 @@ export function orderProductLinesToPayload(
       // Số nhập tay luôn ưu tiên hơn số tự tính (kể cả đơn miền nam đã cho sửa Tổng KG).
       const effectiveManualTotalKg = manualTotalKg ?? dinhMucTotalKg;
       const cutWeight = isCutLikeOrder
-        ? calculateCutOrderWeight(line.daiM, String(quantity), conversion, unit, productCode, productName, isSongLine ? '' : (line.kho || ''), doLiDmWeightScale(line.doLiDm, selectedProduct?.doLiDm))
+        ? calculateCutOrderWeight(line.daiM, String(quantity), conversion, unit, productCode, productName, isSongLine ? '' : (line.kho || ''), doLiDmWeightScale(line.doLiDm, catalogWeightLi(selectedProduct)))
         : null;
 
       let cutQuyCach: string | undefined;
@@ -1043,9 +1110,9 @@ export function orderProductLinesToPayload(
       const rawTenSanXuat =
         line.productionName.trim() || selectedProduct?.productionName || resolved.productionName || '';
       const shouldReplaceMangName = isSouthOrder ? lineMang !== undefined : Boolean(lineMang);
-      const tenSanXuat = applyTemDoLi(shouldReplaceMangName && lineMang !== undefined
+      const tenSanXuat = applyTemDoLi(applyDacDoLi(shouldReplaceMangName && lineMang !== undefined
         ? replaceMangInName(rawTenSanXuat, lineMang, variantSpecs?.mang)
-        : rawTenSanXuat);
+        : rawTenSanXuat));
       const tenGhep = resolveTenGhep(tenSanXuat, quyCachMDai);
 
       return {
@@ -1195,6 +1262,15 @@ export function orderToForm(order: OrderRow): OrderFormState {
 
 export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const { canCreate, canEdit, canDelete } = useTabAccess('orders');
+  const { canCreate: canCreateProduct } = useTabAccess('products');
+  const [isPreparingProduct, setIsPreparingProduct] = useState(false);
+  const productPreparation = useRef(0);
+  const [productCreation, setProductCreation] = useState<{
+    source: ProductSnapshot;
+    line: OrderProductFormLine;
+    projection: React.ComponentProps<typeof OrderProductCreateModal>['projection'];
+    specs: React.ComponentProps<typeof OrderProductCreateModal>['specs'];
+  } | null>(null);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [searchText, setSearchText] = useState('');
   const [selectedType, setSelectedType] = useState('all');
@@ -1464,6 +1540,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   };
 
   const closeForm = () => {
+    productPreparation.current += 1;
+    setProductCreation(null);
     setFormMode(null);
     setEditingId(null);
     setFormError('');
@@ -1698,7 +1776,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     const khoScale = southKhoScale(line.kho, stdKho) ?? 1;
     const liScale = hasZemInName(line.productionName, line.productName, line.productCode)
       ? 1
-      : (doLiDmWeightScale(line.doLiDm, product.doLiDm) ?? 1);
+      : (doLiDmWeightScale(line.doLiDm, catalogWeightLi(product)) ?? 1);
     // Độ dài tấm tiêu chuẩn giữ theo sản phẩm; ĐM tiêu chuẩn = kg tấm chuẩn × hệ số khổ × hệ số độ li (cắt 3 số lẻ).
     // Tổng KG tự nhân thêm Dài m qua KG/1m = ĐM tiêu chuẩn ÷ độ dài tấm tiêu chuẩn.
     const nextDm = truncateTo3Decimals(stdKg * khoScale * liScale);
@@ -1847,7 +1925,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     // Ưu tiên field tem/mauTem riêng trên danh mục SP; fallback parse từ tenGhep (dữ liệu cũ)
     const catalogTem = match?.tem || '';
     const catalogMauTem = match?.mauTem || '';
-    const parsedTem = isSouthOrder && match && !catalogTem
+    const parsedTem = match && !catalogTem
       ? parseSouthTemFromTenGhep(match.tenGhep || match.productionName)
       : null;
     const autoTem = catalogTem || parsedTem?.tem || '';
@@ -1865,7 +1943,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     const rawKho = String(match?.doDayM || '').replace(/m\s*$/iu, '').trim();
     const autoKho = rawKho || (conversion?.khoTamRongM ? String(conversion.khoTamRongM) : '') || inferred.kho;
 
-    const rawDoLiDm = hasZemInName(match?.productionName, match?.name, match?.code) ? '' : orderDoLiDmLiNumber(match?.doLiDm, match?.productionName) || inferred.doLiDm;
+    const autoDoLiDm = hasZemInName(match?.productionName, match?.name, match?.code) ? '' : orderDoLiDmLiNumber(match?.doLiDm, match?.productionName) || inferred.doLiDm;
 
     const autoDoDaiTamTieuChuan = (conversion?.khoTamDaiM ? String(conversion.khoTamDaiM) : '') || rawDaiM || inferred.daiM;
     const autoDinhMucTieuChuanKg = (conversion?.trongLuongKgTam ? String(conversion.trongLuongKgTam) : '') || (match?.totalWeight ? String(match.totalWeight) : '');
@@ -1876,15 +1954,19 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       productName: match?.name || '',
       productionName: match?.productionName || '',
       unit: 'Tấm',
+      doLi: match?.doLi || '',
       mang: extractedMang,
       // Dài m chuẩn của SP (danh mục, fallback bảng quy đổi) — tự fill cho cả
       // đơn theo quy cách / cắt lẻ / miền nam, người dùng sửa lại mét cắt khi cần.
       daiM: orderDuplicateDecimalText(autoDaiM || ''),
       kho: orderDuplicateDecimalText(autoKho || ''),
-      doLiDm: orderDuplicateDecimalText(rawDoLiDm || ''),
+      doLiDm: orderDuplicateDecimalText(autoDoLiDm || ''),
       tongKg: '',
       dinhMucKg: '',
       manualTongKg: false,
+      tem: autoTem,
+      mauTem: autoMauTem,
+      danTem2Dau: Boolean(parsedTem?.danTem2Dau),
       ...(isSouthOrder ? {
         mang: extractedMang,
         doDaiTamTieuChuan: orderDuplicateDecimalText(autoDoDaiTamTieuChuan || ''),
@@ -1894,6 +1976,122 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         danTem2Dau: Boolean(parsedTem?.danTem2Dau)
       } : {})
     });
+  };
+
+  const openCreateProduct = async (lineKey: string) => {
+    if (!canCreateProduct || isPreparingProduct) return;
+    const line = orderForm.productLines.find(item => item.key === lineKey);
+    const match = line && (findOrderProductById(productOptions, line.productId) || resolveOrderLineProduct(productOptions, line));
+    if (!line || !match) { setFormError('Vui lòng chọn dòng có sản phẩm trước khi thêm sản phẩm biến thể.'); return; }
+    setSelectedProductLineKey(lineKey);
+    setIsPreparingProduct(true); setFormError('');
+    const preparation = ++productPreparation.current;
+    try {
+      const source = await fetchProductSnapshot(match.id);
+      if (preparation !== productPreparation.current) return;
+      if (source.conversions.length > 1) throw new Error('Sản phẩm gốc có nhiều bộ quy đổi ngoài cấu trúc hiện tại. Vui lòng kiểm tra danh mục trước khi tạo biến thể.');
+      const options = normalizeOrderProducts([{
+        id: source.product.id, ma_sp: source.product.code, ma_amis: source.product.amisCode, ma_amis_cu: source.product.amisOldCode,
+        ten_sp: source.product.name, ten_san_xuat: source.product.productionName,
+        ten_ghep: source.product.tenGhep, nhom_vthh: source.product.group, don_vi: source.product.unit,
+        do_dai_m: source.product.doDaiM, do_day_m: source.product.doDayM, do_li_dm: source.product.doLiDm,
+        do_li: source.product.doLi, mang: source.product.mang
+      }]);
+      const projected = orderProductLinesToPayload([line], [...options, ...productOptions.filter(item => item.id !== match.id)], orderForm.orderType, source.conversions, orderForm.createdAt)[0] as Record<string, unknown> | undefined;
+      const fromVariantSource = source.product.code.startsWith('VAR-');
+      const southProductAmis = orderForm.orderType === SOUTH_ORDER_TYPE
+        ? buildSouthOrderProductAmis({
+            baseMaAmis: fromVariantSource ? source.product.amisOldCode || source.product.amisCode : source.product.amisCode,
+            nhomVthh: source.product.group,
+            tenSanXuat: line.productionName || source.product.productionName,
+            tem: line.tem,
+            cutWidthM: line.kho || source.product.doDayM,
+            cutLengthM: line.daiM || source.product.doDaiM
+          })
+        : '';
+      const projectedName = String(projected?.ten_ghep || projected?.ten_san_xuat || source.product.productionName || '');
+      // Modal thêm SP: tên SX/tên ghép không mang Dán Tem / Màu tem / 2 Đầu của dòng đơn.
+      const createProductName = appendSouthTemToTenGhep(projectedName, '', '', false);
+      setProductCreation({ source, line: { ...line },
+        projection: { code: southProductAmis || String(projected?.ma_amis || source.product.amisCode), name: source.product.name, productionName: createProductName },
+        specs: { width: line.kho || source.product.doDayM || '', length: line.daiM || source.product.doDaiM || '',
+          doLi: line.doLi || source.product.doLi || '',
+          doLiDm: line.doLiDm || source.product.doLiDm || '',
+          mang: line.mang ?? source.product.mang ?? '',
+          tem: line.tem || '', mauTem: line.mauTem || '', danTem2Dau: Boolean(line.danTem2Dau), kgPerSheet: line.dinhMucKg || '' }
+      });
+    } catch (error: any) { setFormError(error.message || 'Không thể tải sản phẩm gốc.'); }
+    finally { setIsPreparingProduct(false); }
+  };
+
+  const projectNewProductCode = (form: ProductFormState) => {
+    if (!productCreation) return form.amisCode;
+    const base = productCreation.source.product;
+    const length = Number(String(form.doDaiM).replace(/m$/iu, '').replace(',', '.'));
+    const width = Number(String(form.doDayM).replace(/m$/iu, '').replace(',', '.'));
+    const isSouthOrder = orderForm.orderType === SOUTH_ORDER_TYPE;
+    const isSongForm = classifyProductPxGroup(form.group) === 'song';
+    const fromVariant = base.code.startsWith('VAR-');
+    const baseAmis = fromVariant ? base.amisOldCode || base.amisCode : base.amisCode;
+    if (isSouthOrder) {
+      // Đơn miền nam, tạo SP: giữ họ mã + NP/NP2. Độ li lấy từ tem. Đặc đổi khổ, Rỗng đổi mét dài, Sóng chỉ độ li.
+      return buildSouthOrderProductAmis({
+        baseMaAmis: baseAmis,
+        nhomVthh: form.group,
+        tenSanXuat: form.productionName || base.productionName,
+        tem: productCreation.specs.tem ? form.doLi : '',
+        cutWidthM: form.doDayM,
+        cutLengthM: form.doDaiM
+      });
+    }
+    const builder = isRetailCutOrderType(orderForm.orderType) ? buildCutAmisCodeFull : buildMaAmisMoi;
+    const baseLength = Number(String(base.doDaiM).replace(/m$/iu, '').replace(',', '.'));
+    const baseWidth = Number(String(base.doDayM).replace(/m$/iu, '').replace(',', '.'));
+    const lengthChanged = length > 0 && (fromVariant || length !== baseLength);
+    const widthChanged = width > 0 && !isSongForm && (fromVariant || width !== baseWidth);
+    const isDacProductForm = classifyProductPxGroup(form.group) === 'dac';
+    return builder({ baseMaAmis: baseAmis, nhomVthh: form.group,
+      cutLengthM: lengthChanged ? length : undefined,
+      cutWidthM: isSongForm ? undefined : (widthChanged ? width : undefined),
+      doLi: form.doLi !== base.doLi || isDacProductForm ? form.doLi : undefined,
+      doLiDm: form.doLiDm,
+      mang: form.mang, hangPhe: form.hangPhe,
+      tem: productCreation.specs.tem ? form.doLi : undefined, mauTem: productCreation.specs.mauTem,
+      danTem2Dau: productCreation.specs.danTem2Dau,
+      tenSanXuat: form.productionName || base.productionName,
+      ngayCat: orderForm.createdAt
+    });
+  };
+
+  const useCreatedProduct = (saved: ProductSnapshot) => {
+    if (!productCreation) return;
+    const product = saved.product;
+    const option = normalizeOrderProducts([{
+      id: product.id, ma_sp: product.code, ma_amis: product.amisCode, ma_amis_cu: product.amisOldCode, ten_sp: product.name,
+      ten_san_xuat: product.productionName, ten_ghep: product.tenGhep, nhom_vthh: product.group,
+      don_vi: product.unit, do_dai_m: product.doDaiM, do_day_m: product.doDayM,
+      do_li_dm: product.doLiDm, do_li: product.doLi, mang: product.mang, tong_trong_luong: product.totalWeight
+    }])[0];
+    if (!option) { setFormError('Không thể chọn sản phẩm đã lưu do thiếu mã AMIS.'); return; }
+    const tem = parseSouthTemFromTenGhep(product.tenGhep || product.productionName || '');
+    const conversion = saved.conversions[0];
+    setProductOptions(prev => [option, ...prev.filter(item => item.id !== product.id)]);
+    setProductConversions(prev => [...saved.conversions, ...prev.filter(item => item.sanPhamId !== product.id)]);
+    setOrderForm(prev => ({ ...prev, productLines: prev.productLines.map(line => line.key !== productCreation.line.key ? line : {
+      ...line, productId: product.id, productCode: product.amisCode, productName: product.name,
+      productionName: product.productionName || '', tenGhep: product.tenGhep || product.productionName,
+      unit: allowedOrderUnits(option).includes(line.unit) ? line.unit : product.unit,
+      daiM: String(conversion?.khoTamDaiM || product.doDaiM || ''), kho: String(conversion?.khoTamRongM || product.doDayM || ''),
+      doLi: product.doLi || '', doLiDm: orderDoLiDmLiNumber(product.doLiDm), mang: product.mang || '',
+      tem: tem?.tem || '', mauTem: tem?.mauTem || '', danTem2Dau: Boolean(tem?.danTem2Dau),
+      dinhMucKg: '', doDaiTamTieuChuan: String(conversion?.khoTamDaiM || ''), dinhMucTieuChuanKg: String(conversion?.trongLuongKgTam || ''),
+      sourceProduct: undefined, manualFromSaved: false, shouldRecalculateConversion: true,
+      manualTongKg: Boolean(line.manualTongKg && !line.manualFromSaved),
+      tongKg: line.manualTongKg && !line.manualFromSaved ? line.tongKg : '',
+      kg1Sp: '', tlTam: '', tlCuon: '', m2: '', mDai: '', conversionResults: undefined, conversionSource: ''
+    }) }));
+    setProductCreation(null);
+    showAppToast('Đã chọn sản phẩm và quy đổi đã lưu vào dòng đơn hàng.');
   };
 
   const handleSaveOrder = async () => {
@@ -2315,11 +2513,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       selected={selectedProductLineKey === line.key}
       dragging={dragProductIndex === index}
       gridTemplateClass={gridTemplateClass}
-      onSelect={() => setSelectedProductLineKey(line.key)}
+      onSelect={() => setSelectedProductLineKey(current => (current === line.key ? current : line.key))}
       onDelete={() => removeProductLine(line.key)}
       onMoveUp={() => moveProductLine(index, index - 1)}
       onMoveDown={() => moveProductLine(index, index + 1)}
       onDuplicate={() => duplicateProductLineBelow(index)}
+      onCreateProduct={canCreateProduct && (formMode === 'add' ? canCreate : canEdit)
+        ? () => { void openCreateProduct(line.key); } : undefined}
+      createProductDisabled={isPreparingProduct || isSavingOrder || isLoadingLookups || !(line.productId || line.productCode)}
       moveButtonsInStt
       onDragStart={event => handleProductDragStart(event, index)}
       onDragOver={handleProductDragOver}
@@ -2332,6 +2533,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-white">
+      {productCreation && <OrderProductCreateModal source={productCreation.source} projection={productCreation.projection}
+        specs={productCreation.specs} projectCode={projectNewProductCode} onClose={() => setProductCreation(null)} onSaved={useCreatedProduct} />}
       {formMode && createPortal(
         <div
           ref={setOrderFormOverlayEl}
@@ -2603,7 +2806,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       // khổ chuẩn danh mục vào thông tin; không hiện trong tên ghép / Mã AMIS).
                       const isSongOrderLine = classifyProductPxGroup(matchedLineProduct?.group || '') === 'song';
                       const cutWeight = line.shouldRecalculateConversion
-                        ? calculateCutOrderWeight(line.daiM, cutEffectiveQty, matchedConversion, cutEffectiveUnit, line.productCode, matchedLineProduct?.name || line.productName, isSongOrderLine ? '' : (line.kho || ''), doLiDmWeightScale(line.doLiDm, matchedLineProduct?.doLiDm))
+                        ? calculateCutOrderWeight(line.daiM, cutEffectiveQty, matchedConversion, cutEffectiveUnit, line.productCode, matchedLineProduct?.name || line.productName, isSongOrderLine ? '' : (line.kho || ''), doLiDmWeightScale(line.doLiDm, catalogWeightLi(matchedLineProduct)))
                         : null;
                       const kgPerStandardMeter = isFormSouthOrder
                         ? southOrderKgPerMeter(
@@ -2643,7 +2846,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         }
                         if (line.shouldRecalculateConversion) {
                           // TL/đơn vị không phụ thuộc SL → tính với SL = 1 để dòng mới (chưa nhập SL) vẫn tự fill.
-                          const perUnit = calculateCutOrderWeight(line.daiM, '1', matchedConversion, cutEffectiveUnit, line.productCode, matchedLineProduct?.name || line.productName, line.kho || '', doLiDmWeightScale(line.doLiDm, matchedLineProduct?.doLiDm));
+                          const perUnit = calculateCutOrderWeight(line.daiM, '1', matchedConversion, cutEffectiveUnit, line.productCode, matchedLineProduct?.name || line.productName, line.kho || '', doLiDmWeightScale(line.doLiDm, catalogWeightLi(matchedLineProduct)));
                           return positive(perUnit?.kg1Sp ?? Number.NaN);
                         }
                         return positive(parsePercentInput(String(cutEffectiveUnit === 'Cuộn' ? line.tlCuon || '' : line.tlTam || '')));
@@ -2723,10 +2926,15 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <div className="col-span-1 min-w-0">
                           <OrderNumberInput
                             value={line.doLiDm || ''}
-                            onChange={e => updateConversionProductLine(line.key, { doLiDm: e.target.value, manualTongKg: false, tongKg: '', dinhMucKg: '' })}
+                            onChange={e => updateConversionProductLine(line.key, {
+                              doLiDm: e.target.value,
+                              manualTongKg: false,
+                              tongKg: '',
+                              dinhMucKg: ''
+                            })}
                             className={orderFieldClass}
                             placeholder="0.75"
-                            title="Độ li định mức thực tế — chỉ nhập số, tự hiểu là (đm n li)"
+                            title="Độ li định mức — chỉ nhập số, tự hiểu là (đm n li). Không phải độ li thực của tấm"
                           />
                         </div>
                         {!isFormSouthOrder ? (
@@ -2868,45 +3076,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             title="Màng (tự điền khi sản phẩm có màng; để trống nếu không có, tự đổi trong tên sản xuất)"
                           />
                         </div>
-                        <div className="min-w-0">
-                          <SearchableSelect
-                            value={line.tem || ''}
-                            onChange={tem => updateConversionProductLine(line.key, { tem })}
-                            options={[...SOUTH_TEM_OPTIONS]}
-                            placeholder="Chọn/nhập tem"
-                            getLabel={item => String(item)}
-                            getValue={item => String(item)}
-                            allowEmpty
-                            allowCustomValue
-                            inputClassName={orderFieldClass}
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <SearchableSelect
-                            value={line.mauTem || ''}
-                            onChange={mauTem => updateConversionProductLine(line.key, { mauTem })}
-                            options={[...SOUTH_TEM_COLOR_OPTIONS]}
-                            placeholder="Màu tem"
-                            getLabel={item => String(item)}
-                            getValue={item => String(item)}
-                            getOptionLabel={item => southTemColorLabel(String(item)) || String(item)}
-                            getSearchText={item => `${item} ${southTemColorLabel(String(item))}`}
-                            allowEmpty
-                            allowCustomValue
-                            inputClassName={orderFieldClass}
-                          />
-                        </div>
-                        <div className="flex min-w-0 items-center justify-center">
-                          <label className="flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-200 px-2 text-xs font-bold text-zinc-700 hover:bg-zinc-50" title="Dán Tem 2 Đầu">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(line.danTem2Dau)}
-                              onChange={e => updateConversionProductLine(line.key, { danTem2Dau: e.target.checked })}
-                              className="h-4 w-4 accent-emerald-600"
-                            />
-                            2 Đầu
-                          </label>
-                        </div>
+                        <SouthOrderTemCells
+                          tem={line.tem || ''}
+                          mauTem={line.mauTem || ''}
+                          danTem2Dau={Boolean(line.danTem2Dau)}
+                          onPatch={patch => updateProductLine(line.key, patch)}
+                        />
                         <div className="min-w-0">
                           <input
                             value={line.note}

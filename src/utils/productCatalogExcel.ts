@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import {
+  classifyProductPxGroup,
   composeProductionDisplayName,
   extractDoLiDmLi,
   extractZemToken,
@@ -414,6 +415,8 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
     normalizeDinhMucKg(String(row.dinhMucKg ?? '').trim()) ||
     dinhMucKg ||
     normalizeDinhMucKg(seeded.dinhMucKg);
+  const pxGroup = classifyProductPxGroup(group);
+  if (pxGroup === 'dac' || pxGroup === 'rong') dinhMucKg = '';
   const zem = normalizeZemCell(row.zem) || seeded.zem;
   const soSong = normalizeSoSongCell(row.soSong) || seeded.soSong;
   const tcmb = parseTcmbCell(row.tcmb) ? 'TCMB' : seeded.tcmb;

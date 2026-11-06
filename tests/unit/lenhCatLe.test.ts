@@ -471,8 +471,8 @@ describe('lenh-cat-le — ma_amis_cu quy về mã gốc đã lưu', () => {
     };
     const line = buildCatLeSanPhamLine({ mother: rong, qty: 5, w2: 1.22, l2: 30, doLiMoi: '3li', nhomVthh: 'TP; PX Rỗng' });
     const code = String(line.san_pham_cat_1.ma_amis || '');
-    assert.match(code, /3li/);
-    assert.doesNotMatch(code, /4li/);
+    assert.match(code, /3\.0li/);
+    assert.doesNotMatch(code, /(?<![0-9.])4li\b/);
     assert.equal(line.san_pham_cat_1.ma_amis_cu, 'PW-CASE-RONG01');
   });
 

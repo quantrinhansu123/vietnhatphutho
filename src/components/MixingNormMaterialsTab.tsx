@@ -587,10 +587,16 @@ function normalizeProductLookupKey(value: string) {
   return value.trim().toLocaleLowerCase('vi').replace(/\s+/g, '');
 }
 
-function materialOptionLabel(item: Pick<MaterialOption, 'code' | 'name' | 'productionName'> & { nhomVatTuPhu?: string }) {
-  const base = `${item.code} - ${item.name}`;
-  const withProd = item.productionName.trim() ? `${base} · ${item.productionName.trim()}` : base;
-  return item.nhomVatTuPhu ? `${withProd} (${item.nhomVatTuPhu})` : withProd;
+/** Ô đã chọn: mã - tên NVL. Tên sản xuất có cột riêng nên không hiện ở đây. */
+function materialSelectedLabel(item: Pick<MaterialOption, 'code' | 'name'>) {
+  return [item.code.trim(), item.name.trim()].filter(Boolean).join(' - ');
+}
+
+/** Dropdown: mã và tên sản xuất. Không có tên sản xuất thì dùng tên NVL. */
+function materialDropdownLabel(item: Pick<MaterialOption, 'code' | 'name' | 'productionName'> & { nhomVatTuPhu?: string }) {
+  const detail = item.productionName.trim() || item.name.trim();
+  const base = [item.code.trim(), detail].filter(Boolean).join(' - ');
+  return item.nhomVatTuPhu ? `${base} (${item.nhomVatTuPhu})` : base;
 }
 
 
@@ -773,6 +779,16 @@ function resolveNormOrderStatus(maLenhSx: string, orders: MixingProductionOrder[
 
 function isFormulaNormProduct(product: MixingNormProduct) {
   return product.loai !== 'nvl_phu';
+}
+
+/** Tổng KL các SP công thức trên phiếu (không cộng block NVL phụ). */
+function normFormulaTotalKg(row: Pick<MixingNormRow, 'products'>): number | null {
+  const weights = row.products
+    .filter(isFormulaNormProduct)
+    .map(product => product.tong_trong_luong)
+    .filter((value): value is number => value !== null && value !== undefined && Number.isFinite(value));
+  if (weights.length === 0) return null;
+  return weights.reduce((sum, value) => sum + value, 0);
 }
 
 function visibleNormProducts(products: MixingNormProduct[]) {
@@ -3064,6 +3080,7 @@ export default function MixingNormMaterialsTab() {
                 <th className="whitespace-nowrap px-3 py-3 font-black">Lệnh SX</th>
                 <th className="whitespace-nowrap px-3 py-3 font-black">Trạng thái</th>
                 <th className="whitespace-nowrap px-3 py-3 font-black">Sản phẩm</th>
+                <th className="whitespace-nowrap px-3 py-3 text-right font-black">Tổng</th>
                 <th className="px-3 py-3 font-black">NVL / giá trị theo SP</th>
                 <th className="whitespace-nowrap px-3 py-3 text-center font-black">Thao tác</th>
               </tr>
@@ -3116,6 +3133,9 @@ export default function MixingNormMaterialsTab() {
                       ))}
                       </div>
                     )}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right font-black text-[#ef1b2d]">
+                    {formatKhoiLuongDisplay(normFormulaTotalKg(row))}
                   </td>
                   <td
                     className="px-3 py-2.5 text-xs font-semibold text-zinc-700"
@@ -3386,6 +3406,17 @@ export default function MixingNormMaterialsTab() {
                   const productTotal = parseNumberOrNull(product.tongTrongLuong) ?? 0;
                   const standardBatch = parseNumberOrNull(product.dinhLuongCoi) ?? 0;
                   const mixingRoundCount = computeMixingRoundCount(productTotal, standardBatch);
+                  const lineTotals = product.lines.reduce(
+                    (sum, line) => {
+                      const gia = parseNumberOrNull(line.giaTri);
+                      const stats = computeNplPercents(gia, line.donVi, standardBatch, productTotal || null);
+                      if (gia !== null) sum.gia += gia;
+                      if (stats.ty_le_coi !== null) sum.percent += stats.ty_le_coi;
+                      if (stats.tong_khoi_luong !== null) sum.kg += stats.tong_khoi_luong;
+                      return sum;
+                    },
+                    { gia: 0, percent: 0, kg: 0, hasGia: product.lines.some(line => parseNumberOrNull(line.giaTri) !== null) }
+                  );
                   const takenByOthers = new Set<string>();
                   selectedLookupKeysByProduct.forEach((keys, key) => {
                     if (key === product.key) return;
@@ -3585,7 +3616,8 @@ export default function MixingNormMaterialsTab() {
                                       options={mainMaterialOptions}
                                       placeholder={`Tìm mã hoặc tên NVL #${index + 1}`}
                                       getValue={item => (item as MaterialOption).id}
-                                      getLabel={item => materialOptionLabel(item as MaterialOption)}
+                                      getLabel={item => materialSelectedLabel(item as MaterialOption)}
+                                      getOptionLabel={item => materialDropdownLabel(item as MaterialOption)}
                                       getSearchText={item => `${(item as MaterialOption).code} ${(item as MaterialOption).name} ${(item as MaterialOption).productionName}`}
                                       inputClassName={inputClass}
                                       openUpward
@@ -3649,6 +3681,21 @@ export default function MixingNormMaterialsTab() {
                                   </div>
                                 );
                               })}
+                              {lineTotals.hasGia ? (
+                                <div className="grid grid-cols-1 gap-1 rounded-lg border border-[#ef1b2d]/30 bg-red-50 px-1.5 py-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_56px_40px_56px_56px_72px_30px]">
+                                  <span className="flex items-center text-[10px] font-black uppercase tracking-wide text-zinc-700">Tổng</span>
+                                  <span />
+                                  <span className="text-right text-[10px] font-black text-zinc-800">
+                                    {new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(lineTotals.gia)}
+                                  </span>
+                                  <span className="text-right text-[10px] font-black text-zinc-700">{roundPercent(lineTotals.percent)}%</span>
+                                  <span className="text-right text-[10px] font-black text-zinc-700">{roundPercent(lineTotals.percent)}%</span>
+                                  <span className="text-right text-[10px] font-black text-[#ef1b2d]">
+                                    {formatKhoiLuongDisplay(lineTotals.kg)}
+                                  </span>
+                                  <span />
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         </div>
@@ -3817,7 +3864,8 @@ export default function MixingNormMaterialsTab() {
                                         options={filteredOptions}
                                         placeholder={'Tìm NVL phụ #' + (index + 1)}
                                         getValue={item => (item as MaterialOption).id}
-                                        getLabel={item => materialOptionLabel(item as MaterialOption)}
+                                        getLabel={item => materialSelectedLabel(item as MaterialOption)}
+                                        getOptionLabel={item => materialDropdownLabel(item as MaterialOption)}
                                         getSearchText={item => (item as MaterialOption).code + ' ' + (item as MaterialOption).name + ' ' + (item as MaterialOption).productionName + ' ' + ((item as MaterialOption).nhomVatTuPhu || '')}
                                         inputClassName={inputClass}
                                         openUpward
