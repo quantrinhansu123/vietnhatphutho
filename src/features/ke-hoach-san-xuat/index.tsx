@@ -4958,6 +4958,16 @@ type AllocatedProductionLine = {
   productId: string;
   productionName: string;
   quantity: number;
+  soLuongBac: number;
+  soLuongTrung: number;
+  soLuongNam: number;
+};
+
+type AllocatedRegionQuantities = {
+  quantity: number;
+  soLuongBac: number;
+  soLuongTrung: number;
+  soLuongNam: number;
 };
 
 /** Gom SL đã lập lệnh theo mã đơn, một lần duyệt — tránh quét lại toàn bộ lệnh theo từng sản phẩm. */
@@ -4972,7 +4982,10 @@ function buildAllocatedLinesByOrder(productionOrders: ProductionOrderRow[]) {
         productCode: line.productCode,
         productId: line.productId || '',
         productionName: line.productionName || '',
-        quantity: parseRowQuantity(line.quantity)
+        quantity: parseRowQuantity(line.quantity),
+        soLuongBac: parseRowQuantity(String(line.soLuongBac ?? '')),
+        soLuongTrung: parseRowQuantity(String(line.soLuongTrung ?? '')),
+        soLuongNam: parseRowQuantity(String(line.soLuongNam ?? ''))
       };
       const bucket = map.get(orderRef);
       if (bucket) bucket.push(entry);
@@ -4994,6 +5007,30 @@ function sumAllocatedLines(
     if (productLineMatches(line, productCode, productId, productionName)) sum += line.quantity;
   }
   return sum;
+}
+
+function sumAllocatedRegionQuantities(
+  lines: AllocatedProductionLine[] | undefined,
+  productCode: string,
+  productId = '',
+  productionName = ''
+): AllocatedRegionQuantities {
+  const empty: AllocatedRegionQuantities = {
+    quantity: 0,
+    soLuongBac: 0,
+    soLuongTrung: 0,
+    soLuongNam: 0
+  };
+  if (!lines || lines.length === 0) return empty;
+  const out = { ...empty };
+  for (const line of lines) {
+    if (!productLineMatches(line, productCode, productId, productionName)) continue;
+    out.quantity += line.quantity;
+    out.soLuongBac += line.soLuongBac;
+    out.soLuongTrung += line.soLuongTrung;
+    out.soLuongNam += line.soLuongNam;
+  }
+  return out;
 }
 
 export function getAllocatedProductionQuantity(
@@ -5104,6 +5141,88 @@ function buildSalesOrderRegionFields(
   };
 }
 
+/** Chia `target` theo tỷ lệ `parts`, tổng 3 miền = target (largest remainder). */
+function distributeQuantityAcrossParts(parts: [number, number, number], target: number): [number, number, number] {
+  const total = parts[0] + parts[1] + parts[2];
+  if (!(target > 0) || !(total > 0)) return [0, 0, 0];
+  if (Math.abs(total - target) < 1e-9) {
+    return parts.map(value => Math.max(0, Math.round(value))) as [number, number, number];
+  }
+
+  const raw = parts.map(value => (value / total) * target);
+  const floors = raw.map(value => Math.floor(value + 1e-9));
+  let leftover = Math.round(target - floors.reduce((sum, value) => sum + value, 0));
+  const byFrac = raw
+    .map((value, index) => ({ index, frac: value - floors[index] }))
+    .sort((a, b) => b.frac - a.frac);
+  const out = [...floors] as [number, number, number];
+  const step = leftover >= 0 ? 1 : -1;
+  leftover = Math.abs(leftover);
+  for (let i = 0; i < byFrac.length && leftover > 0; i += 1) {
+    out[byFrac[i].index] += step;
+    leftover -= 1;
+  }
+  return out.map(value => Math.max(0, value)) as [number, number, number];
+}
+
+/**
+ * Bắc/Trung/Nam còn thiếu = SL miền trên đơn − SL miền đã lập LSX.
+ * Nếu LSX cũ không ghi miền thì scale tỷ lệ 3 miền theo SL còn thiếu.
+ */
+function scaleOrderLineRegionFieldsToRemaining(
+  sourceLine: OrderProductLine | undefined,
+  remaining: number,
+  allocatedRegions?: AllocatedRegionQuantities
+): Pick<ProductionOrderEntryLine, 'slBac' | 'slTrung' | 'slNam'> | null {
+  if (!sourceLine || !orderLineHasRegionQuantity(sourceLine) || !Number.isFinite(remaining) || remaining <= 0) {
+    return null;
+  }
+
+  const orderBac = Math.max(0, parseProductionOrderQuantity(String(sourceLine.soLuongBac ?? '')));
+  const orderTrung = Math.max(0, parseProductionOrderQuantity(String(sourceLine.soLuongTrung ?? '')));
+  const orderNam = Math.max(0, parseProductionOrderQuantity(String(sourceLine.soLuongNam ?? '')));
+  const orderTotal = orderBac + orderTrung + orderNam;
+  if (!(orderTotal > 0)) return null;
+
+  const allocBac = Math.max(0, allocatedRegions?.soLuongBac ?? 0);
+  const allocTrung = Math.max(0, allocatedRegions?.soLuongTrung ?? 0);
+  const allocNam = Math.max(0, allocatedRegions?.soLuongNam ?? 0);
+  const allocRegionTotal = allocBac + allocTrung + allocNam;
+
+  // Có LSX đã ghi Bắc/Trung/Nam → trừ đúng từng miền; không thì scale từ SL miền gốc.
+  const baseParts: [number, number, number] =
+    allocRegionTotal > 0
+      ? [
+          Math.max(0, orderBac - allocBac),
+          Math.max(0, orderTrung - allocTrung),
+          Math.max(0, orderNam - allocNam)
+        ]
+      : [orderBac, orderTrung, orderNam];
+
+  const baseTotal = baseParts[0] + baseParts[1] + baseParts[2];
+  const parts =
+    baseTotal > 0 ? baseParts : ([orderBac, orderTrung, orderNam] as [number, number, number]);
+  const [slBac, slTrung, slNam] = distributeQuantityAcrossParts(parts, remaining);
+
+  return {
+    slBac: String(slBac),
+    slTrung: String(slTrung),
+    slNam: String(slNam)
+  };
+}
+
+function resolveProductionEntryRegionFields(
+  order: OrderRow | undefined,
+  sourceLine: OrderProductLine | undefined,
+  remaining: number,
+  allocatedRegions?: AllocatedRegionQuantities
+): Pick<ProductionOrderEntryLine, 'slBac' | 'slTrung' | 'slNam'> {
+  return (
+    scaleOrderLineRegionFieldsToRemaining(sourceLine, remaining, allocatedRegions) ||
+    buildSalesOrderRegionFields(order, sourceLine, remaining)
+  );
+}
+
 function productionProductMatchesCode(product: ProductRow, productCode: string) {
   const key = normalizeProductCodeKey(productCode);
   if (!key) return false;
@@ -5170,7 +5289,16 @@ export function buildProductionEntryLine(
     productionName
   );
   const sourceProductId = line?.productId?.trim() || '';
+  const matchProductId = sourceProductId || productId;
+  const matchProductionName = productionName || line?.productionName || '';
+  const allocatedRegions = sumAllocatedRegionQuantities(
+    buildAllocatedLinesByOrder(productionOrders).get(orderRef.trim()),
+    productCode,
+    matchProductId,
+    matchProductionName
+  );
   const metadata = productionEntryMetadataFromOrderLine(line);
+  const { slBac: _slBac, slTrung: _slTrung, slNam: _slNam, ...metadataWithoutRegion } = metadata;
   const sourceQty = parseProductionOrderQuantity(String(line?.quantity ?? ''));
   const shownQty = remaining > 0 ? String(remaining) : '';
   const draft: ProductionOrderEntryLine = {
@@ -5182,7 +5310,7 @@ export function buildProductionEntryLine(
     quantity: sourceQty > 0 ? String(sourceQty) : shownQty,
     unit: unit || getOrderProductUnit(orders, orderRef, productCode, productId, productionName),
     productId: sourceProductId || undefined,
-    ...metadata
+    ...metadataWithoutRegion
   };
   const rates = conversionRatesForEntry(draft, sourceQty);
   const scaled = scaleProductionEntryQuantity({ ...draft, quyDoiMotDonVi: rates }, shownQty);
@@ -5193,9 +5321,10 @@ export function buildProductionEntryLine(
     unit: draft.unit,
     // Chỉ lấy ID thật trên dòng don_hang.san_pham; không fallback từ catalog/ô chọn.
     productId: sourceProductId || undefined,
-    ...metadata,
+    ...metadataWithoutRegion,
     ...scaled,
-    ...buildSalesOrderRegionFields(sourceOrder, line, remaining)
+    // Bắc/Trung/Nam = còn thiếu từng miền (đã trừ LSX), không lấy nguyên SL trên đơn.
+    ...resolveProductionEntryRegionFields(sourceOrder, line, remaining, allocatedRegions)
   };
 }
 
@@ -6204,7 +6333,7 @@ export function AddProductionOrderModal({
           product.productionName,
           product.id,
           product.sourceLine,
-          product.orderQty
+          product.remainingQty
         )
       };
     }
@@ -6279,8 +6408,8 @@ export function AddProductionOrderModal({
     );
 
     if (isSameProduct) {
-      if (!currentLine?.quantity.trim() && product.orderQty > 0) {
-        updateEntryLine(key, scaleProductionEntryQuantity(currentLine, String(product.orderQty)));
+      if (!currentLine?.quantity.trim() && product.remainingQty > 0) {
+        updateEntryLine(key, scaleProductionEntryQuantity(currentLine, String(product.remainingQty)));
       }
       return;
     }
@@ -6295,7 +6424,7 @@ export function AddProductionOrderModal({
       product.productionName,
       product.productId,
       product.sourceLine,
-      product.orderQty
+      product.remainingQty
     );
     updateEntryLine(key, {
       ...built,
@@ -7307,7 +7436,7 @@ export function AddProductionOrderModal({
                     setLineDraftProductCode(optionKey);
                     const product = (productOptionsByOrderRef.get(lineDraftOrderRef.trim()) ?? [])
                       .find(item => item.optionKey === optionKey);
-                    setLineDraftQuantity(product?.orderQty > 0 ? String(product.orderQty) : '');
+                    setLineDraftQuantity(product?.remainingQty > 0 ? String(product.remainingQty) : '');
                   }}
                   options={productOptionsByOrderRef.get(lineDraftOrderRef.trim()) ?? []}
                   placeholder={lineDraftOrderRef ? 'Gõ để tìm mã hàng' : 'Chọn đơn trước'}
@@ -8101,7 +8230,7 @@ export function EditProductionOrderModal({
           product.productionName,
           product.id,
           product.sourceLine,
-          product.orderQty
+          product.remainingQty
         )
       };
     }
@@ -8177,14 +8306,14 @@ export function EditProductionOrderModal({
     );
 
     if (isSameProduct) {
-      // Chọn lại đúng SP: giữ SL đã nhập tay; nếu đang trống thì khôi phục SL đơn hàng.
-      if (!currentLine?.quantity.trim() && product.orderQty > 0) {
-        updateEntryLine(key, scaleProductionEntryQuantity(currentLine, String(product.orderQty)));
+      // Chọn lại đúng SP: giữ SL đã nhập tay; nếu đang trống thì điền SL còn thiếu.
+      if (!currentLine?.quantity.trim() && product.remainingQty > 0) {
+        updateEntryLine(key, scaleProductionEntryQuantity(currentLine, String(product.remainingQty)));
       }
       return;
     }
 
-    // Khi đổi sản phẩm, tự điền đúng SL của dòng sản phẩm trong đơn hàng.
+    // Khi đổi sản phẩm, tự điền SL còn thiếu (đã trừ phần đã lập LSX).
     const built = buildProductionEntryLine(
       orders,
       productionOrders,
@@ -8195,7 +8324,7 @@ export function EditProductionOrderModal({
       product.productionName,
       product.productId,
       product.sourceLine,
-      product.orderQty
+      product.remainingQty
     );
     updateEntryLine(key, {
       ...built,
