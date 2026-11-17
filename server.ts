@@ -5511,16 +5511,25 @@ async function attachLiveKhoNvlIds<T extends Record<string, unknown>>(
   return { records: stamped, ensured: catalog.ensured, skipped: catalog.skipped, error: catalog.error };
 }
 
-/** Id kho_nvl đang sống của một mã trong đúng kho. Dùng khi cộng tồn theo id danh mục. */
-async function liveKhoNvlIdsForWarehouse(code: string, tenKho: string): Promise<Set<string>> {
-  const hits = await loadKhoNvlHitsByIdentity([code]);
+/** Id kho_nvl đang sống của nhiều mã trong đúng kho. Dùng khi kiểm tồn theo lô phiếu. */
+async function liveKhoNvlIdsForWarehouseBatch(codes: string[], tenKho: string): Promise<Map<string, Set<string>>> {
+  const hits = await loadKhoNvlHitsByIdentity(codes);
   const want = normalizeKhoLabelForMatch(tenKho);
-  const ids = new Set<string>();
+  const idsByCode = new Map<string, Set<string>>();
   for (const [identity, hit] of hits) {
-    const warehouse = identity.split('\0')[3] ?? '';
-    if (normalizeKhoLabelForMatch(warehouse) === want) ids.add(hit.id);
+    const [code, , , warehouse = ''] = identity.split('\0');
+    if (normalizeKhoLabelForMatch(warehouse) !== want) continue;
+    const ids = idsByCode.get(code) || new Set<string>();
+    ids.add(hit.id);
+    idsByCode.set(code, ids);
   }
-  return ids;
+  return idsByCode;
+}
+
+/** Wrapper single-code kept for inventory paths that already request one material. */
+async function liveKhoNvlIdsForWarehouse(code: string, tenKho: string): Promise<Set<string>> {
+  const byCode = await liveKhoNvlIdsForWarehouseBatch([code], tenKho);
+  return byCode.get(code) || new Set<string>();
 }
 
 /** Cột id_danh_muc đã có trên phiếu thì tồn chỉ cộng đúng id. Chưa chạy SQL thì giữ cách cộng cũ. */
@@ -5868,14 +5877,20 @@ async function buildNvlInboundLots(
 
 async function validateNvlExportLots(
   items: WarehouseSlipLineInput[],
-  excludeSlipCode?: string
+  excludeSlipCode?: string,
+  options?: { requireLot?: boolean }
 ): Promise<{ error: string } | null> {
+  const requireLot = options?.requireLot === true;
   const requestedByLot = new Map<string, { qty: number; code: string; price: number; slipCode?: string }>();
 
   for (const item of items) {
     const lotId = String(item.sourceInboundLineId || '').trim();
-    // Lô nhập / giá không bắt buộc — chỉ validate khi đã chọn lô.
-    if (!lotId) continue;
+    if (!lotId) {
+      if (requireLot) {
+        return { error: `Dòng ${item.code} cần chọn lô nhập (giá) khi xuất NVL.` };
+      }
+      continue;
+    }
     const current = requestedByLot.get(lotId) || {
       qty: 0,
       code: item.code,
@@ -13617,6 +13632,46 @@ export function createApp() {
     }
   });
 
+  /** Danh sách đơn giá đã từng nhập của 1 mã NVL (dropdown chọn / gõ tay giá mới). */
+  app.get(['/api/phieu-xuat-nhap-kho/gia-nvl', '/api/phieu-nhap-kho/gia-nvl', '/api/phieu-xuat-kho/gia-nvl'], async (req, res) => {
+    if (!supabase) {
+      return res.json({ prices: [], total: 0, source: 'local' });
+    }
+    try {
+      const maNpl = String(req.query.ma_npl ?? req.query.materialCode ?? req.query.code ?? '').trim();
+      if (!maNpl) {
+        return res.status(400).json({ error: 'Thiếu mã NPL (ma_npl).' });
+      }
+      const { nvl: nvlLoaiKhos } = await loaiKhoLists();
+      const nvlOr = nvlLoaiKhoOrClause(nvlLoaiKhos);
+      const { data, error } = await queryWarehouseSplitRows('nhap', table =>
+        supabase
+          .from(table)
+          .select('don_gia, so_luong, ngay_phieu')
+          .eq('ma_npl', maNpl)
+          .eq('loai_phieu', 'nhap')
+          .or(nvlOr)
+          .order('ngay_phieu', { ascending: false })
+          .limit(2000)
+      );
+      if (error) {
+        return res.status(500).json({ error: `Không tải được giá NVL. ${error.message}` });
+      }
+      const countByPrice = new Map<number, number>();
+      for (const row of data || []) {
+        const donGia = roundWarehouseMoney(Number(row.don_gia) || 0);
+        if (!Number.isFinite(donGia) || donGia < 0) continue;
+        countByPrice.set(donGia, (countByPrice.get(donGia) || 0) + 1);
+      }
+      const prices = [...countByPrice.entries()]
+        .sort((a, b) => b[0] - a[0])
+        .map(([don_gia, so_lan]) => ({ don_gia, so_lan }));
+      return res.json({ prices, total: prices.length, ma_npl: maNpl, source: 'supabase' });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi tải giá NVL.' });
+    }
+  });
+
   app.get(['/api/phieu-xuat-nhap-kho/dinh-muc-da-xuat', '/api/phieu-xuat-nhap-kho/lenh-sx-da-xuat', '/api/phieu-xuat-kho/dinh-muc-da-xuat', '/api/phieu-xuat-kho/lenh-sx-da-xuat'], async (req, res) => {
     if (!supabase) {
       return res.json({ items: [], total: 0, source: 'local' });
@@ -13815,7 +13870,7 @@ export function createApp() {
       }
 
       if (parsed.loaiPhieu === 'xuat' && parsed.loaiKho === 'nvl') {
-        const lotError = await validateNvlExportLots(parsed.items);
+        const lotError = await validateNvlExportLots(parsed.items, undefined, { requireLot: true });
         if (lotError) {
           return res.status(400).json(lotError);
         }
@@ -13965,7 +14020,7 @@ export function createApp() {
       }
 
       if (parsed.loaiPhieu === 'xuat' && parsed.loaiKho === 'nvl') {
-        const lotError = await validateNvlExportLots(parsed.items, slipCode);
+        const lotError = await validateNvlExportLots(parsed.items, slipCode, { requireLot: true });
         if (lotError) {
           return res.status(400).json(lotError);
         }
@@ -17634,6 +17689,7 @@ async function loadKiemKhoLiveTongHopForDot(
         ton_dau: number;
         nhap: number;
         xuat: number;
+        priceLots: Map<string, { don_gia: number; so_luong: number; ngay: string; chua_ro_gia: boolean }>;
       };
       const balances = new Map<string, NvlBalance>();
       const balanceKey = (code: string, name: string, productionName: string, warehouse: string) =>
@@ -17666,7 +17722,8 @@ async function loadKiemKhoLiveTongHopForDot(
             tong_kg: input.tongKg === undefined || input.tongKg === null || !Number.isFinite(input.tongKg) ? null : input.tongKg,
             ton_dau: 0,
             nhap: 0,
-            xuat: 0
+            xuat: 0,
+            priceLots: new Map()
           };
           balances.set(key, balance);
         }
@@ -17736,12 +17793,43 @@ async function loadKiemKhoLiveTongHopForDot(
         if (!Number.isFinite(qty)) return;
         const slipDate = parseWarehouseSlipDate(row.ngay_phieu) ?? '';
         const isExport = String(row.loai_phieu ?? '').trim().toLowerCase() === 'xuat';
+        if (!isExport && qty > 0) {
+          const lotId = String(row.id ?? '').trim();
+          if (lotId) {
+            const rawPrice = row.don_gia;
+            const unitPrice = Number(rawPrice);
+            const hasUnitPrice = rawPrice !== null && rawPrice !== undefined && String(rawPrice).trim() !== '' && Number.isFinite(unitPrice) && unitPrice >= 0;
+            balance.priceLots.set(lotId, {
+              don_gia: hasUnitPrice ? roundWarehouseMoney(unitPrice) : 0,
+              so_luong: roundWarehouseQty(qty),
+              ngay: slipDate,
+              chua_ro_gia: !hasUnitPrice
+            });
+          }
+        } else if (isExport && qty > 0) {
+          let remaining = qty;
+          const sourceLotId = String(row.id_dong_nhap_nguon ?? '').trim();
+          if (sourceLotId) {
+            const lot = balance.priceLots.get(sourceLotId);
+            if (lot) lot.so_luong = roundWarehouseQty(Math.max(0, lot.so_luong - remaining));
+          } else {
+            // Legacy exports without a lot reference consume oldest priced stock first.
+            // Any quantity beyond known lots remains in the unpriced reconciliation bucket below.
+            const fifoLots = [...balance.priceLots.entries()].sort((a, b) => a[1].ngay.localeCompare(b[1].ngay));
+            for (const [, lot] of fifoLots) {
+              if (remaining <= 0) break;
+              const used = Math.min(remaining, lot.so_luong);
+              lot.so_luong = roundWarehouseQty(lot.so_luong - used);
+              remaining = roundWarehouseQty(remaining - used);
+            }
+          }
+        }
         if (slipDate && slipDate < tuNgay) {
-          balance.ton_dau = roundWarehouseMoney(balance.ton_dau + (isExport ? -qty : qty));
+          balance.ton_dau = roundWarehouseQty(balance.ton_dau + (isExport ? -qty : qty));
         } else if (isExport) {
-          balance.xuat = roundWarehouseMoney(balance.xuat + qty);
+          balance.xuat = roundWarehouseQty(balance.xuat + qty);
         } else {
-          balance.nhap = roundWarehouseMoney(balance.nhap + qty);
+          balance.nhap = roundWarehouseQty(balance.nhap + qty);
         }
       };
 
@@ -17814,10 +17902,42 @@ async function loadKiemKhoLiveTongHopForDot(
         }
       }
 
-      let rows = Array.from(balances.values()).map(balance => ({
-        ...balance,
-        ton_cuoi: roundWarehouseMoney(balance.ton_dau + balance.nhap - balance.xuat)
-      }));
+      let rows = Array.from(balances.values()).map(balance => {
+        const tonCuoi = roundWarehouseQty(balance.ton_dau + balance.nhap - balance.xuat);
+        const byPrice = new Map<number, number>();
+        for (const lot of balance.priceLots.values()) {
+          if (lot.so_luong <= 0) continue;
+          if (!lot.chua_ro_gia) byPrice.set(lot.don_gia, roundWarehouseQty((byPrice.get(lot.don_gia) || 0) + lot.so_luong));
+        }
+        const pricedQty = [...byPrice.values()].reduce((sum, value) => sum + value, 0);
+        const lotMismatch = pricedQty > tonCuoi + 0.0005;
+        const unpricedQty = roundWarehouseQty(lotMismatch ? Math.max(0, tonCuoi) : Math.max(0, tonCuoi - pricedQty));
+        const giaTon: Array<{ don_gia: number; so_luong: number; thanh_tien: number; chua_ro_gia: boolean; ly_do?: string }> = lotMismatch ? [] : [...byPrice.entries()]
+          .sort((a, b) => a[0] - b[0])
+          .map(([don_gia, so_luong]) => ({
+            don_gia,
+            so_luong,
+            thanh_tien: roundWarehouseMoney(don_gia * so_luong),
+            chua_ro_gia: false
+          }));
+        if (unpricedQty > 0.0005) {
+          giaTon.push({
+            don_gia: 0,
+            so_luong: unpricedQty,
+            thanh_tien: 0,
+            chua_ro_gia: true,
+            ...(lotMismatch ? { ly_do: 'Số lượng theo lô đang lệch tổng tồn' } : {})
+          });
+        }
+        const { priceLots: _priceLots, ...row } = balance;
+        return {
+          ...row,
+          ton_cuoi: tonCuoi,
+          gia_ton: giaTon,
+          tong_tien_ton: roundWarehouseMoney(giaTon.reduce((sum, item) => sum + item.thanh_tien, 0)),
+          ton_chua_ro_gia: unpricedQty
+        };
+      });
       if (keyword) {
         rows = rows.filter(row =>
           row.ma_npl.toLowerCase().includes(keyword) ||
@@ -20407,7 +20527,7 @@ async function loadKiemKhoLiveTongHopForDot(
     insertNhapKho: insertNhapKhoCatalogRows,
     ensureKhoNvlCatalog: ensureKhoNvlCatalogForNvlLines,
     attachLiveKhoNvlIds,
-    liveKhoNvlIds: liveKhoNvlIdsForWarehouse,
+    liveKhoNvlIds: liveKhoNvlIdsForWarehouseBatch,
     slipsHaveCatalogStamp: warehouseSlipsHaveCatalogStamp,
     isMissingTable: isMissingTableError,
     isMissingColumn: isMissingColumnError,
