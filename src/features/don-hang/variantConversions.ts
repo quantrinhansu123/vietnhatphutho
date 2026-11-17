@@ -42,13 +42,26 @@ export function variantConversion(
     : baseM2 && specs.weightScale !== null ? baseM2 * (specs.weightScale ?? 1) : null;
   const linear = m2Weight && width ? m2Weight * width
     : directSheet && length ? directSheet / length : null;
+  // Đổi mét, giữ khổ: TL/tấm = cắt 3 số của (kg tấm cũ × mét mới / mét cũ) — một lần, không qua kg/m đã cắt.
+  const widthUnchanged = !specs.width || (width !== null && oldWidth !== null && Math.abs(width - oldWidth) < 1e-9);
+  const lengthChanged =
+    Boolean(specs.length) && length !== null && oldLength !== null && Math.abs(length - oldLength) > 1e-9;
+  const scaledSheetFromLength =
+    !directSheet &&
+    widthUnchanged &&
+    lengthChanged &&
+    oldSheet &&
+    oldLength &&
+    length
+      ? oldSheet * (length / oldLength)
+      : null;
   const nextArea = rollWidth && rollLength ? rollWidth * rollLength : null;
   return {
     ...next,
     dienTichM2: area(nextArea),
     trongLuongKgM2: kg(m2Weight),
     trongLuongKgMDai: kg(linear),
-    trongLuongKgTam: kg(directSheet ?? (linear && length ? linear * length : null)),
+    trongLuongKgTam: kg(directSheet ?? scaledSheetFromLength ?? (linear && length ? linear * length : null)),
     trongLuongKgCuon: kg(m2Weight && nextArea ? m2Weight * nextArea : null)
   };
 }

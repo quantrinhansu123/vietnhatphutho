@@ -23,13 +23,13 @@
 | PATCH | `/api/kho-nvl/:id` | ~8195 |
 | DELETE | `/api/kho-nvl` (bulk `{ ids }`) | ~8237 |
 | DELETE | `/api/kho-nvl/:id` | ~8290 |
-| GET | `/api/ton-kho-nvl?from&to&ten_kho` | Tồn kỳ: bỏ `ten_kho` = toàn bộ 4 kho lõi để frontend TỔNG HỢP gộp theo mã; kèm `ten_kho` cụ thể = đúng kho đó (chi tiết / chuyển kho nguồn). Danh sách `kho_nvl` + `nhap_kho`. Sau `supabase-phieu-nhap-xuat-id-danh-muc.sql`, chỉ cộng phiếu `loai_danh_muc = kho_nvl` và `id_danh_muc` đúng id dòng `kho_nvl` đang sống (phiếu của dòng đã xóa không cộng vào dòng tạo lại). Chưa chạy SQL thì vẫn cộng theo mã + tên + tên sản xuất + kho |
+| GET | `/api/ton-kho-nvl?from&to&ten_kho` | Tồn kỳ kèm `gia_ton[]` theo đơn giá/lô nhập và `tong_tien_ton`; xuất có liên kết lô trừ đúng lô, xuất cũ thiếu liên kết được phân bổ FIFO. `ton_chua_ro_gia` báo phần tồn không thể gắn với giá. Bỏ `ten_kho` = toàn bộ 4 kho lõi; có `ten_kho` = đúng kho đó. Danh sách `kho_nvl` + `nhap_kho`; nếu đã chạy `supabase-phieu-nhap-xuat-id-danh-muc.sql` thì lọc phiếu theo đúng id danh mục đang sống. |
 
 ## Frontend
 
 | File | Nội dung |
 |------|----------|
-| `src/features/kho-nvl/index.tsx` | `/kho-nvl` liệt kê tách riêng từng kho (unique mã + tên + tên SX + kho): bỏ trống hoặc chọn đúng "Kho NVL" = toàn bộ bảng kho-nvl; chọn kho NVL cụ thể khác (Chính/Phụ/PC) = chỉ kho đó. Tồn đầu / Nhập / Xuất / Tồn cuối tính riêng đúng kho qua `GET /api/ton-kho-nvl` (toàn nhóm thì không gửi `ten_kho`) |
+| `src/features/kho-nvl/index.tsx` | `/kho-nvl` và NVL trong `/kho-hang`: dòng tổng theo NVL hiển thị tồn cuối + tổng tiền; ngay dưới có chi tiết tồn theo từng đơn giá. Tồn đầu / Nhập / Xuất / Tồn cuối tính riêng theo kho qua `GET /api/ton-kho-nvl` |
 | `src/features/kho-hang/index.tsx` | Kho hàng — liệt kê đầy đủ tất cả các kho; chọn đúng "Kho NVL" = toàn bộ bảng kho-nvl tách riêng từng kho (`warehouseFilter=""`), chọn kho NVL cụ thể khác = chỉ kho đó. Kho thành phẩm vẫn `ThanhPhamStockPanel` |
 | `src/App.tsx` | Shell routing — import panel, không chứa logic bảng |
 | `src/features/_shared/` | Helper dùng chung (storage, hr, recordHelpers) |

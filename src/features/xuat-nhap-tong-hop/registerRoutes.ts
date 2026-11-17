@@ -4,6 +4,7 @@
  * Ghi vế vào phieu_nhap_kho / phieu_xuat_kho. ten_kho không bao giờ là tên máy.
  */
 import type { Express } from 'express';
+import { findExceededMachinePriceGroup, machinePriceGroupKey } from './machineReturnPriceGroups';
 
 type ChiPhiKemTheo = { ten: string; don_gia: number; thanh_tien: number };
 
@@ -70,6 +71,13 @@ type DetailLine = {
   norm_kg_per_unit?: number | null;
   link_anh_can_thuc_te?: string;
   link_anh_can_thuc_te_public_id?: string;
+  /** Lô nhập nguồn khi xuất từ kho (trừ tồn theo giá). */
+  id_dong_nhap_nguon?: string;
+  ma_phieu_nhap_nguon?: string;
+  /** Return metadata: exact Sổ trộn snapshot used to check machine quantity. */
+  so_tron_id?: string;
+  /** Warehouse/price bucket shown to the operator; no export slip is selected. */
+  ton_may_nhom_kho?: string;
 };
 
 /** Nguồn từng dòng của phiếu xuất: ưu tiên src_* (kiểu mới), null = dùng nguồn header (kiểu cũ). */
@@ -81,14 +89,26 @@ function xuatLineSrcOf(line: DetailLine): { loai: 'kho' | 'may'; id: string } | 
 }
 
 /** Đích từng dòng của phiếu xuất: ưu tiên dich_* (kiểu mới), fallback hack cũ + kho_dong. */
-function xuatLineDestOf(line: DetailLine): { loai: 'kho' | 'may' | 'ncc'; id: string } {
+function xuatLineDestOf(line: DetailLine): { loai: 'kho' | 'may' | 'ncc' | 'phan_xuong'; id: string } {
   const kind = text(line.dich_dong_loai).toLowerCase();
   const id = text(line.dich_dong_id);
-  if ((kind === 'kho' || kind === 'may' || kind === 'ncc') && id) return { loai: kind, id };
+  if ((kind === 'kho' || kind === 'may' || kind === 'ncc' || kind === 'phan_xuong') && id) {
+    return { loai: kind, id };
+  }
   if (line.nguon_dong_loai === 'may' && line.nguon_dong_id) {
     return { loai: 'may', id: line.nguon_dong_id };
   }
   return { loai: 'kho', id: line.kho_dong_id };
+}
+
+const PHAN_XUONG_DEST = new Set(['Đặc', 'Sóng', 'Rỗng']);
+
+function phanXuongParty(id: string): Party | { error: string } {
+  const value = text(id);
+  if (!PHAN_XUONG_DEST.has(value)) {
+    return { error: 'Xuất đến phân xưởng phải là Đặc, Sóng hoặc Rỗng.' };
+  }
+  return { loai: 'phan_xuong', id: value, ten: `Phân xưởng ${value}`, maKho: null, vatTu: true };
 }
 
 function materialClassOf(value: unknown): 'nvl_chinh' | 'nvl_phu' | 'chua_phan_loai' {
@@ -110,7 +130,7 @@ function nvlCatalogPhanLoaiLabel(value: unknown): string | null {
   return null;
 }
 
-type Party = { loai: 'kho' | 'may' | 'ncc'; id: string; ten: string; maKho: string | null; vatTu: boolean };
+type Party = { loai: 'kho' | 'may' | 'ncc' | 'phan_xuong'; id: string; ten: string; maKho: string | null; vatTu: boolean };
 
 type ParsedHeader = {
   loai: 'nhap' | 'xuat';
@@ -130,6 +150,11 @@ type ParsedHeader = {
   catalog: 'nvl' | 'san_pham';
   /** Hủy: chỉ ghi vế xuất, không nhập lại nơi đến. */
   skipInbound?: boolean;
+  dotSanXuatId?: string | null;
+  dotSo?: string | null;
+  phanXuong?: string | null;
+  phieuXuatGocId?: string | null;
+  phieuXuatGocMa?: string | null;
 };
 
 export type TongHopRouteDeps = {
@@ -175,7 +200,7 @@ export type TongHopRouteDeps = {
     lines: Array<{ code: string; name: string; productionName?: string; unit: string; materialClass?: string; phanLoai?: string }>,
     tenKho: string
   ) => Promise<{ records: T[]; ensured: number; skipped: number; error?: string }>;
-  liveKhoNvlIds: (code: string, tenKho: string) => Promise<Set<string>>;
+  liveKhoNvlIds: (codes: string[], tenKho: string) => Promise<Map<string, Set<string>>>;
   slipsHaveCatalogStamp: () => Promise<boolean>;
   isMissingTable: (error: { message?: string; code?: string } | null) => boolean;
   isMissingColumn: (error: { message?: string; code?: string } | null) => boolean;
@@ -184,6 +209,8 @@ export type TongHopRouteDeps = {
 };
 
 const SELECT =
+  'id, ma_phieu_chung, loai, ngay, kho_dich, nguon_loai, nguon_id, dich_loai, dich_id, ca, loai_nhap, loai_xuat, chi_tiet, ma_phieu_nhap, ma_phieu_xuat, ma_phieu_nhap_huy, ma_phieu_xuat_huy, trang_thai, nguoi_lap, nguoi_giao, dia_diem, ly_do, ghi_chu, dot_san_xuat_id, dot_so, phan_xuong, phieu_xuat_goc_id, phieu_xuat_goc_ma, created_at, updated_at';
+const SELECT_LEGACY =
   'id, ma_phieu_chung, loai, ngay, kho_dich, nguon_loai, nguon_id, dich_loai, dich_id, ca, loai_nhap, loai_xuat, chi_tiet, ma_phieu_nhap, ma_phieu_xuat, ma_phieu_nhap_huy, ma_phieu_xuat_huy, trang_thai, nguoi_lap, nguoi_giao, dia_diem, ly_do, ghi_chu, created_at, updated_at';
 
 function text(value: unknown) {
@@ -276,6 +303,12 @@ function slipItems(lines: DetailLine[], machine?: string): SlipLine[] {
     ...(text(line.link_anh_can_thuc_te) ? { actualWeightImageUrl: text(line.link_anh_can_thuc_te) } : {}),
     ...(text(line.link_anh_can_thuc_te_public_id)
       ? { actualWeightImagePublicId: text(line.link_anh_can_thuc_te_public_id) }
+      : {}),
+    ...(text(line.id_dong_nhap_nguon)
+      ? { sourceInboundLineId: text(line.id_dong_nhap_nguon) }
+      : {}),
+    ...(text(line.ma_phieu_nhap_nguon)
+      ? { sourceInboundSlipCode: text(line.ma_phieu_nhap_nguon) }
       : {})
   }));
 }
@@ -362,8 +395,13 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       const dichDongLoai = text(item.dich_dong_loai ?? item.dichDongLoai).toLowerCase() || (loai === 'xuat' ? nguonDongLoaiRaw : '');
       const dichDongId = text(item.dich_dong_id ?? item.dichDongId) || (loai === 'xuat' ? nguonDongId || khoNhap : '');
       if (loai === 'xuat') {
-        if (dichDongLoai !== 'kho' && dichDongLoai !== 'may' && dichDongLoai !== 'ncc') {
-          return { error: `Dòng ${index + 1}: chọn kho, máy hoặc nhà cung cấp xuất đến.` };
+        if (
+          dichDongLoai !== 'kho'
+          && dichDongLoai !== 'may'
+          && dichDongLoai !== 'ncc'
+          && dichDongLoai !== 'phan_xuong'
+        ) {
+          return { error: `Dòng ${index + 1}: chọn kho, máy, phân xưởng hoặc nhà cung cấp xuất đến.` };
         }
         if (!dichDongId) return { error: `Dòng ${index + 1}: chọn nơi xuất đến.` };
       }
@@ -382,6 +420,15 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       const ngayDong = text(item.ngay_dong ?? item.ngayDong).slice(0, 10);
       const caDong = text(item.ca_dong ?? item.caDong);
       const tonDauRaw = parseLocalizedNumber(item.ton_dau_ca ?? item.tonDauCa ?? '');
+      const lotId = text(
+        item.id_dong_nhap_nguon ?? item.idDongNhapNguon ?? item.sourceInboundLineId ?? item.source_inbound_line_id
+      );
+      const lotSlip = text(
+        item.ma_phieu_nhap_nguon ?? item.maPhieuNhapNguon ?? item.sourceInboundSlipCode ?? item.source_inbound_slip_code
+      );
+      if (loai === 'xuat' && srcLoai !== 'may' && !lotId) {
+        return { error: `Dòng ${index + 1} (${ma}): chọn lô nhập (giá) khi xuất từ kho.` };
+      }
       const kem = parseChiPhiKemTheo(item.chi_phi_kem_theo ?? item.chiPhiKemTheo, index + 1, ma);
       if ('error' in kem) return kem;
       lines.push({
@@ -413,6 +460,12 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
         ...(Number.isFinite(normRaw) && normRaw > 0 ? { norm_kg_per_unit: normRaw } : {}),
         ...(imageUrl ? { link_anh_can_thuc_te: imageUrl } : {}),
         ...(imageId ? { link_anh_can_thuc_te_public_id: imageId } : {}),
+        ...(lotId ? { id_dong_nhap_nguon: lotId } : {}),
+        ...(lotSlip ? { ma_phieu_nhap_nguon: lotSlip } : {}),
+        ...(text(item.so_tron_id ?? item.soTronId) ? { so_tron_id: text(item.so_tron_id ?? item.soTronId) } : {}),
+        ...(text(item.ton_may_nhom_kho ?? item.tonMayNhomKho)
+          ? { ton_may_nhom_kho: text(item.ton_may_nhom_kho ?? item.tonMayNhomKho) }
+          : {}),
         kho_dong_id: loai === 'nhap' ? khoNhap : loai === 'xuat' && dichDongLoai === 'kho' ? dichDongId : '',
         kho_dong_ten: loai === 'nhap' ? khoNhap : loai === 'xuat' && dichDongLoai === 'kho' ? dichDongId : '',
         kho_dong_ma: null,
@@ -442,7 +495,6 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       if (kind && id) {
         const loaded = await loadParty(kind, id);
         if ('error' in loaded) return { error: loaded.error };
-        if (loaded.loai === 'may') return { error: 'Nguồn nhập là kho hoặc nhà cung cấp.' };
         nguon = loaded;
       }
     } else {
@@ -515,6 +567,10 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
               const loaded = await loadParty('ncc', dest.id);
               if ('error' in loaded) throw new Error(loaded.error);
               destParty = loaded;
+            } else if (dest.loai === 'phan_xuong') {
+              const loaded = phanXuongParty(dest.id);
+              if ('error' in loaded) throw new Error(loaded.error);
+              destParty = loaded;
             } else {
               destParty = await loadCached(dest.loai, dest.id);
             }
@@ -522,14 +578,20 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
             return { error: `${tag}: ${err?.message || 'nơi đến không hợp lệ.'}` };
           }
           const sourceNvl = src.loai === 'may' || src.vatTu;
-          if (destParty.loai === 'ncc') {
+          if (destParty.loai === 'ncc' || destParty.loai === 'phan_xuong') {
             line.kho_dong_id = '';
             line.kho_dong_ten = '';
             line.kho_dong_ma = null;
             line.kho_dong_vat_tu = false;
-            line.dich_dong_loai = 'ncc';
+            line.dich_dong_loai = destParty.loai;
             line.dich_dong_id = destParty.id;
-            if (!sourceNvl) return { error: `${tag}: trả nhà cung cấp chỉ xuất từ kho NVL.` };
+            if (!sourceNvl) {
+              return {
+                error: destParty.loai === 'phan_xuong'
+                  ? `${tag}: xuất theo phân xưởng chỉ xuất từ kho NVL hoặc máy.`
+                  : `${tag}: trả nhà cung cấp chỉ xuất từ kho NVL.`
+              };
+            }
           } else if (destParty.loai === 'may') {
             line.kho_dong_id = '';
             line.kho_dong_ten = '';
@@ -560,6 +622,24 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
           if (!firstDest) firstDest = destParty;
         }
         if (catalogSet.size > 1) return { error: 'Một phiếu xuất chỉ dùng một loại hàng (NVL hoặc thành phẩm).' };
+        if (catalogSet.has('nvl')) {
+          const dotRaw = text(source.dot_so ?? source.dotSo);
+          const dotMatch = dotRaw.match(/(\d{1,2})/);
+          const dotNumber = dotMatch ? Number(dotMatch[1]) : 0;
+          if (!Number.isInteger(dotNumber) || dotNumber < 1 || dotNumber > 10) {
+            return { error: 'Phiếu xuất NVL phải có đợt sản xuất từ Đợt 1 đến Đợt 10.' };
+          }
+          const foldedLoaiXuat = text(source.loai_xuat ?? source.loaiXuat)
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/đ/g, 'd')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (foldedLoaiXuat === 'xuat theo may' && parsedLines.lines.some(line => xuatLineDestOf(line).loai !== 'may')) {
+            return { error: 'Loại “Xuất theo máy” phải chọn máy làm nơi xuất đến.' };
+          }
+        }
         const firstSrc = lineSrcs[0];
         // Header giữ nguồn chung khi đồng nhất (list/in tương thích), nhiều nguồn thì null.
         nguon = lineSrcs.every(s => s.loai === firstSrc.loai && s.id === firstSrc.id) ? firstSrc : null;
@@ -607,64 +687,244 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
         lyDo: text(source.ly_do ?? source.lyDo) || null,
         ghiChu: text(source.ghi_chu ?? source.ghiChu) || null,
         lines: parsedLines.lines,
-        catalog
+        catalog,
+        dotSanXuatId: text(source.dot_san_xuat_id ?? source.dotSanXuatId) || null,
+        dotSo: text(source.dot_so ?? source.dotSo).slice(0, 80) || null,
+        phanXuong: text(source.phan_xuong ?? source.phanXuong).slice(0, 40)
+          || (dich.loai === 'phan_xuong' ? dich.id : '')
+          || null,
+        phieuXuatGocId: text(source.phieu_xuat_goc_id ?? source.phieuXuatGocId) || null,
+        phieuXuatGocMa: text(source.phieu_xuat_goc_ma ?? source.phieuXuatGocMa).slice(0, 80) || null
       }
     };
   }
 
-  async function stockOf(code: string, party: { loai: 'kho' | 'may'; id: string }, catalog: 'nvl' | 'san_pham') {
-    if (!deps.supabase) return 0;
-    const tables = await deps.readTables(null);
-    const matchCatalogId = catalog === 'nvl' && party.loai === 'kho' && (await deps.slipsHaveCatalogStamp());
-    const liveIds = matchCatalogId ? await deps.liveKhoNvlIds(code, party.id) : null;
-    let ton = 0;
+  async function stockOfMany(
+    codes: string[],
+    party: { loai: 'kho' | 'may'; id: string },
+    catalog: 'nvl' | 'san_pham',
+    tables: string[],
+    matchCatalogId: boolean
+  ) {
+    const totals = new Map<string, number>(codes.map(code => [code, 0]));
+    if (!deps.supabase || !codes.length) return totals;
+    const liveIdsByCode = matchCatalogId ? await deps.liveKhoNvlIds(codes, party.id) : null;
+    const codeColumn = catalog === 'nvl' ? 'ma_npl' : 'ma_sp';
+    const pageSize = 1000;
     for (const table of tables) {
-      let query = deps.supabase
-        .from(table)
-        .select(
-          matchCatalogId
-            ? 'ma_npl, ma_sp, ten_kho, may, loai_phieu, so_luong, id_danh_muc, loai_danh_muc'
-            : 'ma_npl, ma_sp, ten_kho, may, loai_phieu, so_luong'
-        )
-        .limit(20000);
-      query = catalog === 'nvl' ? query.eq('ma_npl', code) : query.eq('ma_sp', code);
-      const { data, error } = await query;
-      if (error) {
-        if (deps.isMissingTable(error) || deps.isMissingColumn(error)) continue;
-        throw new Error(error.message || 'Không tính được tồn.');
-      }
-      for (const row of (data || []) as Array<Record<string, unknown>>) {
-        const qty = Number(row.so_luong) || 0;
-        const xuat = text(row.loai_phieu).toLowerCase() === 'xuat';
-        const tenKho = text(row.ten_kho);
-        const may = text(row.may);
-        if (party.loai === 'kho') {
-          if (matchCatalogId) {
-            const catalogId = text(row.id_danh_muc);
-            if (text(row.loai_danh_muc) !== 'kho_nvl' || !liveIds?.has(catalogId)) continue;
-          } else if (deps.normalizeKho(tenKho) !== deps.normalizeKho(party.id)) {
-            continue;
+      let offset = 0;
+      while (true) {
+        const { data, error } = await deps.supabase
+          .from(table)
+          .select(
+            matchCatalogId
+              ? 'ma_npl, ma_sp, ten_kho, may, loai_phieu, so_luong, id_danh_muc, loai_danh_muc'
+              : 'ma_npl, ma_sp, ten_kho, may, loai_phieu, so_luong'
+          )
+          .in(codeColumn, codes)
+          .range(offset, offset + pageSize - 1);
+        if (error) {
+          if (deps.isMissingTable(error) || deps.isMissingColumn(error)) break;
+          throw new Error(error.message || 'Không tính được tồn.');
+        }
+        const rows = (data || []) as Array<Record<string, unknown>>;
+        for (const row of rows) {
+          const code = text(row[codeColumn]);
+          if (!totals.has(code)) continue;
+          const qty = Number(row.so_luong) || 0;
+          const xuat = text(row.loai_phieu).toLowerCase() === 'xuat';
+          const tenKho = text(row.ten_kho);
+          const may = text(row.may);
+          if (party.loai === 'kho') {
+            if (matchCatalogId) {
+              const catalogId = text(row.id_danh_muc);
+              if (text(row.loai_danh_muc) !== 'kho_nvl' || !liveIdsByCode?.get(code)?.has(catalogId)) continue;
+            } else if (deps.normalizeKho(tenKho) !== deps.normalizeKho(party.id)) {
+              continue;
+            }
+            totals.set(code, (totals.get(code) || 0) + (xuat ? -qty : qty));
+          } else if (may === party.id) {
+            const inbound = (xuat && tenKho) || (!xuat && !tenKho);
+            const outbound = (xuat && !tenKho) || (!xuat && tenKho);
+            if (inbound) totals.set(code, (totals.get(code) || 0) + qty);
+            if (outbound) totals.set(code, (totals.get(code) || 0) - qty);
           }
-          ton += xuat ? -qty : qty;
-        } else if (may === party.id || may === party.id) {
-          const inbound =
-            (xuat && tenKho) || (!xuat && !tenKho);
-          const outbound = (xuat && !tenKho) || (!xuat && tenKho);
-          if (inbound) ton += qty;
-          if (outbound) ton -= qty;
+        }
+        if (rows.length < pageSize) break;
+        offset += pageSize;
+      }
+    }
+    for (const [code, ton] of totals) totals.set(code, round3(ton));
+    return totals;
+  }
+
+  async function stockOf(
+    code: string,
+    party: { loai: 'kho' | 'may'; id: string },
+    catalog: 'nvl' | 'san_pham'
+  ) {
+    const tables = await deps.readTables(null);
+    const matchCatalogId = catalog === 'nvl' && party.loai === 'kho'
+      ? await deps.slipsHaveCatalogStamp()
+      : false;
+    const stock = await stockOfMany([code], party, catalog, tables, matchCatalogId);
+    return stock.get(code) || 0;
+  }
+
+  async function assertMachineReturnStock(header: ParsedHeader) {
+    if (!deps.supabase) return;
+    const reportIds = [...new Set(header.lines.map(line => text(line.so_tron_id)).filter(Boolean))];
+    if (reportIds.length !== 1 || header.lines.some(line => !text(line.so_tron_id))) {
+      throw new Error('Phiếu nhập lại từ máy phải tham chiếu đúng một phiếu Sổ trộn.');
+    }
+    const reportRes = await deps.supabase
+      .from('so_tron')
+      .select('id, ngay, ca, ma_may, ten_may, bang_ban_giao')
+      .eq('id', reportIds[0])
+      .maybeSingle();
+    if (reportRes.error) throw new Error(reportRes.error.message || 'Không đọc được phiếu Sổ trộn.');
+    const report = reportRes.data as Record<string, unknown> | null;
+    if (!report) throw new Error('Không tìm thấy phiếu Sổ trộn đã chọn.');
+    const first = header.lines[0];
+    const machineId = text(first?.nguon_dong_id || first?.src_id);
+    const reportMachines = [text(report.ma_may), text(report.ten_may)].filter(Boolean);
+    if (!machineId || !reportMachines.some(value => deps.normalizeKho(machineId) === deps.normalizeKho(value))) {
+      throw new Error('Máy trên phiếu nhập lại không khớp máy của phiếu Sổ trộn.');
+    }
+    const reportDate = text(report.ngay).slice(0, 10);
+    const reportShift = text(report.ca);
+    if (text(first?.ngay_dong).slice(0, 10) !== reportDate || text(first?.ca_dong) !== reportShift) {
+      throw new Error('Ngày/ca nhập lại phải khớp với phiếu Sổ trộn đang kiểm tra.');
+    }
+
+    const { data: previousRows, error: previousError } = await deps.supabase
+      .from(deps.tables.header)
+      .select('chi_tiet, trang_thai')
+      .eq('loai', 'xuat')
+      .eq('loai_xuat', header.loaiXuat)
+      .limit(5000);
+    if (previousError && !deps.isMissingTable(previousError)) {
+      throw new Error(previousError.message || 'Không kiểm tra được các lần nhập lại trước.');
+    }
+    const returnedByCode = new Map<string, number>();
+    const returnedByPriceGroup = new Map<string, number>();
+    for (const row of (previousRows || []) as Array<Record<string, unknown>>) {
+      if (text(row.trang_thai) === 'huy') continue;
+      const priorLines = Array.isArray(row.chi_tiet) ? row.chi_tiet as Array<Record<string, unknown>> : [];
+      for (const line of priorLines) {
+        if (text(line.so_tron_id) !== reportIds[0]) continue;
+        const code = text(line.ma_hang);
+        returnedByCode.set(code, (returnedByCode.get(code) || 0) + (Number(line.so_luong) || 0));
+        const warehouse = text(line.ton_may_nhom_kho);
+        if (warehouse) {
+          const unitPrice = Number(line.don_gia) || 0;
+          const key = machinePriceGroupKey(code, warehouse, unitPrice, deps.normalizeKho);
+          returnedByPriceGroup.set(key, (returnedByPriceGroup.get(key) || 0) + (Number(line.so_luong) || 0));
         }
       }
     }
-    return round3(ton);
+
+    // Tồn Sổ trộn là tổng theo mã; giới hạn thêm từng lớp giá theo lượng đã cấp lên đúng máy.
+    // Phần kiểm tra này giữ nguyên các phiếu cũ không có metadata kho/giá.
+    const { data: issuedRows, error: issuedError } = await deps.supabase
+      .from(deps.tables.header)
+      .select('ngay, trang_thai, nguon_loai, nguon_id, dich_loai, dich_id, chi_tiet')
+      .eq('loai', 'xuat')
+      .lte('ngay', reportDate)
+      .limit(5000);
+    if (issuedError && !deps.isMissingTable(issuedError)) {
+      throw new Error(issuedError.message || 'Không kiểm tra được lịch sử cấp NVL theo giá.');
+    }
+    const issuedByPriceGroup = new Map<string, number>();
+    const machineKey = deps.normalizeKho(machineId);
+    for (const row of (issuedRows || []) as Array<Record<string, unknown>>) {
+      if (text(row.trang_thai) === 'huy') continue;
+      const issuedDate = text(row.ngay).slice(0, 10);
+      if (issuedDate && issuedDate > reportDate) continue;
+      const details = Array.isArray(row.chi_tiet) ? row.chi_tiet as Array<Record<string, unknown>> : [];
+      for (const line of details) {
+        const destinationKind = text(line.dich_dong_loai || row.dich_loai).toLowerCase();
+        const destinationId = text(line.dich_dong_id || row.dich_id);
+        if (destinationKind !== 'may' || deps.normalizeKho(destinationId) !== machineKey) continue;
+        const sourceKind = text(line.src_loai || line.nguon_dong_loai || row.nguon_loai).toLowerCase();
+        if (sourceKind && sourceKind !== 'kho') continue;
+        const warehouse = text(line.src_id || line.nguon_dong_id || row.nguon_id || line.src_ten);
+        const code = text(line.ma_hang);
+        if (!warehouse || !code) continue;
+        const unitPrice = Number(line.don_gia) || 0;
+        const key = machinePriceGroupKey(code, warehouse, unitPrice, deps.normalizeKho);
+        issuedByPriceGroup.set(key, (issuedByPriceGroup.get(key) || 0) + (Number(line.so_luong) || 0));
+      }
+    }
+    const requestedByPriceGroup = new Map<string, { code: string; warehouse: string; unitPrice: number; qty: number }>();
+    for (const line of header.lines) {
+      const warehouse = text(line.ton_may_nhom_kho);
+      if (!warehouse) continue;
+      const unitPrice = line.don_gia;
+      const key = machinePriceGroupKey(line.ma_hang, warehouse, unitPrice, deps.normalizeKho);
+      const bucket = requestedByPriceGroup.get(key) || { code: line.ma_hang, warehouse, unitPrice, qty: 0 };
+      bucket.qty += line.so_luong;
+      requestedByPriceGroup.set(key, bucket);
+    }
+    const exceeded = findExceededMachinePriceGroup(
+      [...requestedByPriceGroup.values()].map(row => ({
+        code: row.code,
+        warehouse: row.warehouse,
+        unitPrice: row.unitPrice,
+        quantity: row.qty
+      })),
+      issuedByPriceGroup,
+      returnedByPriceGroup,
+      deps.normalizeKho
+    );
+    if (exceeded) {
+      if (!issuedByPriceGroup.has(machinePriceGroupKey(exceeded.code, exceeded.warehouse, exceeded.unitPrice, deps.normalizeKho))) {
+        throw new Error(`NVL ${exceeded.code} không có lịch sử cấp từ ${exceeded.warehouse} với đơn giá ${exceeded.unitPrice}.`);
+      }
+      throw new Error(`NVL ${exceeded.code} tại ${exceeded.warehouse}, đơn giá ${exceeded.unitPrice} chỉ còn ${round3(exceeded.available)} theo lớp giá; không thể nhập lại ${round3(exceeded.quantity)}.`);
+    }
+
+    const reportedByCode = new Map<string, number>();
+    const handover = Array.isArray(report.bang_ban_giao)
+      ? report.bang_ban_giao as Array<Record<string, unknown>>
+      : [];
+    for (const line of handover) {
+      const code = text(line.ma_nvl || line.ma_npl);
+      if (code) reportedByCode.set(code, Number(line.ton_cuoi_ca) || 0);
+    }
+    const requestedByCode = new Map<string, number>();
+    for (const line of header.lines) {
+      requestedByCode.set(line.ma_hang, (requestedByCode.get(line.ma_hang) || 0) + line.so_luong);
+    }
+    for (const [code, requested] of requestedByCode) {
+      const reported = reportedByCode.get(code);
+      if (reported === undefined) throw new Error(`NVL ${code} không có trong phiếu Sổ trộn.`);
+      const available = Math.max(0, reported - (returnedByCode.get(code) || 0));
+      if (requested > available + 1e-9) {
+        throw new Error(`NVL ${code} chỉ còn ${round3(available)} theo Sổ trộn; không thể nhập lại ${round3(requested)}.`);
+      }
+    }
   }
 
   async function assertSourceStock(header: ParsedHeader, excludeCodes: string[]) {
-    const groups = new Map<string, { party: { loai: 'kho' | 'may'; id: string }; qty: number; code: string }>();
+    const isMachineReturn =
+      header.loai === 'xuat' &&
+      text(header.loaiXuat).toLocaleLowerCase('vi') === 'nhập lại từ máy vào kho';
+    if (isMachineReturn) {
+      await assertMachineReturnStock(header);
+      return;
+    }
+    type StockGroup = { party: { loai: 'kho' | 'may'; id: string }; qty: number; code: string };
+    const groups = new Map<string, StockGroup>();
     const sources: Array<{ party: { loai: 'kho' | 'may'; id: string }; code: string; qty: number }> = [];
     if (header.loai === 'nhap') {
       if (header.nguon?.loai === 'kho') {
         for (const line of header.lines) {
           sources.push({ party: { loai: 'kho', id: header.nguon.id }, code: line.ma_hang, qty: line.so_luong });
+        }
+      } else if (header.nguon?.loai === 'may') {
+        for (const line of header.lines) {
+          sources.push({ party: { loai: 'may', id: header.nguon.id }, code: line.ma_hang, qty: line.so_luong });
         }
       }
     } else {
@@ -685,14 +945,38 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       if (current) current.qty = round3(current.qty + row.qty);
       else groups.set(key, { party: row.party, qty: row.qty, code: row.code });
     }
-    for (const group of groups.values()) {
-      let ton = await stockOf(group.code, group.party, header.catalog);
-      if (excludeCodes.length) {
-        /* tồn đã gồm phiếu đang sửa; phần trừ được hoàn khi xóa vế cũ trước khi ghi lại */
+    const byParty = new Map<string, { party: { loai: 'kho' | 'may'; id: string }; groups: Map<string, StockGroup> }>();
+    for (const [key, group] of groups) {
+      const partyKey = `${group.party.loai}|${group.party.id}`;
+      let bucket = byParty.get(partyKey);
+      if (!bucket) {
+        bucket = { party: group.party, groups: new Map() };
+        byParty.set(partyKey, bucket);
       }
-      if (ton + 1e-9 < group.qty) {
-        const where = group.party.loai === 'may' ? `máy ${group.party.id}` : group.party.id;
-        throw new Error(`${where} chỉ còn ${ton} ${group.code} — không đủ xuất ${group.qty}.`);
+      bucket.groups.set(key, group);
+    }
+    if (!byParty.size) return;
+    const tables = await deps.readTables(null);
+    const matchCatalogId = header.catalog === 'nvl' && [...byParty.values()].some(bucket => bucket.party.loai === 'kho')
+      ? await deps.slipsHaveCatalogStamp()
+      : false;
+    for (const bucket of byParty.values()) {
+      const stock = await stockOfMany(
+        [...new Set([...bucket.groups.values()].map(group => group.code))],
+        bucket.party,
+        header.catalog,
+        tables,
+        matchCatalogId && bucket.party.loai === 'kho'
+      );
+      for (const group of bucket.groups.values()) {
+        const ton = stock.get(group.code) || 0;
+        if (excludeCodes.length) {
+          /* tồn đã gồm phiếu đang sửa; phần trừ được hoàn khi xóa vế cũ trước khi ghi lại */
+        }
+        if (ton + 1e-9 < group.qty) {
+          const where = group.party.loai === 'may' ? `máy ${group.party.id}` : group.party.id;
+          throw new Error(`${where} chỉ còn ${ton} ${group.code} — không đủ xuất ${group.qty}.`);
+        }
       }
     }
   }
@@ -783,6 +1067,17 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
           loaiNhap: null,
           nguoiGiao: null
         });
+      } else if (header.nguon?.loai === 'may') {
+        push({
+          loai: 'xuat',
+          tenKho: '',
+          may: header.nguon.id,
+          maKho: '',
+          loaiKho: 'nvl',
+          lines: header.lines,
+          loaiNhap: null,
+          nguoiGiao: null
+        });
       }
       const byDest = new Map<string, DetailLine[]>();
       for (const line of header.lines) {
@@ -850,7 +1145,8 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       const src = await resolveLegParty(srcKind, line.nguon_dong_id);
       if (src.loai === 'ncc') throw new Error(`Dòng ${line.ma_hang}: nguồn xuất là kho hoặc máy.`);
       const dest = xuatLineDestOf(line);
-      if (dest.loai === 'ncc') {
+      if (dest.loai === 'ncc' || dest.loai === 'phan_xuong') {
+        // NCC / phân xưởng: chỉ vế xuất (trừ nguồn); đích lưu trên chi_tiet + header.phan_xuong.
         mergeLeg(xuatBucket, {
           loai: 'xuat',
           tenKho: src.loai === 'kho' ? src.ten : '',
@@ -920,9 +1216,11 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       const maKho =
         leg.maKho ||
         (leg.tenKho ? await deps.resolveMaKho(leg.tenKho, leg.loaiKho === 'nvl' ? 'kho_nvl' : 'kho_thanh_pham') : leg.loaiKho === 'nvl' ? 'kho_nvl' : 'kho_thanh_pham');
-      const items = slipItems(leg.lines, leg.may || undefined).map(item =>
-        link ? { ...item, sourceInboundLineId: link.id, sourceInboundSlipCode: link.code } : item
-      );
+      // id_dong_nhap_nguon = lô nhập để trừ tồn theo giá. Không ghi đè nếu dòng đã chọn lô.
+      const items = slipItems(leg.lines, leg.may || undefined).map(item => {
+        if (text(item.sourceInboundLineId)) return item;
+        return link ? { ...item, sourceInboundLineId: link.id, sourceInboundSlipCode: link.code } : item;
+      });
       const built = deps.buildSlipRecords(
         {
           loaiPhieu: leg.loai,
@@ -1044,6 +1342,21 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
     return rows;
   }
 
+  function isMissingColumnError(error: { message?: string } | null | undefined) {
+    const msg = String(error?.message || '').toLowerCase();
+    return msg.includes('column') && (msg.includes('does not exist') || msg.includes('schema cache'));
+  }
+
+  function stripSxColumns(row: Record<string, unknown>) {
+    const next = { ...row };
+    delete next.dot_san_xuat_id;
+    delete next.dot_so;
+    delete next.phan_xuong;
+    delete next.phieu_xuat_goc_id;
+    delete next.phieu_xuat_goc_ma;
+    return next;
+  }
+
   app.get('/api/xuat-nhap-tong-hop', async (req, res) => {
     if (!deps.supabase) return res.json({ records: [], total: 0, source: 'local' });
     const loai = text(req.query.loai);
@@ -1054,14 +1367,20 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
     const loaiXuat = text(req.query.loai_xuat);
     const limit = Math.min(2000, Math.max(1, Number(req.query.limit) || 500));
     const isoDate = (value: string) => (/^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '');
-    let query = deps.supabase.from(deps.tables.header).select(SELECT).order('ngay', { ascending: false }).limit(limit);
-    if (loai === 'nhap' || loai === 'xuat') query = query.eq('loai', loai);
-    if (isoDate(from)) query = query.gte('ngay', from.slice(0, 10));
-    if (isoDate(to)) query = query.lte('ngay', to.slice(0, 10));
-    if (loaiNhap) query = query.eq('loai_nhap', loaiNhap);
-    if (loaiXuat) query = query.eq('loai_xuat', loaiXuat);
-    if (ncc) query = query.or(`nguon_id.eq.${ncc},dich_id.eq.${ncc}`);
-    const { data, error } = await query;
+    const buildListQuery = (columns: string) => {
+      let query = deps.supabase!.from(deps.tables.header).select(columns).order('ngay', { ascending: false }).limit(limit);
+      if (loai === 'nhap' || loai === 'xuat') query = query.eq('loai', loai);
+      if (isoDate(from)) query = query.gte('ngay', from.slice(0, 10));
+      if (isoDate(to)) query = query.lte('ngay', to.slice(0, 10));
+      if (loaiNhap) query = query.eq('loai_nhap', loaiNhap);
+      if (loaiXuat) query = query.eq('loai_xuat', loaiXuat);
+      if (ncc) query = query.or(`nguon_id.eq.${ncc},dich_id.eq.${ncc}`);
+      return query;
+    };
+    let { data, error } = await buildListQuery(SELECT);
+    if (error && isMissingColumnError(error)) {
+      ({ data, error } = await buildListQuery(SELECT_LEGACY));
+    }
     if (error) {
       if (deps.isMissingTable(error)) return res.status(503).json({ error: tableMissing(error), records: [] });
       return res.status(500).json({ error: error.message || 'Không tải được phiếu tổng hợp.' });
@@ -1130,8 +1449,7 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
 
   async function saveHeader(header: ParsedHeader, existing?: Record<string, unknown>) {
     if (!deps.supabase) throw new Error('Supabase chưa được cấu hình.');
-    if (header.loai === 'nhap' || header.loai === 'xuat') await assertSourceStock(header, []);
-    if (header.loai === 'xuat') await assertSourceStock(header, []);
+    await assertSourceStock(header, []);
     const oldNhapCodes = text(existing?.ma_phieu_nhap).split(',').map(item => item.trim()).filter(Boolean);
     const oldXuatCodes = text(existing?.ma_phieu_xuat).split(',').map(item => item.trim()).filter(Boolean);
     if (existing) {
@@ -1197,7 +1515,10 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
     const xuatDestLabels = header.loai === 'xuat'
       ? [...new Set(header.lines.map(line => {
         const d = xuatLineDestOf(line);
-        return d.loai === 'may' ? line.dich_dong_id || d.id : line.kho_dong_ten || d.id;
+        if (d.loai === 'may') return line.dich_dong_id || d.id;
+        if (d.loai === 'phan_xuong') return `Phân xưởng ${d.id}`;
+        if (d.loai === 'ncc') return line.dich_dong_id || d.id;
+        return line.kho_dong_ten || d.id;
       }).filter(Boolean))]
       : [];
     const row = {
@@ -1221,7 +1542,12 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       nguoi_giao: header.nguoiGiao,
       dia_diem: header.diaDiem,
       ly_do: header.lyDo,
-      ghi_chu: header.ghiChu
+      ghi_chu: header.ghiChu,
+      dot_san_xuat_id: header.dotSanXuatId || null,
+      dot_so: header.dotSo || null,
+      phan_xuong: header.phanXuong || null,
+      phieu_xuat_goc_id: header.phieuXuatGocId || null,
+      phieu_xuat_goc_ma: header.phieuXuatGocMa || null
     };
     return row;
   }
@@ -1233,10 +1559,18 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       if (!deps.supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
       const maChung = text((req.body as any)?.ma_phieu_chung) || `TH-${deps.newSlipCode(parsed.header.loai)}`;
       const row = await saveHeader(parsed.header);
-      const { data, error } = await deps.supabase
+      let insertPayload: Record<string, unknown> = { ...row, ma_phieu_chung: maChung };
+      let { data, error } = await deps.supabase
         .from(deps.tables.header)
-        .insert({ ...row, ma_phieu_chung: maChung })
+        .insert(insertPayload)
         .select(SELECT);
+      if (error && isMissingColumnError(error)) {
+        insertPayload = { ...stripSxColumns(row), ma_phieu_chung: maChung };
+        ({ data, error } = await deps.supabase
+          .from(deps.tables.header)
+          .insert(insertPayload)
+          .select(SELECT_LEGACY));
+      }
       if (error) {
         for (const code of text(row.ma_phieu_nhap).split(',').map(item => item.trim()).filter(Boolean)) {
           await deps.deleteSlip(code);
@@ -1259,7 +1593,10 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
     try {
       if (!deps.supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
       const id = text(req.params.id);
-      const { data: existing, error: loadError } = await deps.supabase.from(deps.tables.header).select(SELECT).eq('id', id).limit(1);
+      let { data: existing, error: loadError } = await deps.supabase.from(deps.tables.header).select(SELECT).eq('id', id).limit(1);
+      if (loadError && isMissingColumnError(loadError)) {
+        ({ data: existing, error: loadError } = await deps.supabase.from(deps.tables.header).select(SELECT_LEGACY).eq('id', id).limit(1));
+      }
       if (loadError) return res.status(500).json({ error: loadError.message });
       const current = (existing || [])[0] as Record<string, unknown> | undefined;
       if (!current) return res.status(404).json({ error: 'Không tìm thấy phiếu.' });
@@ -1267,7 +1604,10 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       const parsed = await parseBody({ ...(req.body as object), loai: current.loai });
       if ('error' in parsed) return res.status(400).json({ error: parsed.error });
       const row = await saveHeader(parsed.header, current);
-      const { data, error } = await deps.supabase.from(deps.tables.header).update(row).eq('id', id).select(SELECT);
+      let { data, error } = await deps.supabase.from(deps.tables.header).update(row).eq('id', id).select(SELECT);
+      if (error && isMissingColumnError(error)) {
+        ({ data, error } = await deps.supabase.from(deps.tables.header).update(stripSxColumns(row)).eq('id', id).select(SELECT_LEGACY));
+      }
       if (error) return res.status(500).json({ error: error.message || 'Không cập nhật được phiếu.' });
       return res.json({ success: true, record: (data || [])[0] || null });
     } catch (err: any) {
@@ -1280,7 +1620,10 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
     try {
       if (!deps.supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
       const id = text(req.params.id);
-      const { data: existing, error: loadError } = await deps.supabase.from(deps.tables.header).select(SELECT).eq('id', id).limit(1);
+      let { data: existing, error: loadError } = await deps.supabase.from(deps.tables.header).select(SELECT).eq('id', id).limit(1);
+      if (loadError && isMissingColumnError(loadError)) {
+        ({ data: existing, error: loadError } = await deps.supabase.from(deps.tables.header).select(SELECT_LEGACY).eq('id', id).limit(1));
+      }
       if (loadError) return res.status(500).json({ error: loadError.message });
       const current = (existing || [])[0] as Record<string, unknown> | undefined;
       if (!current) return res.status(404).json({ error: 'Không tìm thấy phiếu.' });
@@ -1293,7 +1636,8 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       const resolvedCatalog: 'nvl' | 'san_pham' =
         'error' in party ? catalog : party.loai === 'may' || party.vatTu ? 'nvl' : 'san_pham';
       // Hủy phiếu xuất = lấy lại từ từng nơi đến → holder là đích từng dòng.
-      // Hủy phiếu nhập giữ logic cũ (holder theo đích chung).
+      // Phiếu nhập có thể gộp nhiều kho; dùng kho nhận trên từng dòng thay vì
+      // `kho_dich` tổng hợp (có thể chứa nhiều tên kho nối bằng dấu phẩy).
       const huyPartyCache = new Map<string, Party>();
       const huyParty = async (kind: 'kho' | 'may', id: string): Promise<Party> => {
         const key = `${kind}|${id}`.toLowerCase();
@@ -1308,7 +1652,8 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
         if (text(current.loai) === 'xuat') {
           const dest = xuatLineDestOf(line);
           if (!dest.id) return res.status(400).json({ error: `Dòng ${line.ma_hang}: thiếu nơi đến, không hủy được.` });
-          if (dest.loai === 'ncc') continue;
+          // Phân xưởng là nơi ghi nhận sử dụng, không có tồn đích để kiểm tra khi đảo phiếu.
+          if (dest.loai === 'ncc' || dest.loai === 'phan_xuong') continue;
           const destPartyOf = await huyParty(dest.loai, dest.id);
           const lineCatalog: 'nvl' | 'san_pham' =
             destPartyOf.loai === 'may' || destPartyOf.vatTu ? 'nvl' : 'san_pham';
@@ -1321,10 +1666,11 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
           }
           continue;
         }
+        const receivingWarehouse = text(line.kho_dong_id || line.kho_dong_ten || current.kho_dich || dichId);
         const holder =
           dichLoai === 'may'
             ? { loai: 'may' as const, id: dichId }
-            : { loai: 'kho' as const, id: text(current.kho_dich) || dichId };
+            : { loai: 'kho' as const, id: receivingWarehouse };
         const ton = await stockOf(line.ma_hang, holder, resolvedCatalog);
         if (ton + 1e-9 < Number(line.so_luong)) {
           return res.status(400).json({
@@ -1343,7 +1689,8 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       if (text(current.loai) === 'nhap') {
         const groups = new Map<string, DetailLine[]>();
         for (const line of lines) {
-          const key = `${line.nguon_dong_loai}|${line.nguon_dong_id}`;
+          const receivingWarehouse = text(line.kho_dong_id || line.kho_dong_ten || current.kho_dich || dichId);
+          const key = `${line.nguon_dong_loai}|${line.nguon_dong_id}|${receivingWarehouse}`;
           groups.set(key, [...(groups.get(key) || []), line]);
         }
         for (const group of groups.values()) {
@@ -1352,14 +1699,15 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
           const back = fromKho ? await loadParty('kho', text(sample?.nguon_dong_id)) : null;
           const backParty: Party = back && !('error' in back)
             ? back
-            : destParty;
+            : await huyParty('kho', text(sample?.kho_dong_id || sample?.kho_dong_ten || current.kho_dich || dichId));
+          const receivingParty = await huyParty('kho', text(sample?.kho_dong_id || sample?.kho_dong_ten || current.kho_dich || dichId));
           const header: ParsedHeader = {
             loai: 'xuat',
             ngay: new Date().toISOString().slice(0, 10),
             ca: caText || null,
             caList,
             nguon: null,
-            dich: fromKho ? backParty : destParty,
+            dich: fromKho ? backParty : receivingParty,
             loaiNhap: 'Hủy phiếu tổng hợp',
             loaiXuat: 'Hủy phiếu tổng hợp',
             nguoiLap: text((req.body as any)?.nguoiLap) || text(current.nguoi_lap) || null,
@@ -1370,10 +1718,10 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
             lines: group.map(line => ({
               ...line,
               nguon_dong_loai: 'kho',
-              nguon_dong_id: destParty.ten || destParty.id,
-              nguon_dong_ten: destParty.ten || destParty.id
+              nguon_dong_id: receivingParty.ten || receivingParty.id,
+              nguon_dong_ten: receivingParty.ten || receivingParty.id
             })),
-            catalog: resolvedCatalog,
+            catalog: receivingParty.vatTu ? 'nvl' : resolvedCatalog,
             skipInbound: !fromKho
           };
           const codes = await writeLegs(header, {}, reason);
@@ -1396,6 +1744,10 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
           nccId: string;
           lines: DetailLine[];
         }>();
+        const workshopGroups = new Map<string, {
+          src: { loai: 'kho' | 'may'; id: string };
+          lines: DetailLine[];
+        }>();
         for (const line of lines) {
           const s = xuatLineSrcOf(line) || legacySrc;
           if (!s?.id) return res.status(400).json({ error: `Dòng ${line.ma_hang}: thiếu nguồn xuất, không hủy được.` });
@@ -1406,6 +1758,13 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
             const cur = nccGroups.get(key);
             if (cur) cur.lines.push(line);
             else nccGroups.set(key, { src: { loai: s.loai, id: s.id }, nccId: d.id, lines: [line] });
+            continue;
+          }
+          if (d.loai === 'phan_xuong') {
+            const key = `${s.loai}|${s.id}=>phan_xuong|${d.id}`;
+            const cur = workshopGroups.get(key);
+            if (cur) cur.lines.push(line);
+            else workshopGroups.set(key, { src: { loai: s.loai, id: s.id }, lines: [line] });
             continue;
           }
           const key = `${s.loai}|${s.id}=>${d.loai}|${d.id}`;
@@ -1479,6 +1838,36 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
               kho_dong_ten: kho.ten,
               kho_dong_ma: kho.maKho,
               kho_dong_vat_tu: kho.vatTu,
+              dich_dong_loai: '',
+              dich_dong_id: ''
+            })),
+            catalog: 'nvl'
+          }, {}, reason);
+          merged.maNhap = joinCode(merged.maNhap, codes.maNhap);
+          merged.maXuat = joinCode(merged.maXuat, codes.maXuat);
+        }
+        for (const group of workshopGroups.values()) {
+          const source = await huyParty(group.src.loai, group.src.id);
+          const codes = await writeLegs({
+            loai: 'nhap',
+            ngay: today,
+            ca: caText || null,
+            caList,
+            nguon: null,
+            dich: source,
+            loaiNhap: 'Hủy phiếu tổng hợp',
+            loaiXuat: null,
+            nguoiLap: text((req.body as any)?.nguoiLap) || text(current.nguoi_lap) || null,
+            nguoiGiao: text(current.nguoi_giao) || null,
+            diaDiem: text(current.dia_diem) || null,
+            lyDo: reason,
+            ghiChu: `Hủy ${text(current.ma_phieu_chung)}`,
+            lines: group.lines.map(line => ({
+              ...line,
+              kho_dong_id: group.src.loai === 'kho' ? source.id : '',
+              kho_dong_ten: group.src.loai === 'kho' ? source.ten : '',
+              kho_dong_ma: group.src.loai === 'kho' ? source.maKho : null,
+              kho_dong_vat_tu: group.src.loai === 'kho' ? source.vatTu : false,
               dich_dong_loai: '',
               dich_dong_id: ''
             })),

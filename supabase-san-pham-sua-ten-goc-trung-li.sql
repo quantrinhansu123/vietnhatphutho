@@ -71,7 +71,7 @@ set ten_goc = c.ten_goc_new,
           nullif(btrim(s.mang), ''),
           nullif(btrim(s.do_li), ''),
           nullif(btrim(s.do_li_dm), ''),
-          nullif(btrim(s.do_day_m), ''),
+          nullif(btrim(s.kho_rong), ''),
           nullif(btrim(s.do_dai_m), '')
         ),
         ''

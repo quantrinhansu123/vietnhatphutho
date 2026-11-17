@@ -86,6 +86,32 @@ export function formatNumber(val: number, fractionDigits: number = 1): string {
   }).format(val);
 }
 
+/** Định dạng số theo quy ước Việt Nam: hàng nghìn `.`, thập phân `,`. */
+export function formatNumberVN(val: number, fractionDigits: number = 1): string {
+  return new Intl.NumberFormat('vi-VN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: fractionDigits
+  }).format(val);
+}
+
+/** Format giá trị vừa nhập, giữ nguyên số chữ số thập phân người dùng đã gõ. */
+export function formatNumberInputVN(value: string, fallbackFractionDigits = 3): string {
+  const parsed = parseLocalizedNumberVN(value);
+  if (!Number.isFinite(parsed)) return value;
+  const text = value.trim().replace(/\s/g, '');
+  const lastComma = text.lastIndexOf(',');
+  const lastDot = text.lastIndexOf('.');
+  const decimalSeparator = lastComma >= 0 && lastDot >= 0
+    ? (lastComma > lastDot ? ',' : '.')
+    : lastComma >= 0 ? ','
+      : lastDot >= 0 && !/^-?\d{1,3}(\.\d{3})+$/.test(text) ? '.' : '';
+  const fractionDigits = decimalSeparator ? (text.split(decimalSeparator).pop() || '').length : 0;
+  return new Intl.NumberFormat('vi-VN', {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: Math.max(fallbackFractionDigits, fractionDigits)
+  }).format(parsed);
+}
+
 /** Tiền VND: phần nghìn `,` (VD: 1,250,000). Lẻ dùng `.` (VD: 1,250.5). */
 export function formatMoney(val: number, fractionDigits: number = 0): string {
   if (!Number.isFinite(val)) return '0';
@@ -100,6 +126,20 @@ export function formatMoney(val: number, fractionDigits: number = 0): string {
   return `${sign}${withCommas}`;
 }
 
+/** Tiền theo quy ước Việt Nam: 1.234,50. */
+export function formatMoneyVN(val: number, fractionDigits: number = 0): string {
+  if (!Number.isFinite(val)) return '0';
+  const rounded = Math.round(val * 10 ** fractionDigits) / 10 ** fractionDigits;
+  const [intPart, decPart = ''] = Math.abs(rounded).toFixed(fractionDigits).split('.');
+  const withDots = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const sign = rounded < 0 ? '-' : '';
+  if (fractionDigits > 0) {
+    const trimmedDec = decPart.replace(/0+$/, '');
+    return trimmedDec ? `${sign}${withDots},${trimmedDec}` : `${sign}${withDots}`;
+  }
+  return `${sign}${withDots}`;
+}
+
 /**
  * Số lượng tồn/phiếu: phần nghìn `,`, thập phân `.`, làm tròn 2 số,
  * luôn hiện đủ 2 số sau `.` (VD: 1,234.50 / 22.58 / 0.00).
@@ -110,6 +150,15 @@ export function formatQty(val: number): string {
   const [intPart, decPart = ''] = Math.abs(rounded).toFixed(2).split('.');
   const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   return `${rounded < 0 ? '-' : ''}${withCommas}.${decPart}`;
+}
+
+/** Số lượng theo quy ước Việt Nam, luôn hiện đủ hai chữ số thập phân. */
+export function formatQtyVN(val: number): string {
+  if (!Number.isFinite(val)) return '0,00';
+  const rounded = Math.round(val * 100) / 100;
+  const [intPart, decPart = ''] = Math.abs(rounded).toFixed(2).split('.');
+  const withDots = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${rounded < 0 ? '-' : ''}${withDots},${decPart}`;
 }
 
 /**
@@ -145,9 +194,36 @@ export function parseLocalizedNumber(value: unknown): number {
   return Number(normalized);
 }
 
+/** Parser cho ô nhập đã chuyển sang chuẩn Việt Nam; dấu phẩy luôn là thập phân. */
+export function parseLocalizedNumberVN(value: unknown): number {
+  const text = String(value ?? '').trim().replace(/\s/g, '');
+  if (!text) return NaN;
+  const lastDot = text.lastIndexOf('.');
+  const lastComma = text.lastIndexOf(',');
+  let normalized = text;
+  if (lastDot >= 0 && lastComma >= 0) {
+    // Hỗ trợ cả kiểu Việt 1.234,5 và dữ liệu cũ kiểu Mỹ 1,234.5.
+    const decimalIsComma = lastComma > lastDot;
+    const decimal = decimalIsComma ? ',' : '.';
+    const grouping = decimalIsComma ? /\./g : /,/g;
+    normalized = `${text.slice(0, text.lastIndexOf(decimal)).replace(grouping, '')}.${text.slice(text.lastIndexOf(decimal) + 1)}`;
+  } else if (lastComma >= 0) {
+    normalized = /^-?\d{1,3}(,\d{3}){2,}$/.test(text)
+      ? text.replace(/,/g, '')
+      : text.replace(',', '.');
+  } else if (lastDot >= 0 && /^-?\d{1,3}(\.\d{3})+$/.test(text)) {
+    normalized = text.replace(/\./g, '');
+  }
+  return Number(normalized);
+}
+
 /** Đọc số tiền nhập tay: 25,000 -> 25000, 1,250.5 -> 1250.5 (vẫn đọc được 1.250.000 và 1.250,5 cũ). */
 export function parseMoneyInput(value: string): number {
   return parseLocalizedNumber(value);
+}
+
+export function parseMoneyInputVN(value: string): number {
+  return parseLocalizedNumberVN(value);
 }
 
 /** Format ô nhập giá: chỉ giữ số, hiển thị dấu phẩy phân cách (24000 -> 24,000) */
@@ -157,11 +233,36 @@ export function sanitizeMoneyInput(value: string): string {
   return formatMoney(Number(digits), 0);
 }
 
+/** Giữ phần thập phân nhập bằng dấu phẩy và nhóm hàng nghìn bằng dấu chấm. */
+export function sanitizeMoneyInputVN(value: string): string {
+  const cleaned = value.replace(/[^\d,.-]/g, '').replace(/-/g, '');
+  if (!cleaned) return '';
+  const hasComma = cleaned.includes(',');
+  const hasDot = cleaned.includes('.');
+  const commaThousandsOnly = hasComma && !hasDot && /^\d{1,3}(,\d{3}){2,}$/.test(cleaned);
+  const decimalSeparator = hasComma && hasDot
+    ? (cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.') ? ',' : '.')
+    : hasComma && !commaThousandsOnly ? ',' : '';
+  const decimalIndex = decimalSeparator ? cleaned.lastIndexOf(decimalSeparator) : -1;
+  const integerRaw = (decimalIndex >= 0 ? cleaned.slice(0, decimalIndex) : cleaned).replace(/[.,]/g, '');
+  const decimalRaw = decimalIndex >= 0 ? cleaned.slice(decimalIndex + 1).replace(/[^\d]/g, '') : '';
+  const grouped = integerRaw.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return decimalIndex >= 0 ? `${grouped},${decimalRaw}` : grouped;
+}
+
 export function formatPercent(val: number): string {
   return formatNumber(val, 2);
+}
+
+export function formatPercentVN(val: number): string {
+  return formatNumberVN(val, 2);
 }
 
 export function parsePercentInput(value: string): number {
   // Chuẩn mới "3,000.00", vẫn đọc được kiểu cũ "3.000,00".
   return parseLocalizedNumber(value);
+}
+
+export function parsePercentInputVN(value: string): number {
+  return parseLocalizedNumberVN(value);
 }

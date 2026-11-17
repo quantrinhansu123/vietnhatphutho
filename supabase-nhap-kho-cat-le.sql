@@ -35,7 +35,7 @@ begin
     set ten_goc = s.ten_goc,
         do_li = s.do_li,
         do_li_dm = s.do_li_dm,
-        do_day_m = s.do_day_m,
+        do_day_m = s.kho_rong,
         do_dai_m = s.do_dai_m,
         mang = s.mang,
         hang_phe = s.hang_phe,

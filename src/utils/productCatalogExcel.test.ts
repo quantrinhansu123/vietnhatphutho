@@ -23,11 +23,15 @@ function makeRow(patch: Partial<ProductCatalogExcelRow> = {}): ProductCatalogExc
     zem: '',
     soSong: '',
     dinhMucKg: '',
+    doDaiTamTieuChuan: '',
     tcmb: '',
     doDayM: '',
     doDaiM: '',
     mang: '',
     hangPhe: '',
+    mau: '',
+    giaRe: '',
+    tcmn: '',
     nature: '',
     group: '',
     unit: '',
@@ -81,10 +85,10 @@ test('import: ĐVT CUỘN, TẤM về Tấm và tính ten_ghep', () => {
     })
   );
   assert.equal(payload.unit, 'Tấm');
-  assert.equal(payload.doLiDm, '(đm 9,7 li)');
+  assert.equal(payload.doLiDm, '(đm 9.7 li)');
   assert.equal(
     payload.tenGhep,
-    'Tấm nhựa đặc màu TRẮNG - STD - 10li - (đm 9,7 li) - 1.22m - 9m'
+    'Tấm nhựa đặc màu TRẮNG - STD - 10li - (đm 9.7 li) - 1.22m - 9m'
   );
   assert.equal(payload.productionName, payload.tenGhep);
 });
@@ -119,20 +123,35 @@ test('import: Rỗng bỏ 2.1m khỏi tên ghép nhưng vẫn lưu doDayM', () =
   assert.equal(payload.productionName, payload.tenGhep);
 });
 
-test('import: tên gốc đuôi li trùng độ li thì cắt, tên ghép hết trùng', () => {
+test('import: thiếu Tên gốc thì chỉ lấy loại SP; tên ghép vẫn đủ thông số', () => {
   const payload = productCatalogRowToPayload(
     makeRow({
       code: 'STS06-1.2li- NP',
       amisCode: 'STS06-1.2li- NP',
       name: 'Tấm nhựa sóng',
       productionName: 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG 1,2LI - 4M',
-      group: 'TP; PX Sóng'
+      group: 'TP; PX Sóng',
+      mau: 'TRẮNG'
     })
   );
-  assert.equal(payload.tenGoc, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG');
+  assert.equal(payload.tenGoc, 'NHỰA SÓNG');
   assert.equal(payload.doLi, '1.2li');
   assert.equal(payload.tenGhep, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG - 1.2li - 4m');
   assert.equal(payload.productionName, payload.tenGhep);
+});
+
+test('import: tên gốc ghi tay đuôi li trùng độ li thì cắt', () => {
+  const payload = productCatalogRowToPayload(
+    makeRow({
+      code: 'STS06-1.2li- NP',
+      amisCode: 'STS06-1.2li- NP',
+      name: 'Tấm nhựa sóng',
+      productionName: 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG 1,2LI - 4M',
+      group: 'TP; PX Sóng',
+      tenGoc: 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG 1,2LI'
+    })
+  );
+  assert.equal(payload.tenGoc, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG');
 });
 
 test('import: cột ZEM / Số sóng / ĐM kg / TCMB ghép đúng vị trí', () => {
@@ -153,7 +172,7 @@ test('import: cột ZEM / Số sóng / ĐM kg / TCMB ghép đúng vị trí', ()
   // Hàng ZEM: không ghép độ li / đm-li vào tên (ZEM thay độ li).
   assert.equal(
     dac.tenGhep,
-    'Tấm nhựa đặc màu XDT 8ZEM - STD - TCMB - 1.22m - 30m'
+    'Tấm nhựa đặc màu XDT - 8ZEM - STD - TCMB - 1.22m - 30m'
   );
 
   const song = productCatalogRowToPayload(
@@ -162,13 +181,17 @@ test('import: cột ZEM / Số sóng / ĐM kg / TCMB ghép đúng vị trí', ()
       name: 'Nhựa sóng trắng 13 sóng',
       productionName: 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG - 2m',
       group: 'TP; PX Sóng',
+      tenGoc: 'NHỰA SÓNG',
+      mau: 'TRẮNG',
       soSong: '13 sóng',
-      dinhMucKg: '4,8 kg'
+      dinhMucKg: '4,8 kg',
+      doDaiTamTieuChuan: '6m'
     })
   );
   assert.equal(song.soSong, '13');
   assert.equal(song.dinhMucKg, '(đm 4.8 kg)');
-  assert.equal(song.tenGhep, 'NHỰA SÓNG TRẮNG - NP - 13 SÓNG - (đm 4.8 kg) - 2m');
+  assert.equal(song.doDaiTamTieuChuan, '6m');
+  assert.equal(song.tenGhep, 'NHỰA SÓNG TRẮNG - NP - 13 SÓNG - ( ĐM 4.8KG/6M ) - 2m');
 
   const duplicatedKg = productCatalogRowToPayload(
     makeRow({
@@ -183,7 +206,7 @@ test('import: cột ZEM / Số sóng / ĐM kg / TCMB ghép đúng vị trí', ()
   assert.equal(duplicatedKg.dinhMucKg, '(đm 12 kg)');
   assert.equal(
     duplicatedKg.tenGhep,
-    'NHỰA SÓNG XDT - NP - 11 SÓNG - 1.5li - (đm 12 kg) - 2.5m'
+    'NHỰA SÓNG XDT - NP - 11 SÓNG - 1.5li - ( ĐM 12KG/6M ) - 2.5m'
   );
 
   const gluedKg = productCatalogRowToPayload(
@@ -199,7 +222,7 @@ test('import: cột ZEM / Số sóng / ĐM kg / TCMB ghép đúng vị trí', ()
   assert.equal(gluedKg.dinhMucKg, '(đm 12 kg)');
   assert.equal(
     gluedKg.tenGhep,
-    'NHỰA SÓNG XDT - NP - 11 SÓNG - 1.5li - (đm 12 kg) - 6m'
+    'NHỰA SÓNG XDT - NP - 11 SÓNG - 1.5li - ( ĐM 12KG/6M ) - 6m'
   );
 
   const midKg = productCatalogRowToPayload(
@@ -212,7 +235,7 @@ test('import: cột ZEM / Số sóng / ĐM kg / TCMB ghép đúng vị trí', ()
     })
   );
   assert.equal(midKg.dinhMucKg, '(đm 7.8 kg)');
-  assert.equal(midKg.tenGhep, 'NHỰA SÓNG XDT - NP - 9 SÓNG - 1li - (đm 7.8 kg) - 2m');
+  assert.equal(midKg.tenGhep, 'NHỰA SÓNG XDT - NP - 9 SÓNG - 1li - ( ĐM 7.8KG/6M ) - 2m');
 
   const duplicateLi = productCatalogRowToPayload(
     makeRow({
@@ -223,7 +246,7 @@ test('import: cột ZEM / Số sóng / ĐM kg / TCMB ghép đúng vị trí', ()
       group: 'TP; PX Sóng'
     })
   );
-  assert.equal(duplicateLi.tenGhep, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG - 1.5li - (đm 12 kg) - 2.4m');
+  assert.equal(duplicateLi.tenGhep, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG - 1.5li - ( ĐM 12KG/6M ) - 2.4m');
 
   const mixedLi = productCatalogRowToPayload(
     makeRow({
@@ -235,10 +258,10 @@ test('import: cột ZEM / Số sóng / ĐM kg / TCMB ghép đúng vị trí', ()
     })
   );
   assert.equal(mixedLi.doLi, '1li');
-  assert.equal(mixedLi.tenGhep, 'NHỰA SÓNG XDT - NP - 9 SÓNG - 1li - (đm 12 kg) - 6m');
+  assert.equal(mixedLi.tenGhep, 'NHỰA SÓNG XDT - NP - 9 SÓNG - 1li - ( ĐM 12KG/6M ) - 6m');
 });
 
-test('import: đọc đúng header mới ĐM (đm li) / ĐM (đm kg) / ZEM / Số sóng / TCMB', async () => {
+test('import: đọc đúng header miền nam v2 + Mét dài ĐM / ZEM / Số sóng / TCMB', async () => {
   const headers: string[] = [...PRODUCT_CATALOG_EXCEL_HEADERS];
   const row = headers.map(() => '');
   const set = (header: string, value: string) => {
@@ -246,28 +269,71 @@ test('import: đọc đúng header mới ĐM (đm li) / ĐM (đm kg) / ZEM / S�
     assert.ok(index >= 0, `Thiếu header ${header}`);
     row[index] = value;
   };
-  set('Mã SP', 'SP-HDR');
+  set('Mã AMIS', 'SP-HDR');
   set('Tên sản phẩm', 'Sản phẩm header mới');
-  set('Tên sản xuất', 'Tấm nhựa đặc màu XDT - STD - 2li - 1.22m - 30m');
+  set('Tên sản xuất mới', 'Tấm nhựa đặc màu XDT - STD - 2li - 1.22m - 30m');
+  set('Loại', 'TP; PX Đặc');
+  set('ĐVT', 'Tấm');
+  set('Tên gốc', 'Tấm nhựa đặc');
   set('Độ li', '2li');
   set('ZEM', '8');
   set('Số sóng', '11');
   set('ĐM (đm li)', '(đm 1.8 li)');
   set('ĐM (đm kg)', '(đm 4,8 kg)');
+  set('Mét dài ĐM (m)', '6m');
   set('TCMB', 'x');
-  set('Nhóm', 'TP; PX Đặc');
+  set('Màu', 'XDT');
 
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([headers, row]), 'San_pham');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([headers, row]), 'Sản phẩm');
   const buffer = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
   const [parsed] = await parseProductCatalogExcel(
     new File([new Uint8Array(buffer)], 'danh-muc.xlsx')
   );
 
+  assert.equal(parsed.code, 'SP-HDR');
+  assert.equal(parsed.amisCode, 'SP-HDR');
+  assert.equal(parsed.tenGoc, 'Tấm nhựa đặc');
+  assert.equal(parsed.group, 'TP; PX Đặc');
+  assert.equal(parsed.unit, 'Tấm');
+  assert.equal(parsed.mau, 'XDT');
   assert.equal(parsed.doLi, '2li');
   assert.equal(parsed.zem, '8');
   assert.equal(parsed.soSong, '11');
   assert.equal(parsed.doLiDm, '(đm 1.8 li)');
   assert.equal(parsed.dinhMucKg, '(đm 4,8 kg)');
+  assert.equal(parsed.doDaiTamTieuChuan, '6m');
   assert.equal(parsed.tcmb, 'x');
+});
+
+test('import: ưu tiên sheet Sản phẩm trong file 2 sheet; Mã AMIS đủ để import', async () => {
+  const catalogHeaders = [...PRODUCT_CATALOG_EXCEL_HEADERS];
+  const catalogRow = catalogHeaders.map(() => '');
+  catalogRow[catalogHeaders.indexOf('Mã AMIS')] = 'STS02-11s';
+  catalogRow[catalogHeaders.indexOf('Tên sản phẩm')] = 'Nhựa sóng xanh';
+  catalogRow[catalogHeaders.indexOf('Tên sản xuất mới')] = 'NHỰA SÓNG XANH - 11 SÓNG 6ZEM - ( ĐM 5.2KG/6M ) - 2m';
+  catalogRow[catalogHeaders.indexOf('Loại')] = 'TP; PX Sóng';
+  catalogRow[catalogHeaders.indexOf('Tên gốc')] = 'NHỰA SÓNG';
+  catalogRow[catalogHeaders.indexOf('ĐM (đm kg)')] = '(đm 5.2 kg)';
+  catalogRow[catalogHeaders.indexOf('Mét dài ĐM (m)')] = '6m';
+
+  const convHeaders = [
+    'Mã amis',
+    'Tên sản phẩm',
+    'Tên sản xuất',
+    'Trọng lượng (kg/Tấm)'
+  ];
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([catalogHeaders, catalogRow]), 'Sản phẩm');
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.aoa_to_sheet([convHeaders, ['STS02-11s', 'Nhựa sóng xanh', 'NHỰA SÓNG XANH', '1.73']]),
+    'Import quy doi'
+  );
+  const buffer = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
+  const rows = await parseProductCatalogExcel(new File([new Uint8Array(buffer)], 'mix.xlsx'));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].tenGoc, 'NHỰA SÓNG');
+  assert.equal(rows[0].dinhMucKg, '(đm 5.2 kg)');
+  assert.equal(rows[0].doDaiTamTieuChuan, '6m');
 });

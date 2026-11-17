@@ -21,6 +21,20 @@ import {
   resolveCustomerOrdersForPrint,
   type ProductionPlanRelatedReports
 } from './relatedReportsPrint';
+import {
+  aggregateSoTronDoneQty,
+  defaultPtdmApplyQtys,
+  formatPlanPtdmAttachedAtVn,
+  loadAggregatedPlanMaterialsFromPtdm,
+  parsePlanPtdmList,
+  parseSoTronQtyHints,
+  plannedProductWeightKg,
+  remainingPlanQty,
+  scaleMaterialsFromPtdmChiTiet,
+  type PlanPtdmRef,
+  type PlanPrintMaterialRow,
+  type SoTronProductQtyHint
+} from './ptdmPlanHelpers';
 import OrderPrintSheet from '../../components/OrderPrintSheet';
 import { getProductionShiftOptions, normalizeShiftSettings, shiftNamesMatch, shiftIsoDateByDays, type ShiftOption } from '../../utils/shiftSettings';
 import { isExternalStaffCode, resolveScheduleStaffName } from '../../utils/externalStaff';
@@ -197,8 +211,9 @@ export function compareProductionOrderPriority(a: ProductionOrderRow, b: Product
   return `${b.startDate} ${b.code}`.localeCompare(`${a.startDate} ${a.code}`, 'vi');
 }
 
-export function isActiveProductionPlanOrder(row: ProductionOrderRow) {
-  return /đang|chờ|cho|active|sx/i.test(row.status);
+export function isActiveProductionPlanOrder(row: Pick<ProductionOrderRow, 'status'>) {
+  const status = String(row.status || '').trim().toLocaleLowerCase('vi').replace(/\s+/g, ' ');
+  return status === 'chờ sx' || status === 'chờ sản xuất' || status === 'cho sx' || status === 'cho san xuat';
 }
 
 export type ProductionPlanLine = {
@@ -217,6 +232,8 @@ export type ProductionPlanLine = {
   shift: string;
   priority: number;
   note: string;
+  /** Lịch sử PTĐM gắn vào dòng lệnh trong ngày. */
+  danhSachPtdm: PlanPtdmRef[];
 };
 
 export function getProductionOrderProductLines(row: Pick<ProductionOrderRow, 'products' | 'productCode' | 'productName' | 'quantity' | 'unit'>): OrderProductLine[] {
@@ -305,7 +322,16 @@ export function productionOrderToPlanLine(
   priority: number,
   machines: MachineRow[] = []
 ): ProductionPlanLine {
-  const products = getProductionOrderProductLines(row);
+  const products = getProductionOrderProductLines(row).map(product => ({
+    ...product,
+    quantity: String(
+      parseProductionOrderQuantity(String(product.soLuongBac || '')) +
+      parseProductionOrderQuantity(String(product.soLuongTrung || '')) +
+      parseProductionOrderQuantity(String(product.soLuongNam || ''))
+    ),
+    soLuongLenh: product.soLuongLenh || product.quantity,
+    soLuongDaSx: product.soLuongDaSx || '0'
+  }));
   const primaryProduct = products[0];
 
   return {
@@ -321,6 +347,7 @@ export function productionOrderToPlanLine(
     orderRef: row.orderRef,
     position: resolveProductionOrderMachine(row, machines),
     staff: row.staff,
+    danhSachPtdm: [],
     shift: row.shift,
     priority,
     note: row.note
@@ -346,14 +373,21 @@ export function buildUpdateProductionPlanLines(
   const sourceLines = productionOrders.map((row, index) => {
     const line = productionOrderToPlanLine(row, index + 1, machines);
     const savedLine = savedById.get(row.id);
-    return savedLine ? { ...line, note: savedLine.note } : line;
+    if (!savedLine) return line;
+    return {
+      ...line,
+      note: savedLine.note,
+      danhSachPtdm: savedLine.danhSachPtdm || [],
+      products: savedLine.products.length > 0 ? savedLine.products : line.products,
+      quantity: savedLine.quantity || line.quantity
+    };
   });
   const missingSavedLines = savedLines
     .filter(line => !sourceIds.has(line.id))
-    .map(line => ({ ...line, priority: sourceLines.length + 1 }));
+    .map(line => ({ ...line, priority: sourceLines.length + 1, danhSachPtdm: line.danhSachPtdm || [] }));
 
   return [...sourceLines, ...missingSavedLines]
-    .map((line, index) => ({ ...line, priority: index + 1 }));
+    .map((line, index) => ({ ...line, priority: index + 1, danhSachPtdm: line.danhSachPtdm || [] }));
 }
 
 export function enrichProductionPlanLines(
@@ -365,11 +399,15 @@ export function enrichProductionPlanLines(
 
   return planLines.map(line => {
     const source = sourceById.get(line.id);
-    if (!source) return line;
+    if (!source) return { ...line, danhSachPtdm: line.danhSachPtdm || [] };
 
+    const base = productionOrderToPlanLine(source, line.priority, machines);
     return {
-      ...productionOrderToPlanLine(source, line.priority, machines),
-      note: line.note
+      ...base,
+      note: line.note,
+      danhSachPtdm: line.danhSachPtdm || [],
+      products: line.products.length > 0 ? line.products : base.products,
+      quantity: line.quantity || base.quantity
     };
   });
 }
@@ -585,6 +623,10 @@ type ProductionPlanFormSnapshot = {
 function cloneProductionPlanLines(lines: ProductionPlanLine[]): ProductionPlanLine[] {
   return lines.map(line => ({
     ...line,
+    danhSachPtdm: (line.danhSachPtdm || []).map(item => ({
+      ...item,
+      so_luong_ap_dung_theo_sp: item.so_luong_ap_dung_theo_sp.map(q => ({ ...q }))
+    })),
     products: line.products.map(product => ({ ...product }))
   }));
 }
@@ -680,6 +722,37 @@ export function StaffAssignmentPrintSheet({
 async function loadProductionPlanMaterials(
   lines: ProductionPlanLine[]
 ): Promise<Record<string, ProductionOrderMaterialLine[]>> {
+  const ptdmIds = [
+    ...new Set(
+      lines.flatMap(line => (line.danhSachPtdm || []).map(item => item.dinh_muc_id).filter(Boolean))
+    )
+  ];
+  const ptdmById = new Map<string, { chi_tiet?: unknown; ten_phieu?: string }>();
+  if (ptdmIds.length > 0) {
+    const res = await fetch(`/api/bang-tron-vat-tu-dinh-muc?ids=${encodeURIComponent(ptdmIds.join(','))}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || 'Không thể tải phiếu PTĐM để in NVL.');
+    }
+    const items = Array.isArray(data?.records)
+      ? data.records
+      : Array.isArray(data?.items)
+        ? data.items
+        : Array.isArray(data)
+          ? data
+          : [];
+    items.forEach((item: Record<string, unknown>) => {
+      const id = String(item.id || '').trim();
+      if (id && ptdmIds.includes(id)) {
+        ptdmById.set(id, { chi_tiet: item.chi_tiet, ten_phieu: String(item.ten_phieu || '') });
+      }
+    });
+    const missingPtdmIds = ptdmIds.filter(id => !ptdmById.has(id));
+    if (missingPtdmIds.length > 0) {
+      throw new Error(`Không tìm thấy ${missingPtdmIds.length} phiếu PTĐM đã gắn. Kiểm tra lại dữ liệu PTĐM.`);
+    }
+  }
+
   const entries = await Promise.all(
     lines.flatMap(line => {
       const products =
@@ -695,9 +768,43 @@ async function loadProductionPlanMaterials(
             ];
 
       return products.map(async product => {
+        const materialKey = products.length > 1 ? `${line.id}__${product.productCode}` : line.id;
+        const ptdmList = line.danhSachPtdm || [];
+        if (ptdmList.length > 0) {
+          const merged = new Map<string, ProductionOrderMaterialLine>();
+          ptdmList.forEach(ptdm => {
+            const applyQty =
+              ptdm.so_luong_ap_dung_theo_sp.find(
+                q =>
+                  (product.productId && q.san_pham_id && q.san_pham_id === product.productId) ||
+                  normalizeProductCodeKey(q.ma_sp) === normalizeProductCodeKey(product.productCode)
+              )?.so_luong_ap_dung ??
+              remainingPlanQty(
+                parseProductionOrderQuantity(product.quantity),
+                parseProductionOrderQuantity(product.soLuongDaSx || '0')
+              );
+            const applyWeightKg = plannedProductWeightKg(product, applyQty);
+            const chiTiet = ptdmById.get(ptdm.dinh_muc_id)?.chi_tiet;
+            scaleMaterialsFromPtdmChiTiet(chiTiet, applyWeightKg, product.productId, product.productCode).forEach(material => {
+              const key = `${normalizeProductCodeKey(material.code)}__${material.unit || '-'}`;
+              const existing = merged.get(key);
+              if (existing) {
+                existing.proposedQuantity = roundNplNumber(existing.proposedQuantity + material.proposedQuantity);
+                if (existing.weightKg != null || material.weightKg != null) {
+                  existing.weightKg = roundNplNumber((existing.weightKg || 0) + (material.weightKg || 0));
+                }
+              } else {
+                merged.set(key, { ...material });
+              }
+            });
+          });
+          if (merged.size > 0) {
+            return [materialKey, [...merged.values()]] as const;
+          }
+        }
+
         const { items, product: catalogProduct } = await fetchProductPrintData(product.productCode);
         const orderQuantity = parseProductionOrderQuantity(product.quantity);
-        const materialKey = products.length > 1 ? `${line.id}__${product.productCode}` : line.id;
         return [materialKey, buildProductionOrderMaterialProposal(orderQuantity, items, catalogProduct)] as const;
       });
     })
@@ -1729,7 +1836,9 @@ export function buildProductionPlanSaveItems(lines: ProductionPlanLine[]) {
               productCode: line.productCode,
               productName: line.productName,
               unit: line.unit,
-              quantity: line.quantity
+              quantity: line.quantity,
+              soLuongLenh: line.quantity,
+              soLuongDaSx: '0'
             }
           ];
 
@@ -1743,14 +1852,32 @@ export function buildProductionPlanSaveItems(lines: ProductionPlanLine[]) {
       ca: line.shift && line.shift !== '-' ? line.shift : '',
       may: line.position && line.position !== '-' ? line.position : '',
       nhan_su: line.staff && line.staff !== '-' ? line.staff : '',
+      danh_sach_ptdm: line.danhSachPtdm || [],
       san_pham: products.map(product => {
         const sanPhamId = product.productId?.trim() ? product.productId : null;
+        const soLuong = parseProductionOrderQuantity(product.quantity);
+        const soLuongLenh = parseProductionOrderQuantity(product.soLuongLenh || product.quantity);
+        const soLuongDaSx = parseProductionOrderQuantity(product.soLuongDaSx || '0');
         return {
           san_pham_id: sanPhamId,
           ma_sp: product.productCode,
           ten_sp: product.productName,
+          ten_san_xuat: product.productionName || product.productName,
+          ten_ghep: product.tenGhep || '',
+          ma_don_hang: product.orderRef || line.orderRef || '',
           don_vi: product.unit && product.unit !== '-' ? product.unit : '',
-          so_luong: parseProductionOrderQuantity(product.quantity)
+          so_luong: soLuong,
+          so_luong_lenh: soLuongLenh,
+          so_luong_da_sx: soLuongDaSx,
+          ghi_chu: product.note || '',
+          so_luong_bac: product.soLuongBac ?? '',
+          so_luong_trung: product.soLuongTrung ?? '',
+          so_luong_nam: product.soLuongNam ?? '',
+          tl_cuon: product.tlCuon || '',
+          tl_tam: product.tlTam || '',
+          kg_1_sp: product.kg1Sp || '',
+          tong_kg: product.tongKg || '',
+          ket_qua_quy_doi: product.conversionResults || []
         };
       })
     };
@@ -1780,6 +1907,7 @@ export type ProductionPlanHistoryLine = {
   machine: string;
   staff: string;
   products: OrderProductLine[];
+  danhSachPtdm: PlanPtdmRef[];
 };
 
 export function normalizeProductionPlanHistory(data: unknown): ProductionPlanHistorySummary[] {
@@ -1836,14 +1964,27 @@ export function normalizeProductionPlanHistoryLines(data: unknown): ProductionPl
         shift: pickText(record, ['ca', 'shift'], '-'),
         machine: pickText(record, ['may', 'machine'], '-'),
         staff: pickText(record, ['nhan_su', 'staff'], '-'),
-        products
+        products: products.map(product => ({
+          ...product,
+          soLuongLenh: product.soLuongLenh || product.quantity,
+          soLuongDaSx: product.soLuongDaSx || '0'
+        })),
+        danhSachPtdm: parsePlanPtdmList(record.danh_sach_ptdm ?? record.danhSachPtdm)
       };
     })
     .filter((row): row is ProductionPlanHistoryLine => Boolean(row))
     .sort((a, b) => a.priority - b.priority);
 }
 
-function ProductionPlanPrintPreviewTableSheet({ planData, staffMap }: { planData: any; staffMap?: Map<string, string> }) {
+function ProductionPlanPrintPreviewTableSheet({
+  planData,
+  staffMap,
+  materialRows = []
+}: {
+  planData: any;
+  staffMap?: Map<string, string>;
+  materialRows?: Array<{ code: string; name: string; unit: string; totalQuantity: number; shift: string; orderCodes: string[] }>;
+}) {
   const header = planData.plan || {};
   const rows = (planData.rows || []).map((r: any) => ({
     ...r,
@@ -1855,6 +1996,15 @@ function ProductionPlanPrintPreviewTableSheet({ planData, staffMap }: { planData
     kg_cuon: r.kg_cuon !== null ? Number(r.kg_cuon) : null,
     tl_tam: r.tl_tam !== null ? Number(r.tl_tam) : null
   }));
+  const materialsByShift = (() => {
+    const map = new Map<string, typeof materialRows>();
+    materialRows.forEach(row => {
+      const list = map.get(row.shift) || [];
+      list.push(row);
+      map.set(row.shift, list);
+    });
+    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b, 'vi', { numeric: true }));
+  })();
 
   const computedRows = rows.map((row: any) => {
     const bac = Math.max(0, row.slsx_bac);
@@ -1969,6 +2119,46 @@ function ProductionPlanPrintPreviewTableSheet({ planData, staffMap }: { planData
           ))}
         </tbody>
       </table>
+
+      <div className="mt-3 border-t border-gray-300 pt-2">
+        <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-gray-700">
+          Vật tư theo PTĐM (kế hoạch ngày)
+        </div>
+        <p className="mb-1 text-[10px] text-gray-500">Quy đổi định mức 1 cối theo tổng trọng lượng sản xuất của kế hoạch ngày.</p>
+        {materialsByShift.length === 0 ? (
+          <p className="py-2 text-xs text-gray-500">Chưa có vật tư PTĐM trên kế hoạch ngày này.</p>
+        ) : (
+          materialsByShift.map(([shift, rowsOfShift]) => (
+            <div key={shift} className="mb-2">
+              <div className="mb-0.5 text-[11px] font-semibold text-gray-700">Ca {shift}</div>
+              <table className="w-full border-collapse text-xs">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="border border-gray-300 px-1 py-0.5 text-center w-8">STT</th>
+                    <th className="border border-gray-300 px-1 py-0.5 text-left">Mã NVL</th>
+                    <th className="border border-gray-300 px-1 py-0.5 text-left">Tên NVL</th>
+                    <th className="border border-gray-300 px-1 py-0.5 text-center w-12">ĐVT</th>
+                    <th className="border border-gray-300 px-1 py-0.5 text-right w-28">Tổng NVL cần xuất</th>
+                    <th className="border border-gray-300 px-1 py-0.5 text-left">Lệnh SX</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rowsOfShift.map((mat, idx) => (
+                    <tr key={`${shift}-${mat.code}-${idx}`}>
+                      <td className="border border-gray-300 px-1 py-0.5 text-center">{idx + 1}</td>
+                      <td className="border border-gray-300 px-1 py-0.5 font-mono">{mat.code}</td>
+                      <td className="border border-gray-300 px-1 py-0.5">{mat.name || mat.code}</td>
+                      <td className="border border-gray-300 px-1 py-0.5 text-center">{mat.unit || '—'}</td>
+                      <td className="border border-gray-300 px-1 py-0.5 text-right tabular-nums">{formatNumber(mat.totalQuantity, 2)}</td>
+                      <td className="border border-gray-300 px-1 py-0.5">{mat.orderCodes.join(', ') || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -2175,7 +2365,8 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
         unit: line.products[0]?.unit || '',
         products: line.products,
         status: '', orderRef: line.orderRef, position: line.machine !== '-' ? line.machine : line.position,
-        staff: line.staff, shift: line.shift, priority: line.priority, note: line.note
+        staff: line.staff, shift: line.shift, priority: line.priority, note: line.note,
+        danhSachPtdm: line.danhSachPtdm || []
       })));
       setEditingPlan({ ...plan, maSo: planMaSo, ngayLienLac: planNgayLienLac, dacTa: planDacTa } as any);
       setShowCreateModal(true);
@@ -2220,7 +2411,8 @@ export function ProductionPlanHistoryPanel({ onBack }: { onBack: () => void }) {
         staff: line.staff,
         shift: line.shift,
         priority: line.priority,
-        note: line.note
+        note: line.note,
+        danhSachPtdm: line.danhSachPtdm || []
       })));
       setPrintingPlan(plan);
     } catch (error: any) {
@@ -2598,10 +2790,14 @@ export function ProductionPlanModal({
   const [accountingInventoryMaterials, setAccountingInventoryMaterials] = useState<MaterialRow[]>([]);
   const [showQrPrintModal, setShowQrPrintModal] = useState(false);
   const [planDate, setPlanDate] = useState(todayDateInputValue());
+  const [planShiftFilter, setPlanShiftFilter] = useState('all');
   const [planHeaderNote, setPlanHeaderNote] = useState('');
   const [planMaSo, setPlanMaSo] = useState('');
   const [planNgayLienLac, setPlanNgayLienLac] = useState('');
   const [planDacTa, setPlanDacTa] = useState('');
+  const [soTronHints, setSoTronHints] = useState<SoTronProductQtyHint[]>([]);
+  const [ptdmOptions, setPtdmOptions] = useState<Array<{ id: string; ten_phieu: string; ma_lenh_sx: string }>>([]);
+  const [expandedPlanLineIds, setExpandedPlanLineIds] = useState<Set<string>>(new Set());
   const [pendingStaffAssignmentPrint, setPendingStaffAssignmentPrint] = useState(false);
   const [isLoadingRelatedPrint, setIsLoadingRelatedPrint] = useState(false);
   const [relatedPrintData, setRelatedPrintData] = useState<ProductionPlanRelatedReports | null>(null);
@@ -2610,6 +2806,7 @@ export function ProductionPlanModal({
   const [relatedPrintCatalog, setRelatedPrintCatalog] = useState<ProductRow[]>([]);
   const [relatedPrintConversions, setRelatedPrintConversions] = useState<OrderProductConversion[]>([]);
   const [relatedPrintPlanPreviewData, setRelatedPrintPlanPreviewData] = useState<any>(null);
+  const [relatedPrintPlanMaterials, setRelatedPrintPlanMaterials] = useState<PlanPrintMaterialRow[]>([]);
   const [pendingRelatedPrint, setPendingRelatedPrint] = useState(false);
   const [relatedShiftOptions, setRelatedShiftOptions] = useState<ShiftOption[]>([]);
   const [selectedRelatedShifts, setSelectedRelatedShifts] = useState<string[]>([]);
@@ -2623,17 +2820,33 @@ export function ProductionPlanModal({
   } | null>(null);
 
   const displayLines = useMemo(
-    () => printOnly ? planLines : enrichProductionPlanLines(planLines, productionOrders, machines),
-    [planLines, productionOrders, machines, printOnly]
+    () => {
+      const lines = printOnly ? planLines : enrichProductionPlanLines(planLines, productionOrders, machines);
+      return lines.filter(line => {
+        if (!editPlanId && !isActiveProductionPlanOrder(line)) return false;
+        if (planShiftFilter === 'all') return true;
+        return String(line.shift || '').split(',').some(shift => shiftNamesMatch(shift.trim(), planShiftFilter));
+      });
+    },
+    [planLines, productionOrders, machines, printOnly, editPlanId, planShiftFilter]
   );
+  const planShiftOptions = useMemo(() => {
+    const shifts: string[] = [];
+    planLines.forEach(line => String(line.shift || '').split(',').forEach(raw => {
+      const shift = raw.trim();
+      if (shift && shift !== '-' && !shifts.some(existing => shiftNamesMatch(existing, shift))) shifts.push(shift);
+    }));
+    return shifts.sort((a, b) => a.localeCompare(b, 'vi', { numeric: true }));
+  }, [planLines]);
   const selectedLines = useMemo(
     () => displayLines
       .filter(line => selectedLineIds.has(line.id))
       .map((line, index) => ({ ...line, priority: index + 1 })),
     [displayLines, selectedLineIds]
   );
-  const allLinesSelected = displayLines.length > 0 && selectedLineIds.size === displayLines.length;
-  const someLinesSelected = selectedLineIds.size > 0 && !allLinesSelected;
+  const selectedVisibleLineCount = displayLines.filter(line => selectedLineIds.has(line.id)).length;
+  const allLinesSelected = displayLines.length > 0 && selectedVisibleLineCount === displayLines.length;
+  const someLinesSelected = selectedVisibleLineCount > 0 && !allLinesSelected;
   const currentFormSnapshot = useMemo<ProductionPlanFormSnapshot>(() => ({
     planLines,
     selectedLineIds: [...selectedLineIds],
@@ -2683,6 +2896,7 @@ export function ProductionPlanModal({
     setAccountingInventoryMaterials([]);
     setShowQrPrintModal(false);
     setPlanDate(initialDate);
+    setPlanShiftFilter('all');
     setPlanHeaderNote(initialHeaderNote);
     setPlanMaSo(initialMaSo || '');
     setPlanNgayLienLac(initialNgayLienLac || '');
@@ -2905,6 +3119,7 @@ export function ProductionPlanModal({
       setRelatedPrintCatalog([]);
     setRelatedPrintConversions([]);
       setRelatedPrintPlanPreviewData(null);
+      setRelatedPrintPlanMaterials([]);
       setRelatedShiftSummaryRows([]);
       setRelatedShiftSummaryFilters(null);
     };
@@ -3004,6 +3219,13 @@ export function ProductionPlanModal({
 
   const handlePrintNvl = async () => {
     if (displayLines.length === 0) return;
+    const missingPtdm = displayLines.filter(line => !(line.danhSachPtdm || []).length);
+    if (missingPtdm.length > 0) {
+      setFormError(
+        `Cần gắn ít nhất 1 phiếu PTĐM trước khi in NVL (thiếu: ${missingPtdm.map(l => l.code).join(', ')}).`
+      );
+      return;
+    }
     setIsLoadingNvlPrint(true);
     setFormError('');
 
@@ -3037,6 +3259,35 @@ export function ProductionPlanModal({
           }
         } catch (e) {
           // Nếu lỗi, tiếp tục mà không cập nhật relatedPrintPlanPreviewData
+        }
+        try {
+          setRelatedPrintPlanMaterials(
+            await loadAggregatedPlanMaterialsFromPtdm(
+              displayLines.map(line => ({
+                orderCode: line.code,
+                shift: line.shift || '—',
+                products: (line.products.length
+                  ? line.products
+                  : [{ productCode: line.productCode, quantity: line.quantity, soLuongDaSx: '0' }]
+                ).map(product => ({
+                  productId: product.productId,
+                  productCode: product.productCode,
+                  quantity: product.quantity,
+                  soLuongDaSx: product.soLuongDaSx,
+                  unit: product.unit,
+                  tlCuon: product.tlCuon,
+                  tlTam: product.tlTam,
+                  kg1Sp: product.kg1Sp,
+                  totalKg: product.tongKg,
+                  orderQuantity: product.soLuongLenh,
+                  conversionResults: product.conversionResults
+                })),
+                danhSachPtdm: line.danhSachPtdm || []
+              }))
+            )
+          );
+        } catch {
+          setRelatedPrintPlanMaterials([]);
         }
       }
 
@@ -3305,6 +3556,134 @@ export function ProductionPlanModal({
     setPlanLines(prev => prev.map(line => (line.id === lineId ? { ...line, note } : line)));
   };
 
+  const updateLineProductQty = (
+    lineId: string,
+    productIndex: number,
+    patch: Partial<Pick<OrderProductLine, 'quantity' | 'soLuongDaSx' | 'note' | 'soLuongBac' | 'soLuongTrung' | 'soLuongNam'>>
+  ) => {
+    setPlanLines(prev =>
+      prev.map(line => {
+        if (line.id !== lineId) return line;
+        const products = line.products.map((product, index) => {
+          if (index !== productIndex) return product;
+          const updated = { ...product, ...patch };
+          if (['soLuongBac', 'soLuongTrung', 'soLuongNam'].some(key => key in patch)) {
+            updated.quantity = String(
+              parseProductionOrderQuantity(String(updated.soLuongBac || '')) +
+              parseProductionOrderQuantity(String(updated.soLuongTrung || '')) +
+              parseProductionOrderQuantity(String(updated.soLuongNam || ''))
+            );
+          }
+          return updated;
+        });
+        return {
+          ...line,
+          products,
+          quantity: products[0]?.quantity ?? line.quantity
+        };
+      })
+    );
+  };
+
+  const applySoTronDoneHintsToLine = (lineId: string) => {
+    setPlanLines(prev =>
+      prev.map(line => {
+        if (line.id !== lineId) return line;
+        const machine = line.position && line.position !== '-' ? line.position : '';
+        const shift = line.shift && line.shift !== '-' ? line.shift : '';
+        const products = line.products.map(product => {
+          const done = aggregateSoTronDoneQty(soTronHints, {
+            ma_lenh_sx: line.code,
+            san_pham_id: product.productId,
+            ma_sp: product.productCode,
+            ma_may: machine,
+            ca: shift
+          });
+          return { ...product, soLuongDaSx: String(done) };
+        });
+        return { ...line, products };
+      })
+    );
+  };
+
+  const updateLinePtdmIds = (lineId: string, selectedIds: string[]) => {
+    setPlanLines(prev =>
+      prev.map(line => {
+        if (line.id !== lineId) return line;
+        const prevById = new Map((line.danhSachPtdm || []).map(item => [item.dinh_muc_id, item]));
+        const danhSachPtdm: PlanPtdmRef[] = selectedIds.map(id => {
+          const existing = prevById.get(id);
+          if (existing) return existing;
+          const option = ptdmOptions.find(item => item.id === id);
+          return {
+            dinh_muc_id: id,
+            ten_phieu: option?.ten_phieu || id,
+            thoi_gian_gan: '',
+            so_luong_ap_dung_theo_sp: defaultPtdmApplyQtys(line.products)
+          };
+        });
+        return { ...line, danhSachPtdm };
+      })
+    );
+  };
+
+  useEffect(() => {
+    if (!open || !planDate) {
+      setSoTronHints([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/so-tron?ngay=${encodeURIComponent(planDate)}&limit=300`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || cancelled) return;
+        setSoTronHints(parseSoTronQtyHints(data));
+      } catch {
+        if (!cancelled) setSoTronHints([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, planDate]);
+
+  useEffect(() => {
+    if (!open) {
+      setPtdmOptions([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/bang-tron-vat-tu-dinh-muc?limit=500');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || cancelled) return;
+        const items = Array.isArray(data?.records)
+          ? data.records
+          : Array.isArray(data?.items)
+            ? data.items
+            : Array.isArray(data)
+              ? data
+              : [];
+        setPtdmOptions(
+          items
+            .map((item: Record<string, unknown>) => ({
+              id: String(item.id || '').trim(),
+              ten_phieu: String(item.ten_phieu || item.id || '').trim(),
+              ma_lenh_sx: String(item.ma_lenh_sx || '').trim()
+            }))
+            .filter((item: { id: string }) => item.id)
+        );
+      } catch {
+        if (!cancelled) setPtdmOptions([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
   const handleReset = () => {
     if (!initialFormSnapshot || !isFormDirty) return;
     setPlanLines(cloneProductionPlanLines(initialFormSnapshot.planLines));
@@ -3463,9 +3842,22 @@ export function ProductionPlanModal({
               </div>
             </section>}
 
+            {!printOnly && <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-white p-3">
+              <label className="text-xs font-black uppercase tracking-wider text-zinc-500" htmlFor="production-plan-shift-filter">Lọc theo ca</label>
+              <SimpleSelect
+                value={planShiftFilter}
+                onChange={setPlanShiftFilter}
+                options={[{ value: 'all', label: 'Tất cả ca' }, ...planShiftOptions.map(shift => ({ value: shift, label: shift }))]}
+                placeholder="Chọn ca"
+                getLabel={item => String((item as { label?: string }).label || '')}
+                getValue={item => String((item as { value?: string }).value || '')}
+              />
+              <span className="text-xs text-zinc-500">Chỉ hiển thị lệnh có trạng thái Chờ sx.</span>
+            </div>}
+
             {!printOnly && (displayLines.length === 0 ? (
               <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm font-semibold text-zinc-500">
-                Không có lệnh SX đang chờ hoặc đang sản xuất.
+                Không có lệnh SX trạng thái Chờ sx trong ca đã chọn.
               </p>
             ) : (
               <div className="overflow-x-auto rounded-xl border border-zinc-200">
@@ -3484,19 +3876,28 @@ export function ProductionPlanModal({
                           aria-label="Chọn tất cả lệnh sản xuất"
                         />
                       </th>
+                      <th className="w-8 px-1 py-2 font-black" />
                       <th className="px-2 py-2 font-black">STT</th>
                       <th className="px-2 py-2 font-black">Tên máy</th>
                       <th className="px-2 py-2 font-black">Ca làm việc</th>
                       <th className="px-2 py-2 font-black">Nhân sự</th>
                       <th className="px-2 py-2 font-black">Lệnh sản xuất</th>
+                      <th className="px-2 py-2 font-black">PTĐM</th>
                       <th className="px-2 py-2 font-black">Ghi chú</th>
                       <th className="px-2 py-2 font-black">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
-                    {displayLines.map((line, index) => (
+                    {displayLines.map((line, index) => {
+                      const expanded = expandedPlanLineIds.has(line.id);
+                      const ptdmCount = (line.danhSachPtdm || []).length;
+                      const linePtdmOptions = ptdmOptions.filter(option => {
+                        const tokens = option.ma_lenh_sx.split(',').map(t => t.trim().toUpperCase()).filter(Boolean);
+                        return tokens.length === 0 || tokens.includes(line.code.trim().toUpperCase());
+                      });
+                      return (
+                      <React.Fragment key={line.id}>
                       <tr
-                        key={line.id}
                         draggable
                         onDragStart={event => {
                           event.dataTransfer.effectAllowed = 'move';
@@ -3533,12 +3934,33 @@ export function ProductionPlanModal({
                             aria-label={`Chọn lệnh sản xuất dòng ${index + 1}`}
                           />
                         </td>
+                        <td className="w-8 px-1 py-2 text-center">
+                          <button
+                            type="button"
+                            onPointerDown={event => event.stopPropagation()}
+                            onClick={() => {
+                              setExpandedPlanLineIds(current => {
+                                const next = new Set(current);
+                                if (next.has(line.id)) next.delete(line.id);
+                                else next.add(line.id);
+                                return next;
+                              });
+                            }}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded border border-zinc-200 text-zinc-600"
+                            title={expanded ? 'Thu gọn SL / PTĐM' : 'SL ngày & PTĐM'}
+                          >
+                            {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                          </button>
+                        </td>
                         <td className="px-2 py-2 font-black text-emerald-700">{index + 1}</td>
                         <td className="px-2 py-2 font-semibold text-zinc-800">{line.position || '-'}</td>
                         <td className="px-2 py-2 text-zinc-700">{line.shift && line.shift !== '-' ? line.shift : '-'}</td>
                         <td className="px-2 py-2 text-zinc-600">{productionOrderStaffDisplay(line, staffMap)}</td>
                         <td className="px-2 py-2 font-mono text-xs font-bold text-zinc-900">
                           {line.code}
+                        </td>
+                        <td className="px-2 py-2 text-xs font-semibold text-zinc-700">
+                          {ptdmCount > 0 ? `${ptdmCount} phiếu` : <span className="text-zinc-400">Chưa gắn</span>}
                         </td>
                         <td className="px-2 py-2 align-top">
                           <textarea
@@ -3577,7 +3999,160 @@ export function ProductionPlanModal({
                           </RowActionsMenu>
                         </td>
                       </tr>
-                    ))}
+                      {expanded ? (
+                        <tr className="bg-zinc-50/80">
+                          <td colSpan={10} className="px-3 py-3">
+                            <div className="space-y-3">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-xs font-extrabold uppercase tracking-wide text-zinc-600">
+                                  SL kế hoạch ngày · Đã SX (sổ trộn) · PTĐM
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => applySoTronDoneHintsToLine(line.id)}
+                                  className="inline-flex h-8 items-center rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-bold text-sky-800 hover:bg-sky-100"
+                                >
+                                  Lấy đã SX từ sổ trộn
+                                </button>
+                              </div>
+                              <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
+                                <table className="min-w-[1680px] w-full text-left text-xs">
+                                  <thead className="bg-zinc-100 text-[10px] uppercase text-zinc-600">
+                                    <tr>
+                                      <th className="px-2 py-1.5">STT</th>
+                                      <th className="px-2 py-1.5">Mã đơn hàng</th>
+                                      <th className="px-2 py-1.5">Tên sản xuất</th>
+                                      <th className="px-2 py-1.5">Ghi chú</th>
+                                      <th className="px-2 py-1.5">ĐVT</th>
+                                      <th className="px-2 py-1.5">Tồn kho</th>
+                                      <th className="px-2 py-1.5">TL/cuộn</th>
+                                      <th className="px-2 py-1.5">SL kế hoạch</th>
+                                      <th className="px-2 py-1.5">SLSX Bắc</th>
+                                      <th className="px-2 py-1.5">SLSX Trung</th>
+                                      <th className="px-2 py-1.5">SLSX Nam</th>
+                                      <th className="px-2 py-1.5">TL/tấm</th>
+                                      <th className="px-2 py-1.5">Tổng TL</th>
+                                      <th className="px-2 py-1.5">Thực tế SX</th>
+                                      <th className="px-2 py-1.5">Còn lại</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {(line.products.length > 0
+                                      ? line.products
+                                      : [{
+                                          productCode: line.productCode,
+                                          productName: line.productName,
+                                          quantity: line.quantity,
+                                          unit: line.unit,
+                                          soLuongBac: '0',
+                                          soLuongTrung: '0',
+                                          soLuongNam: '0',
+                                          soLuongDaSx: '0'
+                                        }]
+                                    ).map((product, productIndex) => {
+                                      const planQty = parseProductionOrderQuantity(product.quantity);
+                                      const doneQty = parseProductionOrderQuantity(product.soLuongDaSx || '0');
+                                      const remain = remainingPlanQty(planQty, doneQty);
+                                      const isCuon = /cuộn/i.test(product.unit || '');
+                                      const isTam = /tấm/i.test(product.unit || '');
+                                      const tlCuon = parseProductionOrderQuantity(String(product.tlCuon || ''));
+                                      const tlTam = parseProductionOrderQuantity(String(product.tlTam || ''));
+                                      const unitWeight = isCuon ? tlCuon : isTam ? tlTam : 0;
+                                      return (
+                                        <tr key={`${line.id}-${product.productCode}-${productIndex}`} className="border-t border-zinc-100">
+                                          <td className="px-2 py-1.5 text-center">{productIndex + 1}</td>
+                                          <td className="px-2 py-1.5 font-mono font-semibold">{product.orderRef || line.orderRef || '-'}</td>
+                                          <td className="px-2 py-1.5">{product.productionName || product.productName || '-'}</td>
+                                          <td className="px-2 py-1.5">
+                                            <input
+                                              type="text"
+                                              value={product.note || ''}
+                                              onChange={event => updateLineProductQty(line.id, productIndex, { note: event.target.value })}
+                                              className="w-48 rounded border border-zinc-200 px-2 py-1 outline-none focus:border-emerald-400"
+                                              placeholder="Ghi chú sản phẩm"
+                                            />
+                                          </td>
+                                          <td className="px-2 py-1.5 text-center">{product.unit || '-'}</td>
+                                          <td className="px-2 py-1.5 text-center">—</td>
+                                          <td className="px-2 py-1.5 text-right">{isCuon && tlCuon > 0 ? formatNumber(tlCuon, 2) : '—'}</td>
+                                          <td className="px-2 py-1.5 text-right font-bold">{formatNumber(planQty, 2)}</td>
+                                          {(['soLuongBac', 'soLuongTrung', 'soLuongNam'] as const).map((field, regionIndex) => (
+                                            <td key={field} className="px-2 py-1.5">
+                                              <input
+                                                type="text"
+                                                inputMode="decimal"
+                                                value={product[field] || ''}
+                                                onChange={event => updateLineProductQty(line.id, productIndex, { [field]: event.target.value })}
+                                                className="w-20 rounded border border-zinc-200 px-2 py-1 text-right font-semibold outline-none focus:border-emerald-400"
+                                                aria-label={`SL ${['Bắc', 'Trung', 'Nam'][regionIndex]} của ${product.productCode}`}
+                                              />
+                                            </td>
+                                          ))}
+                                          <td className="px-2 py-1.5 text-right">{isTam && tlTam > 0 ? formatNumber(tlTam, 2) : '—'}</td>
+                                          <td className="px-2 py-1.5 text-right font-semibold">{unitWeight > 0 ? formatNumber(unitWeight * (
+                                            parseProductionOrderQuantity(String(product.soLuongBac || '')) +
+                                            parseProductionOrderQuantity(String(product.soLuongTrung || '')) +
+                                            parseProductionOrderQuantity(String(product.soLuongNam || ''))
+                                          ), 2) : '—'}</td>
+                                          <td className="px-2 py-1.5">
+                                            <input
+                                              type="text"
+                                              inputMode="decimal"
+                                              value={product.soLuongDaSx || '0'}
+                                              onChange={event => updateLineProductQty(line.id, productIndex, { soLuongDaSx: event.target.value })}
+                                              className="w-24 rounded border border-zinc-200 px-2 py-1 font-semibold outline-none focus:border-sky-400"
+                                            />
+                                          </td>
+                                          <td className="px-2 py-1.5 font-bold text-emerald-700">{formatNumber(remain, 2)}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                              <div className="space-y-2">
+                                <label className="block text-xs font-bold text-zinc-600">PTĐM theo lệnh {line.code} (có thể chọn nhiều phiếu)</label>
+                                <SearchableMultiSelect
+                                  values={(line.danhSachPtdm || [])
+                                    .map(item => linePtdmOptions.find(opt => opt.id === item.dinh_muc_id) || {
+                                      id: item.dinh_muc_id,
+                                      ten_phieu: item.ten_phieu,
+                                      ma_lenh_sx: line.code
+                                    })}
+                                  onChange={values => updateLinePtdmIds(line.id, values.map(v => v.id))}
+                                  options={linePtdmOptions}
+                                  getValue={item => item.id}
+                                  getLabel={item => item.ten_phieu || item.id}
+                                  getSearchText={item => `${item.ten_phieu} ${item.ma_lenh_sx} ${item.id}`}
+                                  allowCustomValues={false}
+                                  hideSelectedFromList
+                                  keepOptionsOrder
+                                  maxResults={200}
+                                  placeholder="Chọn phiếu trộn định mức theo lệnh..."
+                                />
+                                {(line.danhSachPtdm || []).length > 0 ? (
+                                  <ul className="space-y-1 text-xs text-zinc-600">
+                                    {(line.danhSachPtdm || []).map(ptdm => (
+                                      <li key={ptdm.dinh_muc_id} className="rounded-lg border border-zinc-200 bg-white px-2 py-1.5">
+                                        <span className="font-semibold text-zinc-800">{ptdm.ten_phieu}</span>
+                                        <span className="mx-2 text-zinc-400">·</span>
+                                        <span>Gắn: {formatPlanPtdmAttachedAtVn(ptdm.thoi_gian_gan)}</span>
+                                        <span className="mx-2 text-zinc-400">·</span>
+                                        <span>
+                                          SL áp dụng:{' '}
+                                          {ptdm.so_luong_ap_dung_theo_sp.map(q => `${q.ma_sp}:${q.so_luong_ap_dung}`).join(', ') || '-'}
+                                        </span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : null}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                      </React.Fragment>
+                    );})}
                   </tbody>
                 </table>
               </div>
@@ -3695,6 +4270,7 @@ export function ProductionPlanModal({
                 <ProductionPlanPrintPreviewTableSheet
                   planData={relatedPrintPlanPreviewData}
                   staffMap={staffMap}
+                  materialRows={relatedPrintPlanMaterials}
                 />
               </div>
             ) : displayLines.length > 0 ? (
@@ -4626,7 +5202,7 @@ export function useProductionOrderPrint() {
   };
 }
 
-export const PRODUCTION_ORDER_STATUS_OPTIONS = ['Chờ sx', 'Đang sx', 'Hoàn thành', 'Hủy'];
+export const PRODUCTION_ORDER_STATUS_OPTIONS = ['Chờ sx', 'Đang sx', 'Tạm dừng', 'Hoàn thành', 'Hủy'];
 
 export type ProductionOrderLookupSetting = {
   id: string;

@@ -6,6 +6,8 @@ import { queueTongHopEdit, type TongHopHeader } from '../xuat-nhap-tong-hop/mode
 import { sumKemStored } from '../xuat-nhap-tong-hop/chiPhiKemTheo';
 import { formatMoney, formatNumber, formatQty } from '../../utils';
 import { normalizeWarehouseName } from '../kho-hang';
+import { getProductionShiftOptions, normalizeShiftSettings, type ShiftOption } from '../../utils/shiftSettings';
+import { MachineStockTab } from './MachineStockTab';
 
 type PickOption = { id: string; label: string };
 
@@ -237,6 +239,8 @@ export function matchTokenFilter(
 }
 
 export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit: () => void }) {
+  const [viewMode, setViewMode] = useState<'movements' | 'machine-stock'>('movements');
+  const [shiftOptions, setShiftOptions] = useState<ShiftOption[]>([]);
   const [from, setFrom] = useState(firstDayOfMonthIso());
   const [to, setTo] = useState(todayIso());
   const [machineOptions, setMachineOptions] = useState<PickOption[]>([]);
@@ -252,10 +256,12 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
     let alive = true;
     void Promise.all([
       fetch('/api/danh-sach-may').then(r => r.json().catch(() => ({}))),
-      fetch('/api/quan-ly-kho').then(r => r.json().catch(() => ({})))
+      fetch('/api/quan-ly-kho').then(r => r.json().catch(() => ({}))),
+      fetch('/api/cai-dat').then(r => r.json().catch(() => ({})))
     ])
-      .then(([mayRes, khoRes]) => {
+      .then(([mayRes, khoRes, settingsRes]) => {
         if (!alive) return;
+        setShiftOptions(getProductionShiftOptions(normalizeShiftSettings(settingsRes)));
         const mayRows = Array.isArray((mayRes as { machines?: unknown }).machines)
           ? ((mayRes as { machines: Record<string, unknown>[] }).machines)
           : [];
@@ -631,6 +637,12 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Chế độ thống kê NVL">
+        <button type="button" role="tab" aria-selected={viewMode === 'movements'} onClick={() => setViewMode('movements')} className={`rounded-lg px-3 py-2 text-xs font-extrabold ${viewMode === 'movements' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-700'}`}>Nhập – xuất</button>
+        <button type="button" role="tab" aria-selected={viewMode === 'machine-stock'} onClick={() => setViewMode('machine-stock')} className={`rounded-lg px-3 py-2 text-xs font-extrabold ${viewMode === 'machine-stock' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-700'}`}>Kiểm tra tồn theo máy</button>
+      </div>
+
+      {viewMode === 'movements' ? <>
       <div className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
         <div className="grid items-end gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
           <label className="block min-w-0 space-y-1">
@@ -829,6 +841,7 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
           <p className="mt-1 text-xs font-medium text-zinc-500">Chọn từ ngày, đến ngày, máy và kho rồi bấm Xem.</p>
         </div>
       )}
+      </> : <MachineStockTab machines={machineOptions} shifts={shiftOptions} />}
     </div>
   );
 }

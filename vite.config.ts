@@ -22,7 +22,9 @@ export default defineConfig(() => {
       // Port/clientPort are configured in server.ts (middlewareMode + hmr.server).
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      watch: process.env.DISABLE_HMR === 'true'
+        ? null
+        : { ignored: ['**/.ai/**', '**/.tmp/**'] },
     },
   };
 });

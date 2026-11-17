@@ -7,6 +7,7 @@ import {
   normalizeDinhMucKg,
   normalizeDoLiDm,
   normalizeDoLiToken,
+  resolveSongDoDaiTamTieuChuan,
   seedProductionSpecs,
   stripDuplicateLiFromTenGoc
 } from './productProductionName.ts';
@@ -28,12 +29,17 @@ export type ProductCatalogExcelRow = {
   soSong: string;
   /** `(đm n kg)` — định mức kg. */
   dinhMucKg: string;
+  /** Mét dài tấm tiêu chuẩn của ĐM kg (Sóng), vd `6m`. */
+  doDaiTamTieuChuan: string;
   /** `x` / `1` / `TCMB` = có; trống = không. */
   tcmb: string;
   doDayM: string;
   doDaiM: string;
   mang: string;
   hangPhe: string;
+  mau: string;
+  giaRe: string;
+  tcmn: string;
   nature: string;
   group: string;
   unit: string;
@@ -60,21 +66,32 @@ const HEADER_ALIASES: Record<keyof Omit<ProductCatalogExcelRow, 'rowNumber'>, st
   amisOldCode: ['ma amis cu', 'ma_amis_cu', 'amis cu', 'amis old'],
   newCode: ['ma moi', 'ma_sp_moi', 'ma sp moi'],
   name: ['ten san pham', 'ten_sp', 'ten sp', 'name'],
-  productionName: ['ten san xuat', 'ten_san_xuat', 'production name'],
+  productionName: ['ten san xuat moi', 'ten san xuat', 'ten_san_xuat', 'production name'],
   tenGoc: ['ten goc', 'ten_goc'],
   doLi: ['do li', 'do_li'],
   doLiDm: ['dm dm n li', 'dm dm li', 'dm n li', 'do li dm', 'do_li_dm', 'dinh muc dm li', 'dinh muc li'],
   zem: ['zem', 'do zem', 'so zem'],
   soSong: ['so song', 'song'],
   dinhMucKg: ['dm dm kg', 'dm kg', 'dinh muc kg', 'dm (kg)'],
+  doDaiTamTieuChuan: [
+    'met dai dm m',
+    'met dai dm',
+    'do dai tam tieu chuan',
+    'do_dai_tam_tieu_chuan',
+    'dai tam tieu chuan',
+    'm dai dm'
+  ],
   tcmb: ['tcmb', 'tieu chuan mien bac', 'tc mien bac'],
   doDayM: ['kho rong m', 'kho rong', 'do day m', 'do_day_m', 'do day'],
   doDaiM: ['met dai', 'do dai m', 'do_dai_m', 'm dai'],
   mang: ['mang', 'mang eco'],
   hangPhe: ['hang phe', 'hang_phe'],
+  mau: ['mau'],
+  giaRe: ['gia re', 'gia_re'],
+  tcmn: ['tcmn'],
   nature: ['tinh chat', 'tinh_chat', 'nature'],
-  group: ['nhom vthh', 'nhom_vthh', 'nhom', 'group'],
-  unit: ['don vi tinh', 'don_vi', 'don vi', 'unit'],
+  group: ['nhom vthh', 'nhom_vthh', 'nhom', 'loai', 'group'],
+  unit: ['don vi tinh', 'don_vi', 'don vi', 'dvt', 'unit'],
   totalWeight: ['tong tl kg', 'tong tl', 'tong trong luong', 'tong_trong_luong', 'total weight'],
   wastePercent: ['% ty le hao hut', 'ty le hao hut', 'ty_le_hao_hut', 'hao hut', 'ty le hang hong', 'ty le hang hong %', 'waste percent'],
   rollWidth: ['kho cuon m', 'kho cuon', 'kho_cuon', 'roll width'],
@@ -98,45 +115,31 @@ const HEADER_ALIASES: Record<keyof Omit<ProductCatalogExcelRow, 'rowNumber'>, st
 };
 
 /**
- * Cột mẫu khớp bảng `/san-pham` + form thêm/sửa / DB `san_pham`.
- * Ô trống = vẫn đẩy lên (null / bỏ trống), không bắt buộc đủ giá trị.
- * Trùng Mã AMIS vẫn hợp lệ — không chặn import.
+ * Mẫu Excel gọn — giống sheet miền nam v2 (+ Mét dài ĐM cho Sóng).
+ * Không gồm cột tồn kho / lõi túi thừa; quy đổi cân nặng nằm file quy đổi riêng.
  */
 export const PRODUCT_CATALOG_EXCEL_HEADERS = [
-  'Mã SP',
+  'Mã AMIS',
   'Tên sản phẩm',
-  'Tên sản xuất',
+  'Tên sản xuất mới',
+  'Loại',
+  'ĐVT',
   'Tên gốc',
-  'Độ li',
-  'ZEM',
   'Số sóng',
+  'ZEM',
+  'Hàng phế',
+  'Màng',
+  'TCMB',
+  'Độ li',
   'ĐM (đm li)',
   'ĐM (đm kg)',
-  'TCMB',
+  'Mét dài ĐM (m)',
   'Khổ rộng (m)',
   'Mét dài',
-  'Màng',
-  'Hàng phế',
-  'Tính chất',
-  'Nhóm',
-  'Đơn vị',
-  'Tổng TL (kg)',
-  'Tỷ lệ hàng hỏng (%)',
-  'Tồn đầu',
-  'Nhập',
-  'Xuất',
-  'Tồn',
-  'Tồn tối thiểu',
-  'Mã AMIS',
-  'Mã AMIS cũ',
-  'Mã mới',
-  'Khổ cuộn (m)',
-  'Chiều dài mét/cuộn (m)',
-  'Trọng lượng lõi (kg)',
-  'Trọng lượng túi (kg)',
-  'Trọng lượng nhựa + phụ gia (kg)',
-  'Nguồn gốc',
-  'Mô tả'
+  'Màu',
+  'Giá rẻ',
+  'TCMN',
+  'Ghi chú'
 ] as const;
 
 function normalizeHeader(value: unknown) {
@@ -167,9 +170,61 @@ function findColumn(headers: string[], aliases: string[]) {
   );
 }
 
+function sheetLooksLikeCatalog(headers: string[]) {
+  const hasName = findColumn(headers, HEADER_ALIASES.name) >= 0;
+  const hasCode =
+    findColumn(headers, HEADER_ALIASES.code) >= 0
+    || findColumn(headers, HEADER_ALIASES.amisCode) >= 0;
+  const hasTenGoc = findColumn(headers, HEADER_ALIASES.tenGoc) >= 0;
+  const hasProduction = findColumn(headers, HEADER_ALIASES.productionName) >= 0;
+  return hasName && hasCode && (hasTenGoc || hasProduction);
+}
+
+function pickCatalogSheet(workbook: XLSX.WorkBook): XLSX.WorkSheet | null {
+  const preferred = workbook.SheetNames.find(name => {
+    const key = normalizeHeader(name);
+    return (
+      (key.includes('san pham') || key === 'san_pham')
+      && !key.includes('quy doi')
+      && !key.includes('nvl')
+    );
+  });
+  if (preferred && workbook.Sheets[preferred]) {
+    const matrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[preferred], {
+      header: 1,
+      defval: '',
+      raw: false
+    }) as unknown[][];
+    const headers = (matrix[0] || []).map(normalizeHeader);
+    if (sheetLooksLikeCatalog(headers)) return workbook.Sheets[preferred];
+  }
+
+  for (const name of workbook.SheetNames) {
+    const sheet = workbook.Sheets[name];
+    if (!sheet) continue;
+    const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+      header: 1,
+      defval: '',
+      raw: false
+    }) as unknown[][];
+    const headers = (matrix[0] || []).map(normalizeHeader);
+    if (sheetLooksLikeCatalog(headers)) return sheet;
+  }
+
+  return workbook.Sheets[workbook.SheetNames[0]] || null;
+}
+
+function defaultTenGoc(group: string) {
+  const px = classifyProductPxGroup(group);
+  if (px === 'song') return 'NHỰA SÓNG';
+  if (px === 'dac') return 'Tấm nhựa đặc';
+  if (px === 'rong') return 'Tấm nhựa rỗng';
+  return '';
+}
+
 export async function parseProductCatalogExcel(file: File): Promise<ProductCatalogExcelRow[]> {
   const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const sheet = pickCatalogSheet(workbook);
   if (!sheet) return [];
 
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
@@ -192,9 +247,10 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
   }
 
   const codeIndex = findColumn(headers, HEADER_ALIASES.code);
+  const amisIndex = findColumn(headers, HEADER_ALIASES.amisCode);
   const nameIndex = findColumn(headers, HEADER_ALIASES.name);
-  if (codeIndex < 0 && nameIndex < 0) {
-    throw new Error('Không tìm thấy cột "Mã SP" hoặc "Tên sản phẩm" trong file Excel.');
+  if (codeIndex < 0 && amisIndex < 0 && nameIndex < 0) {
+    throw new Error('Không tìm thấy cột "Mã AMIS" / "Mã SP" hoặc "Tên sản phẩm" trong file Excel.');
   }
 
   // "Tồn" đúng cột — sau khi đã map ton dau / ton toi thieu
@@ -202,7 +258,7 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
 
   const indices = {
     code: codeIndex,
-    amisCode: findColumn(headers, HEADER_ALIASES.amisCode),
+    amisCode: amisIndex,
     amisOldCode: findColumn(headers, HEADER_ALIASES.amisOldCode),
     newCode: findColumn(headers, HEADER_ALIASES.newCode),
     name: nameIndex,
@@ -213,11 +269,15 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
     zem: findColumn(headers, HEADER_ALIASES.zem),
     soSong: findColumn(headers, HEADER_ALIASES.soSong),
     dinhMucKg: findColumn(headers, HEADER_ALIASES.dinhMucKg),
+    doDaiTamTieuChuan: findColumn(headers, HEADER_ALIASES.doDaiTamTieuChuan),
     tcmb: findColumn(headers, HEADER_ALIASES.tcmb),
     doDayM: findColumn(headers, HEADER_ALIASES.doDayM),
     doDaiM: findColumn(headers, HEADER_ALIASES.doDaiM),
     mang: findColumn(headers, HEADER_ALIASES.mang),
     hangPhe: findColumn(headers, HEADER_ALIASES.hangPhe),
+    mau: findColumn(headers, HEADER_ALIASES.mau),
+    giaRe: findColumn(headers, HEADER_ALIASES.giaRe),
+    tcmn: findColumn(headers, HEADER_ALIASES.tcmn),
     nature: findColumn(headers, HEADER_ALIASES.nature),
     group: findColumn(headers, HEADER_ALIASES.group),
     unit: findColumn(headers, HEADER_ALIASES.unit),
@@ -248,6 +308,21 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
         ? exactTon
         : -1;
   }
+  // "Mét dài" không được trùng cột "Mét dài ĐM (m)".
+  if (
+    indices.doDaiM >= 0
+    && indices.doDaiTamTieuChuan >= 0
+    && indices.doDaiM === indices.doDaiTamTieuChuan
+  ) {
+    const exactMetDai = headers.findIndex(header => header === 'met dai');
+    (indices as { doDaiM: number }).doDaiM =
+      exactMetDai >= 0 && exactMetDai !== indices.doDaiTamTieuChuan ? exactMetDai : -1;
+  }
+  // "Màu" không được khớp nhầm "mau amis" nếu có.
+  if (indices.mau >= 0 && headers[indices.mau]?.includes('amis')) {
+    const exactMau = headers.findIndex(header => header === 'mau');
+    (indices as { mau: number }).mau = exactMau;
+  }
 
   return matrix
     .slice(1)
@@ -256,9 +331,14 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
         const col = indices[key];
         return col >= 0 ? cellToText(row[col]) : '';
       };
+      const codeRaw = get('code');
+      const amisRaw = get('amisCode');
+      // File miền nam / Phú Thọ chỉ có Mã AMIS → dùng luôn làm mã SP.
+      const amisCode = amisRaw || codeRaw;
+      const code = codeRaw || amisCode;
       return {
-        code: get('code'),
-        amisCode: get('amisCode'),
+        code,
+        amisCode,
         amisOldCode: get('amisOldCode'),
         newCode: get('newCode'),
         name: get('name'),
@@ -269,11 +349,15 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
         zem: get('zem'),
         soSong: get('soSong'),
         dinhMucKg: get('dinhMucKg'),
+        doDaiTamTieuChuan: get('doDaiTamTieuChuan'),
         tcmb: get('tcmb'),
         doDayM: get('doDayM'),
         doDaiM: get('doDaiM'),
         mang: get('mang'),
         hangPhe: get('hangPhe'),
+        mau: get('mau'),
+        giaRe: get('giaRe'),
+        tcmn: get('tcmn'),
         nature: get('nature'),
         group: get('group'),
         unit: get('unit'),
@@ -300,48 +384,53 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
 export function downloadProductCatalogExcelTemplate() {
   const worksheet = XLSX.utils.aoa_to_sheet([
     [...PRODUCT_CATALOG_EXCEL_HEADERS],
-    // 1 dòng đủ mẫu (Đặc có TCMB + đm li)
+    // Sóng — tên gốc chỉ loại SP
     [
-      'SP-001',
-      'Tấm nhựa đặc Standart màu trắng sứ 2.5li',
-      'Tấm nhựa đặc màu trắng sứ - STD - TCMB - 2.5li - (đm 2.1 li) - 1.22m',
-      'Tấm nhựa đặc màu trắng sứ',
-      '2.5li',
-      '',
-      '',
-      '(đm 2.1 li)',
-      '',
-      'x',
-      '1.22m',
-      '',
-      'STD',
-      '',
-      'Thành phẩm',
-      'TP; PX Đặc',
+      'STS02-11s-6zem',
+      'Tấm nhựa sóng Standart màu xanh 11 sóng 6 zem',
+      'NHỰA SÓNG XANH - 11 SÓNG 6ZEM - ( ĐM 5.2KG/6M ) - 2m',
+      'TP; PX Sóng',
       'Tấm',
-      '12.5',
-      '13',
-      '0',
-      '0',
-      '0',
-      '0',
-      '10',
-      'STD01-2.5li*1.22m',
+      'NHỰA SÓNG',
+      '11',
+      '6ZEM',
       '',
       '',
-      '1.22',
-      '50',
-      '0.2',
-      '0.1',
-      '12.2',
+      '',
+      '',
+      '',
+      '(đm 5.2 kg)',
+      '6m',
+      '1.08m',
+      '2m',
+      'XANH',
+      '',
       '',
       ''
     ],
-    // 1 dòng gần như trống — vẫn hợp lệ khi tải lên (chỉ cần Mã SP hoặc Tên)
+    // Đặc
     [
-      'SP-002',
-      'Sản phẩm để trống các cột còn lại',
-      ...Array(Math.max(0, PRODUCT_CATALOG_EXCEL_HEADERS.length - 2)).fill('')
+      'STD02-10li*1.22m',
+      'Tấm nhựa đặc Standard màu xanh da trời 10li',
+      'Tấm nhựa đặc màu XDT - STD - 10li - (đm 9.7 li) - 1.22m - 9m',
+      'TP; PX Đặc',
+      'Cuộn',
+      'Tấm nhựa đặc',
+      '',
+      '',
+      '',
+      'STD',
+      '',
+      '10li',
+      '(đm 9.7 li)',
+      '',
+      '',
+      '1.22m',
+      '9m',
+      'XDT',
+      '',
+      '',
+      ''
     ]
   ]);
   worksheet['!cols'] = PRODUCT_CATALOG_EXCEL_HEADERS.map(header => ({
@@ -349,7 +438,7 @@ export function downloadProductCatalogExcelTemplate() {
   }));
 
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'San_pham');
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Sản phẩm');
   XLSX.writeFile(workbook, 'mau-danh-muc-san-pham.xlsx');
 }
 
@@ -391,7 +480,8 @@ export function normalizeSoSongCell(value: unknown): string {
 export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
   const productionName = row.productionName.trim();
   const group = row.group.trim();
-  const amisCode = row.amisCode.trim();
+  const amisCode = (row.amisCode.trim() || row.code.trim());
+  const code = (row.code.trim() || amisCode);
   const seeded = seedProductionSpecs({
     tenSanXuat: productionName,
     maAmis: amisCode,
@@ -417,11 +507,22 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
     normalizeDinhMucKg(seeded.dinhMucKg);
   const pxGroup = classifyProductPxGroup(group);
   if (pxGroup === 'dac' || pxGroup === 'rong') dinhMucKg = '';
+  const doDaiTamTieuChuan = pxGroup === 'dac' || pxGroup === 'rong'
+    ? ''
+    : resolveSongDoDaiTamTieuChuan(productionName, dinhMucKg, row.doDaiTamTieuChuan).replace(/,/g, '.');
   const zem = normalizeZemCell(row.zem) || seeded.zem;
   const soSong = normalizeSoSongCell(row.soSong) || seeded.soSong;
   const tcmb = parseTcmbCell(row.tcmb) ? 'TCMB' : seeded.tcmb;
-  // Tên gốc ghi tay đuôi li trùng độ li thì cắt (vd "...11 SÓNG 1,2LI" + 1.2li).
-  const tenGoc = stripDuplicateLiFromTenGoc(row.tenGoc.trim() || seeded.tenGoc, doLi);
+  const mau = row.mau.trim() || seeded.mau;
+  const giaRe = /giá\s*rẻ/iu.test(row.giaRe.trim()) || /giá\s*rẻ/iu.test(row.hangPhe)
+    ? 'Giá rẻ'
+    : seeded.giaRe;
+  const tcmn = /tcmn/iu.test(row.tcmn.trim()) ? 'TCMN' : seeded.tcmn;
+  // Tên gốc: ưu tiên ô Excel (chỉ loại SP như miền nam); thiếu thì suy theo nhóm.
+  const tenGoc = stripDuplicateLiFromTenGoc(
+    row.tenGoc.trim() || defaultTenGoc(group) || seeded.tenGoc,
+    doLi
+  );
   // DB / hệ thống dùng `.` thập phân (`1,08` → `1.08`).
   const doDayM = (row.doDayM.trim() || seeded.doDayM).replace(/,/g, '.');
   const doDaiM = (row.doDaiM.trim() || seeded.doDaiM).replace(/,/g, '.');
@@ -430,22 +531,44 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
   const unit = normalizeImportUnit(row.unit);
   // Canonical: ten_san_xuat = chuỗi đã ghép; ten_ghep mirror cùng giá trị (legacy).
   const tenGhep = composeProductionDisplayName(
-    { tenGoc, doLi, doLiDm, dinhMucKg, zem, soSong, tcmb, doDayM, doDaiM, mang, hangPhe },
+    {
+      tenGoc,
+      mau,
+      giaRe,
+      tcmn,
+      np: seeded.np,
+      off: seeded.off,
+      doLi,
+      doLiDm,
+      dinhMucKg,
+      doDaiTamTieuChuan,
+      zem,
+      soSong,
+      tcmb,
+      doDayM,
+      doDaiM,
+      mang,
+      hangPhe
+    },
     group
   );
   // Chuỗi rỗng vẫn gửi lên — API map thành null / bỏ trống, không chặn import.
   // Sóng: do_dai_m lấy đúng theo tên SX dòng (không max).
   return {
-    code: row.code.trim(),
+    code,
     newCode: row.newCode.trim(),
     amisCode,
     amisOldCode: row.amisOldCode.trim(),
     name: row.name.trim(),
     productionName: tenGhep || productionName,
     tenGoc,
+    mau,
+    giaRe,
+    tcmn,
     doLi,
     doLiDm,
     dinhMucKg,
+    doDaiTamTieuChuan,
     zem,
     soSong,
     tcmb: tcmb ? true : false,
@@ -454,7 +577,7 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
     mang,
     hangPhe,
     tenGhep,
-    nature: row.nature.trim(),
+    nature: row.nature.trim() || 'Thành phẩm',
     group,
     unit,
     totalWeight: row.totalWeight.trim(),

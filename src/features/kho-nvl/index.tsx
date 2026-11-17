@@ -16,7 +16,7 @@ import {
   Upload,
   X
 } from 'lucide-react';
-import { formatNumber, formatMoney, formatPercent, formatQty, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
+import { formatNumberVN, formatMoneyVN, formatPercentVN, formatQtyVN, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { BackButton } from '../../components/layout/NavButtons';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { pickText, formatCell, filterDuplicateZeroWarehouseRows, parsePeriodQuantityValue } from '../_shared/recordHelpers';
@@ -65,16 +65,21 @@ type NvlPeriodBalance = {
   xuat: number;
   phan_loai: string;
   nhom_vthh: string;
+  gia_ton?: Array<{ don_gia: number; so_luong: number; thanh_tien: number; chua_ro_gia?: boolean; ly_do?: string }>;
+  tong_tien_ton?: number;
+  ton_chua_ro_gia?: number;
 };
 
+type NvlPriceBalance = { don_gia: number; so_luong: number; thanh_tien: number; chua_ro_gia?: boolean; ly_do?: string };
+
 function formatPeriodQty(value: number) {
-  return formatQty(value);
+  return formatQtyVN(value);
 }
 
-/** Ô số lượng: trống → '—', có số → nghìn `,`, thập phân `.`, luôn 2 số (VD: 1,234.50). */
+/** Ô số lượng: trống → '—', có số → nghìn `.`, thập phân `,`, luôn 2 số (VD: 1.234,50). */
 function formatQtyCell(value: unknown) {
   if (value === null || value === undefined || String(value).trim() === '') return '—';
-  return formatQty(parsePeriodQuantityValue(value) ?? NaN);
+  return formatQtyVN(parsePeriodQuantityValue(value) ?? NaN);
 }
 
 function periodIdentity(code: string, name: string, productionName: string, warehouse: string) {
@@ -105,6 +110,8 @@ export interface MaterialRow {
   outbound: string;
   phanLoai: string;
   auxiliaryMaterialGroup: string;
+  priceBalances?: NvlPriceBalance[];
+  totalInventoryValue?: number;
   /** Dòng tồn phát sinh từ phiếu kho nhưng chưa có bản ghi riêng trong danh mục kho_nvl. */
   inventoryBalanceOnly?: boolean;
 }
@@ -147,7 +154,7 @@ export function computeClosingStock(opening: string, inbound: string, outbound: 
   if (openingVal === null) return '-';
   const inboundVal = parseInventoryNumber(inbound) ?? 0;
   const outboundVal = parseInventoryNumber(outbound) ?? 0;
-  return formatQty(openingVal + inboundVal - outboundVal);
+  return formatQtyVN(openingVal + inboundVal - outboundVal);
 }
 
 export function normalizeMaterialsInventory(data: unknown): MaterialRow[] {
@@ -889,8 +896,8 @@ export function MaterialViewModal({
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {[
                   ['Tồn đầu', material.openingStock],
-                  ['Nhập', formatNumber(totalInbound, 2)],
-                  ['Xuất', formatNumber(totalOutbound, 2)],
+                  ['Nhập', formatNumberVN(totalInbound, 2)],
+                  ['Xuất', formatNumberVN(totalOutbound, 2)],
                   ['Tồn cuối', closingDisplay]
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5 text-center">
@@ -936,7 +943,7 @@ export function MaterialViewModal({
                               <td className={`px-4 py-3 text-right font-mono font-bold ${
                                 tab === 'inbound-history' ? 'text-emerald-700' : 'text-amber-800'
                               }`}>
-                                {formatNumber(row.quantity, 2)}
+                                {formatNumberVN(row.quantity, 2)}
                               </td>
                             </TableRow>
                           </React.Fragment>
@@ -1393,13 +1400,15 @@ export function MaterialsInventoryPanel({
     };
     const apply = (material: MaterialRow, row: NvlPeriodBalance | undefined): MaterialRow => {
       if (!row) {
-        return { ...material, openingStock: '0.00', inbound: '0.00', outbound: '0.00' };
+        return { ...material, openingStock: '0.00', inbound: '0.00', outbound: '0.00', priceBalances: [], totalInventoryValue: 0 };
       }
       return {
         ...material,
         openingStock: formatPeriodQty(row.ton_dau),
         inbound: formatPeriodQty(row.nhap),
-        outbound: formatPeriodQty(row.xuat)
+        outbound: formatPeriodQty(row.xuat),
+        priceBalances: Array.isArray(row.gia_ton) ? row.gia_ton : [],
+        totalInventoryValue: Number(row.tong_tien_ton) || 0
       };
     };
 
@@ -1446,6 +1455,8 @@ export function MaterialsInventoryPanel({
         outbound: formatPeriodQty(row.xuat),
         phanLoai: row.phan_loai || '-',
         auxiliaryMaterialGroup: row.nhom_vthh || '-',
+        priceBalances: Array.isArray(row.gia_ton) ? row.gia_ton : [],
+        totalInventoryValue: Number(row.tong_tien_ton) || 0,
         inventoryBalanceOnly: true
       });
       used.add(row);
@@ -2054,6 +2065,7 @@ export function MaterialsInventoryPanel({
           {isWholeGroupFilter
             ? 'Toàn bộ bảng kho-nvl (Kho NVL, Kho NVL Chính, Kho NVL Phụ, Kho PC) — mỗi dòng là một mã trong một kho, Tồn đầu / Nhập / Xuất / Tồn cuối tính riêng đúng kho đó từ phiếu nhập kho và phiếu xuất kho.'
             : `Chi tiết kho ${warehouseFilter.trim()} — mỗi dòng là một mã trong kho này, Tồn đầu / Nhập / Xuất / Tồn cuối tính riêng đúng kho đó từ phiếu nhập kho và phiếu xuất kho.`}
+          {' '}Tổng tiền tồn được cộng từ số lượng còn ở từng đơn giá; phiếu xuất cũ chưa gắn lô được phân bổ FIFO, phần chưa đối chiếu được đánh dấu chưa rõ giá.
           {periodReady ? '' : ' Chưa chọn đủ ngày nên các cột tồn để trống.'}
         </p>
         {materialsError || periodError ? (
@@ -2372,6 +2384,7 @@ export function MaterialsInventoryPanel({
           <TableHeadCell>Nhập</TableHeadCell>
           <TableHeadCell>Xuất</TableHeadCell>
           <TableHeadCell>Tồn cuối</TableHeadCell>
+          <TableHeadCell>Tổng tiền tồn</TableHeadCell>
           <TableHeadCell align="center">Thao tác</TableHeadCell>
         </TableHead>
         <TableBody>
@@ -2411,6 +2424,12 @@ export function MaterialsInventoryPanel({
                   {material.openingStock === '—'
                     ? '—'
                     : computeClosingStock(material.openingStock, material.inbound, material.outbound)}
+                </td>
+                <td className="px-4 py-3 text-right font-mono font-black text-emerald-800">
+                  {periodReady ? formatMoneyVN(material.totalInventoryValue || 0, 0) : '—'}
+                  {(material.priceBalances || []).some(item => item.chua_ro_gia && item.so_luong > 0)
+                    ? <div className="mt-0.5 text-[10px] font-semibold text-amber-700">Có tồn chưa rõ giá</div>
+                    : null}
                 </td>
                 <td className="px-4 py-3 text-center">
                   <RowActionsMenu label={`Thao tác ${material.code || material.name}`}>
@@ -2457,12 +2476,33 @@ export function MaterialsInventoryPanel({
                   </RowActionsMenu>
                 </td>
               </TableRow>
+              {periodReady && (material.priceBalances || []).length > 0 ? <tr className="border-b border-zinc-200 bg-zinc-50/70">
+                <td colSpan={showKhoColumn ? 15 : 14} className="px-5 py-2.5">
+                  <div className="ml-3 rounded-lg border border-zinc-200 bg-white p-2.5">
+                    <div className="mb-2 text-[10px] font-black uppercase tracking-wide text-zinc-500">Chi tiết tồn theo đơn giá · {material.code || material.name}</div>
+                    {(material.priceBalances || []).length ? (
+                      <div className="space-y-1.5">
+                        {(material.priceBalances || []).map((priceRow, index) => (
+                          <div key={`${material.id}-${priceRow.chua_ro_gia ? 'unknown' : priceRow.don_gia}-${index}`} className={`grid grid-cols-2 gap-2 rounded-md px-2.5 py-1.5 text-xs sm:grid-cols-4 ${priceRow.chua_ro_gia ? 'bg-amber-50 text-amber-900' : 'bg-zinc-50 text-zinc-700'}`}>
+                            <span className="font-semibold">{priceRow.chua_ro_gia ? (priceRow.ly_do || 'Chưa rõ đơn giá') : 'Đơn giá'}</span>
+                            <span className="text-right font-mono font-bold">{priceRow.chua_ro_gia ? '—' : `${formatMoneyVN(priceRow.don_gia, 0)} / ${material.unit}`}</span>
+                            <span className="text-right">Tồn: <strong className="font-mono">{formatQtyVN(priceRow.so_luong)}</strong></span>
+                            <span className="text-right">Thành tiền: <strong className="font-mono">{priceRow.chua_ro_gia ? 'Chưa tính' : formatMoneyVN(priceRow.thanh_tien, 0)}</strong></span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-zinc-400">Không có tồn theo đơn giá trong kỳ đã chọn.</p>
+                    )}
+                  </div>
+                </td>
+              </tr> : null}
             </React.Fragment>
             );
           })}
 
           {!isLoadingMaterials && visibleMaterials.length === 0 && (
-            <TableEmptyRow colSpan={showKhoColumn ? 14 : 13}>
+            <TableEmptyRow colSpan={showKhoColumn ? 15 : 14}>
               {warehouseFilter
                 ? 'Không có mã hàng trong kho này.'
                 : 'Chưa có nguyên vật liệu trong danh mục.'}

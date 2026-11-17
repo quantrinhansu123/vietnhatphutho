@@ -113,10 +113,18 @@ export interface ProductRow {
   /** Tên dùng trong sản xuất (main) — optional để tương thích form kho feature. */
   productionName?: string;
   tenGoc?: string;
+  /** Màu tấm. `Trắng` khác `trắng sữa`. */
+  mau?: string;
+  np?: string;
+  tcmn?: string;
+  giaRe?: string;
+  off?: string;
   doLi?: string;
   doLiDm?: string;
   /** `(đm n kg)` — định mức kg, tách khỏi `doLiDm`. */
   dinhMucKg?: string;
+  /** Mét dài tấm tiêu chuẩn của ĐM kg (Sóng), vd `6m` trong `ĐM 9.5KG/6M`. */
+  doDaiTamTieuChuan?: string;
   /** `6ZEM`, `8ZEM` — nối sau sóng (Sóng) / sau màu (Đặc). */
   zem?: string;
   /** Số sóng (`11` của `11 SÓNG`). */

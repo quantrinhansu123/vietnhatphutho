@@ -5,7 +5,7 @@
 | **SQL** | `supabase-dot-san-xuat.sql` |
 
 **API:** `server.ts` dot-san-xuat routes — `GET /api/dot-san-xuat/preview?tu_ngay&den_ngay&ma_may`, `GET /api/dot-san-xuat/next-so`, `GET/POST/PUT/DELETE /api/dot-san-xuat`
-**UI:** `src/features/dot-san-xuat/index.tsx` — Từ ngày → Đến ngày → Máy → 2 bảng chỉ xem (lệnh SX + phiếu xuất đúng phạm vi ngày/máy, không tick chọn), tổng vật tư tự động (sửa tay được), báo cáo xem trước giống mẫu Excel (sửa trực tiếp thu hồi/hao hụt/TL thực tế/số công/chi phí ngay trong bảng), nút **Xem trước bản in** (form + từng đợt đã lưu)
+**UI:** `src/features/dot-san-xuat/index.tsx` — Từ ngày → Đến ngày → Máy → 2 bảng chỉ xem (lệnh SX + phiếu xuất đúng phạm vi ngày/máy, không tick chọn), tổng vật tư tự động (sửa tay được), báo cáo xem trước giống mẫu Excel (sửa trực tiếp thu hồi/hao hụt/TL thực tế/số công/chi phí ngay trong bảng), nút **Xem trước bản in** (form + từng đợt đã lưu). Tab **Theo dõi NVL**: chọn đợt → liệt kê phiếu `phieu_nhap_xuat_tong_hop` gắn `dot_san_xuat_id`/`dot_so`, tổng xuất / nhập lại / còn lại.
 **So sánh đợt trước:** API trả `dot_truoc` kèm `don_gia_chinh/phu/chinh_thuc_te/tong/nhan_cong` tính sẵn từ đợt đã lưu
 **In:** `src/features/dot-san-xuat/PrintPreviewModal.tsx` (`DotSanXuatPrintSheet` + `DotSanXuatPrintPreviewModal`) + CSS `.dot-san-xuat-print-*` trong `src/index.css`
 **Components:** dùng chung `VnCalendarPicker`, `SearchableSelect`

@@ -6,6 +6,12 @@ import { useTabAccess } from '../../app/useTabAccess';
 import { AlertTriangle, Loader2, Printer, Save, X } from 'lucide-react';
 import { isCuonProduct, isTamProduct } from '../_shared/orderHelpers';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from '../../components/layout/constants';
+import { formatNumber } from '../../utils';
+import {
+  loadAggregatedPlanMaterialsFromPtdm,
+  parsePlanPtdmList,
+  type PlanPrintMaterialRow
+} from './ptdmPlanHelpers';
 
 interface PreviewRow {
   key: string;
@@ -13,6 +19,7 @@ interface PreviewRow {
   ma_don_hang: string;
   san_pham_id: string | null;
   item_index: number;
+  ma_sp: string;
   ten_sp: string;
   ten_san_xuat: string;
   don_vi: string;
@@ -65,7 +72,13 @@ function formatPlanDate(value: string): string {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : value || '—';
 }
 
-/** Đồng nhất với lệnh sản xuất: Tổng TL tính theo Tổng SX, không theo phần phân bổ vùng. */
+function parsePlanQuantity(value: unknown): number {
+  if (value === null || value === undefined || value === '') return 0;
+  const parsed = typeof value === 'number' ? value : Number(String(value).trim().replace(/\s/g, '').replace(',', '.'));
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+/** Tổng TL của kế hoạch ngày tính theo số lượng phân bổ Bắc + Trung + Nam. */
 function calculateTotalWeight(row: Pick<PreviewRow, 'don_vi' | 'kg_cuon' | 'tl_tam' | 'tong_sx'>) {
   if (isCuonProduct(row.don_vi)) return row.tong_sx * (row.kg_cuon ?? 0);
   if (isTamProduct(row.don_vi)) return row.tong_sx * (row.tl_tam ?? 0);
@@ -107,8 +120,13 @@ export function ProductionPlanPrintPreviewModal({
     ma_so: string;
     ngay_lien_lac: string;
     dac_ta: string;
+    don_hang_ghi_chu: string;
+    lenh_ghi_chu: string;
   } | null>(null);
   const [rows, setRows] = useState<PreviewRow[]>([]);
+  const [materialRows, setMaterialRows] = useState<PlanPrintMaterialRow[]>([]);
+  const [hasAttachedPtdm, setHasAttachedPtdm] = useState(false);
+  const [materialsError, setMaterialsError] = useState('');
   const [lanBanHanh, setLanBanHanh] = useState('01');
   const [edits, setEdits] = useState<
     Record<string, RowEdit>
@@ -122,9 +140,16 @@ export function ProductionPlanPrintPreviewModal({
       setLoading(true);
       setError('');
       setFormError('');
+      setMaterialsError('');
+      setMaterialRows([]);
+      setHasAttachedPtdm(false);
       try {
-        const res = await fetch(`/api/ke-hoach-sx/${planId}/print-preview`);
+        const [res, detailRes] = await Promise.all([
+          fetch(`/api/ke-hoach-sx/${planId}/print-preview`),
+          fetch(`/api/ke-hoach-sx?id=${encodeURIComponent(planId)}`)
+        ]);
         const data = await res.json();
+        const detailData = await detailRes.json().catch(() => ({}));
 
         if (!res.ok) {
           throw new Error(data.error || 'Không thể tải xem trước.');
@@ -135,7 +160,9 @@ export function ProductionPlanPrintPreviewModal({
           ngay_ke_hoach: data.plan.ngay_ke_hoach || '',
           ma_so: data.plan.ma_so || '',
           ngay_lien_lac: data.plan.ngay_lien_lac || '',
-          dac_ta: data.plan.dac_ta || ''
+          dac_ta: data.plan.dac_ta || '',
+          don_hang_ghi_chu: data.plan.don_hang_ghi_chu || '',
+          lenh_ghi_chu: data.plan.lenh_ghi_chu || ''
         });
         setLanBanHanh(data.plan.lan_ban_hanh || '01');
 
@@ -145,14 +172,15 @@ export function ProductionPlanPrintPreviewModal({
           ma_don_hang: String(r.ma_don_hang || '').trim(),
           san_pham_id: r.san_pham_id || null,
           item_index: Number(r.item_index) || idx,
+          ma_sp: String(r.ma_sp || r.ma_hang || r.productCode || '').trim(),
           ten_sp: String(r.ten_sp || '').trim(),
           ten_san_xuat: String(
-            r.ten_ghep || r.tenGhep || r.ten_san_xuat || r.productionName || r.ten_sp || r.ten_hang || r.ten_san_pham || r.productName || ''
+            r.ten_san_xuat || r.productionName || r.ten_sp || r.ten_hang || r.ten_san_pham || r.productName || ''
           ).trim(),
           don_vi: String(r.don_vi || '').trim(),
-          slsx_bac: Number(r.slsx_bac) || 0,
-          slsx_trung: Number(r.slsx_trung) || 0,
-          slsx_nam: Number(r.slsx_nam) || 0,
+          slsx_bac: parsePlanQuantity(r.slsx_bac),
+          slsx_trung: parsePlanQuantity(r.slsx_trung),
+          slsx_nam: parsePlanQuantity(r.slsx_nam),
           ghi_chu: r.ghi_chu || '',
           tong_sx: Number(r.tong_sx) || 0,
           kg_cuon: r.kg_cuon !== null ? Number(r.kg_cuon) : null,
@@ -175,6 +203,61 @@ export function ProductionPlanPrintPreviewModal({
           };
         });
         setEdits(newEdits);
+
+        // Vật tư theo PTĐM gắn trên dòng kế hoạch ngày (không phải toàn bộ lệnh SX).
+        if (detailRes.ok) {
+          const detailLines = Array.isArray((detailData as { lines?: unknown }).lines)
+            ? ((detailData as { lines: Array<Record<string, unknown>> }).lines)
+            : [];
+          const sourceLines = detailLines.map(line => {
+            let productsRaw: unknown = line.san_pham;
+            if (typeof productsRaw === 'string') {
+              try { productsRaw = JSON.parse(productsRaw); } catch { productsRaw = []; }
+            }
+            if (productsRaw && typeof productsRaw === 'object' && !Array.isArray(productsRaw)) {
+              const obj = productsRaw as Record<string, unknown>;
+              productsRaw = obj.items ?? obj.products ?? [];
+            }
+            const products = (Array.isArray(productsRaw) ? productsRaw : []).map((item: any) => {
+              const productCode = String(item.ma_sp || item.productCode || item.ma_hang || '').trim();
+              const productId = String(item.san_pham_id || item.productId || '').trim() || undefined;
+              const matchingPreviewRow = rowsWithNames.find(row =>
+                (productId && row.san_pham_id === productId) ||
+                (row.ma_sp && row.ma_sp.trim().toLocaleUpperCase('vi') === productCode.toLocaleUpperCase('vi'))
+              );
+              return {
+                productId,
+                productCode,
+                quantity: String(item.so_luong ?? item.quantity ?? '').trim(),
+                soLuongDaSx: String(item.so_luong_da_sx ?? item.soLuongDaSx ?? '0').trim(),
+                unit: String(item.don_vi ?? item.unit ?? matchingPreviewRow?.don_vi ?? '').trim(),
+                tlCuon: String(item.tl_cuon ?? item.tlCuon ?? matchingPreviewRow?.kg_cuon ?? '').trim(),
+                tlTam: String(item.tl_tam ?? item.tlTam ?? matchingPreviewRow?.tl_tam ?? '').trim(),
+                kg1Sp: String(item.kg_1_sp ?? item.kg1Sp ?? '').trim(),
+                totalKg: String(item.tong_kg ?? item.tongKg ?? '').trim(),
+                orderQuantity: String(item.so_luong_lenh ?? item.soLuongLenh ?? '').trim(),
+                conversionResults: Array.isArray(item.ket_qua_quy_doi ?? item.conversionResults)
+                  ? (item.ket_qua_quy_doi ?? item.conversionResults).map((conversion: any) => ({
+                      unit: String(conversion.don_vi ?? conversion.unit ?? '').trim(),
+                      value: Number(conversion.gia_tri ?? conversion.value)
+                    }))
+                  : []
+              };
+            }).filter(item => item.productCode);
+            return {
+              orderCode: String(line.ma_lenh_sx || '').trim(),
+              shift: String(line.ca || '').trim() || '—',
+              products,
+              danhSachPtdm: parsePlanPtdmList(line.danh_sach_ptdm ?? line.danhSachPtdm)
+            };
+          });
+          setHasAttachedPtdm(sourceLines.some(line => line.danhSachPtdm.length > 0));
+          try {
+            setMaterialRows(await loadAggregatedPlanMaterialsFromPtdm(sourceLines));
+          } catch (matErr: any) {
+            setMaterialsError(matErr?.message || 'Không tải được vật tư PTĐM.');
+          }
+        }
       } catch (err: any) {
         setError(err.message || 'Lỗi khi tải xem trước.');
       } finally {
@@ -195,7 +278,7 @@ export function ProductionPlanPrintPreviewModal({
       const totalSlsx = bac + trung + nam;
       const overLimit = totalSlsx > row.tong_sx + 0.0001;
 
-      const tongTl = calculateTotalWeight(row);
+      const tongTl = calculateTotalWeight({ ...row, tong_sx: totalSlsx });
       return {
         ...row,
         bac,
@@ -211,6 +294,15 @@ export function ProductionPlanPrintPreviewModal({
   }, [rows, edits]);
 
   const hasValidationError = computedRows.some(r => r.overLimit);
+  const materialsByShift = useMemo(() => {
+    const map = new Map<string, PlanPrintMaterialRow[]>();
+    materialRows.forEach(row => {
+      const list = map.get(row.shift) || [];
+      list.push(row);
+      map.set(row.shift, list);
+    });
+    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b, 'vi', { numeric: true }));
+  }, [materialRows]);
 
   function updateEdit(editKey: string, patch: Partial<RowEdit>) {
     setEdits(prev => ({
@@ -274,6 +366,9 @@ export function ProductionPlanPrintPreviewModal({
   const numHeadCell = 'whitespace-nowrap px-2.5 py-2.5 text-center font-bold';
   const textHeadCell = 'whitespace-nowrap px-2.5 py-2.5 text-left font-bold';
   const bodyCell = 'border-b border-zinc-200 px-2.5 py-1.5 align-middle';
+  const orderNoteLines = String(header?.don_hang_ghi_chu || '').split('\n').map(line => line.trim()).filter(Boolean);
+  const productionNote = String(header?.lenh_ghi_chu || '').trim();
+  const showProductionNote = Boolean(productionNote && !orderNoteLines.includes(productionNote));
 
   return createPortal(
     <div className="production-order-preview-print-root fixed inset-0 z-[90] flex items-end justify-center bg-zinc-950/50 p-0 backdrop-blur-sm sm:items-center sm:p-4">
@@ -377,9 +472,23 @@ export function ProductionPlanPrintPreviewModal({
               {header?.dac_ta && (
                 <div className="whitespace-pre-wrap break-words border-b border-gray-300 px-2 py-1 text-[10px]">{header.dac_ta}</div>
               )}
+              {(showProductionNote || orderNoteLines.length > 0) && (
+                <div className="border-b border-gray-300 px-2 py-1 text-[10px]">
+                  <div className="font-bold">Ghi chú chung từ đơn hàng:</div>
+                  {showProductionNote && <div className="whitespace-pre-wrap break-words">Ghi chú lệnh SX: {productionNote}</div>}
+                  {orderNoteLines.map((line, idx) => <div key={idx} className="whitespace-pre-wrap break-words">{line}</div>)}
+                </div>
+              )}
             </div>
 
             <div className="production-order-preview-print-body bg-zinc-100 p-4 sm:p-6 print:bg-transparent print:p-0">
+              {(showProductionNote || orderNoteLines.length > 0) && (
+                <div className="production-order-preview-noprint mx-auto mb-3 max-w-[1400px] rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-amber-800">Ghi chú chung từ đơn hàng</p>
+                  {showProductionNote && <pre className="mt-1 whitespace-pre-wrap break-words text-xs font-bold leading-5 text-amber-900">Ghi chú lệnh SX: {productionNote}</pre>}
+                  {orderNoteLines.map((line, idx) => <pre key={idx} className="mt-1 whitespace-pre-wrap break-words text-xs font-bold leading-5 text-amber-900">{line}</pre>)}
+                </div>
+              )}
               <div className="mx-auto max-w-[1400px] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm print:max-w-none print:overflow-visible print:rounded-none print:border-0 print:shadow-none">
                 <div className="overflow-x-auto print:overflow-hidden">
                   <table className="w-full border-collapse text-xs print:[&_td]:border print:[&_td]:border-gray-400 print:[&_th]:border print:[&_th]:border-gray-400">
@@ -418,9 +527,18 @@ export function ProductionPlanPrintPreviewModal({
                             <td className={`${bodyCell} bg-zinc-50/60 print:bg-transparent`} />
                             <td className={`${bodyCell} text-right tabular-nums text-zinc-700`}>{isCuonProduct(row.don_vi) ? formatNum(row.kg_cuon) : '—'}</td>
                             <td className={`${bodyCell} text-right font-bold tabular-nums text-zinc-900`}>{row.tong_sx.toFixed(2)}</td>
-                            <td className={bodyCell}><input type="number" min="0" step="any" value={edits[editKey]?.bac ?? '0'} onChange={event => updateEdit(editKey, { bac: event.target.value })} className={row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS} /></td>
-                            <td className={bodyCell}><input type="number" min="0" step="any" value={edits[editKey]?.trung ?? '0'} onChange={event => updateEdit(editKey, { trung: event.target.value })} className={row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS} /></td>
-                            <td className={bodyCell}><input type="number" min="0" step="any" value={edits[editKey]?.nam ?? '0'} onChange={event => updateEdit(editKey, { nam: event.target.value })} className={row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS} /></td>
+                            <td className={bodyCell}>
+                              <input type="number" min="0" step="any" value={edits[editKey]?.bac ?? '0'} onChange={event => updateEdit(editKey, { bac: event.target.value })} className={`${row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS} print:hidden`} />
+                              <span className="hidden print:inline">{formatNumber(row.bac, 2)}</span>
+                            </td>
+                            <td className={bodyCell}>
+                              <input type="number" min="0" step="any" value={edits[editKey]?.trung ?? '0'} onChange={event => updateEdit(editKey, { trung: event.target.value })} className={`${row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS} print:hidden`} />
+                              <span className="hidden print:inline">{formatNumber(row.trung, 2)}</span>
+                            </td>
+                            <td className={bodyCell}>
+                              <input type="number" min="0" step="any" value={edits[editKey]?.nam ?? '0'} onChange={event => updateEdit(editKey, { nam: event.target.value })} className={`${row.overLimit ? NUM_INPUT_ERROR_CLASS : NUM_INPUT_CLASS} print:hidden`} />
+                              <span className="hidden print:inline">{formatNumber(row.nam, 2)}</span>
+                            </td>
                             <td className={`${bodyCell} text-right tabular-nums text-zinc-700`}>{isTamProduct(row.don_vi) ? formatNum(row.tl_tam) : '—'}</td>
                             <td className={`${bodyCell} text-right font-bold tabular-nums text-zinc-900`}>{row.tongTl.toFixed(2)}</td>
                             <td className={`${bodyCell} bg-zinc-50/60 print:bg-transparent`} />
@@ -437,10 +555,61 @@ export function ProductionPlanPrintPreviewModal({
                   {hasValidationError ? (
                     <p className="flex items-center gap-1.5 text-xs font-semibold text-rose-600"><AlertTriangle className="h-3.5 w-3.5 shrink-0" />{overLimitCount} dòng có tổng SL.SX (Bắc + Trung + Nam) vượt quá Tổng SX.</p>
                   ) : (
-                    <p className="text-xs text-zinc-500">Tổng SL.SX (Bắc + Trung + Nam) của mỗi dòng không được vượt quá Tổng SX.</p>
+                    <p className="text-xs text-zinc-500">Tổng SL.SX (Bắc + Trung + Nam) của mỗi dòng không được vượt quá Tổng SX. Kế hoạch theo ngày = sản phẩm ngày + vật tư từ PTĐM đã gắn.</p>
                   )}
                 </div>
               )}
+
+              <div className="mx-auto mt-4 max-w-[1400px] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm print:mt-3 print:max-w-none print:overflow-visible print:rounded-none print:border-0 print:shadow-none">
+                <div className="border-b border-zinc-200 bg-zinc-950 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-white print:bg-gray-100 print:text-black">
+                  Vật tư theo PTĐM (kế hoạch ngày)
+                </div>
+                <p className="px-3 py-1.5 text-[11px] text-zinc-500">Đã quy đổi định mức 1 cối theo tổng trọng lượng sản xuất trong kế hoạch ngày.</p>
+                {materialsError ? (
+                  <p className="px-4 py-3 text-sm font-semibold text-rose-600">{materialsError}</p>
+                ) : materialsByShift.length === 0 ? (
+                  <p className="px-4 py-6 text-center text-sm font-semibold text-zinc-400">
+                    {hasAttachedPtdm
+                      ? 'PTĐM đã được gắn nhưng chưa quy đổi ra vật tư. Kiểm tra sản phẩm trong PTĐM và dữ liệu trọng lượng sản phẩm.'
+                      : 'Kế hoạch này chưa lưu PTĐM. Hãy gắn PTĐM cho lệnh rồi lưu kế hoạch.'}
+                  </p>
+                ) : (
+                  materialsByShift.map(([shift, rowsOfShift]) => (
+                    <div key={shift} className="border-b border-zinc-100 last:border-b-0">
+                      <div className="bg-zinc-50 px-3 py-1.5 text-[11px] font-extrabold text-zinc-700 print:bg-transparent">
+                        Ca {shift}
+                        <span className="ml-2 font-semibold text-zinc-500">· {rowsOfShift.length} mã NVL</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full border-collapse text-xs print:[&_td]:border print:[&_td]:border-gray-400 print:[&_th]:border print:[&_th]:border-gray-400">
+                          <thead className="bg-zinc-100 text-[10px] uppercase tracking-wide text-zinc-600">
+                            <tr>
+                              <th className={`${numHeadCell} w-10`}>STT</th>
+                              <th className={`${textHeadCell} min-w-24`}>Mã NVL</th>
+                              <th className={`${textHeadCell} min-w-40`}>Tên NVL</th>
+                              <th className={`${numHeadCell} w-14`}>ĐVT</th>
+                              <th className={`${numHeadCell} w-32`}>Tổng NVL cần xuất</th>
+                              <th className={`${textHeadCell} min-w-32`}>Lệnh SX</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rowsOfShift.map((mat, idx) => (
+                              <tr key={`${shift}-${mat.code}-${mat.unit}-${idx}`} className="hover:bg-zinc-50">
+                                <td className={`${bodyCell} text-center font-bold text-zinc-500`}>{idx + 1}</td>
+                                <td className={`${bodyCell} font-mono font-bold text-zinc-800`}>{mat.code}</td>
+                                <td className={`${bodyCell} font-semibold text-zinc-900`}>{mat.name || mat.code}</td>
+                                <td className={`${bodyCell} text-center`}>{mat.unit || '—'}</td>
+                                <td className={`${bodyCell} text-right font-bold tabular-nums`}>{formatNumber(mat.totalQuantity, 2)}</td>
+                                <td className={`${bodyCell} text-zinc-600`}>{mat.orderCodes.join(', ') || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -453,7 +622,10 @@ export function ProductionPlanPrintPreviewModal({
 
         {!loading && !error && (
           <div className="production-order-preview-noprint flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-zinc-200 bg-white px-5 py-3">
-            <div className="hidden text-xs font-semibold text-zinc-500 sm:block">{computedRows.length > 0 ? `${computedRows.length} dòng sản phẩm` : ''}</div>
+            <div className="hidden text-xs font-semibold text-zinc-500 sm:block">
+              {computedRows.length > 0 ? `${computedRows.length} SP` : ''}
+              {materialRows.length > 0 ? ` · ${materialRows.length} NVL` : ''}
+            </div>
             <div className="flex flex-1 justify-end gap-2 sm:flex-none">
               <button type="button" onClick={onClose} className="inline-flex h-10 items-center rounded-xl border border-zinc-300 bg-white px-4 text-sm font-bold text-zinc-700 transition hover:bg-zinc-50">Đóng</button>
               {canEdit && (

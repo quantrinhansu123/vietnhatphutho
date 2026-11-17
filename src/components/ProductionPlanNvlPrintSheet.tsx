@@ -56,6 +56,8 @@ export default function ProductionPlanNvlPrintSheet({
           <p className="production-plan-print-date">Ngày: {formatPrintDate(planDate)}</p>
         </header>
 
+        <p className="mb-2 text-xs text-zinc-600">Lượng NVL đã quy đổi từ định mức 1 cối theo tổng trọng lượng sản xuất trong kế hoạch ngày.</p>
+
         <table className="production-plan-nvl-print-meta-table">
           <tbody>
             <tr>
@@ -109,7 +111,7 @@ export default function ProductionPlanNvlPrintSheet({
                       <th>Mã NVL</th>
                       <th>Tên NVL</th>
                       <th>ĐVT</th>
-                      <th>Tổng định mức</th>
+                      <th>Tổng NVL cần xuất</th>
                     </tr>
                   </thead>
                   <tbody>

@@ -12,3 +12,5 @@ log.txt
 .ai/
 test-results/
 .tmp-esbuild/
+.tmp/
+.pnpm-store/

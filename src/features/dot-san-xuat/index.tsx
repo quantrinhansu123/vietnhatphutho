@@ -153,9 +153,20 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
 
   const [dots, setDots] = useState<DotSanXuatRow[]>([]);
   const [listLoading, setListLoading] = useState(false);
-  const [view, setView] = useState<'form' | 'list'>('form');
+  const [view, setView] = useState<'form' | 'list' | 'monitor'>('form');
   const [printData, setPrintData] = useState<DotSanXuatPrintData | null>(null);
   const [printOpen, setPrintOpen] = useState(false);
+  const [monitorDotId, setMonitorDotId] = useState('');
+  const [monitorRows, setMonitorRows] = useState<Array<{
+    id: string;
+    ma: string;
+    loai: string;
+    ngay: string;
+    loaiPhieu: string;
+    may: string;
+    tongSl: number;
+  }>>([]);
+  const [monitorLoading, setMonitorLoading] = useState(false);
 
   useEffect(() => {
     fetch('/api/danh-sach-may')
@@ -194,6 +205,65 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
       setListLoading(false);
     }
   }
+
+  async function loadMonitor(dotId: string) {
+    setMonitorDotId(dotId);
+    if (!dotId) {
+      setMonitorRows([]);
+      return;
+    }
+    setMonitorLoading(true);
+    try {
+      const res = await fetch('/api/xuat-nhap-tong-hop?limit=500');
+      const data = await res.json().catch(() => ({}));
+      const records = Array.isArray(data.records) ? data.records as Array<Record<string, unknown>> : [];
+      const dot = dots.find(item => item.id === dotId);
+      const rows = records
+        .filter(row => {
+          if (String(row.trang_thai || '') === 'huy') return false;
+          const byId = String(row.dot_san_xuat_id || '') === dotId;
+          const bySo = dot && String(row.dot_so || '') === String(dot.dot_so || '') && String(row.dot_so || '');
+          return byId || Boolean(bySo);
+        })
+        .map(row => {
+          const detail = Array.isArray(row.chi_tiet) ? row.chi_tiet as Array<Record<string, unknown>> : [];
+          const tongSl = detail.reduce((sum, line) => sum + (Number(line.so_luong) || 0), 0);
+          const first = detail[0] || {};
+          const may = String(
+            first.dich_dong_id || first.src_id || first.nguon_dong_id || row.dich_id || row.nguon_id || ''
+          );
+          return {
+            id: String(row.id || ''),
+            ma: String(row.ma_phieu_chung || ''),
+            loai: String(row.loai || ''),
+            ngay: String(row.ngay || '').slice(0, 10),
+            loaiPhieu: String(row.loai_xuat || row.loai_nhap || ''),
+            may,
+            tongSl
+          };
+        });
+      setMonitorRows(rows);
+    } catch {
+      setMonitorRows([]);
+    } finally {
+      setMonitorLoading(false);
+    }
+  }
+
+  const monitorTotals = useMemo(() => {
+    let xuat = 0;
+    let nhapLai = 0;
+    for (const row of monitorRows) {
+      const folded = row.loaiPhieu
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd');
+      if (row.loai === 'xuat') xuat += row.tongSl;
+      else if (folded.includes('nhap lai')) nhapLai += row.tongSl;
+    }
+    return { xuat, nhapLai, conLai: xuat - nhapLai };
+  }, [monitorRows]);
 
   /** Lấy số đợt tiếp theo trong tháng của máy (chỉ khi bấm nút Gợi ý). */
   async function suggestDotSo() {
@@ -568,8 +638,83 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
           >
             Đã lưu ({dots.length})
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setView('monitor');
+              if (!monitorDotId && dots[0]?.id) void loadMonitor(dots[0].id);
+            }}
+            className={`h-9 rounded-lg px-3 text-[12px] font-bold ${view === 'monitor' ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-600'}`}
+          >
+            Theo dõi NVL
+          </button>
         </div>
       </div>
+
+      {view === 'monitor' ? (
+        <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-card">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="min-w-[16rem] flex-1 space-y-1">
+              <span className={labelCls}>Đợt sản xuất</span>
+              <SearchableSelect
+                value={monitorDotId}
+                onChange={value => void loadMonitor(value)}
+                options={dots.map(row => ({
+                  id: row.id,
+                  label: `${row.ten_dot || `Đợt ${row.dot_so}`} · ${row.ten_may || row.ma_may}`
+                }))}
+                getValue={(item: { id: string }) => item.id}
+                getLabel={(item: { label: string }) => item.label}
+                placeholder="Chọn đợt để theo dõi"
+                inputClassName={inputCls}
+                comboboxMode
+                comboboxSearchable
+              />
+            </label>
+            <div className="flex flex-wrap gap-2 text-[12px] font-bold">
+              <span className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-amber-800">Xuất: {formatNumber(monitorTotals.xuat)}</span>
+              <span className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-emerald-800">Nhập lại: {formatNumber(monitorTotals.nhapLai)}</span>
+              <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-slate-800">Còn lại: {formatNumber(monitorTotals.conLai)}</span>
+            </div>
+          </div>
+          {monitorLoading ? (
+            <div className="flex items-center gap-2 py-4 text-[13px] text-slate-500">
+              <Loader2 className="h-4 w-4 animate-spin" /> Đang tải phiếu tổng hợp...
+            </div>
+          ) : !monitorDotId ? (
+            <p className="py-4 text-[13px] text-slate-500">Chọn đợt để xem xuất / nhập lại gắn đợt–máy.</p>
+          ) : monitorRows.length === 0 ? (
+            <p className="py-4 text-[13px] text-slate-500">Chưa có phiếu tổng hợp gắn đợt này.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full min-w-[720px] text-[12.5px]">
+                <thead>
+                  <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                    <th className="px-3 py-2">Mã phiếu</th>
+                    <th className="px-3 py-2">Ngày</th>
+                    <th className="px-3 py-2">Loại</th>
+                    <th className="px-3 py-2">Diễn giải</th>
+                    <th className="px-3 py-2">Máy/kho</th>
+                    <th className="px-3 py-2 text-right">Tổng SL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {monitorRows.map(row => (
+                    <tr key={row.id} className="border-t border-slate-100">
+                      <td className="px-3 py-2 font-bold text-slate-900">{row.ma || row.id}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{formatDateVN(row.ngay)}</td>
+                      <td className="px-3 py-2">{row.loai === 'xuat' ? 'Xuất' : 'Nhập'}</td>
+                      <td className="px-3 py-2">{row.loaiPhieu || '—'}</td>
+                      <td className="px-3 py-2">{row.may || '—'}</td>
+                      <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatNumber(row.tongSl)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
 
       {view === 'list' ? (
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
@@ -663,7 +808,7 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
             </div>
           )}
         </div>
-      ) : (
+      ) : view === 'form' ? (
         <>
           <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-card">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -1065,7 +1210,7 @@ export function DotSanXuatPanel({ onBack }: { onBack: () => void }) {
             </div>
           )}
         </>
-      )}
+      ) : null}
       <DotSanXuatPrintPreviewModal open={printOpen} data={printData} onClose={() => setPrintOpen(false)} />
     </div>
   );

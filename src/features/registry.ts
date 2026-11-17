@@ -267,13 +267,21 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   ke_hoach_san_xuat: {
     table: 'ke_hoach_san_xuat',
     label: 'Kế hoạch sản xuất',
-    sql: ['supabase-ke-hoach-sx.sql', 'supabase-ke-hoach-san-xuat.sql'],
+    sql: [
+      'supabase-ke-hoach-sx.sql',
+      'supabase-ke-hoach-san-xuat.sql',
+      'supabase-ke-hoach-san-xuat-dong-ptdm-sl.sql'
+    ],
     apiPrefix: '/api/ke-hoach-sx',
-    serverLines: '4200–4360',
+    serverLines: 'ke-hoach-sx routes + saveProductionPlanSnapshot',
     appTab: 'production-plan-history',
     appLines: 'src/features/ke-hoach-san-xuat/index.tsx',
     components: ['src/components/ProductionPlanNvlPrintSheet.tsx', 'src/components/ControlBoardShiftSummaryTable.tsx'],
-    utils: ['src/utils/controlBoardShiftSummary.ts', 'src/utils/controlBoardShiftSummaryDetails.ts']
+    utils: [
+      'src/features/ke-hoach-san-xuat/ptdmPlanHelpers.ts',
+      'src/utils/controlBoardShiftSummary.ts',
+      'src/utils/controlBoardShiftSummaryDetails.ts'
+    ]
   },
   dot_san_xuat: {
     table: 'dot_san_xuat',
@@ -696,13 +704,22 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
   phieu_nhap_xuat_tong_hop: {
     table: 'phieu_nhap_xuat_tong_hop',
     label: 'Phiếu nhập / xuất tổng hợp (kho hoặc máy từng dòng)',
-    sql: ['supabase-phieu-nhap-xuat-tong-hop.sql', 'supabase-nhap-kho-ma-may.sql'],
+    sql: [
+      'supabase-phieu-nhap-xuat-tong-hop.sql',
+      'supabase-nhap-kho-ma-may.sql',
+      'supabase-phieu-nhap-xuat-tong-hop-dot-phan-xuong.sql'
+    ],
     apiPrefix: '/api/xuat-nhap-tong-hop',
     serverLines: 'registerXuatNhapTongHopRoutes + GET /api/ton-may',
     appTab: 'phieu-nhap-xuat-tong-hop',
     appLines: 'src/features/xuat-nhap-tong-hop/index.tsx + list.tsx',
-    components: ['src/components/WarehouseSlipPrintModal.tsx', 'src/components/shared/SearchableSelect.tsx'],
-    utils: ['src/features/xuat-nhap-tong-hop/registerRoutes.ts']
+    components: [
+      'src/components/WarehouseSlipPrintModal.tsx',
+      'src/components/shared/SearchableSelect.tsx',
+      'src/features/xuat-nhap-tong-hop/xuatNvlDetail.tsx',
+      'src/features/xuat-nhap-tong-hop/model.ts'
+    ],
+    utils: ['src/features/xuat-nhap-tong-hop/registerRoutes.ts', 'src/utils/soTronPrevShiftTon.ts']
   },
   phieu_chuyen_kho: {
     table: 'phieu_chuyen_kho',

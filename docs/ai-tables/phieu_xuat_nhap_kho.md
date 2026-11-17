@@ -59,7 +59,7 @@ Mỗi lần **sửa** phiếu xuất kho NVL (PUT) lưu 1 row vào `phieu_xuat_n
 - SQL migrate: `supabase-phieu-xuat-nhap-kho-module1.sql` — thêm `dia_diem, loai_nhap_kho, ten_nvl_sx, ca_list`.
 - Server (`server.ts`): `parseWarehouseSlipBody` + `buildWarehouseSlipInsertRecords` lưu 6 cột mới (insert tương thích DB cũ qua `insertWarehouseSlipRecordsResilient`); nhập NVL không cần máy, xuất NVL máy bắt buộc; `GET /api/ton-kho-nvl` báo cáo tồn NVL hard `Tồn đầu = 0`, `Tồn cuối = Nhập − Xuất`.
 - Pure logic: `src/features/phieu-xuat-nhap-kho/nvlSlipLogic.ts` (+ unit `tests/unit/nvlSlipLogic.test.ts`).
-- UI (`src/features/phieu-xuat-nhap-kho/index.tsx`): `LOAI_NHAP_KHO_OPTIONS` (4 gợi ý + tự nhập), ô Máy ẩn với phiếu nhập thường (chỉ hiện khi Nhập lại VTSX / Tạo hạt), `validateShiftsSameLoaiCa`, tên SX NVL read-only theo dòng từ `kho_nvl` / PTĐM, nút **Thêm NVL chính/phụ** (chính trên · phụ dưới), xuất NVL có **Ngày tồn + Ca trước trên từng dòng** để lấy tồn đầu ca.
+- UI (`src/features/phieu-xuat-nhap-kho/index.tsx`): `LOAI_NHAP_KHO_OPTIONS` (4 gợi ý + tự nhập), ô Máy ẩn với phiếu nhập thường (chỉ hiện khi Nhập lại VTSX / Tạo hạt), `validateShiftsSameLoaiCa`, tên SX NVL read-only theo dòng từ `kho_nvl` / PTĐM, nút **Thêm NVL chính/phụ** (chính trên · phụ dưới), xuất NVL có **Lô/Giá bắt buộc** (`requireInboundLot: true`, cột chọn lô từ `/lo-ton`, ghi `id_dong_nhap_nguon`) + **Ngày tồn + Ca trước** để lấy tồn đầu ca. Server `validateNvlExportLots(..., { requireLot: true })`. **Ảnh số cân thực tế đang tạm ẩn** (`SHOW_NVL_ACTUAL_WEIGHT_IMAGE = false`); dữ liệu/API vẫn giữ để bật lại sau.
 
 
 ## Kho thành phẩm (chốt 22/09/2026)

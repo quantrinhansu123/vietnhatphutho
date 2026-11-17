@@ -7,13 +7,35 @@ export type ProductPxGroup = 'dac' | 'song' | 'rong' | 'other';
 export const FILM_OPTIONS = ['ECO', 'STD', 'SUN PC', 'HA', 'LUX'] as const;
 
 export const WASTE_GRADE_OPTIONS = [
+  'hàng chạy 100% NS Off',
   'hàng 100% NS Off',
   'hàng chạy 100% phế',
   'hàng nguyên phế',
   'hàng tiêu chuẩn',
   '(GIÁ RẺ)',
-  '100% NS',
-  'hàng chạy 100% NS Off'
+  '100% NS'
+] as const;
+
+/** Màu dài đứng trước màu ngắn để `trắng sữa` không bị nhận thành `trắng`. */
+export const PRODUCT_COLOR_OPTIONS = [
+  'xanh lá cây',
+  'trắng trong',
+  'trắng sứ',
+  'trắng sữa',
+  'trắng xứ',
+  'xám khói',
+  'khuếch tán',
+  'trắng',
+  'xanh',
+  'xám',
+  'xdt',
+  'trà',
+  'đen',
+  'đỏ',
+  'vàng',
+  'hồng',
+  'nâu',
+  'cam'
 ] as const;
 
 export interface AmisSpecs {
@@ -33,23 +55,38 @@ export interface ProductionNameParts {
   doLiDm: string;
   /** `(đm n kg)` — định mức kg (Sóng / đơn miền nam). */
   dinhMucKg: string;
+  /** Mét dài tấm tiêu chuẩn của ĐM kg (Sóng), vd `6m` trong `ĐM 9.5KG/6M`. */
+  doDaiTamTieuChuan?: string;
   /** `TCMB` (tiêu chuẩn miền bắc) hoặc ''. */
   tcmb: string;
   /** `6ZEM`, `8ZEM` — nối ngay sau sóng (Sóng) / sau màu (Đặc). */
   zem: string;
   /** Số sóng (`11` của `11 SÓNG`). */
   soSong: string;
+  /** Màu tấm. `Trắng` và `trắng sữa` là hai màu khác nhau. `trắng xứ` chuẩn hóa thành `trắng sữa`. */
+  mau?: string;
+  /** Token `NP` đứng riêng, không phải NP2. */
+  np?: string;
+  /** Tiêu chuẩn miền nam. */
+  tcmn?: string;
+  /** `Giá rẻ` — cột riêng, không gộp vào hàng phế. */
+  giaRe?: string;
+  /** Token `OFF` của nhóm Đặc. */
+  off?: string;
 }
 
-const DO_LI_DM_RE = /\(\s*đm\s*([\d.,]+)\s*(li|kg)\s*\)/iu;
+/** `(đm n li|kg)` hoặc `( ĐM nKG )` / `( ĐM nKG/6M )`. */
+const DO_LI_DM_RE = /\(\s*đm\s*([\d.,]+)\s*(li|kg)(?:\s*\/\s*[\d.,]+\s*m)?\s*\)/iu;
 const TCMB_RE = /\bTCMB\b/iu;
 const SONG_COUNT_RE = /(\d+)\s*sóng\b/iu;
 const AMIS_LI_RE = /-\s*([\d.,]+)\s*li\b/iu;
 const AMIS_DAY_RE = /\*\s*([\d.,]+)\s*m\b/iu;
-const AMIS_ZEM_RE = /(\d+)\s*zem\b/iu;
+const AMIS_ZEM_RE = /(\d+(?:[.,]\d+)?)\s*zem\b/iu;
 const NAME_MANG_RE = /(?:màng\s+)?(ECO|STD|SUN\s*PC|HA|LUX|STANDA)\b/iu;
 const NAME_HANG_PHE_RE =
-  /(hàng\s+100%\s+NS\s+Off|hàng\s+chạy\s+100%\s+phế|hàng\s+100%\s+phế|chạy\s+100%\s+phế|hàng\s+nguyên\s+phế|hàng\s+tiêu\s+chuẩn|100%\s*NS\b|\(\s*GIÁ\s+RẺ\s*\))/iu;
+  /(hàng\s+chạy\s+100%\s+NS\s+Off|hàng\s+100%\s+NS\s+Off|hàng\s+chạy\s+100%\s+phế|hàng\s+100%\s+phế|chạy\s+100%\s+phế|hàng\s+nguyên\s+phế|hàng\s+tiêu\s+chuẩn|100%\s*NS\b|\(\s*GIÁ\s+RẺ\s*\))/iu;
+/** Token OFF đứng riêng (không khớp OFFICE). */
+const BARE_OFF_TOKEN_RE = /(^|[\s-])OFF(?=[\s-]|$)/iu;
 /** Mét sau dấu `-` (standalone), cho phép text theo sau như `30m hàng…`. */
 const DASH_METER_RE = /-\s*([\d.,]+)\s*m(?=\b)/giu;
 /** Mọi token mét trong chuỗi (Sóng: lấy cái cuối). */
@@ -126,7 +163,9 @@ export function extractTcmb(tenSanXuat: string): string {
 /** ZEM chuẩn hoá `6ZEM` (nhận `6zem`, `6 ZEM`, `(6zem)`). */
 export function extractZemToken(tenSanXuat: string): string {
   const match = String(tenSanXuat || '').match(AMIS_ZEM_RE);
-  return match ? `${Number(match[1])}ZEM` : '';
+  if (!match) return '';
+  const n = normalizeDecimalToken(match[1]);
+  return n ? `${n}ZEM` : '';
 }
 
 /** Số sóng: `11 SÓNG` → `11`. */
@@ -138,7 +177,7 @@ export function extractSoSong(tenSanXuat: string): string {
 /** Bỏ token ZEM khỏi chuỗi (`màu TRẮNG 8ZEM` → `màu TRẮNG`, `(6zem)` → ''). */
 export function stripZemToken(text: string): string {
   return String(text || '')
-    .replace(/\s*[-–—]?\s*[([]?\s*\d+\s*zem\s*[)\]]?/giu, ' ')
+    .replace(/\s*[-–—]?\s*[([]?\s*\d+(?:[.,]\d+)?\s*zem\s*[)\]]?/giu, ' ')
     .replace(/\(\s*\)/gu, ' ')
     .replace(/\s{2,}/g, ' ')
     .replace(/\s*[-–—]\s*$/u, '')
@@ -189,6 +228,126 @@ export function classifyProductPxGroup(nhomVthh: string): ProductPxGroup {
   return 'other';
 }
 
+function tidyNameText(text: string): string {
+  return String(text || '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s*[-–—]\s*(?:[-–—]\s*)+/g, ' - ')
+    .replace(/^\s*[-–—]\s*/u, '')
+    .replace(/\s*[-–—]\s*$/u, '')
+    .trim();
+}
+
+function colorPattern(color: string): string {
+  return color.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+}
+
+const PRODUCT_COLOR_ALT = PRODUCT_COLOR_OPTIONS.map(colorPattern).join('|');
+const LABELED_COLOR_RE = new RegExp(`màu\\s+(${PRODUCT_COLOR_ALT})(?=$|[^\\p{L}\\p{N}])`, 'iu');
+const SONG_COLOR_RE = new RegExp(`(sóng)\\s+(${PRODUCT_COLOR_ALT})(?=$|[^\\p{L}\\p{N}])`, 'iu');
+const BARE_COLOR_RE = new RegExp(`(^|[^\\p{L}\\p{N}])(${PRODUCT_COLOR_ALT})(?=$|[^\\p{L}\\p{N}])`, 'iu');
+
+/** `trắng xứ` là cách gọi cũ của `trắng sữa`. `Trắng` giữ nguyên, không gộp vào trắng sữa. */
+export function canonicalProductColor(raw: string): string {
+  const text = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (/^trắng\s+xứ$/iu.test(text)) return 'trắng sữa';
+  return text;
+}
+
+/** Lấy màu dài nhất. `trắng sữa` không bị rút thành `trắng`. */
+export function extractProductColor(text: string): string {
+  const source = String(text || '');
+  const labeled = source.match(LABELED_COLOR_RE);
+  if (labeled) return canonicalProductColor(labeled[1]);
+  const song = source.match(SONG_COLOR_RE);
+  if (song) return canonicalProductColor(song[2]);
+  const bare = source.match(BARE_COLOR_RE);
+  if (bare) return canonicalProductColor(bare[2]);
+  return '';
+}
+
+export function stripProductColor(text: string): string {
+  return tidyNameText(
+    String(text || '')
+      .replace(LABELED_COLOR_RE, ' ')
+      .replace(SONG_COLOR_RE, '$1')
+  );
+}
+
+/** Tách màu, NP, OFF, TCMN, Giá rẻ, số sóng ra khỏi tên gốc. */
+export function splitProductionIdentity(tenGoc: string): {
+  tenGoc: string;
+  mau: string;
+  np: string;
+  tcmn: string;
+  giaRe: string;
+  off: string;
+} {
+  const source = String(tenGoc || '').trim();
+  const mau = extractProductColor(source);
+  let text = stripProductColor(source);
+  if (mau) {
+    const alternatives = /^trắng sữa$/iu.test(mau) ? ['trắng sữa', 'trắng xứ'] : [mau];
+    const token = alternatives.map(colorPattern).join('|');
+    text = text.replace(new RegExp(`(^|[^\\p{L}\\p{N}])(?:${token})(?=$|[^\\p{L}\\p{N}])`, 'iu'), '$1');
+  }
+  const kept: string[] = [];
+  let np = '';
+  let tcmn = '';
+  let giaRe = '';
+  let off = '';
+  for (const segment of text.split(/\s*[-–—]\s*/).map(part => part.trim()).filter(Boolean)) {
+    if (!np && /^NP$/iu.test(segment)) {
+      np = 'NP';
+      continue;
+    }
+    if (!off && /^OFF$/iu.test(segment)) {
+      off = 'OFF';
+      continue;
+    }
+    if (!tcmn && /^(?:hàng\s+)?tcmn$/iu.test(segment)) {
+      tcmn = 'TCMN';
+      continue;
+    }
+    if (!giaRe && /^\(?\s*giá\s*rẻ\s*\)?$/iu.test(segment)) {
+      giaRe = 'Giá rẻ';
+      continue;
+    }
+    if (/^\d+\s*sóng$/iu.test(segment)) continue;
+    kept.push(segment);
+  }
+  text = tidyNameText(kept.join(' - ')).replace(/\b\d+\s+sóng\b/giu, ' ');
+  return { tenGoc: tidyNameText(text), mau, np, tcmn, giaRe, off };
+}
+
+function applyProductionIdentity(parts: ProductionNameParts): ProductionNameParts {
+  const identity = splitProductionIdentity(parts.tenGoc);
+  const hangPhe = String(parts.hangPhe || '').trim();
+  const giaFromPhe = /^\(?\s*giá\s*rẻ\s*\)?$/iu.test(hangPhe);
+  return {
+    ...parts,
+    tenGoc: identity.tenGoc,
+    mau: parts.mau || identity.mau,
+    np: parts.np || identity.np,
+    tcmn: parts.tcmn || identity.tcmn,
+    giaRe: parts.giaRe || identity.giaRe || (giaFromPhe ? 'Giá rẻ' : ''),
+    off: parts.off || identity.off,
+    hangPhe: giaFromPhe ? '' : hangPhe
+  };
+}
+
+/**
+ * `(đm 4.8 kg)` + mét dài ĐM → `( ĐM 4.8KG/6M )` trên tên sản xuất Sóng.
+ * Thiếu mét dài ĐM thì mặc định `6M` (`SONG_STANDARD_LENGTH_M`).
+ */
+export function formatSongDinhMucKgLabel(value: string, standardLengthM?: string | number): string {
+  const match = String(value || '').match(/(\d+(?:[.,]\d+)?)/);
+  if (!match) return '';
+  const kg = match[1].replace(',', '.');
+  const length = parseDoDaiMLength(String(standardLengthM ?? '')) ?? SONG_STANDARD_LENGTH_M;
+  const lengthToken = `${String(length).replace(/\.0$/, '')}M`;
+  return `( ĐM ${kg}KG/${lengthToken} )`;
+}
+
 export function parseAmisSpecs(maAmis: string): AmisSpecs {
   const text = String(maAmis || '').trim();
   const liMatch = text.match(AMIS_LI_RE);
@@ -196,7 +355,8 @@ export function parseAmisSpecs(maAmis: string): AmisSpecs {
   const zemMatch = text.match(AMIS_ZEM_RE);
   const doLi = liMatch ? `${normalizeDecimalToken(liMatch[1])}li` : '';
   const doDayM = dayMatch ? formatMetersLabel(Number(normalizeDecimalToken(dayMatch[1]))) : '';
-  const zem = zemMatch ? `${zemMatch[1]}ZEM` : '';
+  const zemNum = zemMatch ? normalizeDecimalToken(zemMatch[1]) : '';
+  const zem = zemNum ? `${zemNum}ZEM` : '';
   return { doLi, doDayM, zem };
 }
 
@@ -225,11 +385,11 @@ export function extractMang(tenSanXuat: string): string {
 
 /**
  * Hàng phế CHỈ khi tên sản xuất ghi rõ cụm hàng phế
- * (hàng 100% NS Off / hàng chạy 100% phế / hàng 100% phế / chạy 100% phế /
- *  hàng nguyên phế / hàng tiêu chuẩn / 100% NS (chuẩn hóa từ 100%NS) /
+ * (hàng chạy 100% NS Off / hàng 100% NS Off / hàng chạy 100% phế / …
  *  (GIÁ RẺ) của sóng NP2 → chuẩn hóa `(GIÁ RẺ)`).
  * Không suy diễn từ mã AMIS hay token "NP" — tránh gán nhầm hàng phế
  * cho sản phẩm thường rồi lọt vào tên ghép.
+ * Đặc + token OFF / NS Off: chuẩn hóa `hàng chạy 100% NS Off` (xem `resolveDacHangPhe`).
  */
 function extractHangPhe(tenSanXuat: string): string {
   const fromName = String(tenSanXuat || '').match(NAME_HANG_PHE_RE);
@@ -237,10 +397,34 @@ function extractHangPhe(tenSanXuat: string): string {
   const t = fromName[1].trim();
   if (/GIÁ\s+RẺ/i.test(t)) return '(GIÁ RẺ)';
   if (/^100%\s*NS$/i.test(t)) return '100% NS';
+  if (/NS\s*Off/i.test(t)) return 'hàng chạy 100% NS Off';
   if (/^chạy\s+100%\s*phế$/i.test(t) || (/100%\s*phế/i.test(t) && !/NS\s*Off/i.test(t))) {
     return 'hàng chạy 100% phế';
   }
   return t;
+}
+
+/** Đặc NP2/OFF: tên có OFF hoặc NS Off → bắt buộc hàng phế `hàng chạy 100% NS Off`. */
+export function resolveDacHangPhe(tenSanXuat: string, hangPheFromName = ''): string {
+  const text = String(tenSanXuat || '');
+  const fromName = String(hangPheFromName || extractHangPhe(text) || '').trim();
+  const hasOff =
+    BARE_OFF_TOKEN_RE.test(text) ||
+    /NS\s*Off/iu.test(text) ||
+    /NS\s*Off/iu.test(fromName);
+  if (hasOff) return 'hàng chạy 100% NS Off';
+  return fromName;
+}
+
+/** Bỏ token OFF trần khỏi ten_goc khi đã có segment hàng phế NS Off. */
+function stripBareOffToken(text: string): string {
+  return String(text || '')
+    .replace(/(^|[\s-])OFF(?=[\s-]|$)/giu, '$1')
+    .replace(/\s*[-–—]\s*(?:[-–—]\s*)+/g, ' - ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s*[-–—]\s*$/u, '')
+    .replace(/^\s*[-–—]\s*/u, '')
+    .trim();
 }
 
 function resolveDoLi(maAmis: string, tenSanXuat: string, _group: ProductPxGroup): string {
@@ -321,6 +505,34 @@ export function normalizeDinhMucKg(value: string | null | undefined): string {
 /** Sóng: kg ghi trong tên là định mức của tấm dài 6m, không phải kg của mét dài đang cắt. */
 export const SONG_STANDARD_LENGTH_M = 6;
 
+/**
+ * Mét dài tấm tiêu chuẩn của ĐM kg trong tên SX (vd `/6M` trong `ĐM 9.5KG/6M`).
+ * Không phải `do_dai_m` (mét dài SP đang cắt).
+ */
+export function extractDoDaiTamTieuChuan(tenSanXuat: string): string {
+  const match = String(tenSanXuat || '').match(/(?:đm|dm)?\s*[\d.,]+\s*kg\s*\/\s*([\d.,]+)\s*m\b/iu);
+  if (!match) return '';
+  const meters = Number(String(match[1]).replace(',', '.'));
+  if (!Number.isFinite(meters) || meters <= 0) return '';
+  return formatMetersLabel(meters);
+}
+
+/** Sóng: lấy mét dài ĐM từ tên hoặc mặc định `6m` khi đã có đm kg. */
+export function resolveSongDoDaiTamTieuChuan(
+  tenSanXuat: string,
+  dinhMucKg: string,
+  explicit = ''
+): string {
+  const fromExplicit = parseDoDaiMLength(explicit);
+  if (fromExplicit != null) return formatMetersLabel(fromExplicit);
+  const fromName = extractDoDaiTamTieuChuan(tenSanXuat);
+  if (fromName) return fromName;
+  if (normalizeDinhMucKg(dinhMucKg) || /[\d.,]\s*kg\b/iu.test(tenSanXuat)) {
+    return formatMetersLabel(SONG_STANDARD_LENGTH_M);
+  }
+  return '';
+}
+
 /** Tên có token kg (`12kg`, `12 kg`, `(đm 12 kg)`). */
 export function productionNameHasKg(text: string): boolean {
   return /[\d.,]\s*kg\b/iu.test(String(text || ''));
@@ -337,6 +549,18 @@ export function songStandardDinhMucKg(kgPerSheet: unknown, lengthM: unknown): st
   const standard = truncateTo3Decimals((kg / length) * SONG_STANDARD_LENGTH_M);
   if (!(standard > 0)) return '';
   return normalizeDinhMucKg(String(standard));
+}
+
+/**
+ * TL/tấm Sóng theo mét dài = cắt 3 số của (kg tấm chuẩn 6m × mét / 6).
+ * Tính một lần trên tích — không cắt kg/m rồi mới nhân mét (tránh 7.92 thay vì 7.916).
+ */
+export function songSheetWeightFromStandardKg(standardKgAt6m: unknown, lengthM: unknown): number | null {
+  const kg = Number(String(standardKgAt6m ?? '').replace(',', '.').replace(/m\s*$/iu, '').trim());
+  const length = Number(String(lengthM ?? '').replace(',', '.').replace(/m\s*$/iu, '').trim());
+  if (!Number.isFinite(kg) || !Number.isFinite(length) || kg <= 0 || length <= 0) return null;
+  const value = truncateTo3Decimals((kg * length) / SONG_STANDARD_LENGTH_M);
+  return value > 0 ? value : null;
 }
 
 /** Bỏ `12kg` đứng ngoài ngoặc. Giữ `(đm 12 kg)`. */
@@ -786,6 +1010,11 @@ export function stripParsedSegmentsFromTenGoc(
     if (hangPhe) {
       const esc = escapeRegex(hangPhe).replace(/\s+/g, '\\s+');
       stripTail(new RegExp(`(?:^|\\s*[-–—]\\s*)${esc}\\s*$`, 'iu'));
+      // Alias NS Off ngắn hơn (khi hangPhe đã chuẩn hóa `hàng chạy 100% NS Off`).
+      if (/NS\s*Off/iu.test(hangPhe)) {
+        stripTail(/(?:^|\s*[-–—]\s*)hàng\s+100%\s+NS\s+Off\s*$/iu);
+        text = stripBareOffToken(text);
+      }
     }
     stripTail(/(?:^|\s*[-–—]\s*)\(\s*GIÁ\s+RẺ\s*\)\s*$/iu);
 
@@ -796,9 +1025,9 @@ export function stripParsedSegmentsFromTenGoc(
     }
 
     if (parts.doLiDm || parts.dinhMucKg) {
-      stripTail(/(?:^|\s*[-–—]\s*)\(\s*đm\s*[\d.,]+\s*(?:li|kg)\s*\)\s*$/iu);
-      // `1.5li ( ĐM 12KG )` — đm dính sau độ li, không có dấu `-`.
-      stripTail(/\s*\(\s*đm\s*[\d.,]+\s*(?:li|kg)\s*\)\s*$/iu);
+      stripTail(/(?:^|\s*[-–—]\s*)\(\s*đm\s*[\d.,]+\s*(?:li|kg)(?:\s*\/\s*[\d.,]+\s*m)?\s*\)\s*$/iu);
+      // `1.5li ( ĐM 12KG/6M )` — đm dính sau độ li, không có dấu `-`.
+      stripTail(/\s*\(\s*đm\s*[\d.,]+\s*(?:li|kg)(?:\s*\/\s*[\d.,]+\s*m)?\s*\)\s*$/iu);
     }
 
     const doLi = String(parts.doLi || '').trim();
@@ -817,8 +1046,8 @@ export function stripParsedSegmentsFromTenGoc(
     // Bỏ mọi mét / li / (đm) / màng còn dính cuối ten_goc (kể cả giá trị cũ khác field hiện tại)
     // để đổi khổ / mét dài / ĐM / màng luôn ghép lại đúng từ thông số.
     stripTail(/(?:^|\s*[-–—]\s*|\s+)[\d.,]+\s*m\s*$/iu);
-    stripTail(/(?:^|\s*[-–—]\s*)\(\s*đm\s*[\d.,]+\s*(?:li|kg)\s*\)\s*$/iu);
-    stripTail(/\s*\(\s*đm\s*[\d.,]+\s*(?:li|kg)\s*\)\s*$/iu);
+    stripTail(/(?:^|\s*[-–—]\s*)\(\s*đm\s*[\d.,]+\s*(?:li|kg)(?:\s*\/\s*[\d.,]+\s*m)?\s*\)\s*$/iu);
+    stripTail(/\s*\(\s*đm\s*[\d.,]+\s*(?:li|kg)(?:\s*\/\s*[\d.,]+\s*m)?\s*\)\s*$/iu);
     stripTail(/(?:^|\s*[-–—]\s*)[\d.,]+\s*l?i\s*$/iu);
     stripTail(/(?:^|\s*[-–—]\s*)(?:màng\s+)?(?:ECO|STD|SUN\s*PC|LUX|HA)\s*$/iu);
 
@@ -888,7 +1117,9 @@ export function parseProductionNameParts(
   const soSong = extractSoSong(text);
   const extra = { dinhMucKg, zem, tcmb, soSong };
   const mang = extractMang(text);
-  const hangPhe = extractHangPhe(text);
+  let hangPhe = extractHangPhe(text);
+  // Đặc: OFF / NS Off trên tên → luôn gắn `hàng chạy 100% NS Off` (NP2).
+  if (group === 'dac') hangPhe = resolveDacHangPhe(text, hangPhe);
   let doLi = resolveDoLi(maAmis, text, group);
   if (doLi && !isValidDoLiToken(doLi)) doLi = '';
   // Hàng ZEM: không độ li / không đm-li (đm-kg sóng vẫn giữ nếu có trong tên).
@@ -913,7 +1144,7 @@ export function parseProductionNameParts(
     });
     // Độ li đã có field riêng. Tên lỗi có thể dính hai token (`1.5li` và `1li`) — bỏ hết rồi compose gắn một lần.
     const tenGoc = doLi ? stripLooseDoLiTokens(stripped) : stripped;
-    return {
+    return applyProductionIdentity({
       tenGoc,
       doLi,
       doDayM: '',
@@ -922,7 +1153,7 @@ export function parseProductionNameParts(
       hangPhe,
       doLiDm,
       ...extra
-    };
+    });
   }
 
   const { before } = splitFirstDash(text);
@@ -951,7 +1182,7 @@ export function parseProductionNameParts(
       doDayM,
       doDaiM
     });
-    return {
+    return applyProductionIdentity({
       tenGoc,
       doLi,
       doDayM,
@@ -960,7 +1191,7 @@ export function parseProductionNameParts(
       hangPhe,
       doLiDm,
       ...extra
-    };
+    });
   }
 
   // Đặc (+ other): giữ token như `NP` trong ten_goc (không cắt ở dấu `-` đầu).
@@ -990,8 +1221,11 @@ export function parseProductionNameParts(
   // Làm sạch đuôi còn sót (hangPhe sau mét không dấu `-`, li khi ZEM, màng…).
   tenGocDac = stripDacTenGocTailNoise(tenGocDac, { hangPhe, mang });
   tenGocDac = stripZemToken(tenGocDac);
-  return {
+  // OFF đã chuyển thành segment hàng phế — không giữ token OFF trần trong ten_goc.
+  if (/NS\s*Off/iu.test(hangPhe)) tenGocDac = stripBareOffToken(tenGocDac);
+  return applyProductionIdentity({
     tenGoc: tenGocDac,
+    off: BARE_OFF_TOKEN_RE.test(text) ? 'OFF' : '',
     doLi,
     doDayM: dacDoDayM,
     doDaiM: dacDoDaiM,
@@ -999,7 +1233,7 @@ export function parseProductionNameParts(
     hangPhe,
     doLiDm,
     ...extra
-  };
+  });
 }
 
 /** Bỏ đuôi thừa khi parse Đặc từ tên đã ghép / ZEM (giữ NP trong thân tên). */
@@ -1068,77 +1302,87 @@ export function stripDuplicateLiFromTenGoc(tenGoc: string, doLi: string): string
 }
 
 /**
- * Ghép tên hiển thị.
- * Thứ tự: ten_goc (ZEM nối sau sóng/màu) - hàng phế - màng - TCMB - độ li - đm li - đm kg - độ dày - mét dài.
- * TP; PX Đặc và Rỗng: không ghép `(đm n kg)` vào tên (cột `dinh_muc_kg` vẫn lưu).
- * TP; PX Rỗng: bỏ khổ 2.1m mặc định khỏi tên ghép (DB vẫn lưu do_day_m).
- * Có ZEM: không ghép độ li / đm-li (ZEM đã thay độ li trên tên).
+ * Ghép tên từ từng cột.
+ * Sóng: `NHỰA SÓNG {Màu} - NP - {n} SÓNG {ZEM} - Giá rẻ - Hàng phế - Màng - TCMB - TCMN - Độ li - ĐM li - ( ĐM nKG/6M ) - Mét dài`.
+ * Đặc: `Tấm nhựa đặc màu {Màu} - NP|OFF|Giá rẻ - {ZEM} - Hàng phế - Màng - TCMB - TCMN - Độ li - ĐM li - Khổ rộng - Mét dài`.
+ * Rỗng: `Tấm nhựa rỗng màu {Màu} - NP - {ZEM} - Hàng phế - Màng - TCMB - TCMN - Độ li - ĐM li - Mét dài`.
+ * Có ZEM thì bỏ độ li và đm li. Sóng và Rỗng không hiện khổ. Đặc và Rỗng không hiện đm kg.
  */
 export function composeProductionDisplayName(
   parts: Partial<ProductionNameParts>,
   nhomVthh: string
 ): string {
   const rawDoLi = String(parts.doLi || '').trim();
-  let tenGoc = stripDuplicateLiFromTenGoc(String(parts.tenGoc || '').trim(), rawDoLi);
-  tenGoc = stripTcmbToken(stripZemToken(tenGoc));
+  const sourceTenGoc = stripTcmbToken(stripZemToken(stripDuplicateLiFromTenGoc(String(parts.tenGoc || '').trim(), rawDoLi)));
+  const identity = splitProductionIdentity(sourceTenGoc);
+  const group = classifyProductPxGroup(nhomVthh);
+  const mau = canonicalProductColor(parts.mau !== undefined ? String(parts.mau || '') : identity.mau);
+  const np = parts.np !== undefined ? (/^NP$/iu.test(String(parts.np || '')) ? 'NP' : '') : identity.np;
+  const tcmn = parts.tcmn !== undefined ? (/tcmn/iu.test(String(parts.tcmn || '')) ? 'TCMN' : '') : identity.tcmn;
+  const off = parts.off !== undefined ? (/^OFF$/iu.test(String(parts.off || '')) ? 'OFF' : '') : identity.off;
+  const giaReField = parts.giaRe !== undefined ? String(parts.giaRe || '').trim() : identity.giaRe;
+  const hangPheRaw = String(parts.hangPhe || '').trim();
+  const giaFromPhe = /^\(?\s*giá\s*rẻ\s*\)?$/iu.test(hangPheRaw);
+  const showOff = group === 'dac' && (off === 'OFF' || /^OFF$/iu.test(hangPheRaw) || BARE_OFF_TOKEN_RE.test(sourceTenGoc));
+  const giaRe = showOff ? '' : (giaReField || (giaFromPhe ? 'Giá rẻ' : ''));
+  const hangPhe =
+    giaFromPhe || (showOff && /NS\s*Off/iu.test(hangPheRaw)) || (np && (!hangPheRaw || /^hàng\s+nguyên\s+phế$/iu.test(hangPheRaw)))
+      ? ''
+      : hangPheRaw;
+
+  const head =
+    group === 'song'
+      ? ['NHỰA SÓNG', mau].filter(Boolean).join(' ')
+      : group === 'dac'
+        ? (mau ? `Tấm nhựa đặc màu ${mau}` : 'Tấm nhựa đặc')
+        : group === 'rong'
+          ? (mau ? `Tấm nhựa rỗng màu ${mau}` : 'Tấm nhựa rỗng')
+          : [identity.tenGoc, mau].filter(Boolean).join(' ');
 
   const zem =
     String(parts.zem || '').trim() ||
     extractZemToken(String(parts.tenGoc || '')) ||
     extractZemToken(rawDoLi);
   const tcmb = String(parts.tcmb || '').trim() || extractTcmb(String(parts.tenGoc || ''));
-  // Số sóng: thay tại chỗ (`11 SÓNG`), chưa có thì nối cuối ten_goc.
-  const soSong = String(parts.soSong || '').trim().replace(/[^\d]/g, '');
-  if (soSong) {
-    const songMatch = tenGoc.match(SONG_COUNT_RE);
-    if (songMatch) {
-      if (String(Number(songMatch[1])) !== soSong) {
-        // Giữ nguyên đuôi chữ gốc (` Sóng` / ` SÓNG`).
-        tenGoc = tenGoc.replace(SONG_COUNT_RE, `${soSong}${songMatch[0].slice(songMatch[1].length)}`);
-      }
-    } else {
-      tenGoc = tenGoc ? `${tenGoc} - ${soSong} SÓNG` : `${soSong} SÓNG`;
-    }
-  }
-  // ZEM đứng ngay sau sóng (Sóng) / sau màu (Đặc) — cuối ten_goc, cách 1 dấu cách.
-  if (zem) tenGoc = tenGoc ? `${tenGoc} ${zem}` : zem;
-
+  const soSong = String(parts.soSong || '').trim().replace(/[^\d]/g, '') || extractSoSong(sourceTenGoc);
+  const songSegment = [soSong ? `${soSong} SÓNG` : '', zem].filter(Boolean).join(' ');
   const doLi = zem ? '' : rawDoLi;
   const mang = String(parts.mang || '').trim();
-  const hangPhe = String(parts.hangPhe || '').trim();
-  const rawDoLiDm = String(parts.doLiDm || '').trim();
-  // ZEM: bỏ đm-li; đm-kg vẫn giữ (Sóng ZEM có định mức kg).
-  const doLiDm = zem ? '' : rawDoLiDm;
-  const group = classifyProductPxGroup(nhomVthh);
-  // Đặc và Rỗng: đm kg không hiện trên tên sản xuất.
-  const hideDinhMucKg = group === 'dac' || group === 'rong';
-  const dinhMucKg = hideDinhMucKg ? '' : normalizeDinhMucKg(String(parts.dinhMucKg || '').trim());
-  if (hideDinhMucKg) tenGoc = stripDinhMucKgSegment(tenGoc);
+  const doLiDm = zem ? '' : String(parts.doLiDm || '').trim();
+  const doDaiTamTieuChuan =
+    group === 'song'
+      ? resolveSongDoDaiTamTieuChuan(
+        [parts.tenGoc, parts.dinhMucKg, parts.doDaiM].filter(Boolean).join(' '),
+        String(parts.dinhMucKg || ''),
+        String(parts.doDaiTamTieuChuan || '')
+      )
+      : '';
+  const dinhMucKg =
+    group === 'song'
+      ? formatSongDinhMucKgLabel(String(parts.dinhMucKg || '').trim(), doDaiTamTieuChuan)
+      : '';
   const rawDayM = String(parts.doDayM || '').trim();
   const dayMNum = Number(normalizeDecimalToken(rawDayM.replace(/\s*m\s*$/iu, '')));
-  // Sóng: không hiện khổ rộng trong tên (vẫn lưu DB). Rỗng mặc định 2.1m: cũng bỏ khỏi tên.
-  // Đặc / Rỗng khác 2.1: chuẩn hóa có hậu tố `m` (vd ô Excel `1.22` → `1.22m`).
   const doDayM =
-    group === 'song'
-      ? ''
-      : group === 'rong' && Number.isFinite(dayMNum) && Math.abs(dayMNum - DEFAULT_RONG_WIDTH_M) < 1e-9
-        ? ''
-        : Number.isFinite(dayMNum) && dayMNum > 0
-          ? formatMetersLabel(dayMNum)
-          : rawDayM;
-  const rawDaiM = String(parts.doDaiM || '').trim();
-  const parsedDaiM = parseDoDaiMLength(rawDaiM);
-  // Chuẩn hóa mét dài có hậu tố `m` (vd `2` / `2,4` → `2m` / `2.4m`).
-  const doDaiM = parsedDaiM != null ? formatMetersLabel(parsedDaiM) : rawDaiM;
+    group === 'dac' && Number.isFinite(dayMNum) && dayMNum > 0
+      ? formatMetersLabel(dayMNum)
+      : group === 'rong' && Number.isFinite(dayMNum) && dayMNum > 0 && Math.abs(dayMNum - DEFAULT_RONG_WIDTH_M) > 1e-9
+        ? formatMetersLabel(dayMNum)
+        : '';
+  const parsedDaiM = parseDoDaiMLength(String(parts.doDaiM || '').trim());
+  const doDaiM = parsedDaiM != null ? formatMetersLabel(parsedDaiM) : String(parts.doDaiM || '').trim();
+  const grade = showOff ? 'OFF' : np;
 
-  // Mét dài luôn segment cuối cùng khi có. Chuẩn hóa `,` thập phân → `.`.
-  return (
-    normalizeDecimalCommasInText(
-      joinSegments([tenGoc, hangPhe, mang, tcmb, doLi, doLiDm, dinhMucKg, doDayM, doDaiM]) ||
-        tenGoc ||
-        '-'
-    )
-  );
+  const segments =
+    group === 'song'
+      ? [head, grade, songSegment, giaRe, hangPhe, mang, tcmb, tcmn, doLi, doLiDm, dinhMucKg, doDaiM]
+      : group === 'dac'
+        ? [head, grade, giaRe, zem, hangPhe, mang, tcmb, tcmn, doLi, doLiDm, doDayM, doDaiM]
+        : group === 'rong'
+          ? [head, grade, zem, giaRe, hangPhe, mang, tcmb, tcmn, doLi, doLiDm, doDayM, doDaiM]
+          : [head, grade, giaRe, hangPhe, mang, tcmb, tcmn, doLi, doLiDm, doDayM || (Number.isFinite(dayMNum) && dayMNum > 0 ? formatMetersLabel(dayMNum) : ''), doDaiM];
+
+  return normalizeDecimalCommasInText(joinSegments(segments) || head || '-');
 }
 
 /** Seed đầy đủ từ bản ghi catalog theo đúng tên SX của dòng. */
@@ -1178,6 +1422,10 @@ export function buildOrderTenGhep(
     doLiDm?: string | null;
     /** Màng (đơn miền nam) — ghi đè segment màng nếu có. */
     mang?: string | null;
+    /** Độ li mới. Có giá trị thì ghi đè cột độ li trước khi ghép. */
+    doLi?: string | null;
+    /** Khổ rộng mới. Sóng và Rỗng không đưa khổ vào tên. */
+    doDayM?: number | string | null;
   }
 ): string {
   const nhomVthh = String(options?.nhomVthh || '').trim();
@@ -1200,6 +1448,14 @@ export function buildOrderTenGhep(
   }
   if (options?.mang !== undefined) {
     overrides.mang = String(options.mang ?? '').trim();
+  }
+  const nextDoLi = String(options?.doLi ?? '').trim();
+  if (nextDoLi && !/\bkg\b/iu.test(nextDoLi)) {
+    overrides.doLi = normalizeDoLiToken(nextDoLi);
+  }
+  const width = Number(String(options?.doDayM ?? '').replace(/m\s*$/iu, '').replace(',', '.'));
+  if (Number.isFinite(width) && width > 0) {
+    overrides.doDayM = formatMetersLabel(width);
   }
   if (Object.keys(overrides).length > 0) {
     return composeProductionDisplayName({ ...seeded, ...overrides }, nhomVthh);
@@ -1484,12 +1740,17 @@ export function abbreviateProductionNameFacts(tenSanXuat: string | null | undefi
   const word = (token: string) => new RegExp(`(^|[^\\p{L}\\p{N}])${token}([^\\p{L}\\p{N}]|$)`, 'iu');
   const color: Array<[RegExp, string]> = [
     [word('trắng\\s*sứ'), 'TSU'],
+    [word('trắng\\s*sữa'), 'TSUA'],
+    [word('trắng\\s*xứ'), 'TSUA'],
+    [word('trắng\\s*trong'), 'TTR'],
     [word('trắng'), 'TR'],
+    [word('xanh\\s*lá\\s*cây'), 'XLC'],
     [word('xanh'), 'XA'],
     [word('đen'), 'DEN'],
     [word('vàng'), 'VA'],
     [word('đỏ'), 'DO'],
     [word('hồng'), 'HO'],
+    [word('xám\\s*khói'), 'XKH'],
     [word('xám'), 'XM'],
     [word('trà'), 'TRA'],
     [word('XDT'), 'XDT']

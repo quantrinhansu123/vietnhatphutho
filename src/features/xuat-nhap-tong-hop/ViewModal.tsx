@@ -2,16 +2,20 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Printer, FileText, Warehouse, Truck, MapPin, User, Calendar, Clock, Tag, DollarSign, Scale, Hash, AlertTriangle } from 'lucide-react';
 import { takePendingTongHopView, type TongHopHeader } from './model';
-import { formatTongHopDate, isNvlWarehouseName } from './model';
+import { formatTongHopDate } from './model';
 import { roundKem, sumKemStored } from './chiPhiKemTheo';
 import { formatMoney as formatMoneyUs, formatQty as formatQtyUs, parseLocalizedNumber } from '../../utils';
+import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from '../../components/WarehouseSlipPrintModal';
+import { slipsFromTongHopRecord } from './printSlips';
 
 function statusLabel(status: string) {
   if (status === 'huy') return 'Đã hủy';
   if (status === 'hoan_thanh') return 'Đã ghi sổ';
   return status || '—';
 }
-import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from '../../components/WarehouseSlipPrintModal';
+
+/** Tạm ẩn cột ảnh số cân NVL — bật `true` khi dùng lại. */
+const SHOW_NVL_ACTUAL_WEIGHT_IMAGE = false;
 
 /** Hiển thị số theo chuẩn chung: nghìn `,`, thập phân `.` (VD: 1,250,000 / 100.5). */
 function formatMoney(value: number | string) {
@@ -27,54 +31,7 @@ function formatNumber(value: number | string, decimals = 3) {
 }
 
 function slipsFromRecord(row: TongHopHeader): WarehouseSlipPrintData[] {
-  const detail = Array.isArray(row.chi_tiet) ? row.chi_tiet : [];
-  const groups = new Map<string, Array<Record<string, unknown>>>();
-  for (const line of detail) {
-    const key = String(line.kho_dong_ten || line.nguon_dong_ten || line.nguon_dong_id || row.kho_dich || 'Phiếu');
-    groups.set(key, [...(groups.get(key) || []), line]);
-  }
-  return [...groups.entries()].map(([name, groupLines], index) => {
-    const totalAmount = groupLines.reduce((sum, line) => sum + (parseLocalizedNumber(line.thanh_tien ?? '') || 0), 0);
-    const totalKem = roundKem(groupLines.reduce((sum, line) => sum + sumKemStored(line.chi_phi_kem_theo), 0));
-    const totalKg = roundKem(groupLines.reduce((sum, line) => sum + (parseLocalizedNumber(line.quy_doi_kg ?? '') || 0), 0));
-    return {
-      slipCode: `${row.ma_phieu_chung}-${index + 1}`,
-      slipType: row.loai,
-      warehouseKind: isNvlWarehouseName(name) || row.dich_loai === 'may' ? 'nvl' : 'san_pham',
-      slipDate: formatTongHopDate(String(row.ngay || '').slice(0, 10)),
-      reason: row.ly_do || (row.loai === 'nhap' ? row.loai_nhap || '' : row.loai_xuat || ''),
-      note: row.ghi_chu || '',
-      createdBy: row.nguoi_lap || '',
-      deliverer: row.nguoi_giao || '',
-      warehouseLocation: row.dia_diem || '',
-      totalAmount,
-      totalKem,
-      totalCong: roundKem(totalAmount + totalKem),
-      totalKg,
-      shift: row.ca || '',
-      machine: row.dich_loai === 'may' ? row.dich_id || '' : '',
-      warehouseName: name,
-      useWarehouseNameInTitle: true,
-      isTemporary: false,
-      lines: groupLines.map(line => ({
-        code: String(line.ma_hang || ''),
-        name: String(line.ten_hang || ''),
-        unit: String(line.don_vi || ''),
-        quantity: parseLocalizedNumber(line.so_luong ?? '') || 0,
-        unitPrice: parseLocalizedNumber(line.don_gia ?? '') || 0,
-        lineAmount: parseLocalizedNumber(line.thanh_tien ?? '') || 0,
-        weightKg: parseLocalizedNumber(line.quy_doi_kg ?? '') || null,
-        chiPhiKemTheo: (Array.isArray(line.chi_phi_kem_theo) ? line.chi_phi_kem_theo : []).map(item => {
-          const rowItem = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
-          return {
-            ten: String(rowItem.ten || ''),
-            donGia: parseLocalizedNumber(rowItem.don_gia ?? '') || 0,
-            thanhTien: parseLocalizedNumber(rowItem.thanh_tien ?? '') || 0
-          };
-        })
-      }))
-    };
-  });
+  return slipsFromTongHopRecord(row);
 }
 
 export function TongHopViewModal({
@@ -291,7 +248,7 @@ export function TongHopViewModal({
                     <th className="px-3 py-2 text-right">Thành tiền</th>
                     <th className="px-3 py-2 text-right">Giá nhập kho</th>
                     <th className="px-3 py-2 text-right">Tổng giá nhập kho</th>
-                    <th className="px-3 py-2 text-center">Ảnh cân</th>
+                    {SHOW_NVL_ACTUAL_WEIGHT_IMAGE ? <th className="px-3 py-2 text-center">Ảnh cân</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -320,20 +277,22 @@ export function TongHopViewModal({
                       <td className="px-3 py-2 text-right tabular-nums font-mono text-zinc-900">{formatMoney(String(line.thanh_tien || ''))}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-mono text-sky-800" title={`Giá mua + Chi phí đi kèm/1kg (${formatMoney(kemPerKg)})`}>{importPrice === null ? '—' : formatMoney(importPrice)}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-mono text-sky-800">{importAmount === null ? '—' : formatMoney(importAmount)}</td>
-                      <td className="px-3 py-2 text-center">
-                        {line.link_anh_can_thuc_te ? (
-                          <button
-                            type="button"
-                            onClick={() => window.open(line.link_anh_can_thuc_te as string, '_blank')}
-                            className="text-blue-600 hover:text-blue-800 font-semibold"
-                            title="Xem ảnh số cân"
-                          >
-                            <FileText className="h-4 w-4 mx-auto" />
-                          </button>
-                        ) : (
-                          <span className="text-zinc-300">—</span>
-                        )}
-                      </td>
+                      {SHOW_NVL_ACTUAL_WEIGHT_IMAGE ? (
+                        <td className="px-3 py-2 text-center">
+                          {line.link_anh_can_thuc_te ? (
+                            <button
+                              type="button"
+                              onClick={() => window.open(line.link_anh_can_thuc_te as string, '_blank')}
+                              className="text-blue-600 hover:text-blue-800 font-semibold"
+                              title="Xem ảnh số cân"
+                            >
+                              <FileText className="h-4 w-4 mx-auto" />
+                            </button>
+                          ) : (
+                            <span className="text-zinc-300">—</span>
+                          )}
+                        </td>
+                      ) : null}
                     </tr>
                     );
                   })}

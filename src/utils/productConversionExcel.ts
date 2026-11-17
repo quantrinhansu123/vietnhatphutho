@@ -34,7 +34,7 @@ export const PRODUCT_CONVERSION_EXCEL_HEADERS = [
 const HEADER_ALIASES: Record<keyof Omit<ProductConversionExcelRow, 'rowNumber'>, string[]> = {
   amisCode: ['ma amis', 'ma_amis', 'amis code', 'amis' , 'Mã amis'],
   productName: ['ten san pham', 'ten_san_pham', 'product name', 'ten sp'],
-  productionName: ['ten san xuat', 'ten_san_xuat', 'production name', 'ten sx'],
+  productionName: ['ten san xuat moi', 'ten san xuat', 'ten_san_xuat', 'production name', 'ten sx'],
   sheetWidthM: ['kho tam rong', 'kho_tam_rong', 'sheet width', 'tam rong'],
   sheetLengthM: ['kho tam dai', 'kho_tam_dai', 'sheet length', 'tam dai'],
   rollWidthM: ['kho cuon rong', 'kho_cuon_rong', 'roll width', 'cuon rong'],
@@ -72,9 +72,49 @@ function findColumn(headers: string[], aliases: string[]) {
   );
 }
 
+function sheetHasConversionHeaders(headers: string[]) {
+  const hasAmis = findColumn(headers, HEADER_ALIASES.amisCode) >= 0;
+  const hasWeight =
+    findColumn(headers, HEADER_ALIASES.kgPerSheet) >= 0
+    || findColumn(headers, HEADER_ALIASES.kgPerRoll) >= 0
+    || findColumn(headers, HEADER_ALIASES.kgPerLinearM) >= 0
+    || findColumn(headers, HEADER_ALIASES.kgPerM2) >= 0;
+  return hasAmis && hasWeight;
+}
+
+function pickConversionSheet(workbook: XLSX.WorkBook): XLSX.WorkSheet | null {
+  const preferred = workbook.SheetNames.find(name => {
+    const key = normalizeHeader(name);
+    return key.includes('quy doi') || key.includes('bang quy doi') || key.includes('import quy doi');
+  });
+  if (preferred && workbook.Sheets[preferred]) {
+    const matrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[preferred], {
+      header: 1,
+      defval: '',
+      raw: false
+    }) as unknown[][];
+    const headers = (matrix[0] || []).map(normalizeHeader);
+    if (sheetHasConversionHeaders(headers)) return workbook.Sheets[preferred];
+  }
+
+  for (const name of workbook.SheetNames) {
+    const sheet = workbook.Sheets[name];
+    if (!sheet) continue;
+    const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+      header: 1,
+      defval: '',
+      raw: false
+    }) as unknown[][];
+    const headers = (matrix[0] || []).map(normalizeHeader);
+    if (sheetHasConversionHeaders(headers)) return sheet;
+  }
+
+  return workbook.Sheets[workbook.SheetNames[0]] || null;
+}
+
 export async function parseProductConversionExcel(file: File): Promise<ProductConversionExcelRow[]> {
   const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const sheet = pickConversionSheet(workbook);
   if (!sheet) return [];
 
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {

@@ -51,6 +51,10 @@ export interface OrderProductLine {
   soLuongBac?: string;
   soLuongTrung?: string;
   soLuongNam?: string;
+  /** KHSX: SL gốc lệnh (đối chiếu); `quantity` = SL kế hoạch ngày. */
+  soLuongLenh?: string;
+  /** KHSX: đã SX (gợi ý từ sổ trộn, cho sửa tay). */
+  soLuongDaSx?: string;
 }
 
 export function isUuidLike(val?: string | null): boolean {

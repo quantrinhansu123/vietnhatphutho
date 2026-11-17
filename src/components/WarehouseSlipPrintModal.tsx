@@ -93,6 +93,8 @@ export type WarehouseSlipPrintLine = {
 export type WarehouseSlipPrintData = {
   slipCode: string;
   slipType: 'nhap' | 'xuat';
+  /** Loại nghiệp vụ cụ thể (vd. nhập mua ngoài, xuất theo máy/PTĐM). */
+  slipCategory?: string;
   warehouseKind: 'nvl' | 'san_pham' | 'tai_che' | 'hang_hong' | 'hang_hoa' | 'cong_cu_dung_cu' | 'gia_cong';
   slipDate: string;
   reason: string;
@@ -239,6 +241,7 @@ export function mergeWarehousePrintSlips(slips: WarehouseSlipPrintData[]): Wareh
   return {
     ...first,
     slipCode: joinUniquePrintValues(slips.map(slip => slip.slipCode)),
+    slipCategory: joinUniquePrintValues(slips.map(slip => slip.slipCategory)),
     slipDate: first.slipDate,
     reason: joinUniquePrintValues(slips.map(slip => slip.reason)),
     note: joinUniquePrintValues(slips.map(slip => slip.note)),
@@ -462,6 +465,11 @@ function NhapKhoPrintBody({ data }: { data: WarehouseSlipPrintData }) {
       </div>
 
       <div className="warehouse-nhap-kho-print-meta">
+        {data.slipCategory ? (
+          <p>
+            <span>- Loại phiếu:</span> {data.slipCategory}
+          </p>
+        ) : null}
         <p>
           <span>- Họ và tên người giao:</span> {deliverer || '.................................................................'}
         </p>
@@ -583,6 +591,11 @@ function NvlExportPrintBody({ data }: { data: WarehouseSlipPrintData }) {
         <p>
           <strong>Số phiếu:</strong> {data.slipCode || ''}
         </p>
+        {data.slipCategory ? (
+          <p>
+            <strong>Loại phiếu:</strong> {data.slipCategory}
+          </p>
+        ) : null}
         <p>
           <strong>Ngày:</strong> {formatSlipDateShort(data.slipDate)}
         </p>
@@ -732,6 +745,11 @@ export function WarehouseSlipPrintSheet({ data }: { data: WarehouseSlipPrintData
         ) : (
           <>
             <div className="warehouse-slip-print-meta">
+              {printData.slipCategory ? (
+                <p>
+                  <strong>Loại phiếu:</strong> {printData.slipCategory}
+                </p>
+              ) : null}
               <p>
                 <strong>Số phiếu:</strong> {printData.slipCode || '-'}
               </p>

@@ -1,9 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Copy, Loader2, Pencil, Plus, Printer, Save, Search, Trash2, X } from 'lucide-react';
+import { Copy, Layers3, Loader2, Pencil, Plus, Printer, Save, Search, Trash2, X } from 'lucide-react';
 import { useTabAccess } from '../app/useTabAccess';
 import { RowActionsMenu } from './shared/table';
 import { SearchableSelect } from './shared/SearchableSelect';
 import SearchableMultiSelect from './SearchableMultiSelect';
+import MixingNormProductGroupModal, {
+  type MixingNormGroupAddPayload,
+  type MixingNormGroupProduct
+} from './MixingNormProductGroupModal';
 import {
   normalizeMixingProductionOrders,
   isMixingDoneOrderStatus,
@@ -160,6 +164,18 @@ type ProductOption = {
   totalWeight?: number | null;
   wastePercent?: number;
   nhomVthh?: string;
+  mang?: string;
+  hangPhe?: string;
+  doLi?: string;
+  zem?: string;
+  dinhMucKg?: string;
+  doDaiM?: string;
+  mau?: string;
+  tcmb?: boolean | string;
+  tcmn?: string;
+  giaRe?: string;
+  np?: string;
+  off?: string;
   nplItems?: MixingBomItem[];
   /** Khóa chọn: `san_pham_id` hoặc `san_pham_id§biến thể` khi cùng SP có nhiều tên ghép/ghi chú. */
   selectionKey?: string;
@@ -543,6 +559,18 @@ function normalizeCatalogProducts(data: unknown): ProductOption[] {
       totalWeight: parseNumberOrNull(row.tong_trong_luong ?? row.totalWeight),
       wastePercent: parseNumberOrNull(row.ty_le_hao_hut ?? row.wastePercent) ?? 0,
       nhomVthh: String(row.nhom_vthh ?? row.group ?? '').trim(),
+      mang: String(row.mang ?? '').trim(),
+      hangPhe: String(row.hang_phe ?? row.hangPhe ?? '').trim(),
+      doLi: String(row.do_li ?? row.doLi ?? '').trim(),
+      zem: String(row.zem ?? '').trim(),
+      dinhMucKg: String(row.dinh_muc_kg ?? row.dinhMucKg ?? '').trim(),
+      doDaiM: String(row.do_dai_m ?? row.doDaiM ?? '').trim(),
+      mau: String(row.mau ?? '').trim(),
+      tcmb: row.tcmb === true || row.tcmb === 'TCMB' || row.tcmb === 'true' ? true : String(row.tcmb ?? '').trim(),
+      tcmn: String(row.tcmn ?? '').trim(),
+      giaRe: String(row.gia_re ?? row.giaRe ?? '').trim(),
+      np: String(row.np ?? '').trim(),
+      off: String(row.off ?? '').trim(),
       // This screen does not autofill BOMs. Avoid parsing a potentially large
       // JSON payload for every catalog row just to render the picker.
       nplItems: []
@@ -1265,6 +1293,8 @@ export default function MixingNormMaterialsTab() {
   const [form, setForm] = useState<NormForm>(emptyForm);
   const [printDocs, setPrintDocs] = useState<MixingNormRatioPrintDoc[]>([]);
   const [pendingPrint, setPendingPrint] = useState(false);
+  /** Key block SP đang mở modal chọn nhanh theo nhóm (rỗng = đóng). */
+  const [productGroupTargetKey, setProductGroupTargetKey] = useState('');
 
   const mainMaterialOptions = useMemo(
     () => pickPreferredMainMaterials(materials),
@@ -2330,6 +2360,313 @@ export default function MixingNormMaterialsTab() {
     setForm(prev => ({ ...prev, products: [...prev.products, emptyProduct()] }));
   };
 
+  /** SP đã có trên phiếu (đã Add / chọn tay) — vẫn hiện trong modal, đánh dấu. */
+  const usedProductKeysOnForm = useMemo(() => {
+    const keys = new Set<string>();
+    for (const product of form.products) {
+      product.maSpIds.forEach(id => {
+        const trimmed = String(id || '').trim();
+        if (trimmed) {
+          keys.add(trimmed);
+          keys.add(baseProductId(trimmed));
+        }
+      });
+      product.maSpCodes.forEach(code => {
+        const trimmed = code.trim();
+        if (trimmed) keys.add(normalizeProductLookupKey(trimmed));
+      });
+    }
+    return keys;
+  }, [form.products]);
+
+  /** SP đang gắn trên block mở modal — tick sẵn giống lúc chọn. */
+  const preselectedProductKeysForModal = useMemo(() => {
+    const keys = new Set<string>();
+    const target = form.products.find(item => item.key === productGroupTargetKey);
+    if (!target) return keys;
+    target.maSpIds.forEach(id => {
+      const trimmed = String(id || '').trim();
+      if (trimmed) {
+        keys.add(trimmed);
+        keys.add(baseProductId(trimmed));
+      }
+    });
+    target.maSpCodes.forEach(code => {
+      const trimmed = code.trim();
+      if (trimmed) keys.add(normalizeProductLookupKey(trimmed));
+    });
+    return keys;
+  }, [form.products, productGroupTargetKey]);
+
+  const optionMatchesKeySet = (option: ProductOption, keys: Set<string>) => {
+    if (!keys.size) return false;
+    const candidates = [
+      option.selectionKey,
+      option.id,
+      option.id ? baseProductId(option.id) : '',
+      normalizeProductLookupKey(option.code)
+    ]
+      .map(value => String(value || '').trim())
+      .filter(Boolean);
+    return candidates.some(key => keys.has(key));
+  };
+
+  const groupModalProducts = useMemo((): MixingNormGroupProduct[] => {
+    // Chỉ hiện SP của block đang mở + SP chưa gắn block nào.
+    // SP đã chọn ở block khác → ẩn.
+    return productOptions
+      .filter(option => {
+        const onThisBlock = optionMatchesKeySet(option, preselectedProductKeysForModal);
+        const usedElsewhere =
+          optionMatchesKeySet(option, usedProductKeysOnForm) && !onThisBlock;
+        return !usedElsewhere;
+      })
+      .map(option => {
+        const catalog = option.id ? catalogProductsById.get(option.id) : undefined;
+        return {
+          key: option.selectionKey || option.id || option.code,
+          id: option.id,
+          code: option.code,
+          amisCode: option.amisCode || catalog?.amisCode,
+          name: option.name,
+          tenSanXuat: option.tenSanXuat || catalog?.tenSanXuat,
+          tenGhep: option.tenGhep || catalog?.tenGhep,
+          nhomVthh: option.nhomVthh || catalog?.nhomVthh,
+          mang: option.mang || catalog?.mang,
+          hangPhe: option.hangPhe || catalog?.hangPhe,
+          doLi: option.doLi || catalog?.doLi,
+          zem: option.zem || catalog?.zem,
+          dinhMucKg: option.dinhMucKg || catalog?.dinhMucKg,
+          doDaiM: option.doDaiM || catalog?.doDaiM,
+          mau: option.mau || catalog?.mau,
+          tcmb: option.tcmb ?? catalog?.tcmb,
+          tcmn: option.tcmn || catalog?.tcmn,
+          giaRe: option.giaRe || catalog?.giaRe,
+          np: option.np || catalog?.np,
+          off: option.off || catalog?.off,
+          linePrefix: option.linePrefix,
+          selectionKey: option.selectionKey
+        };
+      });
+  }, [productOptions, catalogProductsById, usedProductKeysOnForm, preselectedProductKeysForModal]);
+
+  const openProductGroupModal = (productKey: string) => {
+    if (selectedOrders.length === 0) {
+      setError('Chọn lệnh SX trước khi chọn nhanh sản phẩm theo nhóm.');
+      setErrorProductKey(productKey);
+      return;
+    }
+    if (productOptions.length === 0) {
+      setError('Lệnh SX chưa có sản phẩm để gom nhóm.');
+      setErrorProductKey(productKey);
+      return;
+    }
+    setError('');
+    setErrorProductKey('');
+    setProductGroupTargetKey(productKey);
+  };
+
+  const resolveGroupProductsToOptions = (items: MixingNormGroupProduct[]): ProductOption[] =>
+    items
+      .map(item => productOptionsById.get(item.selectionKey || item.id || item.key) || productOptionsById.get(item.id))
+      .filter((item): item is ProductOption => Boolean(item));
+
+  /** Gỡ SP khỏi các block khác khi gắn vào block đích (tránh trùng mã trên phiếu). */
+  const stripProductIdsFromOtherBlocks = (
+    products: ProductForm[],
+    targetKey: string,
+    takenIds: Set<string>
+  ): ProductForm[] => {
+    if (takenIds.size === 0) return products;
+    return products.map(product => {
+      if (product.key === targetKey) return product;
+      const keepIndexes = product.maSpIds
+        .map((id, index) => {
+          const key = (id || '').trim();
+          const base = key ? baseProductId(key) : '';
+          const codeKey = normalizeProductLookupKey(product.maSpCodes[index] || '');
+          if ((key && takenIds.has(key)) || (base && takenIds.has(base)) || (codeKey && takenIds.has(codeKey))) {
+            return -1;
+          }
+          return index;
+        })
+        .filter(index => index >= 0);
+      if (keepIndexes.length === product.maSpIds.length) return product;
+      const codes = keepIndexes.map(index => product.maSpCodes[index]).filter(Boolean);
+      const ids = keepIndexes.map(index => product.maSpIds[index]);
+      if (codes.length === 0) {
+        return {
+          ...product,
+          maSpCodes: [],
+          maSpIds: [],
+          maSp: '',
+          soLuongGoc: '',
+          tongTrongLuong: '',
+          soLuongTuDong: true
+        };
+      }
+      const rebuilt = buildMergedProductFromCodes(codes, ids);
+      return {
+        ...rebuilt,
+        key: product.key,
+        tenSp: product.tenSp,
+        dinhLuongCoi: product.dinhLuongCoi,
+        ghiChu: product.ghiChu,
+        lines: product.lines,
+        nvlFilled: product.nvlFilled
+      };
+    });
+  };
+
+  /** Tick nhóm / tick từng SP trong modal → gắn vào block SP đang mở. */
+  const applyGroupedProductsToForm = (payload: MixingNormGroupAddPayload) => {
+    const targetKey = productGroupTargetKey;
+
+    if (payload.mode === 'products') {
+      const selected = resolveGroupProductsToOptions(payload.products);
+      if (selected.length === 0) {
+        setError('Sản phẩm đã chọn không còn hợp lệ.');
+        setErrorProductKey(targetKey);
+        return;
+      }
+      const codes = selected.map(item => item.code.trim()).filter(Boolean);
+      const ids = resolveValidProductIds(
+        codes,
+        selected.map(item => (item.selectionKey || item.id || '').trim())
+      );
+      const rebuilt = buildMergedProductFromCodes(codes, ids);
+      const takenIds = new Set<string>();
+      ids.forEach(id => {
+        const trimmed = id.trim();
+        if (!trimmed) return;
+        takenIds.add(trimmed);
+        takenIds.add(baseProductId(trimmed));
+      });
+      codes.forEach(code => {
+        const key = normalizeProductLookupKey(code);
+        if (key) takenIds.add(key);
+      });
+
+      setForm(prev => {
+        const index = prev.products.findIndex(item => item.key === targetKey);
+        if (index < 0) {
+          return { ...prev, products: [...prev.products, { ...rebuilt, tenSp: '' }] };
+        }
+        const current = prev.products[index];
+        const currentHasNvl = current.lines.some(line => line.maNvl.trim() || line.tenNvl.trim());
+        const keepLines = current.nvlFilled || currentHasNvl;
+        const mergedCodes = [...current.maSpCodes];
+        const mergedIds = [...current.maSpIds];
+        codes.forEach((code, codeIndex) => {
+          const id = ids[codeIndex] || '';
+          const already = mergedIds.some(
+            (existing, existingIndex) =>
+              (id && (existing === id || baseProductId(existing) === baseProductId(id))) ||
+              normalizeProductLookupKey(mergedCodes[existingIndex] || '') === normalizeProductLookupKey(code)
+          );
+          if (already) return;
+          mergedCodes.push(code);
+          mergedIds.push(id);
+        });
+        const merged = buildMergedProductFromCodes(mergedCodes, mergedIds);
+        const filled: ProductForm = {
+          ...merged,
+          key: current.key,
+          tenSp: current.tenSp,
+          dinhLuongCoi: current.dinhLuongCoi,
+          ghiChu: current.ghiChu,
+          lines: keepLines ? current.lines : merged.lines,
+          nvlFilled: keepLines
+            ? current.nvlFilled || currentHasNvl
+            : merged.lines.some(line => line.maNvl.trim() || line.tenNvl.trim())
+        };
+        const nextProducts = [...prev.products];
+        nextProducts[index] = filled;
+        return {
+          ...prev,
+          products: stripProductIdsFromOtherBlocks(nextProducts, current.key, takenIds)
+        };
+      });
+      setProductGroupTargetKey('');
+      setError('');
+      setErrorProductKey('');
+      setMessage(`Đã thêm ${selected.length} sản phẩm vào SP đang chọn.`);
+      return;
+    }
+
+    const blocks = payload.groups
+      .map(group => {
+        const selected = resolveGroupProductsToOptions(group.products);
+        if (selected.length === 0) return null;
+        const codes = selected.map(item => item.code.trim()).filter(Boolean);
+        const ids = resolveValidProductIds(
+          codes,
+          selected.map(item => (item.selectionKey || item.id || '').trim())
+        );
+        const rebuilt = buildMergedProductFromCodes(codes, ids);
+        return {
+          ...rebuilt,
+          tenSp: group.category.label
+        };
+      })
+      .filter((item): item is ProductForm => Boolean(item));
+
+    if (blocks.length === 0) {
+      setError('Nhóm đã chọn không còn sản phẩm hợp lệ.');
+      setErrorProductKey(targetKey);
+      return;
+    }
+
+    const takenIds = new Set<string>();
+    blocks.forEach(block => {
+      block.maSpIds.forEach(id => {
+        const trimmed = id.trim();
+        if (!trimmed) return;
+        takenIds.add(trimmed);
+        takenIds.add(baseProductId(trimmed));
+      });
+      block.maSpCodes.forEach(code => {
+        const key = normalizeProductLookupKey(code);
+        if (key) takenIds.add(key);
+      });
+    });
+
+    setForm(prev => {
+      const index = prev.products.findIndex(item => item.key === targetKey);
+      if (index < 0) {
+        return { ...prev, products: stripProductIdsFromOtherBlocks([...prev.products, ...blocks], '', takenIds) };
+      }
+      const current = prev.products[index];
+      const currentHasNvl = current.lines.some(line => line.maNvl.trim() || line.tenNvl.trim());
+      const keepLines = current.nvlFilled || currentHasNvl;
+      const [first, ...rest] = blocks;
+      const filledFirst: ProductForm = {
+        ...first,
+        key: current.key,
+        dinhLuongCoi: current.dinhLuongCoi,
+        ghiChu: current.ghiChu,
+        lines: keepLines ? current.lines : first.lines,
+        nvlFilled: keepLines
+          ? current.nvlFilled || currentHasNvl
+          : first.lines.some(line => line.maNvl.trim() || line.tenNvl.trim())
+      };
+      const nextProducts = [...prev.products];
+      nextProducts.splice(index, 1, filledFirst, ...rest);
+      return {
+        ...prev,
+        products: stripProductIdsFromOtherBlocks(nextProducts, current.key, takenIds)
+      };
+    });
+    setProductGroupTargetKey('');
+    setError('');
+    setErrorProductKey('');
+    setMessage(
+      blocks.length === 1
+        ? `Đã gắn nhóm “${blocks[0].tenSp}” vào SP đang chọn.`
+        : `Đã gắn ${blocks.length} nhóm vào phiếu (SP hiện tại + ${blocks.length - 1} block mới).`
+    );
+  };
+
   /**
    * Bấm "Thêm sản phẩm" ở NVL phụ: tự điền + chọn các sản phẩm đã chọn ở
    * block sản phẩm chính cùng vị trí (block phụ #N lấy SP của block chính #N).
@@ -3276,9 +3613,9 @@ export default function MixingNormMaterialsTab() {
       </section>
 
       {showForm && (canCreate || (canEdit && editingId)) ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="max-h-[94vh] w-full max-w-7xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:rounded-2xl">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+        <div className="fixed inset-0 z-50 flex bg-zinc-950/40 p-0 backdrop-blur-sm">
+          <div className="flex h-full max-h-none w-full max-w-none flex-col overflow-hidden rounded-none border-0 bg-white shadow-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3 sm:px-5">
               <h3 className="text-sm font-black uppercase tracking-wider text-zinc-950">
                 {copySourceTitle || (editingId ? 'Sửa phiếu trộn định mức' : 'Thêm phiếu trộn định mức')}
               </h3>
@@ -3291,7 +3628,7 @@ export default function MixingNormMaterialsTab() {
               </button>
             </div>
 
-            <div className="space-y-4 p-4">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
               {error && !errorProductKey ? (
                 <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
                   {error}
@@ -3375,7 +3712,7 @@ export default function MixingNormMaterialsTab() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs font-black uppercase tracking-wider text-zinc-500">
                   Sản phẩm ({form.products.length})
                   {selectedOrders.length > 0 ? ` · theo ${selectedOrders.map(order => order.orderCode).join(', ')}` : ''}
@@ -3392,7 +3729,7 @@ export default function MixingNormMaterialsTab() {
 
               {!hasAnyProduct ? (
                 <p className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-3 py-4 text-center text-xs font-bold text-zinc-500">
-                  Thêm sản phẩm → chọn mã SP → tự thêm NVL chính (không tự điền từ danh mục).
+                  Thêm sản phẩm → Chọn nhanh theo nhóm để gắn SP vào từng block.
                 </p>
               ) : null}
 
@@ -3417,39 +3754,37 @@ export default function MixingNormMaterialsTab() {
                     },
                     { gia: 0, percent: 0, kg: 0, hasGia: product.lines.some(line => parseNumberOrNull(line.giaTri) !== null) }
                   );
-                  const takenByOthers = new Set<string>();
-                  selectedLookupKeysByProduct.forEach((keys, key) => {
-                    if (key === product.key) return;
-                    keys.forEach(item => takenByOthers.add(item));
-                  });
-                  const takenHere = selectedLookupKeysByProduct.get(product.key) ?? new Set<string>();
-                  const selectedCodes = new Set(productIdentityKeys(product));
-                  const pickerOptions = productOptions.filter(option => {
-                    const identity = option.selectionKey || option.id;
-                    if (takenByOthers.has(identity)) return false;
-                    const selectedOnThisRow = selectedCodes.has(identity);
-                    if (!selectedOnThisRow && takenHere.has(identity)) return false;
-                    return true;
-                  });
+                  const selectedProductOptions = resolveProductOptionsForCodes(product.maSpCodes, product.maSpIds);
                   return (
                     <div
                       key={product.key}
                       className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 shadow-sm"
                     >
-                      <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                         <p className="text-xs font-black uppercase tracking-wider text-zinc-600">
                           SP #{productIndex + 1}
                           {product.maSp ? ` · ${product.maSp}` : ''}
                         </p>
-                        <button
-                          type="button"
-                          onClick={() => removeProduct(product.key)}
-                          disabled={form.products.length <= 1}
-                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 text-[11px] font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-40"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          Xóa SP
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openProductGroupModal(product.key)}
+                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-[11px] font-extrabold text-amber-800 hover:bg-amber-100"
+                            title="Chọn nhanh theo nhóm cho SP này"
+                          >
+                            <Layers3 className="h-3.5 w-3.5" />
+                            Chọn nhanh theo nhóm
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeProduct(product.key)}
+                            disabled={form.products.length <= 1}
+                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 text-[11px] font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-40"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Xóa SP
+                          </button>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -3460,27 +3795,42 @@ export default function MixingNormMaterialsTab() {
                             </span>
                           ) : null}
                           <span className="text-[11px] font-bold text-zinc-500">
-                            Mã sản phẩm (có thể chọn nhiều SP dùng chung 1 công thức trộn)
+                            Sản phẩm đã chọn ({selectedProductOptions.length})
                           </span>
-                          <SearchableMultiSelect<ProductOption>
-                            values={resolveProductOptionsForCodes(product.maSpCodes, product.maSpIds)}
-                            onChange={selected => updateProductCodes(product.key, selected)}
-                            options={pickerOptions}
-                            getValue={option => option.selectionKey || option.id || option.code}
-                            getLabel={productLabel}
-                            getSearchText={productSearchText}
-                            allowCustomValues={false}
-                            hideSelectedFromList
-                            openUpward
-                            placeholder={
-                              pickerOptions.length || product.maSpCodes.length
-                                ? 'Tìm mã SP...'
-                                : productOptions.length
-                                  ? 'Đã chọn hết SP của lệnh SX'
-                                  : 'Chưa có sản phẩm — kiểm tra lệnh SX'
-                            }
-                            inputClassName={inputClass}
-                          />
+                          {selectedProductOptions.length === 0 ? (
+                            <p className="rounded-lg border border-dashed border-amber-300 bg-amber-50/60 px-3 py-2.5 text-[11px] font-semibold text-amber-800">
+                              Chưa có SP — bấm <strong>Chọn nhanh theo nhóm</strong> để thêm.
+                            </p>
+                          ) : (
+                            <ul className="flex flex-wrap gap-1.5">
+                              {selectedProductOptions.map(option => {
+                                const valueKey = option.selectionKey || option.id || option.code;
+                                return (
+                                  <li
+                                    key={valueKey}
+                                    className="inline-flex max-w-full items-start gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-[11px] font-semibold text-zinc-800"
+                                  >
+                                    <span className="min-w-0 flex-1 leading-snug">{productLabel(option)}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateProductCodes(
+                                          product.key,
+                                          selectedProductOptions.filter(
+                                            item => (item.selectionKey || item.id || item.code) !== valueKey
+                                          )
+                                        )
+                                      }
+                                      className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-zinc-400 hover:bg-rose-50 hover:text-rose-600"
+                                      title="Bỏ sản phẩm này"
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </button>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
                         </div>
                         <label className="space-y-1 sm:col-span-2">
                           <span className="text-[11px] font-bold text-zinc-500">
@@ -3572,25 +3922,25 @@ export default function MixingNormMaterialsTab() {
 
                       {showNvlEditor ? (
                         <div className="mt-3 overflow-x-auto pb-2">
-                          <div className="w-full min-w-[760px] rounded-lg border border-[#ef1b2d]/20 bg-red-50/50 p-2">
+                          <div className="w-full min-w-[920px] rounded-lg border border-[#ef1b2d]/20 bg-red-50/50 p-2.5">
                             <div className="mb-2 flex items-center justify-between gap-2">
-                              <p className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                              <p className="text-xs font-black uppercase tracking-wider text-zinc-600 sm:text-sm">
                                 Cối trộn mẫu tiêu chuẩn · {formatKhoiLuongDisplay(standardBatch)}
                                 {mixingRoundCount > 0 ? ` · Cần trộn ~${mixingRoundCount} cối` : ''}
                               </p>
                               <button
                                 type="button"
                                 onClick={() => addLine(product.key)}
-                                className="inline-flex h-7 items-center gap-1 rounded-lg border border-[#ef1b2d]/20 bg-white px-2 text-[10px] font-extrabold text-[#ef1b2d] hover:bg-red-100"
+                                className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d]/20 bg-white px-2.5 text-xs font-extrabold text-[#ef1b2d] hover:bg-red-100"
                               >
-                                <Plus className="h-3 w-3" />
+                                <Plus className="h-3.5 w-3.5" />
                                  Thêm NVL chính
                               </button>
                             </div>
-                            <p className="mb-1.5 hidden text-[9px] font-bold text-zinc-400 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_56px_40px_56px_56px_72px_30px] sm:gap-1 sm:px-1">
+                            <p className="mb-1.5 hidden text-[11px] font-bold uppercase tracking-wide text-zinc-500 sm:grid sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1.05fr)_64px_56px_56px_72px_32px] sm:gap-1.5 sm:px-1">
                               <span>Mã NVL - Tên NVL</span>
                               <span>Tên NVL sản xuất</span>
-                              <span>Giá trị (kg/cối trộn mẫu)</span>
+                              <span>Giá trị (kg/cối)</span>
                               <span>% Cối trộn</span>
                               <span>% Tổng SL</span>
                               <span>Tổng trọng lượng</span>
@@ -3608,18 +3958,21 @@ export default function MixingNormMaterialsTab() {
                                 return (
                                   <div
                                     key={line.key}
-                                    className="grid grid-cols-1 gap-1 rounded-lg border border-zinc-200 bg-white p-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_56px_40px_56px_56px_72px_30px]"
+                                    className="grid grid-cols-1 gap-1.5 rounded-lg border border-zinc-200 bg-white p-2 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1.05fr)_64px_56px_56px_72px_32px]"
                                   >
                                     <SearchableSelect
                                       value={materialSelectValue(line)}
                                       onChange={value => selectMaterialCode(product.key, line.key, value)}
                                       options={mainMaterialOptions}
-                                      placeholder={`Tìm mã hoặc tên NVL #${index + 1}`}
+                                      placeholder="Tìm NVL"
                                       getValue={item => (item as MaterialOption).id}
                                       getLabel={item => materialSelectedLabel(item as MaterialOption)}
                                       getOptionLabel={item => materialDropdownLabel(item as MaterialOption)}
-                                      getSearchText={item => `${(item as MaterialOption).code} ${(item as MaterialOption).name} ${(item as MaterialOption).productionName}`}
-                                      inputClassName={inputClass}
+                                      getSearchText={item => {
+                                        const m = item as MaterialOption;
+                                        return `${m.code} ${m.name} ${m.productionName}`;
+                                      }}
+                                      inputClassName={`${inputClass} text-[13px]`}
                                       openUpward
                                       showAllWhenQueryMatchesSelection
                                       selectedOptionClassName="bg-yellow-50 font-black text-yellow-800 ring-2 ring-inset ring-yellow-400"
@@ -3628,13 +3981,13 @@ export default function MixingNormMaterialsTab() {
                                       value={line.tenNvlSanXuat}
                                       onChange={value => updateLine(product.key, line.key, { tenNvlSanXuat: value })}
                                       options={getMaterialProductionNameOptions(line, mainMaterialOptions)}
-                                      placeholder="Chọn hoặc nhập tên NVL sản xuất"
+                                      placeholder="Tên NVL SX"
                                       allowCustomValue
                                       getValue={item => String(item)}
                                       getLabel={item => String(item)}
                                       getSearchText={item => String(item)}
                                       allowEmpty
-                                      inputClassName={inputClass}
+                                      inputClassName={`${inputClass} text-[13px]`}
                                       openUpward
                                       showAllWhenQueryMatchesSelection
                                       selectedOptionClassName="bg-yellow-50 font-black text-yellow-800 ring-2 ring-inset ring-yellow-400"
@@ -3646,7 +3999,7 @@ export default function MixingNormMaterialsTab() {
                                           giaTri: event.target.value
                                         })
                                       }
-                                      className={`${inputClass} h-8 px-1 text-[10px]`}
+                                      className={`${inputClass} px-2 text-center text-[13px] font-bold`}
                                       placeholder={line.donVi === '%' ? '%' : 'kg'}
                                       inputMode="decimal"
                                       title="Giá trị NVL cho 1 cối trộn mẫu tiêu chuẩn"
@@ -3654,26 +4007,26 @@ export default function MixingNormMaterialsTab() {
                                     <input
                                       value={ty_le_coi === null ? '' : `${ty_le_coi}%`}
                                       readOnly
-                                      className={`${inputClass} h-8 bg-zinc-50 px-1 text-[10px] font-black text-zinc-700`}
+                                      className={`${inputClass} bg-zinc-50 px-2 text-center text-[13px] font-black text-zinc-700`}
                                       title="% Cối trộn = giá trị (kg) / Định lượng 1 cối trộn mẫu tiêu chuẩn"
                                     />
                                     <input
                                       value={ty_le_tong === null ? '' : `${ty_le_tong}%`}
                                       readOnly
-                                      className={`${inputClass} h-8 bg-zinc-50 px-1 text-[10px] font-black text-zinc-700`}
+                                      className={`${inputClass} bg-zinc-50 px-2 text-center text-[13px] font-black text-zinc-700`}
                                       title="% Tổng SL — bằng % Cối trộn vì tỷ lệ không đổi theo mẻ"
                                     />
                                     <input
                                       value={tong_khoi_luong === null ? '' : formatKhoiLuongDisplay(tong_khoi_luong)}
                                       readOnly
-                                      className={`${inputClass} h-8 bg-zinc-50 px-1 text-[10px] font-black text-[#ef1b2d]`}
+                                      className={`${inputClass} bg-zinc-50 px-2 text-center text-[13px] font-black text-[#ef1b2d]`}
                                       title="Tổng trọng lượng = % Tổng SL × Tổng SL sau hao hụt"
                                     />
                                     <button
                                       type="button"
                                       onClick={() => removeLine(product.key, line.key)}
                                       disabled={product.lines.length <= 1}
-                                      className="inline-flex h-8 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40"
+                                      className="inline-flex h-10 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40"
                                       title="Xóa dòng NVL"
                                     >
                                       <Trash2 className="h-4 w-4" />
@@ -3682,15 +4035,15 @@ export default function MixingNormMaterialsTab() {
                                 );
                               })}
                               {lineTotals.hasGia ? (
-                                <div className="grid grid-cols-1 gap-1 rounded-lg border border-[#ef1b2d]/30 bg-red-50 px-1.5 py-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_56px_40px_56px_56px_72px_30px]">
-                                  <span className="flex items-center text-[10px] font-black uppercase tracking-wide text-zinc-700">Tổng</span>
+                                <div className="grid grid-cols-1 gap-1.5 rounded-lg border border-[#ef1b2d]/30 bg-red-50 px-2 py-1.5 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1.05fr)_64px_56px_56px_72px_32px]">
+                                  <span className="flex items-center text-xs font-black uppercase tracking-wide text-zinc-700">Tổng</span>
                                   <span />
-                                  <span className="text-right text-[10px] font-black text-zinc-800">
+                                  <span className="text-center text-[13px] font-black text-zinc-800">
                                     {new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(lineTotals.gia)}
                                   </span>
-                                  <span className="text-right text-[10px] font-black text-zinc-700">{roundPercent(lineTotals.percent)}%</span>
-                                  <span className="text-right text-[10px] font-black text-zinc-700">{roundPercent(lineTotals.percent)}%</span>
-                                  <span className="text-right text-[10px] font-black text-[#ef1b2d]">
+                                  <span className="text-center text-[13px] font-black text-zinc-700">{roundPercent(lineTotals.percent)}%</span>
+                                  <span className="text-center text-[13px] font-black text-zinc-700">{roundPercent(lineTotals.percent)}%</span>
+                                  <span className="text-center text-[13px] font-black text-[#ef1b2d]">
                                     {formatKhoiLuongDisplay(lineTotals.kg)}
                                   </span>
                                   <span />
@@ -3862,11 +4215,14 @@ export default function MixingNormMaterialsTab() {
                                         value={materialSelectValue(line, secondaryMaterialOptions)}
                                         onChange={value => selectSecondaryMaterialCode(product.key, line.key, value)}
                                         options={filteredOptions}
-                                        placeholder={'Tìm NVL phụ #' + (index + 1)}
+                                        placeholder={'Tìm NVL phụ #' + (index + 1) + ' (vd: Hưng Yên, Phế)'}
                                         getValue={item => (item as MaterialOption).id}
                                         getLabel={item => materialSelectedLabel(item as MaterialOption)}
                                         getOptionLabel={item => materialDropdownLabel(item as MaterialOption)}
-                                        getSearchText={item => (item as MaterialOption).code + ' ' + (item as MaterialOption).name + ' ' + (item as MaterialOption).productionName + ' ' + ((item as MaterialOption).nhomVatTuPhu || '')}
+                                        getSearchText={item => {
+                                          const m = item as MaterialOption;
+                                          return `${m.code} ${m.name} ${m.productionName} ${m.nhomVatTuPhu || ''}`;
+                                        }}
                                         inputClassName={inputClass}
                                         openUpward
                                         showAllWhenQueryMatchesSelection
@@ -3974,7 +4330,7 @@ export default function MixingNormMaterialsTab() {
               </section>
             </div>
 
-            <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3">
+            <div className="flex shrink-0 items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-3 sm:px-5">
               <button
                 type="button"
                 onClick={closeForm}
@@ -3999,6 +4355,15 @@ export default function MixingNormMaterialsTab() {
           </div>
         </div>
       ) : null}
+
+      <MixingNormProductGroupModal
+        open={Boolean(productGroupTargetKey)}
+        products={groupModalProducts}
+        usedProductKeys={usedProductKeysOnForm}
+        preselectedProductKeys={preselectedProductKeysForModal}
+        onClose={() => setProductGroupTargetKey('')}
+        onAdd={applyGroupedProductsToForm}
+      />
 
       {printDocs.length > 0 ? <MixingNormRatioPrintBatch docs={printDocs} /> : null}
     </div>

@@ -22,7 +22,7 @@ from (
         nullif(btrim(mang), ''),
         nullif(btrim(do_li), ''),
         nullif(btrim(do_li_dm), ''),
-        nullif(btrim(do_day_m), ''),
+        nullif(btrim(kho_rong), ''),
         nullif(btrim(do_dai_m), '')
       ),
       ''

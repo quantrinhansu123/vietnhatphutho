@@ -6,13 +6,15 @@ import { VnCalendarPicker } from '../so-che-do-may';
 import { TongHopViewModal } from './ViewModal';
 import {
   formatTongHopDate,
-  isNvlWarehouseName,
+  formatDotSoLabel,
+  normalizeDotSo,
+  DOT_SAN_XUAT_OPTIONS,
   queueTongHopEdit,
   queueTongHopView,
   type TongHopHeader,
   type TongHopMode
 } from './model';
-import { roundKem, sumKemStored } from './chiPhiKemTheo';
+import { slipsFromTongHopRecord } from './printSlips';
 import {
   buildPartyAliasKind,
   collectLineTokens,
@@ -35,54 +37,7 @@ function statusLabel(status: string) {
 }
 
 function slipsFromRecord(row: TongHopHeader): WarehouseSlipPrintData[] {
-  const detail = Array.isArray(row.chi_tiet) ? row.chi_tiet : [];
-  const groups = new Map<string, Array<Record<string, unknown>>>();
-  for (const line of detail) {
-    const key = String(line.kho_dong_ten || line.nguon_dong_ten || line.nguon_dong_id || row.kho_dich || 'Phiếu');
-    groups.set(key, [...(groups.get(key) || []), line]);
-  }
-  return [...groups.entries()].map(([name, groupLines], index) => {
-    const totalAmount = groupLines.reduce((sum, line) => sum + (Number(line.thanh_tien) || 0), 0);
-    const totalKem = roundKem(groupLines.reduce((sum, line) => sum + sumKemStored(line.chi_phi_kem_theo), 0));
-    const totalKg = roundKem(groupLines.reduce((sum, line) => sum + (Number(String(line.quy_doi_kg ?? '')) || 0), 0));
-    return {
-    slipCode: `${row.ma_phieu_chung}-${index + 1}`,
-    slipType: row.loai,
-    warehouseKind: isNvlWarehouseName(name) || row.dich_loai === 'may' ? 'nvl' : 'san_pham',
-    slipDate: formatTongHopDate(String(row.ngay || '').slice(0, 10)),
-    reason: row.ly_do || (row.loai === 'nhap' ? row.loai_nhap || '' : row.loai_xuat || ''),
-    note: row.ghi_chu || '',
-    createdBy: row.nguoi_lap || '',
-    deliverer: row.nguoi_giao || '',
-    warehouseLocation: row.dia_diem || '',
-    totalAmount,
-    totalKem,
-    totalCong: roundKem(totalAmount + totalKem),
-    totalKg,
-    shift: row.ca || '',
-    machine: row.dich_loai === 'may' ? row.dich_id || '' : '',
-    warehouseName: name,
-    useWarehouseNameInTitle: true,
-    isTemporary: false,
-    lines: groupLines.map(line => ({
-      code: String(line.ma_hang || ''),
-      name: String(line.ten_hang || ''),
-      unit: String(line.don_vi || ''),
-      quantity: Number(line.so_luong) || 0,
-      unitPrice: Number(line.don_gia) || 0,
-      lineAmount: Number(line.thanh_tien) || 0,
-      weightKg: Number(String(line.quy_doi_kg ?? '')) || null,
-      chiPhiKemTheo: (Array.isArray(line.chi_phi_kem_theo) ? line.chi_phi_kem_theo : []).map(item => {
-        const rowItem = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
-        return {
-          ten: String(rowItem.ten || ''),
-          donGia: Number(rowItem.don_gia) || 0,
-          thanhTien: Number(rowItem.thanh_tien) || 0
-        };
-      })
-    }))
-    };
-  });
+  return slipsFromTongHopRecord(row);
 }
 
 export function TongHopListPanel({
@@ -102,6 +57,7 @@ export function TongHopListPanel({
   const [viewOpen, setViewOpen] = useState(false);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [dotFilter, setDotFilter] = useState('');
   const [machineOptions, setMachineOptions] = useState<PickOption[]>([]);
   const [warehouseOptions, setWarehouseOptions] = useState<PickOption[]>([]);
   const [machines, setMachines] = useState<PickOption[]>([]);
@@ -229,6 +185,7 @@ export function TongHopListPanel({
     return records.filter(row => {
       if (from && text(row.ngay).slice(0, 10) < from.slice(0, 10)) return false;
       if (to && text(row.ngay).slice(0, 10) > to.slice(0, 10)) return false;
+      if (dotFilter && normalizeDotSo(row.dot_so) !== dotFilter) return false;
       if (!needParty) return true;
       const detail = Array.isArray(row.chi_tiet) ? row.chi_tiet : [];
       if (!detail.length) {
@@ -251,7 +208,7 @@ export function TongHopListPanel({
         )
       );
     });
-  }, [records, from, to, maySet, khoSet, aliasKind]);
+  }, [records, from, to, dotFilter, maySet, khoSet, aliasKind]);
 
   async function cancelRecord(row: TongHopHeader) {
     if (!window.confirm(`Hủy ${row.ma_phieu_chung}? Hệ thống sinh phiếu đảo.`)) return;
@@ -293,7 +250,7 @@ export function TongHopListPanel({
             </button>
           ))}
         </div>
-        <div className="grid items-end gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+        <div className="grid items-end gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
           <label className="block min-w-0 space-y-1">
             <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Từ ngày</span>
             <VnCalendarPicker value={from} onChange={setFrom} triggerClassName="min-h-10" />
@@ -332,6 +289,19 @@ export function TongHopListPanel({
               maxResults={100}
             />
           </div>
+          <label className="block min-w-0 space-y-1">
+            <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Đợt sản xuất</span>
+            <select
+              value={dotFilter}
+              onChange={event => setDotFilter(event.target.value)}
+              className="h-10 w-full rounded-lg border border-zinc-300 bg-white px-2 text-xs font-semibold text-zinc-700"
+            >
+              <option value="">Tất cả đợt</option>
+              {DOT_SAN_XUAT_OPTIONS.map(dot => (
+                <option key={dot} value={dot}>{formatDotSoLabel(dot)}</option>
+              ))}
+            </select>
+          </label>
           <div className="flex items-center">
             <button
               type="button"
@@ -348,7 +318,7 @@ export function TongHopListPanel({
           <p className="flex items-center gap-1.5 text-xs font-semibold text-zinc-500">
             {loading ? 'Đang tải phiếu…' : `${visibleRecords.length}/${records.length} phiếu`}
             <Search className="h-3.5 w-3.5" />
-            <span>Để trống ngày/kho/máy là lấy tất cả. Phiếu khớp khi có ≥1 dòng liên quan máy hoặc kho đã chọn.</span>
+            <span>Để trống ngày/đợt/kho/máy là lấy tất cả. Phiếu khớp khi có ≥1 dòng liên quan máy hoặc kho đã chọn.</span>
           </p>
         ) : null}
       </section>
@@ -365,7 +335,7 @@ export function TongHopListPanel({
 
       {loaded ? (
       <section className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
-        <table className="min-w-[860px] w-full text-xs">
+        <table className="min-w-[940px] w-full text-xs">
           <thead>
             <tr className="bg-[#ef1b2d] text-left text-white">
               <th className="px-3 py-2">Mã</th>
@@ -374,6 +344,7 @@ export function TongHopListPanel({
               <th className="px-3 py-2">Nguồn</th>
               <th className="px-3 py-2">Đích</th>
               <th className="px-3 py-2">Ca</th>
+              <th className="px-3 py-2">Đợt</th>
               <th className="px-3 py-2">Trạng thái</th>
               <th className="px-3 py-2" />
             </tr>
@@ -399,6 +370,7 @@ export function TongHopListPanel({
                 <td className="px-3 py-2">{row.nguon_id || '—'}</td>
                 <td className="px-3 py-2">{row.kho_dich || row.dich_id || '—'}</td>
                 <td className="px-3 py-2">{row.ca || '—'}</td>
+                <td className="px-3 py-2">{formatDotSoLabel(String(row.dot_so || '')) || '—'}</td>
                 <td className="px-3 py-2">{statusLabel(row.trang_thai)}</td>
                 <td className="px-3 py-2">
                   <div className="flex justify-end gap-2">
@@ -434,7 +406,7 @@ export function TongHopListPanel({
                 </td>
               </tr>
             ))}
-            {visibleRecords.length === 0 ? <tr><td colSpan={8} className="px-3 py-6 text-center text-slate-500">Chưa có phiếu phù hợp.</td></tr> : null}
+            {visibleRecords.length === 0 ? <tr><td colSpan={9} className="px-3 py-6 text-center text-slate-500">Chưa có phiếu phù hợp.</td></tr> : null}
           </tbody>
         </table>
       </section>
