@@ -19,7 +19,8 @@ test('hạ khổ, mét dài và độ li ĐM tính đủ 9 trường, cắt 3 s�
 });
 test('đổi mét dài hoặc khổ rộng (không khóa kgPerSheet) phải đổi kg/Tấm và kg/Cuộn', () => {
   const longer = variantConversion(source, { width: '2', length: '12', weightScale: 1 });
-  assert.equal(longer.trongLuongKgTam, '29.629');
+  // Cắt 3 số một lần: 14.814 × 12 / 6 = 29.628 (không qua kg/m đã cắt rồi nhân lại).
+  assert.equal(longer.trongLuongKgTam, '29.628');
   assert.equal(longer.trongLuongKgCuon, '74.073');
   assert.notEqual(longer.trongLuongKgTam, source.trongLuongKgTam);
   const narrower = variantConversion(source, { width: '1', length: '6', weightScale: 1 });

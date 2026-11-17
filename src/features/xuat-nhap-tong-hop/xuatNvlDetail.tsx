@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ChevronDown, ImagePlus, Loader2, Plus, RefreshCw, ScanBarcode, Trash2 } from 'lucide-react';
 import ProductQrScanner from '../../components/ProductQrScanner';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import WeighingImagePreviewModal, { WeighingImageThumbnail, type WeighingPreviewImage } from '../../components/WeighingImagePreviewModal';
 import { VnCalendarPicker } from '../so-che-do-may';
-import { insertWarehouseLineByClass } from '../phieu-xuat-nhap-kho/nvlSlipLogic';
+import { insertWarehouseLineByClass, type NvlInboundLotOption } from '../phieu-xuat-nhap-kho';
 import type { MaterialOption } from '../san-pham/types';
 import { fileToOptimizedImageDataUrl, uploadImage } from '../_shared/recordHelpers';
 import { CAMERA_IMAGE_INPUT_PROPS } from '../../utils/cameraCapture';
@@ -17,6 +17,33 @@ import {
 import { normalizeWarehouseMaterialClass } from '../../utils/warehouseNormMerge';
 import { isWarehouseKgUnit } from '../../utils/warehouseWeight';
 import { formatMoney, formatNumber, parseLocalizedNumber } from '../../utils';
+import { NvlPriceSelect } from './NvlPriceSelect';
+
+/** Tạm ẩn khối ảnh số cân NVL — bật `true` khi dùng lại chức năng chụp. */
+const SHOW_NVL_ACTUAL_WEIGHT_IMAGE = false;
+
+export type { NvlInboundLotOption };
+
+export function formatNvlLotLabel(lot: NvlInboundLotOption) {
+  const gia = formatMoney(lot.don_gia || 0, 0);
+  const con = formatNumber(lot.so_luong_con || 0, 3);
+  const ngay = String(lot.ngay_phieu || '').slice(0, 10);
+  return `${lot.ma_phieu || 'Lô'} · ${gia}đ · còn ${con}${lot.don_vi ? ` ${lot.don_vi}` : ''}${ngay ? ` · ${ngay}` : ''}`;
+}
+
+export async function fetchNvlInboundLots(maNpl: string, excludeSlipCode?: string): Promise<NvlInboundLotOption[]> {
+  const code = String(maNpl || '').trim();
+  if (!code) return [];
+  const params = new URLSearchParams({ ma_npl: code });
+  if (excludeSlipCode) params.set('exclude_ma_phieu', excludeSlipCode);
+  const res = await fetch(`/api/phieu-xuat-kho/lo-ton?${params.toString()}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(String((data as { error?: string }).error || 'Không tải được lô tồn NVL.'));
+  }
+  const rows = Array.isArray((data as { lots?: unknown }).lots) ? (data as { lots: NvlInboundLotOption[] }).lots : [];
+  return rows.filter(lot => String(lot.id || '').trim() && Number(lot.so_luong_con) > 0);
+}
 
 export type XuatNvlClass = 'nvl_chinh' | 'nvl_phu' | 'chua_phan_loai';
 
@@ -45,6 +72,10 @@ export type XuatNvlLine = {
   slCt: string;
   soLuong: string;
   donGia: string;
+  /** Lô nhập nguồn khi xuất từ kho — trừ tồn theo giá. */
+  sourceInboundLineId: string;
+  sourceInboundSlipCode: string;
+  lotTonCon: number | null;
   chiPhiKemTheo: ChiPhiKemTheoDraft[];
   normPerKg?: number;
   imageUrl: string;
@@ -53,9 +84,9 @@ export type XuatNvlLine = {
 };
 
 const gridCols =
-  'grid-cols-[2.25rem_5.75rem_minmax(12rem,1.1fr)_minmax(6.5rem,0.85fr)_minmax(6.5rem,0.95fr)_minmax(6rem,0.85fr)_3.25rem_9rem_6.25rem_5.5rem_4.25rem_5.75rem_5rem_4.25rem_5.5rem_2rem]';
-const headerGrid = `mb-1 grid min-w-[114rem] ${gridCols} items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-2 py-2`;
-const lineGrid = `grid min-w-[114rem] ${gridCols} items-center gap-1.5 border-b border-zinc-200/80 py-1.5`;
+  'grid-cols-[2.25rem_5.75rem_minmax(11rem,1fr)_minmax(6rem,0.8fr)_minmax(6rem,0.9fr)_minmax(5.5rem,0.8fr)_3.25rem_minmax(11rem,1.05fr)_9rem_6.25rem_5.25rem_4.25rem_5.5rem_5rem_4.25rem_5.5rem_2rem]';
+const headerGrid = `mb-1 grid min-w-[126rem] ${gridCols} items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-2 py-2`;
+const lineGrid = `grid min-w-[126rem] ${gridCols} items-center gap-1.5 border-b border-zinc-200/80 py-1.5`;
 const head = 'text-[10px] font-black uppercase tracking-wide text-white';
 const field = 'h-8 w-full min-w-0 rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]';
 
@@ -211,6 +242,9 @@ export function emptyXuatNvlFields(patch?: Partial<XuatNvlLine>): XuatNvlLine {
     slCt: '',
     soLuong: '',
     donGia: '',
+    sourceInboundLineId: '',
+    sourceInboundSlipCode: '',
+    lotTonCon: null,
     chiPhiKemTheo: [],
     normPerKg: undefined,
     imageUrl: '',
@@ -249,9 +283,47 @@ export function XuatNvlDetail({
   const [uploadingKey, setUploadingKey] = useState('');
   const [viewing, setViewing] = useState<WeighingPreviewImage | null>(null);
   const [uploadError, setUploadError] = useState('');
+  const [lotsByCode, setLotsByCode] = useState<Record<string, NvlInboundLotOption[]>>({});
+  const [lotsLoadingCode, setLotsLoadingCode] = useState('');
+  const [lotsError, setLotsError] = useState('');
 
   function patchAt(index: number, patch: Partial<XuatNvlLine>) {
     onChange(lines.map((line, i) => (i === index ? { ...line, ...patch } : line)));
+  }
+
+  const lotCodesKey = lines
+    .filter(line => line.srcLoai !== 'may' && line.maHang.trim())
+    .map(line => line.maHang.trim())
+    .sort()
+    .join('|');
+
+  useEffect(() => {
+    const codes = [...new Set(lotCodesKey.split('|').map(code => code.trim()).filter(Boolean))];
+    if (codes.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (const code of codes) {
+        if (cancelled) return;
+        setLotsLoadingCode(code);
+        try {
+          const lots = await fetchNvlInboundLots(code);
+          if (cancelled) return;
+          setLotsByCode(current => ({ ...current, [code]: lots }));
+          setLotsError('');
+        } catch (error) {
+          if (cancelled) return;
+          setLotsError(error instanceof Error ? error.message : 'Không tải được lô tồn.');
+        }
+      }
+      if (!cancelled) setLotsLoadingCode('');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [lotCodesKey]);
+
+  function clearLotFields(): Pick<XuatNvlLine, 'sourceInboundLineId' | 'sourceInboundSlipCode' | 'lotTonCon'> {
+    return { sourceInboundLineId: '', sourceInboundSlipCode: '', lotTonCon: null };
   }
 
   function applyMaterial(index: number, item: MaterialOption) {
@@ -266,7 +338,9 @@ export function XuatNvlDetail({
       auxiliaryGroup: String(item.nhomVatTuPhu || '').trim(),
       normPerKg: isWarehouseKgUnit(unit) ? 1 : Number.isFinite(per) && per > 0 ? per : undefined,
       tonDau: null,
-      tonDauDirty: false
+      tonDauDirty: false,
+      ...clearLotFields(),
+      donGia: ''
     });
   }
 
@@ -422,6 +496,7 @@ export function XuatNvlDetail({
           <span className={head}>Tên nguyên vật liệu</span>
           <span className={head}>Tên sản xuất</span>
           <span className={head}>ĐVT</span>
+          <span className={head}>Lô / Giá *</span>
           <span className={head}>Ngày tồn</span>
           <span className={head}>Ca</span>
           <span className={head}>Tồn đầu ca</span>
@@ -478,7 +553,9 @@ export function XuatNvlDetail({
                       donVi: '',
                       auxiliaryGroup: '',
                       tonDau: null,
-                      tonDauDirty: false
+                      tonDauDirty: false,
+                      ...clearLotFields(),
+                      donGia: ''
                     });
                   }}
                   className={field}
@@ -501,7 +578,9 @@ export function XuatNvlDetail({
                       donVi: '',
                       auxiliaryGroup: '',
                       tonDau: null,
-                      tonDauDirty: false
+                      tonDauDirty: false,
+                      ...clearLotFields(),
+                      donGia: ''
                     });
                   }}
                   options={sourceKind === 'may' ? machines : sourceWarehouses}
@@ -554,6 +633,49 @@ export function XuatNvlDetail({
                 </div>
                 <div className="truncate px-1.5 text-[11px] font-semibold text-zinc-700" title={line.donVi}>{line.donVi || '—'}</div>
                 <div className="min-w-0">
+                  {sourceKind === 'may' ? (
+                    <div className="truncate px-1.5 text-[10px] font-semibold text-zinc-400" title="Xuất từ máy không trừ lô kho">
+                      —
+                    </div>
+                  ) : (
+                    <SearchableSelect
+                      value={line.sourceInboundLineId}
+                      onChange={viewOnly ? undefined : value => {
+                        const lots = lotsByCode[line.maHang.trim()] || [];
+                        const lot = lots.find(item => item.id === value);
+                        if (!lot) {
+                          patchAt(index, { ...clearLotFields(), donGia: line.donGia });
+                          return;
+                        }
+                        patchAt(index, {
+                          sourceInboundLineId: lot.id,
+                          sourceInboundSlipCode: lot.ma_phieu || '',
+                          lotTonCon: Number(lot.so_luong_con) || 0,
+                          donGia: formatMoney(lot.don_gia || 0, 0)
+                        });
+                      }}
+                      options={lotsByCode[line.maHang.trim()] || []}
+                      getValue={item => (item as NvlInboundLotOption).id}
+                      getLabel={item => formatNvlLotLabel(item as NvlInboundLotOption)}
+                      getSearchText={item => formatNvlLotLabel(item as NvlInboundLotOption)}
+                      placeholder={
+                        !line.maHang.trim()
+                          ? 'Chọn mã trước'
+                          : lotsLoadingCode === line.maHang.trim()
+                            ? 'Đang tải lô...'
+                            : (lotsByCode[line.maHang.trim()] || []).length
+                              ? 'Chọn lô / giá'
+                              : 'Không còn lô tồn'
+                      }
+                      disabled={viewOnly || !line.maHang.trim()}
+                      inputClassName={`${field} ${!line.sourceInboundLineId && line.maHang.trim() ? 'border-amber-300 bg-amber-50' : ''}`}
+                      comboboxMode
+                      comboboxSearchable
+                      openUpward
+                    />
+                  )}
+                </div>
+                <div className="min-w-0">
                   <VnCalendarPicker
                     compact
                     openUpward
@@ -599,11 +721,14 @@ export function XuatNvlDetail({
                   if (Number.isFinite(parsed)) patchAt(index, { soLuong: formatNumber(parsed, 3) });
                 }} disabled={viewOnly} className={`${field} border-emerald-200 bg-emerald-50/50`} />
                 <div className={`${field} flex items-center bg-emerald-50/60 font-mono font-bold text-emerald-800`}>{formatNumber(kg || 0, 3)}</div>
-                <input value={line.donGia} onChange={viewOnly ? undefined : event => patchAt(index, { donGia: event.target.value })} onBlur={viewOnly ? undefined : event => {
-                  if (!event.target.value.trim()) return;
-                  const parsed = parseLocalizedNumber(event.target.value);
-                  if (Number.isFinite(parsed)) patchAt(index, { donGia: formatMoney(parsed, 0) });
-                }} disabled={viewOnly} className={field} />
+                <NvlPriceSelect
+                  maHang={line.maHang}
+                  value={line.donGia}
+                  onChange={viewOnly ? () => undefined : next => patchAt(index, { donGia: next })}
+                  disabled={viewOnly}
+                  inputClassName={field}
+                  extraPrices={(lotsByCode[line.maHang.trim()] || []).map(lot => Number(lot.don_gia) || 0)}
+                />
                 <div className="text-right font-mono text-[11px] font-bold tabular-nums">{amountText}</div>
                 {!viewOnly && (
                   <button type="button" onClick={() => onChange(lines.filter((_, i) => i !== index).length ? lines.filter((_, i) => i !== index) : [blankLine()])} className="text-rose-600">
@@ -617,7 +742,7 @@ export function XuatNvlDetail({
                 onChange={viewOnly ? undefined : next => patchAt(index, { chiPhiKemTheo: next })}
                 disabled={viewOnly}
               />
-              {!line.isScanned ? (
+              {SHOW_NVL_ACTUAL_WEIGHT_IMAGE && !line.isScanned ? (
                 <div className="mb-2 rounded-lg border border-red-100 bg-red-50/40 p-2">
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-zinc-600">
@@ -663,6 +788,10 @@ export function XuatNvlDetail({
         })}
       </div>
       {uploadError ? <p className="text-xs font-semibold text-rose-600">{uploadError}</p> : null}
+      {lotsError ? <p className="text-xs font-semibold text-rose-600">{lotsError}</p> : null}
+      <p className="text-[11px] font-semibold text-zinc-500">
+        Xuất từ kho: bắt buộc chọn lô nhập (đơn giá + SL còn). Tồn theo giá = tồn đúng lô đó.
+      </p>
       <ProductQrScanner open={scannerOpen} onClose={() => setScannerOpen(false)} onScan={onScan} closeAfterScan={false} requireConfirm={false} />
       <WeighingImagePreviewModal image={viewing} onClose={() => setViewing(null)} />
     </div>

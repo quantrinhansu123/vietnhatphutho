@@ -17,6 +17,40 @@ function normalizeSearchText(value: string) {
     .replace(/đ/g, 'd');
 }
 
+/** Giới hạn token khi search bằng dấu phẩy (AND) — tránh loop vô ích khi dán chuỗi dài. */
+const MAX_COMMA_SEARCH_TOKENS = 16;
+
+/**
+ * Tách query theo dấu phẩy → nhiều từ khóa AND.
+ * Ví dụ: `Hưng Yên, Phế` → ["hung yen", "phe"] (đã bỏ dấu).
+ * Không có dấu phẩy → 1 token như search cũ.
+ */
+function parseCommaAndSearchTokens(query: string): string[] {
+  const raw = String(query || '').trim();
+  if (!raw) return [];
+  const normalized = normalizeSearchText(raw);
+  if (!normalized) return [];
+  if (!raw.includes(',')) return [normalized];
+
+  const tokens: string[] = [];
+  const seen = new Set<string>();
+  for (const part of normalized.split(',')) {
+    const token = part.trim();
+    if (!token || seen.has(token)) continue;
+    seen.add(token);
+    tokens.push(token);
+    if (tokens.length >= MAX_COMMA_SEARCH_TOKENS) break;
+  }
+  return tokens;
+}
+
+function matchesAllSearchTokens(haystack: string, tokens: string[]): boolean {
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (!haystack.includes(tokens[i])) return false;
+  }
+  return true;
+}
+
 export function SearchableSelect({
   value,
   onChange,
@@ -37,6 +71,7 @@ export function SearchableSelect({
   getSearchText,
   displaySelectedAsValue = false,
   desktopAutoFlip = false,
+  dropdownMaxHeight = 208,
   openUpward = false,
   comboboxMode = false,
   comboboxSearchable = true,
@@ -70,6 +105,8 @@ export function SearchableSelect({
   displaySelectedAsValue?: boolean;
   /** Trên desktop, tự mở menu lên trên nếu phía dưới không đủ chỗ. */
   desktopAutoFlip?: boolean;
+  /** Chiều cao ưu tiên của danh sách mở (px), vẫn tự giới hạn theo vùng nhìn thấy. */
+  dropdownMaxHeight?: number;
   openUpward?: boolean;
   /** Hiển thị dạng combobox: nút có mũi tên, menu mở ra có ô tìm kiếm riêng. */
   comboboxMode?: boolean;
@@ -133,6 +170,15 @@ export function SearchableSelect({
     }
   }, [selectedLabel, open]);
 
+  /** Index search đã normalize sẵn — tránh normalize lại từng option mỗi lần gõ. */
+  const optionSearchIndex = useMemo(() => {
+    const searchOf = getSearchText ?? getLabel;
+    return options.map(item => ({
+      item,
+      haystack: normalizeSearchText(`${searchOf(item)} ${getValue(item)}`)
+    }));
+  }, [options, getSearchText, getLabel, getValue]);
+
   const filteredOptions = useMemo(() => {
     // Combobox không có ô tìm: luôn hiện đủ danh sách.
     // Nếu lọc theo `query` (= giá trị đang chọn) thì đổi ca sẽ mất option khác
@@ -140,25 +186,33 @@ export function SearchableSelect({
     if (comboboxMode && !comboboxSearchable) {
       return options.slice(0, maxResults);
     }
-    const normalized = normalizeSearchText(query.trim());
+    const tokens = parseCommaAndSearchTokens(query);
     const selectedNormalized = normalizeSearchText(String(selectedLabel || '').trim());
-    if (showAllWhenQueryMatchesSelection && normalized && normalized === selectedNormalized) {
+    const queryNormalized = normalizeSearchText(query.trim());
+    if (
+      showAllWhenQueryMatchesSelection &&
+      queryNormalized &&
+      queryNormalized === selectedNormalized &&
+      tokens.length <= 1
+    ) {
       return options.slice(0, maxResults);
     }
-    const list = normalized
-      ? options.filter(item => {
-          const label = normalizeSearchText((getSearchText ?? getLabel)(item));
-          const optionValue = normalizeSearchText(getValue(item));
-          return label.includes(normalized) || optionValue.includes(normalized);
-        })
-      : options;
-    return list.slice(0, maxResults);
+    if (tokens.length === 0) {
+      return options.slice(0, maxResults);
+    }
+
+    const list: unknown[] = [];
+    for (let i = 0; i < optionSearchIndex.length; i += 1) {
+      const row = optionSearchIndex[i];
+      if (!matchesAllSearchTokens(row.haystack, tokens)) continue;
+      list.push(row.item);
+      if (list.length >= maxResults) break;
+    }
+    return list;
   }, [
+    optionSearchIndex,
     options,
     query,
-    getLabel,
-    getSearchText,
-    getValue,
     maxResults,
     comboboxMode,
     comboboxSearchable,
@@ -267,7 +321,7 @@ export function SearchableSelect({
     const viewportHeight = document.documentElement.clientHeight;
     const spaceBelow = Math.max(0, viewportHeight - rect.bottom - margin);
     const spaceAbove = Math.max(0, rect.top - margin);
-    const preferredHeight = openUpward ? spaceAbove : 208;
+    const preferredHeight = openUpward ? spaceAbove : Math.max(120, dropdownMaxHeight);
 
     if (openUpward && spaceAbove > 0) {
       setMenuStyle({
@@ -279,27 +333,25 @@ export function SearchableSelect({
       return;
     }
 
-    if (desktopAutoFlip && isDesktop) {
-      if (spaceBelow < preferredHeight && spaceAbove > spaceBelow) {
-        setMenuStyle({
-          bottom: viewportHeight - rect.top + 4,
-          left,
-          width,
-          maxHeight: Math.min(preferredHeight, spaceAbove)
-        });
-        return;
-      }
-
+    // Combobox / danh sách dài: luôn giới hạn chiều cao theo viewport để scroll được,
+    // tránh tràn che mất nội dung phía dưới (vd Xuất đến máy/kho).
+    const canFlip = openUpward || (desktopAutoFlip && isDesktop) || comboboxMode;
+    if (canFlip && spaceBelow < preferredHeight && spaceAbove > spaceBelow) {
       setMenuStyle({
-        top: rect.bottom + 4,
+        bottom: viewportHeight - rect.top + 4,
         left,
         width,
-        maxHeight: Math.min(preferredHeight, spaceBelow)
+        maxHeight: Math.max(120, Math.min(preferredHeight, spaceAbove))
       });
       return;
     }
 
-    setMenuStyle({ top: rect.bottom + 4, left, width });
+    setMenuStyle({
+      top: rect.bottom + 4,
+      left,
+      width,
+      maxHeight: Math.max(120, Math.min(preferredHeight, spaceBelow || preferredHeight))
+    });
   };
 
   useLayoutEffect(() => {
@@ -319,7 +371,7 @@ export function SearchableSelect({
       window.removeEventListener('scroll', handleReposition, true);
       document.removeEventListener('scroll', handleReposition, true);
     };
-  }, [open, query, filteredOptions.length, desktopAutoFlip, openUpward, matchDropdownWidth]);
+  }, [open, query, filteredOptions.length, desktopAutoFlip, openUpward, matchDropdownWidth, comboboxMode]);
 
   useEffect(() => {
     if (!open || !comboboxMode) return;

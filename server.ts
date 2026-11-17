@@ -2683,8 +2683,9 @@ function parseProductPatchBody(
     'totalWeight', 'tong_trong_luong', 'rollWidth', 'kho_cuon', 'rollLength', 'chieu_dai_cuon',
     'coreWeight', 'trong_luong_loi', 'bagWeight', 'trong_luong_tui', 'plasticWeight', 'trong_luong_nhua',
     'wastePercent', 'ty_le_hao_hut',
-    'tenGoc', 'ten_goc', 'doLi', 'do_li', 'doLiDm', 'do_li_dm', 'doDayM', 'do_day_m',
-    'dinhMucKg', 'dinh_muc_kg', 'zem', 'soSong', 'so_song', 'tcmb',
+    'tenGoc', 'ten_goc', 'mau', 'np', 'tcmn', 'giaRe', 'gia_re', 'off', 'doLi', 'do_li', 'doLiDm', 'do_li_dm', 'doDayM', 'do_day_m', 'khoRong', 'kho_rong',
+    'dinhMucKg', 'dinh_muc_kg', 'doDaiTamTieuChuan', 'do_dai_tam_tieu_chuan',
+    'zem', 'soSong', 'so_song', 'tcmb',
     'doDaiM', 'do_dai_m', 'mang', 'hangPhe', 'hang_phe', 'tenGhep', 'ten_ghep'
   ].some(key => Object.prototype.hasOwnProperty.call(source, key));
 
@@ -2805,6 +2806,21 @@ function parseProductPatchBody(
   if (Object.prototype.hasOwnProperty.call(source, 'tenGoc') || Object.prototype.hasOwnProperty.call(source, 'ten_goc')) {
     record.ten_goc = parseMaterialText(source.tenGoc ?? source.ten_goc) || null;
   }
+  if (Object.prototype.hasOwnProperty.call(source, 'mau')) {
+    record.mau = parseMaterialText(source.mau) || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, 'np')) {
+    record.np = /^NP$/iu.test(parseMaterialText(source.np)) ? 'NP' : null;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, 'tcmn')) {
+    record.tcmn = /tcmn/iu.test(parseMaterialText(source.tcmn)) ? 'TCMN' : null;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, 'giaRe') || Object.prototype.hasOwnProperty.call(source, 'gia_re')) {
+    record.gia_re = /giá\s*rẻ/iu.test(parseMaterialText(source.giaRe ?? source.gia_re)) ? 'Giá rẻ' : null;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, 'off')) {
+    record.off = /^OFF$/iu.test(parseMaterialText(source.off)) ? 'OFF' : null;
+  }
   if (Object.prototype.hasOwnProperty.call(source, 'doLi') || Object.prototype.hasOwnProperty.call(source, 'do_li')) {
     record.do_li = parseMaterialText(source.doLi ?? source.do_li) || null;
   }
@@ -2820,8 +2836,16 @@ function parseProductPatchBody(
   if (Object.prototype.hasOwnProperty.call(source, 'dinhMucKg') || Object.prototype.hasOwnProperty.call(source, 'dinh_muc_kg')) {
     record.dinh_muc_kg = normalizeDinhMucKgServer(source.dinhMucKg ?? source.dinh_muc_kg);
   }
-  if (Object.prototype.hasOwnProperty.call(source, 'doDayM') || Object.prototype.hasOwnProperty.call(source, 'do_day_m')) {
-    record.do_day_m = parseMaterialText(source.doDayM ?? source.do_day_m) || null;
+  if (
+    Object.prototype.hasOwnProperty.call(source, 'doDaiTamTieuChuan')
+    || Object.prototype.hasOwnProperty.call(source, 'do_dai_tam_tieu_chuan')
+  ) {
+    record.do_dai_tam_tieu_chuan =
+      parseMaterialText(source.doDaiTamTieuChuan ?? source.do_dai_tam_tieu_chuan) || null;
+  }
+  if (['doDayM', 'do_day_m', 'khoRong', 'kho_rong'].some(key => Object.prototype.hasOwnProperty.call(source, key))) {
+    // Legacy clients may still send doDayM/do_day_m; persist only the canonical DB column.
+    record.kho_rong = parseMaterialText(source.khoRong ?? source.kho_rong ?? source.doDayM ?? source.do_day_m) || null;
   }
   if (Object.prototype.hasOwnProperty.call(source, 'doDaiM') || Object.prototype.hasOwnProperty.call(source, 'do_dai_m')) {
     record.do_dai_m = parseMaterialText(source.doDaiM ?? source.do_dai_m) || null;
@@ -2868,10 +2892,13 @@ function parseProductPatchBody(
       else record.do_li_dm = dm;
     }
   }
-  // Đặc / Rỗng không có ĐM kg — không giữ giá trị tự điền từ tên hoặc cột.
+  // Đặc / Rỗng không có ĐM kg / mét dài tấm tiêu chuẩn ĐM.
   {
     const px = classifyProductPxGroup(String(record.nhom_vthh || ''));
-    if (px === 'dac' || px === 'rong') record.dinh_muc_kg = null;
+    if (px === 'dac' || px === 'rong') {
+      record.dinh_muc_kg = null;
+      record.do_dai_tam_tieu_chuan = null;
+    }
   }
   // Đặc thiếu đm: tự tính theo bảng trừ lùi từ độ li (kể cả hàng ZEM).
   if (!record.do_li_dm && record.nhom_vthh === 'TP; PX Đặc' && typeof record.do_li === 'string' && record.do_li) {
@@ -2908,12 +2935,19 @@ const PRODUCT_AUDIT_FIELD_LABELS: Record<string, string> = {
   ten_san_xuat: 'Tên sản xuất',
   ten_ghep: 'Tên ghép',
   ten_goc: 'Tên gốc',
+  mau: 'Màu',
+  np: 'NP',
+  tcmn: 'TCMN',
+  gia_re: 'Giá rẻ',
+  off: 'OFF',
   do_li: 'Độ li',
   do_li_dm: 'ĐM (đm li)',
   dinh_muc_kg: 'ĐM (đm kg)',
+  do_dai_tam_tieu_chuan: 'Mét dài ĐM (m)',
   zem: 'ZEM',
   so_song: 'Số sóng',
   tcmb: 'TCMB',
+  kho_rong: 'Khổ rộng (m)',
   do_day_m: 'Khổ rộng (m)',
   do_dai_m: 'Mét dài',
   mang: 'Màng',
@@ -3059,9 +3093,18 @@ function stripMissingProductActorColumns(
   const column = message.match(/'([^']+)'/)?.[1];
   if (
     !column ||
-    !['created_by_username', 'created_by_name', 'updated_by_username', 'updated_by_name', 'updated_at'].includes(
-      column
-    )
+    ![
+      'created_by_username',
+      'created_by_name',
+      'updated_by_username',
+      'updated_by_name',
+      'updated_at',
+      'mau',
+      'np',
+      'tcmn',
+      'gia_re',
+      'off'
+    ].includes(column)
   ) {
     return null;
   }
@@ -8826,6 +8869,19 @@ function makeProductionPlanCode(planDate: string) {
   return `KHSX-${compact}-${suffix}`;
 }
 
+type ProductionPlanPtdmQty = {
+  san_pham_id?: string;
+  ma_sp: string;
+  so_luong_ap_dung: number;
+};
+
+type ProductionPlanPtdmRef = {
+  dinh_muc_id: string;
+  ten_phieu: string;
+  thoi_gian_gan: string;
+  so_luong_ap_dung_theo_sp: ProductionPlanPtdmQty[];
+};
+
 type ProductionPlanSnapshotLine = {
   lenh_sx_id: number | null;
   thu_tu_uu_tien: number;
@@ -8837,7 +8893,72 @@ type ProductionPlanSnapshotLine = {
   may: string;
   nhan_su: string;
   san_pham: unknown[];
+  danh_sach_ptdm: ProductionPlanPtdmRef[];
 };
+
+function parseProductionPlanPtdmList(raw: unknown): ProductionPlanPtdmRef[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item): ProductionPlanPtdmRef | null => {
+      if (!item || typeof item !== 'object') return null;
+      const row = item as Record<string, unknown>;
+      const dinh_muc_id = pickRowField(row, ['dinh_muc_id', 'id', 'dinhMucId'], '');
+      if (!dinh_muc_id) return null;
+      const qtyRaw = row.so_luong_ap_dung_theo_sp ?? row.soLuongApDungTheoSp;
+      const so_luong_ap_dung_theo_sp = Array.isArray(qtyRaw)
+        ? qtyRaw
+            .map((q): ProductionPlanPtdmQty | null => {
+              if (!q || typeof q !== 'object') return null;
+              const qRow = q as Record<string, unknown>;
+              const ma_sp = pickRowField(qRow, ['ma_sp', 'maSp', 'productCode'], '');
+              const so_luong_ap_dung = Number(qRow.so_luong_ap_dung ?? qRow.soLuongApDung ?? qRow.quantity);
+              if (!Number.isFinite(so_luong_ap_dung) || so_luong_ap_dung < 0) return null;
+              const san_pham_id = pickRowField(qRow, ['san_pham_id', 'sanPhamId', 'productId'], '');
+              return {
+                ...(san_pham_id ? { san_pham_id } : {}),
+                ma_sp,
+                so_luong_ap_dung
+              };
+            })
+            .filter((q): q is ProductionPlanPtdmQty => Boolean(q))
+        : [];
+      return {
+        dinh_muc_id,
+        ten_phieu: pickRowField(row, ['ten_phieu', 'tenPhieu', 'name'], dinh_muc_id),
+        thoi_gian_gan: pickRowField(row, ['thoi_gian_gan', 'thoiGianGan', 'attachedAt'], ''),
+        so_luong_ap_dung_theo_sp
+      };
+    })
+    .filter((item): item is ProductionPlanPtdmRef => Boolean(item));
+}
+
+function stampProductionPlanPtdmList(
+  incoming: ProductionPlanPtdmRef[],
+  previous: ProductionPlanPtdmRef[],
+  nowIso: string
+): ProductionPlanPtdmRef[] {
+  const prevMap = new Map(previous.map(item => [item.dinh_muc_id, item.thoi_gian_gan]));
+  return incoming.map(item => ({
+    ...item,
+    thoi_gian_gan: item.thoi_gian_gan || prevMap.get(item.dinh_muc_id) || nowIso
+  }));
+}
+
+function normalizeProductionPlanSanPhamQuantities(raw: unknown[]): unknown[] {
+  return raw.map(item => {
+    if (!item || typeof item !== 'object') return item;
+    const row = item as Record<string, unknown>;
+    const so_luong = Number(row.so_luong ?? row.quantity);
+    const so_luong_lenh = Number(row.so_luong_lenh ?? row.soLuongLenh ?? so_luong);
+    const so_luong_da_sx = Number(row.so_luong_da_sx ?? row.soLuongDaSx ?? 0);
+    return {
+      ...row,
+      so_luong: Number.isFinite(so_luong) && so_luong >= 0 ? so_luong : 0,
+      so_luong_lenh: Number.isFinite(so_luong_lenh) && so_luong_lenh >= 0 ? so_luong_lenh : 0,
+      so_luong_da_sx: Number.isFinite(so_luong_da_sx) && so_luong_da_sx >= 0 ? so_luong_da_sx : 0
+    };
+  });
+}
 
 function parseProductionPlanSnapshotLine(raw: unknown): ProductionPlanSnapshotLine | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -8848,7 +8969,8 @@ function parseProductionPlanSnapshotLine(raw: unknown): ProductionPlanSnapshotLi
   const lenhRaw = item.lenh_sx_id ?? item.id;
   const lenhNumeric = Number(lenhRaw);
   const sanPhamRaw = item.san_pham ?? item.products;
-  const san_pham = Array.isArray(sanPhamRaw) ? sanPhamRaw : [];
+  const san_pham = Array.isArray(sanPhamRaw) ? normalizeProductionPlanSanPhamQuantities(sanPhamRaw) : [];
+  const danh_sach_ptdm = parseProductionPlanPtdmList(item.danh_sach_ptdm ?? item.danhSachPtdm);
 
   return {
     lenh_sx_id: Number.isFinite(lenhNumeric) ? lenhNumeric : null,
@@ -8865,7 +8987,8 @@ function parseProductionPlanSnapshotLine(raw: unknown): ProductionPlanSnapshotLi
     ca: pickRowField(item, ['ca', 'shift'], ''),
     may: pickRowField(item, ['may', 'machine'], ''),
     nhan_su: pickRowField(item, ['nhan_su', 'staff'], ''),
-    san_pham
+    san_pham,
+    danh_sach_ptdm
   };
 }
 
@@ -8913,7 +9036,19 @@ async function saveProductionPlanSnapshot(options: {
     throw new Error('Không thể tạo bản ghi kế hoạch sản xuất.');
   }
 
+  const previousPtdmByOrder = new Map<string, ProductionPlanPtdmRef[]>();
   if (options.planId) {
+    const { data: existingLines, error: existingLinesError } = await supabase
+      .from(SUPABASE_PRODUCTION_PLAN_LINES_TABLE)
+      .select('ma_lenh_sx, danh_sach_ptdm')
+      .eq('ke_hoach_id', planId);
+    if (existingLinesError) throw new Error(productionPlanWriteErrorMessage(existingLinesError));
+    (existingLines || []).forEach((row: Record<string, unknown>) => {
+      const code = String(row.ma_lenh_sx || '').trim();
+      if (!code) return;
+      previousPtdmByOrder.set(code, parseProductionPlanPtdmList(row.danh_sach_ptdm));
+    });
+
     const { error: clearError } = await supabase
       .from(SUPABASE_PRODUCTION_PLAN_LINES_TABLE)
       .delete()
@@ -8921,7 +9056,7 @@ async function saveProductionPlanSnapshot(options: {
     if (clearError) throw new Error(productionPlanWriteErrorMessage(clearError));
   }
 
-  // Extract unique ma_don_hang and query don_hang for enriched san_pham data
+  // Enrich san_pham_id / khu_vuc — giữ nguyên so_luong / so_luong_lenh / so_luong_da_sx từ client.
   const maDonHangSet = new Set<string>();
   options.lines.forEach(line => {
     if (line.ma_don_hang) {
@@ -8932,22 +9067,18 @@ async function saveProductionPlanSnapshot(options: {
     }
   });
 
-  const sanPhamMapByMaDonHang = new Map<string, unknown[]>();
-  const khuVucMapByMaDonHang = new Map<string, string>(); // ma_don_hang -> khu_vuc
-  const productMapByCode = new Map<string, string>(); // Code -> ID mapping
+  const khuVucMapByMaDonHang = new Map<string, string>();
+  const productMapByCode = new Map<string, string>();
 
   if (maDonHangSet.size > 0) {
     const { data: orders, error: ordersError } = await supabase
       .from(SUPABASE_ORDERS_TABLE)
-      .select('ma_don_hang, san_pham, khu_vuc')
+      .select('ma_don_hang, khu_vuc')
       .in('ma_don_hang', Array.from(maDonHangSet));
 
     if (!ordersError && orders) {
       orders.forEach(order => {
         const code = String(order.ma_don_hang || '').trim();
-        if (code && Array.isArray(order.san_pham)) {
-          sanPhamMapByMaDonHang.set(code, order.san_pham);
-        }
         if (code && order.khu_vuc) {
           khuVucMapByMaDonHang.set(code, String(order.khu_vuc).trim());
         }
@@ -8955,7 +9086,6 @@ async function saveProductionPlanSnapshot(options: {
     }
   }
 
-  // Fetch product IDs for enrichment
   const productCodes = new Set<string>();
   options.lines.forEach(line => {
     if (line.san_pham && Array.isArray(line.san_pham)) {
@@ -8982,42 +9112,30 @@ async function saveProductionPlanSnapshot(options: {
     }
   }
 
+  const nowIso = new Date().toISOString();
   const detailRows = options.lines.map(line => {
-    let enrichedSanPham = line.san_pham || [];
     const maDonHang = String(line.ma_don_hang || '').trim();
-
-    // If ma_don_hang is single code, use enriched data from don_hang
-    if (maDonHang) {
-      const codes = maDonHang.split(',').map(c => c.trim()).filter(Boolean);
-      if (codes.length === 1 && sanPhamMapByMaDonHang.has(codes[0])) {
-        enrichedSanPham = sanPhamMapByMaDonHang.get(codes[0])!;
-      }
-      // For multiple ma_don_hang, keep original (not simple to merge)
-    }
-
-    // Lấy khu_vuc từ don_hang
     const khuVuc = khuVucMapByMaDonHang.get(maDonHang) || '';
 
-    // Enrich san_pham_id và khu_vuc
-    enrichedSanPham = enrichedSanPham.map((item: any) => {
+    const enrichedSanPham = (line.san_pham || []).map((item: any) => {
       const sanPhamId = item.san_pham_id?.trim() ? item.san_pham_id : null;
       const enrichedItem: any = {
         ...item,
         san_pham_id: sanPhamId
       };
 
-      // Thêm san_pham_id từ product code nếu thiếu
       if (!sanPhamId && item.ma_sp && productMapByCode.has(String(item.ma_sp).trim())) {
         enrichedItem.san_pham_id = productMapByCode.get(String(item.ma_sp).trim());
       }
 
-      // Thêm khu_vuc từ don_hang
       if (khuVuc) {
         enrichedItem.khu_vuc = khuVuc;
       }
 
       return enrichedItem;
     });
+
+    const previousPtdm = previousPtdmByOrder.get(String(line.ma_lenh_sx || '').trim()) || [];
 
     return {
       ke_hoach_id: planId,
@@ -9030,7 +9148,8 @@ async function saveProductionPlanSnapshot(options: {
       ca: line.ca,
       may: line.may,
       nhan_su: line.nhan_su,
-      san_pham: enrichedSanPham
+      san_pham: enrichedSanPham,
+      danh_sach_ptdm: stampProductionPlanPtdmList(line.danh_sach_ptdm || [], previousPtdm, nowIso)
     };
   });
 
@@ -10063,7 +10182,8 @@ export function createApp() {
         'totalWeight', 'tong_trong_luong', 'rollWidth', 'kho_cuon', 'rollLength', 'chieu_dai_cuon',
         'coreWeight', 'trong_luong_loi', 'bagWeight', 'trong_luong_tui', 'plasticWeight', 'trong_luong_nhua',
         'tenGoc', 'ten_goc', 'doLi', 'do_li', 'doLiDm', 'do_li_dm', 'dinhMucKg', 'dinh_muc_kg',
-        'zem', 'soSong', 'so_song', 'tcmb', 'doDayM', 'do_day_m', 'doDaiM', 'do_dai_m',
+        'doDaiTamTieuChuan', 'do_dai_tam_tieu_chuan',
+        'zem', 'soSong', 'so_song', 'tcmb', 'doDayM', 'do_day_m', 'khoRong', 'kho_rong', 'doDaiM', 'do_dai_m',
         'mang', 'hangPhe', 'hang_phe', 'tenGhep', 'ten_ghep', 'wastePercent', 'ty_le_hao_hut'
       ];
       const hasProductFields = productFieldKeys.some(key => Object.prototype.hasOwnProperty.call(body, key));
@@ -11813,6 +11933,9 @@ export function createApp() {
     tl_tam: number | null;
     khu_vuc: string;
     quy_cach_m_dai: number | null;
+    slsx_bac: number;
+    slsx_trung: number;
+    slsx_nam: number;
   };
 
   async function assembleProductionPlanPreviewRows(
@@ -11824,9 +11947,10 @@ export function createApp() {
       // Load từ ke_hoach_san_xuat_dong thay vì don_hang
       const { data: planLines, error: linesError } = await supabase
         .from(SUPABASE_PRODUCTION_PLAN_LINES_TABLE)
-        .select('ma_don_hang, san_pham')
+        .select('lenh_sx_id, ma_lenh_sx, ma_don_hang, san_pham')
         .eq('ke_hoach_id', planId)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true });
 
       if (linesError) {
         console.error('Error fetching plan lines:', linesError);
@@ -11834,6 +11958,29 @@ export function createApp() {
       }
 
       if (!planLines || planLines.length === 0) return [];
+
+      // Snapshot kế hoạch có thể cũ hoặc được tạo trước khi lưu đủ tên SX / B-T-N.
+      // Đối chiếu lệnh gốc để bản xem trước dùng đúng dữ liệu đang hiển thị ở lệnh SX.
+      const productionOrderIds = [...new Set(planLines.map(line => String(line.lenh_sx_id ?? '').trim()).filter(Boolean))];
+      const productionOrderCodes = [...new Set(planLines.map(line => String(line.ma_lenh_sx ?? '').trim()).filter(Boolean))];
+      const [ordersByIdResult, ordersByCodeResult] = await Promise.all([
+        productionOrderIds.length > 0
+          ? supabase.from(SUPABASE_PRODUCTION_ORDERS_TABLE).select('id, ma_lenh_sx, san_pham').in('id', productionOrderIds)
+          : Promise.resolve({ data: [], error: null }),
+        productionOrderCodes.length > 0
+          ? supabase.from(SUPABASE_PRODUCTION_ORDERS_TABLE).select('id, ma_lenh_sx, san_pham').in('ma_lenh_sx', productionOrderCodes)
+          : Promise.resolve({ data: [], error: null })
+      ]);
+      const liveOrders = [...(ordersByIdResult.data || []), ...(ordersByCodeResult.data || [])];
+      const liveOrderById = new Map<string, Record<string, unknown>>();
+      const liveOrderByCode = new Map<string, Record<string, unknown>>();
+      liveOrders.forEach(order => {
+        const record = order as Record<string, unknown>;
+        const id = String(record.id ?? '').trim();
+        const code = String(record.ma_lenh_sx ?? '').trim();
+        if (id) liveOrderById.set(id, record);
+        if (code) liveOrderByCode.set(code, record);
+      });
 
       const baseRows: ProductionPlanPreviewBaseRow[] = [];
       let globalStt = 0;
@@ -11849,6 +11996,26 @@ export function createApp() {
         }
         const sanPhamArray = Array.isArray(rawSanPham) ? rawSanPham : [];
         const lineOrderRef = String(line.ma_don_hang || '').trim();
+        const liveOrder = liveOrderById.get(String(line.lenh_sx_id ?? '').trim())
+          || liveOrderByCode.get(String(line.ma_lenh_sx ?? '').trim());
+        const liveProducts = sortLenhSxSanPhamList(parseLenhSxSanPham(liveOrder?.san_pham));
+
+        const matchLiveProduct = (item: any, itemIndex: number): Record<string, unknown> | null => {
+          const itemId = String(item?.san_pham_id ?? '').trim();
+          const itemCode = String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '').trim().toLowerCase();
+          const itemStt = Number(item?.stt ?? item?.STT) || itemIndex + 1;
+          if (itemId) {
+            const byId = liveProducts.filter((product: any) => String(product?.san_pham_id ?? '').trim() === itemId);
+            const exactIdAndStt = byId.find((product: any, idx: number) => (Number(product?.stt ?? product?.STT) || idx + 1) === itemStt);
+            if (exactIdAndStt || byId.length === 1) return (exactIdAndStt || byId[0]) as Record<string, unknown>;
+          }
+          if (itemCode) {
+            const sameCode = liveProducts.filter((product: any) => String(product?.ma_sp ?? product?.ma_hang ?? '').trim().toLowerCase() === itemCode);
+            const exactCodeAndStt = sameCode.find((product: any, idx: number) => (Number(product?.stt ?? product?.STT) || idx + 1) === itemStt);
+            if (exactCodeAndStt || sameCode.length === 1) return (exactCodeAndStt || sameCode[0]) as Record<string, unknown>;
+          }
+          return liveProducts[itemIndex] ? liveProducts[itemIndex] as Record<string, unknown> : null;
+        };
 
         sanPhamArray.forEach((item: any, idx: number) => {
           globalStt++;
@@ -11857,6 +12024,20 @@ export function createApp() {
           const key = `${planId}__${globalStt}`;
           const rawQuyCach = item.quy_cach_m_dai ?? item.quyCachMDai ?? item.dai_m ?? item.daiM;
           const quyCachNum = Number(rawQuyCach);
+          const liveProduct = matchLiveProduct(item, idx);
+          const productionName = String(liveProduct?.ten_san_xuat ?? liveProduct?.productionName ?? item.ten_san_xuat ?? item.productionName ?? item.ten_sx ?? '').trim();
+          const liveLength = liveProduct?.quy_cach_m_dai ?? liveProduct?.quyCachMDai ?? liveProduct?.dai_m ?? liveProduct?.daiM;
+          const lengthNum = Number(liveLength ?? rawQuyCach);
+          const planRegion = item?.sl_sx && typeof item.sl_sx === 'object'
+            ? item.sl_sx as Record<string, unknown>
+            : {};
+          const planRegionHasQty = [planRegion.bac, planRegion.trung, planRegion.nam]
+            .some(value => Number.isFinite(parseServerNumber(value)) && parseServerNumber(value) > 0);
+          const regionValue = (...values: unknown[]) => {
+            const value = values.find(candidate => candidate !== undefined && candidate !== null && candidate !== '');
+            const parsed = parseServerNumber(value);
+            return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+          };
 
           baseRows.push({
             key,
@@ -11867,16 +12048,24 @@ export function createApp() {
             ma_sp: String(item.ma_sp || item.ma_hang || item.ma_san_pham || item.productCode || '').trim(),
             ten_sp: String(item.ten_sp || item.ten_hang || item.ten_san_pham || item.productName || '').trim(),
             ten_san_xuat: formatProductionNameWithLengthServer(
-              String(item.ten_san_xuat || item.productionName || item.ten_sx || item.ten_sp || item.ten_hang || item.ten_san_pham || item.productName || '').trim(),
-              Number.isFinite(quyCachNum) && quyCachNum > 0 ? quyCachNum : undefined,
-              String(item.ten_ghep || item.tenGhep || '').trim() || undefined
+              productionName || String(item.ten_sp || item.ten_hang || item.ten_san_pham || item.productName || '').trim(),
+              Number.isFinite(lengthNum) && lengthNum > 0 ? lengthNum : Number.isFinite(quyCachNum) && quyCachNum > 0 ? quyCachNum : undefined
             ),
             don_vi: String(item.don_vi || '').trim(),
             tong_sx: Number(item.so_luong) || 0,
-            kg_cuon: Number(item.tl_cuon ?? item.kg_cuon ?? item.trong_luong_kg_cuon) || null,
-            tl_tam: Number(item.tl_tam ?? item.trong_luong_kg_tam) || null,
+            kg_cuon: Number(item.tl_cuon ?? item.kg_cuon ?? item.trong_luong_kg_cuon ?? liveProduct?.tl_cuon ?? liveProduct?.kg_cuon) || null,
+            tl_tam: Number(item.tl_tam ?? item.trong_luong_kg_tam ?? liveProduct?.tl_tam) || null,
             khu_vuc: String(item.khu_vuc || '').trim(),
-            quy_cach_m_dai: Number.isFinite(quyCachNum) && quyCachNum > 0 ? quyCachNum : null
+            quy_cach_m_dai: Number.isFinite(lengthNum) && lengthNum > 0 ? lengthNum : Number.isFinite(quyCachNum) && quyCachNum > 0 ? quyCachNum : null,
+            slsx_bac: planRegionHasQty
+              ? regionValue(planRegion.bac, item?.so_luong_bac, item?.sl_bac, item?.slsx_bac)
+              : regionValue(item?.so_luong_bac, item?.sl_bac, item?.slsx_bac, planRegion.bac),
+            slsx_trung: planRegionHasQty
+              ? regionValue(planRegion.trung, item?.so_luong_trung, item?.sl_trung, item?.slsx_trung)
+              : regionValue(item?.so_luong_trung, item?.sl_trung, item?.slsx_trung, planRegion.trung),
+            slsx_nam: planRegionHasQty
+              ? regionValue(planRegion.nam, item?.so_luong_nam, item?.sl_nam, item?.slsx_nam)
+              : regionValue(item?.so_luong_nam, item?.sl_nam, item?.slsx_nam, planRegion.nam)
           });
         });
       });
@@ -17654,7 +17843,11 @@ async function loadKiemKhoLiveTongHopForDot(
         console.error('Supabase ton-kho-nvl query error:', movementError);
         return res.status(500).json({ error: `Không thể tải tồn kho NVL. ${movementError.message}` });
       }
-      const movements = mergeWarehouseMovementRows(...movementLists);
+      const movements = mergeWarehouseMovementRows(...movementLists).sort((a, b) => {
+        const dateDiff = String(a?.ngay_phieu ?? '').localeCompare(String(b?.ngay_phieu ?? ''));
+        if (dateDiff) return dateDiff;
+        return String(a?.created_at ?? '').localeCompare(String(b?.created_at ?? ''));
+      });
 
       let catalog: unknown[] = [];
       const catalogFull = await supabase
@@ -18622,7 +18815,7 @@ async function loadKiemKhoLiveTongHopForDot(
     tenSp: string;
     nhomVthh: string;
     donVi: string;
-    specs: { ten_goc: string; do_li: string; do_li_dm: string; do_day_m: string; do_dai_m: string; mang: string; hang_phe: string };
+    specs: { ten_goc: string; do_li: string; do_li_dm: string; kho_rong: string; do_dai_m: string; mang: string; hang_phe: string };
   }): Promise<{ id?: string; warning?: string }> {
     const maMoi = String(args.maMoi || '').trim();
     const tenSp = String(args.tenSp || '').trim();
@@ -18651,7 +18844,7 @@ async function loadKiemKhoLiveTongHopForDot(
         ten_goc: args.specs.ten_goc || null,
         do_li: args.specs.do_li || null,
         do_li_dm: args.specs.do_li_dm || null,
-        do_day_m: args.specs.do_day_m || null,
+        kho_rong: args.specs.kho_rong || null,
         do_dai_m: args.specs.do_dai_m || null,
         mang: args.specs.mang || null,
         hang_phe: args.specs.hang_phe || null
@@ -18806,7 +18999,7 @@ async function loadKiemKhoLiveTongHopForDot(
             ten_goc: String(nguon.ten_goc || ''),
             do_li: String(piece.do_li || ''),
             do_li_dm: String(piece.do_li_dm || ''),
-            do_day_m: String(piece.do_day_m || ''),
+            kho_rong: String(piece.do_day_m || ''),
             do_dai_m: String(piece.do_dai_m || ''),
             mang: String(nguon.mang || ''),
             hang_phe: String(nguon.hang_phe || '')
@@ -21047,6 +21240,9 @@ async function loadKiemKhoLiveTongHopForDot(
       const ca = typeof req.query.ca === 'string' ? req.query.ca.trim() : '';
       const exact = String(req.query.exact ?? '') === '1';
       const maLenhSx = typeof req.query.ma_lenh_sx === 'string' ? req.query.ma_lenh_sx.trim() : '';
+      const requestedIds = typeof req.query.ids === 'string'
+        ? req.query.ids.split(',').map(value => value.trim()).filter(Boolean).slice(0, 100)
+        : [];
       const maMayParam =
         typeof req.query.ma_may === 'string'
           ? req.query.ma_may.trim()
@@ -21064,7 +21260,8 @@ async function loadKiemKhoLiveTongHopForDot(
         .order('ngay', { ascending: false })
         .order('created_at', { ascending: false });
 
-      if (ngay) query = query.eq('ngay', ngay);
+      if (requestedIds.length > 0) query = query.in('id', requestedIds);
+      else if (ngay) query = query.eq('ngay', ngay);
 
       const { data, error } = await query.limit(limit);
       if (error) {
@@ -23741,13 +23938,46 @@ async function loadKiemKhoLiveTongHopForDot(
       // Load ke_hoach_san_xuat_dong để lấy ma_don_hang, san_pham JSON
       const { data: planLines, error: linesError } = await supabase
         .from(SUPABASE_PRODUCTION_PLAN_LINES_TABLE)
-        .select('ma_don_hang, san_pham')
-        .eq('ke_hoach_id', planId);
+        .select('ma_lenh_sx, ma_don_hang, san_pham')
+        .eq('ke_hoach_id', planId)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true });
 
       if (linesError) {
         console.error('Error fetching plan lines:', linesError);
         return res.status(500).json({ error: 'Không thể tải dữ liệu dòng kế hoạch.' });
       }
+
+      const orderRefs = [...new Set((planLines || []).flatMap(line =>
+        String(line.ma_don_hang || '').split(/[,;+|/]+/).map(code => code.trim()).filter(Boolean)
+      ))];
+      const productionOrderCodes = [...new Set((planLines || []).map(line => String(line.ma_lenh_sx || '').trim()).filter(Boolean))];
+      const [orderNotesResult, productionNotesResult] = await Promise.all([
+        orderRefs.length > 0
+          ? supabase.from(SUPABASE_ORDERS_TABLE).select('ma_don_hang, ghi_chu').in('ma_don_hang', orderRefs)
+          : Promise.resolve({ data: [], error: null }),
+        productionOrderCodes.length > 0
+          ? supabase.from(SUPABASE_PRODUCTION_ORDERS_TABLE).select('ma_lenh_sx, ghi_chu').in('ma_lenh_sx', productionOrderCodes)
+          : Promise.resolve({ data: [], error: null })
+      ]);
+      const donHangGhiChu = (orderNotesResult.data || [])
+        .map(row => {
+          const code = String(row.ma_don_hang || '').trim();
+          const note = String(row.ghi_chu || '').replace(/\r\n/g, '\n').split('\n').map(part => part.trim()).filter(Boolean).join('; ');
+          return code && note ? `${code} - ${note}` : '';
+        })
+        .filter(Boolean)
+        .join('\n');
+      const lenhGhiChu = (productionNotesResult.data || [])
+        .map(row => {
+          const code = String(row.ma_lenh_sx || '').trim();
+          const note = String(row.ghi_chu || '').trim();
+          if (!note) return '';
+          return productionOrderCodes.length > 1 && code ? `${code}: ${note}` : note;
+        })
+        .filter(Boolean)
+        .filter((note, idx, all) => all.indexOf(note) === idx)
+        .join('\n');
 
       // Build map của san_pham từ JSON
       const sanPhamMap = new Map<string, any>();
@@ -23770,33 +24000,33 @@ async function loadKiemKhoLiveTongHopForDot(
 
       const rows = baseRows.map(baseRow => {
         const saved = sanPhamMap.get(baseRow.key);
-        if (saved && saved.sl_sx) {
-          return {
-            ...baseRow,
-            slsx_bac: Number(saved.sl_sx.bac) || 0,
-            slsx_trung: Number(saved.sl_sx.trung) || 0,
-            slsx_nam: Number(saved.sl_sx.nam) || 0,
-            ghi_chu: saved.ghi_chu || '',
-            has_saved_detail: true
-          };
-        }
-
-        // Lấy khu_vuc từ JSON (đã lưu khi tạo kế hoạch)
-        const khuVucFromJson = String(saved?.khu_vuc || baseRow.khu_vuc || '').trim();
-        const defaultAlloc = (() => {
-          if (khuVucFromJson === 'Bắc') return { bac: baseRow.tong_sx, trung: 0, nam: 0 };
-          if (khuVucFromJson === 'Trung') return { bac: 0, trung: baseRow.tong_sx, nam: 0 };
-          if (khuVucFromJson === 'Nam') return { bac: 0, trung: 0, nam: baseRow.tong_sx };
-          return { bac: 0, trung: 0, nam: 0 };
-        })();
-
+        const planQty = (...values: unknown[]) => {
+          for (const value of values) {
+            const parsed = parseServerNumber(value);
+            if (Number.isFinite(parsed)) return Math.max(0, parsed);
+          }
+          return 0;
+        };
+        const savedSlSx = saved?.sl_sx && typeof saved.sl_sx === 'object'
+          ? saved.sl_sx as Record<string, unknown>
+          : {};
+        const savedBac = planQty(savedSlSx.bac);
+        const savedTrung = planQty(savedSlSx.trung);
+        const savedNam = planQty(savedSlSx.nam);
+        const planBac = planQty(saved?.so_luong_bac, saved?.sl_bac, saved?.slsx_bac);
+        const planTrung = planQty(saved?.so_luong_trung, saved?.sl_trung, saved?.slsx_trung);
+        const planNam = planQty(saved?.so_luong_nam, saved?.sl_nam, saved?.slsx_nam);
+        const savedTotal = savedBac + savedTrung + savedNam;
+        const planTotal = planBac + planTrung + planNam;
+        const useSavedPreview = savedTotal > 0;
+        const usePlanSnapshot = !useSavedPreview && planTotal > 0;
         return {
           ...baseRow,
-          slsx_bac: defaultAlloc.bac,
-          slsx_trung: defaultAlloc.trung,
-          slsx_nam: defaultAlloc.nam,
-          ghi_chu: '',
-          has_saved_detail: false
+          slsx_bac: useSavedPreview ? savedBac : usePlanSnapshot ? planBac : baseRow.slsx_bac,
+          slsx_trung: useSavedPreview ? savedTrung : usePlanSnapshot ? planTrung : baseRow.slsx_trung,
+          slsx_nam: useSavedPreview ? savedNam : usePlanSnapshot ? planNam : baseRow.slsx_nam,
+          ghi_chu: saved?.ghi_chu || '',
+          has_saved_detail: Boolean(saved?.sl_sx)
         };
       });
 
@@ -23808,7 +24038,9 @@ async function loadKiemKhoLiveTongHopForDot(
           lan_ban_hanh: plan.lan_ban_hanh || '01',
           ma_so: plan.ma_so || '',
           ngay_lien_lac: plan.ngay_lien_lac || '',
-          dac_ta: plan.dac_ta || ''
+          dac_ta: plan.dac_ta || '',
+          don_hang_ghi_chu: donHangGhiChu,
+          lenh_ghi_chu: lenhGhiChu
         },
         rows
       });
@@ -23858,9 +24090,9 @@ async function loadKiemKhoLiveTongHopForDot(
           continue;
         }
 
-        const bac = Number(rowInput.slsx_bac) || 0;
-        const trung = Number(rowInput.slsx_trung) || 0;
-        const nam = Number(rowInput.slsx_nam) || 0;
+        const bac = Math.max(0, parseServerNumber(rowInput.slsx_bac) || 0);
+        const trung = Math.max(0, parseServerNumber(rowInput.slsx_trung) || 0);
+        const nam = Math.max(0, parseServerNumber(rowInput.slsx_nam) || 0);
         const totalInput = bac + trung + nam;
 
         if (!baseRow) {
@@ -23896,7 +24128,9 @@ async function loadKiemKhoLiveTongHopForDot(
       const { data: planLines, error: loadError } = await supabase
         .from(SUPABASE_PRODUCTION_PLAN_LINES_TABLE)
         .select('id, san_pham')
-        .eq('ke_hoach_id', planId);
+        .eq('ke_hoach_id', planId)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true });
 
       if (loadError) {
         console.error('Error loading plan lines:', loadError);
@@ -23925,9 +24159,9 @@ async function loadKiemKhoLiveTongHopForDot(
               ghi_chu: String(inputRow.ghi_chu || '').trim() || null,
               khu_vuc: String(inputRow.khu_vuc || '').trim() || item.khu_vuc,
               sl_sx: {
-                bac: Math.max(0, Number(inputRow.slsx_bac) || 0),
-                trung: Math.max(0, Number(inputRow.slsx_trung) || 0),
-                nam: Math.max(0, Number(inputRow.slsx_nam) || 0)
+                bac: Math.max(0, parseServerNumber(inputRow.slsx_bac) || 0),
+                trung: Math.max(0, parseServerNumber(inputRow.slsx_trung) || 0),
+                nam: Math.max(0, parseServerNumber(inputRow.slsx_nam) || 0)
               }
             };
           }

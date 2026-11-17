@@ -13,12 +13,18 @@
 | GET | `/api/xuat-nhap-tong-hop?from=&to=&limit=` | Lọc ngày server; máy/kho lọc client (đa chọn) |
 | GET | `/api/danh-sach-may` | Options máy (`ma_may`) |
 | GET | `/api/quan-ly-kho` | Options kho (`ten_kho`) |
+| GET | `/api/cai-dat` | Danh sách ca sản xuất theo cài đặt |
+| GET | `/api/so-tron?ngay=&ca=&ma_may=&limit=` | Tồn cuối máy theo ngày, ca, máy; lấy `bang_ban_giao[].ton_cuoi_ca` |
+| POST | `/api/xuat-nhap-tong-hop` | Nhập lại máy → kho; lưu giá từng dòng, kiểm tra tổng lượng theo Sổ trộn và giới hạn theo từng lớp mã + kho nguồn + đơn giá |
 
 ## Frontend
 
 | File | Nội dung |
 |------|----------|
-| `src/features/thong-ke-nvl/index.tsx` | `ThongKeNvlPanel`: lọc từ–đến ngày (`VnCalendarPicker`) + máy/kho đa chọn (`SearchableMultiSelect`, trống = tất cả), bảng 2 tầng Nhập/Xuất giống `/tong-hop-ncc` (thêm cột Kho + Máy), gộp theo tên NVL rồi liệt kê ngày, thanh tổng trên + dưới, xuất CSV |
+| `src/features/thong-ke-nvl/index.tsx` | `ThongKeNvlPanel`: tab Nhập–xuất và tab Kiểm tra tồn theo máy |
+| `src/features/thong-ke-nvl/MachineStockTab.tsx` | Lọc Sổ trộn theo ngày/ca/máy (có chọn tất cả máy); kiểm tra tồn cuối ca và theo dõi kho cấp/đơn giá, chỉ xem, không tạo phiếu nhập lại |
+| `src/features/xuat-nhap-tong-hop/registerRoutes.ts` | Kiểm tra nhập lại từ máy theo Sổ trộn đã chọn, tổng lượng đã nhập trước đó và số dư từng lớp giá |
+| `src/features/xuat-nhap-tong-hop/machineReturnPriceGroups.ts` | Tạo khóa và kiểm tra hạn mức nhập lại theo mã NVL + kho nguồn + đơn giá |
 
 ## Quy ước lọc
 

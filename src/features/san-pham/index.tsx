@@ -56,7 +56,9 @@ import {
   normalizeDinhMucKg,
   normalizeDoLiDm,
   parseDoDaiMLength,
+  resolveSongDoDaiTamTieuChuan,
   seedProductionSpecs,
+  splitProductionIdentity,
   stripParsedSegmentsFromTenGoc
 } from '../../utils/productProductionName';
 import { showAppToast } from '../../lib/appToast';
@@ -2517,13 +2519,20 @@ export function normalizeProducts(data: unknown): ProductRow[] {
         name,
         productionName: String(record.ten_san_xuat ?? record.productionName ?? '').trim(),
         tenGoc: String(record.ten_goc ?? '').trim(),
+        mau: String(record.mau ?? '').trim(),
+        np: String(record.np ?? '').trim(),
+        tcmn: String(record.tcmn ?? '').trim(),
+        giaRe: String(record.gia_re ?? '').trim(),
+        off: String(record.off ?? '').trim(),
         doLi: String(record.do_li ?? '').trim(),
         doLiDm: String(record.do_li_dm ?? '').trim(),
         dinhMucKg: String(record.dinh_muc_kg ?? '').trim(),
+        doDaiTamTieuChuan: String(record.do_dai_tam_tieu_chuan ?? '').trim(),
         zem: String(record.zem ?? '').trim(),
         soSong: String(record.so_song ?? '').trim(),
         tcmb: record.tcmb === true || record.tcmb === 'true' || record.tcmb === 'TCMB' || record.tcmb === 1,
-        doDayM: String(record.do_day_m ?? '').trim(),
+        // `do_day_m` is accepted only for legacy API payloads; the DB column is `kho_rong`.
+        doDayM: String(record.kho_rong ?? record.do_day_m ?? '').trim(),
         doDaiM: String(record.do_dai_m ?? '').trim(),
         mang: String(record.mang ?? '').trim(),
         hangPhe: String(record.hang_phe ?? '').trim(),
@@ -2572,10 +2581,17 @@ export type ProductFormState = {
   name: string;
   productionName: string;
   tenGoc: string;
+  mau: string;
+  np: boolean;
+  tcmn: boolean;
+  giaRe: boolean;
+  off: boolean;
   doLi: string;
   doLiDm: string;
   /** `(đm n kg)` — định mức kg (tách khỏi `doLiDm`). */
   dinhMucKg: string;
+  /** Mét dài tấm tiêu chuẩn của ĐM kg (Sóng), vd `6m`. */
+  doDaiTamTieuChuan: string;
   /** `6ZEM`, `8ZEM` — nối sau sóng (Sóng) / sau màu (Đặc). */
   zem: string;
   /** Số sóng (`11` của `11 SÓNG`). */
@@ -2741,6 +2757,16 @@ export function normalizeUnitForForm(unit: string): string {
 }
 
 export function productToForm(product: ProductRow, conversions: ProductConversionFactors[] = []): ProductFormState {
+  const identity = splitProductionIdentity(product.tenGoc || product.productionName || '');
+  const storedMau = productCellToInput(product.mau || '');
+  let hangPhe = productCellToInput(product.hangPhe);
+  const hangPheIsGiaRe = /giá\s*rẻ/iu.test(hangPhe);
+  if (hangPheIsGiaRe) hangPhe = '';
+  if (!hangPhe) {
+    if (/^OFF$/iu.test(product.off || '') || identity.off === 'OFF') hangPhe = 'hàng chạy 100% NS Off';
+    else if (/^NP$/iu.test(product.np || '') || identity.np === 'NP') hangPhe = 'hàng nguyên phế';
+  }
+  const grade = deriveNpOffFromHangPhe(hangPhe);
   return {
     code: productCellToInput(product.code),
     newCode: productCellToInput(product.newCode),
@@ -2748,17 +2774,26 @@ export function productToForm(product: ProductRow, conversions: ProductConversio
     amisOldCode: productCellToInput(product.amisOldCode || ''),
     name: productCellToInput(product.name),
     productionName: productCellToInput(product.productionName),
-    tenGoc: productCellToInput(product.tenGoc),
+    tenGoc: storedMau ? productCellToInput(product.tenGoc) : (identity.tenGoc || productCellToInput(product.tenGoc)),
+    mau: storedMau || identity.mau,
+    np: grade.np,
+    tcmn: /tcmn/iu.test(product.tcmn || '') || (!product.tcmn && identity.tcmn === 'TCMN'),
+    giaRe:
+      hangPheIsGiaRe ||
+      /giá\s*rẻ/iu.test(product.giaRe || '') ||
+      (!product.giaRe && identity.giaRe === 'Giá rẻ'),
+    off: grade.off,
     doLi: productCellToInput(product.doLi),
     doLiDm: productCellToInput(product.doLiDm),
     dinhMucKg: productCellToInput(product.dinhMucKg),
+    doDaiTamTieuChuan: productCellToInput(product.doDaiTamTieuChuan),
     zem: productCellToInput(product.zem),
     soSong: productCellToInput(product.soSong),
     tcmb: Boolean(product.tcmb),
     doDayM: productCellToInput(product.doDayM),
     doDaiM: productCellToInput(product.doDaiM),
     mang: productCellToInput(product.mang),
-    hangPhe: productCellToInput(product.hangPhe),
+    hangPhe,
     tenGhepManual: '',
     nature: productCellToInput(product.nature),
     group: productCellToInput(product.group),
@@ -2791,9 +2826,15 @@ export function emptyProductForm(): ProductFormState {
     name: '',
     productionName: '',
     tenGoc: '',
+    mau: '',
+    np: false,
+    tcmn: false,
+    giaRe: false,
+    off: false,
     doLi: '',
     doLiDm: '',
     dinhMucKg: '',
+    doDaiTamTieuChuan: '',
     zem: '',
     soSong: '',
     tcmb: false,
@@ -2824,10 +2865,17 @@ export function emptyProductForm(): ProductFormState {
   };
 }
 
+/** NP / OFF suy từ Hàng phế — không còn checkbox riêng trên form. */
+export function deriveNpOffFromHangPhe(hangPhe: string): { np: boolean; off: boolean } {
+  const phe = String(hangPhe || '').trim();
+  const off = /NS\s*Off|^OFF$/iu.test(phe);
+  const np = !off && /nguyên\s*phế|100%\s*phế|chạy\s+100%\s*phế/iu.test(phe);
+  return { np, off };
+}
+
 /**
- * Chuỗi `ten_san_xuat` canonical ghép từ thông số form.
- * Thứ tự: ten gốc (ZEM sau sóng/màu) - hàng phế - màng - TCMB - độ li - đm li - đm kg - khổ - mét dài.
- * Ghép thuần từ ô thông số — không neo theo `productionName` cũ (tránh đổi ĐM/khổ/mét mà tên không đổi).
+ * Chuỗi `ten_san_xuat` ghép từ từng cột: màu, hàng phế (NP/OFF), giá rẻ, TCMN, độ li, khổ, mét dài.
+ * `Trắng` và `trắng sữa` giữ đúng chữ đã nhập.
  */
 export function composeProductFormProductionName(form: ProductFormState): string {
   // Ô "ĐM (đm li)" gõ nhầm `(đm n kg)` → tự route sang đm kg, không ghép trùng.
@@ -2845,6 +2893,8 @@ export function composeProductFormProductionName(form: ProductFormState): string
     doLiDmFromBox ||
     calculateDoLiDm(form.doLi, form.group) ||
     '';
+  const hangPhe = form.hangPhe.trim();
+  const { np, off } = deriveNpOffFromHangPhe(hangPhe);
   const parts = {
     tenGoc: form.tenGoc.trim(),
     doLi: form.doLi.trim(),
@@ -2856,11 +2906,19 @@ export function composeProductFormProductionName(form: ProductFormState): string
     doDayM: form.doDayM.trim(),
     doDaiM: form.doDaiM.trim(),
     mang: form.mang.trim(),
-    hangPhe: form.hangPhe.trim()
+    hangPhe
   };
   // ten_goc chỉ giữ phần gốc — bỏ segment thuộc field (kể cả mét/li cũ còn dính) rồi ghép lại.
-  const tenGoc = stripParsedSegmentsFromTenGoc(parts.tenGoc, parts);
-  return composeProductionDisplayName({ ...parts, tenGoc }, form.group.trim());
+  const tenGoc = splitProductionIdentity(stripParsedSegmentsFromTenGoc(parts.tenGoc, parts)).tenGoc;
+  return composeProductionDisplayName({
+    ...parts,
+    tenGoc,
+    mau: form.mau.trim(),
+    np: np ? 'NP' : '',
+    tcmn: form.tcmn ? 'TCMN' : '',
+    giaRe: form.giaRe ? 'Giá rẻ' : '',
+    off: off ? 'OFF' : ''
+  }, form.group.trim());
 }
 
 export function productFormToPayload(
@@ -2907,16 +2965,26 @@ export function productFormToPayload(
       form.dinhMucKg.trim() ||
       (/\bkg\b/iu.test(rawDoLiDm) ? normalizeDinhMucKg(rawDoLiDm) : '')
     );
-  // Canonical: ten_san_xuat lưu chuỗi đã ghép; ten_ghep mirror cùng giá trị (legacy).
-  const tenGhep = form.tenGhepManual.trim() || composeProductFormProductionName(form);
+  const doDaiTamTieuChuan = pxGroup === 'dac' || pxGroup === 'rong'
+    ? ''
+    : form.doDaiTamTieuChuan.trim();
+  // Canonical: ten_san_xuat = chuỗi đã ghép từ thông số (NP/OFF suy từ hang_phe).
+  const composed = composeProductFormProductionName(form);
+  const { np, off } = deriveNpOffFromHangPhe(form.hangPhe);
   return {
     ...base,
     code: form.amisCode.trim() || form.code.trim(),
-    productionName: tenGhep || form.productionName.trim(),
+    productionName: composed || form.productionName.trim(),
     tenGoc: form.tenGoc.trim(),
+    mau: form.mau.trim(),
+    np: np ? 'NP' : '',
+    tcmn: form.tcmn ? 'TCMN' : '',
+    giaRe: form.giaRe ? 'Giá rẻ' : '',
+    off: off ? 'OFF' : '',
     doLi: form.doLi.trim(),
     doLiDm,
     dinhMucKg,
+    doDaiTamTieuChuan,
     zem: form.zem.trim(),
     soSong: form.soSong.trim(),
     tcmb: form.tcmb,
@@ -2924,7 +2992,7 @@ export function productFormToPayload(
     doDaiM: form.doDaiM.trim(),
     mang: form.mang.trim(),
     hangPhe: form.hangPhe.trim(),
-    tenGhep,
+    tenGhep: composed,
     wastePercent: form.wastePercent.trim().replace(',', '.'),
     conversions: form.conversions.map(item => ({
       sheetWidthM: item.khoTamRongM.trim(),
@@ -3105,21 +3173,37 @@ export function ProductEditModal({
       maAmis: amisCode,
       nhomVthh: group
     });
+    let hangPhe = seeded.hangPhe || base.hangPhe;
+    if (!hangPhe && seeded.off === 'OFF') hangPhe = 'hàng chạy 100% NS Off';
+    else if (!hangPhe && seeded.np === 'NP') hangPhe = 'hàng nguyên phế';
+    const grade = deriveNpOffFromHangPhe(hangPhe);
     return {
       ...next,
       tenGoc: seeded.tenGoc,
+      mau: seeded.mau || '',
+      np: grade.np,
+      tcmn: seeded.tcmn === 'TCMN',
+      giaRe: seeded.giaRe === 'Giá rẻ',
+      off: grade.off,
       doLi: seeded.doLi,
       doLiDm: seeded.doLiDm || extractDoLiDmLi(productionName) || '',
       dinhMucKg: classifyProductPxGroup(group) === 'dac' || classifyProductPxGroup(group) === 'rong'
         ? ''
         : (seeded.dinhMucKg || normalizeDinhMucKg(extractDoLiDm(productionName) || '')),
+      doDaiTamTieuChuan: classifyProductPxGroup(group) === 'dac' || classifyProductPxGroup(group) === 'rong'
+        ? ''
+        : resolveSongDoDaiTamTieuChuan(
+          productionName,
+          seeded.dinhMucKg || normalizeDinhMucKg(extractDoLiDm(productionName) || ''),
+          next.doDaiTamTieuChuan ?? base.doDaiTamTieuChuan
+        ),
       zem: seeded.zem,
       soSong: seeded.soSong,
       tcmb: Boolean(seeded.tcmb),
       doDayM: seeded.doDayM,
       doDaiM: seeded.doDaiM,
       mang: seeded.mang,
-      hangPhe: seeded.hangPhe || base.hangPhe
+      hangPhe
     };
   };
 
@@ -3127,6 +3211,11 @@ export function ProductEditModal({
   const patchProductionSpecs = (patch: Partial<ProductFormState>) => {
     setForm(prev => {
       const next = { ...prev, ...patch, tenGhepManual: '' };
+      if ('hangPhe' in patch) {
+        const grade = deriveNpOffFromHangPhe(next.hangPhe);
+        next.np = grade.np;
+        next.off = grade.off;
+      }
       // Chuẩn hóa ô ĐM (đm li) khi còn số trần — giữ `(đm n li)` sau khi tick TCMB / đổi thông số.
       if ('doLiDm' in patch || next.doLiDm.trim()) {
         const raw = next.doLiDm.trim();
@@ -3311,6 +3400,13 @@ export function ProductEditModal({
                               maAmis: item.amisCode,
                               nhomVthh: item.group || prev.group
                             });
+                            let hangPhe = seeded.hangPhe || item.hangPhe || '';
+                            if (!hangPhe && (seeded.off === 'OFF' || /^OFF$/iu.test(item.off || ''))) {
+                              hangPhe = 'hàng chạy 100% NS Off';
+                            } else if (!hangPhe && (seeded.np === 'NP' || /^NP$/iu.test(item.np || ''))) {
+                              hangPhe = 'hàng nguyên phế';
+                            }
+                            const grade = deriveNpOffFromHangPhe(hangPhe);
                             const seededForm = {
                               ...prev,
                               amisCode: item.amisCode,
@@ -3320,16 +3416,29 @@ export function ProductEditModal({
                               wastePercent,
                               ...(seededBaseConversion ? { conversions: [seededBaseConversion] } : {}),
                               tenGoc: seeded.tenGoc,
+                              mau: seeded.mau || item.mau || '',
+                              np: grade.np,
+                              tcmn: seeded.tcmn === 'TCMN' || /tcmn/iu.test(item.tcmn || ''),
+                              giaRe: seeded.giaRe === 'Giá rẻ' || /giá\s*rẻ/iu.test(item.giaRe || ''),
+                              off: grade.off,
                               doLi: seeded.doLi,
                               doLiDm: seeded.doLiDm,
                               dinhMucKg: seeded.dinhMucKg,
+                              doDaiTamTieuChuan: classifyProductPxGroup(nextGroup) === 'dac'
+                                || classifyProductPxGroup(nextGroup) === 'rong'
+                                ? ''
+                                : resolveSongDoDaiTamTieuChuan(
+                                  item.productionName || '',
+                                  seeded.dinhMucKg || '',
+                                  item.doDaiTamTieuChuan || ''
+                                ),
                               zem: seeded.zem,
                               soSong: seeded.soSong,
                               tcmb: Boolean(seeded.tcmb) || Boolean(item.tcmb),
                               doDayM: seeded.doDayM,
                               doDaiM: seeded.doDaiM,
                               mang: seeded.mang,
-                              hangPhe: seeded.hangPhe || item.hangPhe || '',
+                              hangPhe,
                               tenGhepManual: ''
                             };
                             const composed = composeProductFormProductionName(seededForm);
@@ -3429,26 +3538,6 @@ export function ProductEditModal({
                   />
                 </label>
               ) : null}
-              <label className="block space-y-1.5 sm:col-span-2">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Tên sản xuất *</span>
-                <input
-                  value={form.productionName}
-                  onChange={event => {
-                    const productionName = event.target.value;
-                    setForm(prev => {
-                      const seeded = seedSpecsFromName({ productionName }, prev);
-                      return {
-                        ...prev,
-                        productionName,
-                        ...seeded,
-                        tenGhepManual: ''
-                      };
-                    });
-                  }}
-                  className={productFieldClass}
-                  placeholder="Nhập tên sản xuất — hệ thống suy luận ĐM / thông số"
-                />
-              </label>
               <section className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3 sm:col-span-2">
                 <h4 className="text-xs font-black uppercase text-amber-900">Thông số sản xuất</h4>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -3460,6 +3549,35 @@ export function ProductEditModal({
                       className={`${productFieldClass} bg-white`}
                     />
                   </label>
+                  <label className="space-y-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Màu</span>
+                    <input
+                      value={form.mau}
+                      onChange={event => patchProductionSpecs({ mau: event.target.value })}
+                      className={`${productFieldClass} bg-white`}
+                      placeholder="Trắng khác trắng sữa"
+                      title="Trắng và trắng sữa là hai màu khác nhau. trắng xứ được hiểu là trắng sữa."
+                    />
+                  </label>
+                  <div className="grid grid-cols-1 gap-2 sm:col-span-2 sm:grid-cols-3 lg:col-span-3">
+                    <label className="flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2">
+                      <input type="checkbox" checked={form.giaRe} onChange={event => patchProductionSpecs({ giaRe: event.target.checked })} className="h-4 w-4 accent-[#ef1b2d]" />
+                      <span className="text-[10px] font-black uppercase tracking-wide text-zinc-600">Giá rẻ</span>
+                    </label>
+                    <label className="flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2">
+                      <input type="checkbox" checked={form.tcmn} onChange={event => patchProductionSpecs({ tcmn: event.target.checked })} className="h-4 w-4 accent-[#ef1b2d]" />
+                      <span className="text-[10px] font-black uppercase tracking-wide text-zinc-600">TCMN</span>
+                    </label>
+                    <label className="flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={form.tcmb}
+                        onChange={event => patchProductionSpecs({ tcmb: event.target.checked })}
+                        className="h-4 w-4 accent-[#ef1b2d]"
+                      />
+                      <span className="text-[10px] font-black uppercase tracking-wide text-zinc-600">TCMB</span>
+                    </label>
+                  </div>
                   <label className="space-y-1.5">
                     <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Độ li</span>
                     <input
@@ -3506,16 +3624,15 @@ export function ProductEditModal({
                       placeholder="(đm 4.8 kg)"
                     />
                   </label>
-                  <label className="flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2">
+                  <label className="space-y-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Mét dài ĐM (m)</span>
                     <input
-                      type="checkbox"
-                      checked={form.tcmb}
-                      onChange={event => patchProductionSpecs({ tcmb: event.target.checked })}
-                      className="h-4 w-4 accent-[#ef1b2d]"
+                      value={form.doDaiTamTieuChuan}
+                      onChange={event => patchProductionSpecs({ doDaiTamTieuChuan: event.target.value })}
+                      className={`${productFieldClass} bg-white`}
+                      placeholder="Sóng: 6m"
+                      title="Mét dài tấm tiêu chuẩn của ĐM kg (vd /6M trong ĐM 9.5KG/6M). Khác Mét dài SP."
                     />
-                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-600">
-                      TCMB (tiêu chuẩn miền bắc)
-                    </span>
                   </label>
                   <label className="space-y-1.5">
                     <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Khổ rộng (m)</span>
@@ -3543,29 +3660,8 @@ export function ProductEditModal({
                       onChange={event => patchProductionSpecs({ mang: event.target.value })}
                       className={`${productFieldClass} bg-white`}
                     >
-                      <option value="">— / tự nhập bên dưới</option>
-                      {FILM_OPTIONS.map(opt => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      value={form.mang}
-                      onChange={event => patchProductionSpecs({ mang: event.target.value })}
-                      className={`${productFieldClass} mt-1 bg-white`}
-                      placeholder="ECO / STD / SUN PC / HA hoặc nhập tay"
-                    />
-                  </label>
-                  <label className="space-y-1.5 sm:col-span-2">
-                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Hàng phế</span>
-                    <select
-                      value={form.hangPhe}
-                      onChange={event => patchProductionSpecs({ hangPhe: event.target.value })}
-                      className={`${productFieldClass} bg-white`}
-                    >
                       <option value="">—</option>
-                      {WASTE_GRADE_OPTIONS.map(opt => (
+                      {FILM_OPTIONS.map(opt => (
                         <option key={opt} value={opt}>
                           {opt}
                         </option>
@@ -3574,35 +3670,36 @@ export function ProductEditModal({
                   </label>
                   <label className="space-y-1.5 sm:col-span-2 lg:col-span-3">
                     <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">
-                      Tên sản xuất (canonical) {form.tenGhepManual.trim() ? '(sửa tay)' : '(tự động theo thông số)'}
+                      Hàng Phế
                     </span>
-                    <div className="flex gap-2">
-                      <input
-                        value={form.tenGhepManual.trim() ? form.tenGhepManual : composedName}
-                        onChange={event => {
-                          const value = event.target.value;
-                          setForm(prev => ({ ...prev, tenGhepManual: value, productionName: value }));
-                        }}
-                        placeholder="Sửa tên sản xuất — lưu vào ten_san_xuat"
-                        className={`${productFieldClass} bg-white font-semibold text-zinc-800`}
-                      />
-                      {form.tenGhepManual.trim() ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setForm(prev => ({
-                              ...prev,
-                              tenGhepManual: '',
-                              productionName: composedName || prev.productionName
-                            }))
-                          }
-                          title="Về tự động"
-                          className="h-11 shrink-0 rounded-lg border border-zinc-200 px-3 text-xs font-black text-zinc-600 transition hover:bg-zinc-50"
-                        >
-                          Tự động
-                        </button>
-                      ) : null}
-                    </div>
+                    <select
+                      value={/giá\s*rẻ/iu.test(form.hangPhe) ? '' : form.hangPhe}
+                      onChange={event => patchProductionSpecs({ hangPhe: event.target.value })}
+                      className={`${productFieldClass} bg-white`}
+                      title="NP = hàng nguyên phế / 100% phế · OFF = hàng chạy 100% NS Off"
+                    >
+                      <option value="">—</option>
+                      {WASTE_GRADE_OPTIONS.filter(opt => !/giá\s*rẻ/iu.test(opt)).map(opt => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-1.5 sm:col-span-2 lg:col-span-3">
+                    <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">
+                      Tên sản xuất *{' '}
+                      <span className="font-semibold normal-case tracking-normal text-zinc-400">
+                        (tự ghép theo thông số)
+                      </span>
+                    </span>
+                    <input
+                      value={composedName || form.productionName}
+                      readOnly
+                      className={`${productFieldClass} bg-white font-semibold text-zinc-800`}
+                      placeholder="Tự ghép khi đủ thông số"
+                      title="Tự động ghép từ thông số sản xuất — không nhập tay"
+                    />
                   </label>
                 </div>
               </section>
@@ -5395,6 +5492,11 @@ export function ProductsPanel({
                     composeProductionDisplayName(
                       {
                         tenGoc: row.tenGoc || row.productionName,
+                        mau: row.mau,
+                        np: row.np,
+                        tcmn: row.tcmn,
+                        giaRe: row.giaRe,
+                        off: row.off,
                         doLi: row.doLi,
                         doLiDm: row.doLiDm,
                         dinhMucKg: row.dinhMucKg,

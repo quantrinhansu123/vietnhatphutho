@@ -118,6 +118,9 @@ import {
   normalizeWarehouseMaterialClass
 } from '../../utils/warehouseNormMerge';
 
+/** Tạm ẩn ảnh số cân NVL trên form/xem — bật `true` khi dùng lại. */
+const SHOW_NVL_ACTUAL_WEIGHT_IMAGE = false;
+
 export type WarehouseSlipType = 'nhap' | 'xuat';
 export type WarehouseKind =
   | 'nvl'
@@ -6250,7 +6253,7 @@ export function WarehouseSlipPanel({
                     <span className={warehouseLineMobileHiddenClass} />
                   )}
                   </div>
-                  {isNvlExport && !line.isScanned ? (
+                  {SHOW_NVL_ACTUAL_WEIGHT_IMAGE && isNvlExport && !line.isScanned ? (
                     <div className="mb-2 grid grid-cols-1 justify-items-center gap-2 rounded-lg border border-red-100 bg-red-50/40 p-2 md:justify-items-start">
                       {([
                         {
@@ -7557,7 +7560,7 @@ export function WarehouseHistoryPanel({
                     {viewingRows[0].slipType === 'xuat' && viewingRows[0].warehouseKind === 'nvl' ? (
                       <th className="py-2 pr-3 font-black">PN nhập</th>
                     ) : null}
-                    {viewingRows[0].slipType === 'xuat' && viewingRows[0].warehouseKind === 'nvl' ? (
+                    {SHOW_NVL_ACTUAL_WEIGHT_IMAGE && viewingRows[0].slipType === 'xuat' && viewingRows[0].warehouseKind === 'nvl' ? (
                       <th className="py-2 pr-3 font-black">Ảnh thực tế</th>
                     ) : null}
                     <th className="py-2 pr-3 font-black">Giá</th>
@@ -7583,7 +7586,7 @@ export function WarehouseHistoryPanel({
                           {row.sourceInboundSlipCode || '—'}
                         </td>
                       ) : null}
-                      {viewingRows[0].slipType === 'xuat' && viewingRows[0].warehouseKind === 'nvl' ? (
+                      {SHOW_NVL_ACTUAL_WEIGHT_IMAGE && viewingRows[0].slipType === 'xuat' && viewingRows[0].warehouseKind === 'nvl' ? (
                         <td className="py-2 pr-3">
                           <div className="flex flex-wrap gap-1">
                             {row.actualWeightImageUrl ? (

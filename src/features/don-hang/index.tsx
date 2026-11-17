@@ -109,19 +109,19 @@ interface OrderRowExt extends OrderRow {
   khu_vuc?: string;
 }
 
-const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1420px]';
-const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1660px]';
-const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2440px]';
-const ORDER_MIEN_NAM_TABLE_MIN_WIDTH = 'min-w-[2740px]';
+const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1520px]';
+const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1760px]';
+const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2500px]';
+const ORDER_MIEN_NAM_TABLE_MIN_WIDTH = 'min-w-[2800px]';
 export const PRODUCTION_ORDER_TYPE = 'Đơn sản xuất';
 const orderProductGridClass =
-  'grid-cols-[9.5rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(22rem,2.5fr)_6rem_minmax(7rem,0.9fr)_5rem_7rem_4.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
+  'grid-cols-[9.5rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(22rem,2.5fr)_6rem_minmax(7rem,0.9fr)_5rem_7rem_4.75rem_5.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
 const orderProductionProductGridClass =
-  'grid-cols-[9.5rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(22rem,2.5fr)_6rem_minmax(6.5rem,0.85fr)_5rem_7rem_4.5rem_4.5rem_4.5rem_5rem_5rem_5rem_5rem_6.5rem]';
+  'grid-cols-[9.5rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(22rem,2.5fr)_6rem_minmax(6.5rem,0.85fr)_5rem_7rem_4.5rem_4.5rem_4.5rem_5rem_5.75rem_5rem_5rem_5rem_6.5rem]';
 const orderSouthProductGridClass =
-  'grid-cols-[9.5rem_minmax(9rem,1fr)_minmax(22rem,2.5fr)_7rem_5rem_6rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
+  'grid-cols-[9.5rem_minmax(9rem,1fr)_minmax(22rem,2.5fr)_7rem_5rem_6rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const orderMienNamProductGridClass =
-  'grid-cols-[9.5rem_minmax(9rem,1fr)_minmax(22rem,2.5fr)_7rem_5rem_6rem_8.5rem_6.5rem_7rem_5.5rem_4.5rem_5rem_6rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
+  'grid-cols-[9.5rem_minmax(9rem,1fr)_minmax(22rem,2.5fr)_7rem_5rem_6rem_8.5rem_6.5rem_7rem_5.5rem_4.5rem_5rem_6rem_6rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const ORDER_CONVERSION_PAGE_SIZE = 1000;
 const CUSTOMER_ENTERED_KG_SOURCE = 'khach_hang_nhap_kg';
 /** Tổng KG tự tính từ Định mức (cắt lẻ / miền nam) — server giữ số nhưng FE không coi là nhập tay. */
@@ -608,6 +608,41 @@ function orderCreatedAtToInput(value: string): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Trọng lượng 1 sản phẩm (kg): theo ĐVT — Tấm → TL/tấm, Cuộn → TL/cuộn, còn lại → kg_1_sp / tổng trọng lượng danh mục. */
+function resolveOrderLineWeightPerProduct(
+  line: Pick<OrderProductFormLine, 'kg1Sp' | 'tlTam' | 'tlCuon' | 'tongKg' | 'quantity' | 'unit'>,
+  effectiveUnit: string,
+  conversion?: { trongLuongKgTam?: number | null; trongLuongKgCuon?: number | null } | null,
+  productTotalWeight?: string | number | null
+): number | null {
+  const positive = (value: unknown): number | null => {
+    const n = typeof value === 'number' ? value : parsePercentInput(String(value ?? ''));
+    return Number.isFinite(n) && n > 0 ? truncateTo3Decimals(n) : null;
+  };
+  if (isCuonProduct(effectiveUnit)) {
+    return (
+      positive(line.tlCuon) ||
+      positive(conversion?.trongLuongKgCuon) ||
+      positive(line.kg1Sp) ||
+      positive(productTotalWeight)
+    );
+  }
+  if (isTamProduct(effectiveUnit)) {
+    return (
+      positive(line.tlTam) ||
+      positive(conversion?.trongLuongKgTam) ||
+      positive(line.kg1Sp) ||
+      positive(productTotalWeight)
+    );
+  }
+  const fromKg1 = positive(line.kg1Sp) || positive(productTotalWeight) || positive(conversion?.trongLuongKgTam);
+  if (fromKg1) return fromKg1;
+  const qty = positive(line.quantity);
+  const tong = positive(line.tongKg);
+  if (qty && tong) return truncateTo3Decimals(tong / qty);
+  return null;
+}
+
 function readStoredOrderConversion(
   line: Pick<OrderProductFormLine, 'tongKg' | 'm2' | 'mDai' | 'conversionResults'>,
   targetUnit: 'kg' | 'm2' | 'm dài'
@@ -764,7 +799,7 @@ export function orderProductLinesToPayload(
       const pxGroup = classifyProductPxGroup(selectedProduct?.group || '');
       // Nhựa sóng: không cho sửa khổ trên đơn — luôn dùng khổ chuẩn danh mục,
       // **vẫn lưu `kho` vào JSON thông tin** nhưng tên ghép / Mã AMIS mới không chứa khổ
-      // (compose tên ghép nhóm Sóng vốn bỏ segment `do_day_m`).
+      // (compose tên ghép nhóm Sóng vốn không đưa khổ rộng vào tên).
       const isSongLine = pxGroup === 'song';
       const enteredWidth = isSongLine
         ? (Number.isFinite(catalogWidth) && catalogWidth > 0 ? catalogWidth : Number.NaN)
@@ -874,79 +909,37 @@ export function orderProductLinesToPayload(
           }
         : {};
       const resolveTenGhep = (tenSanXuat: string, cutLength?: number) => {
-        // Ưu tiên tên ghép đã lưu trên danh mục SP (đúng tuyệt đối).
-        // Đơn cắt lẻ / miền nam: thay đúng token m dài chính thành mét cắt
-        // (tránh "...6m - 8m" khi m dài không đứng cuối).
-        // Đơn cắt lẻ / miền nam: thay segment (đm n li|kg) theo định mức thực tế, giữ nguyên token do_li.
-        const isMatchingCatalog = catalogTenGhep && (
-          !tenSanXuat ||
-          tenSanXuat === catalogProductionName ||
-          replaceMangInName(tenSanXuat, '') === replaceMangInName(catalogProductionName, '')
-        );
-        if (isMatchingCatalog) {
-          let base = cutLength != null
-            ? replaceCutLengthMeters(catalogTenGhep, cutLength, mainForCut)
-            : catalogTenGhep;
-          if (widthDiffersForCode) {
-            base = replaceCutWidthMeters(
-              base,
-              enteredWidth,
-              Number.isFinite(catalogWidth) && catalogWidth > 0 ? catalogWidth : undefined,
-              cutLength
-            );
-          }
-          if (doLiDmValue) {
-            base = replaceDoLiDmInTenGhep(base, doLiDmValue, 'li');
-          }
-          if (isSouthOrder ? lineMang !== undefined : Boolean(lineMang)) {
-            base = replaceMangInName(base, String(lineMang), variantSpecs?.mang);
-          }
-          if (nameHasZem || hasZemInName(base)) base = stripDoLiDmLiSegment(base);
-          base = applyDacDoLi(base);
-          base = applyTemDoLi(base);
-          // Sóng: giữ `(đm n kg)` gốc trên tên, không ghi theo ô Định mức tiêu chuẩn.
-          // Nhóm khác: bỏ segment kg khỏi tên ghép.
-          if (isSouthOrder && pxGroup !== 'song' && !nameHasZem) base = stripDinhMucKgSegment(base);
-          return isCutLikeOrder ? appendSouthTemToTenGhep(base, temValue, mauTemValue, danTem2DauValue) : base;
-        };
-        let tenGhep = buildOrderTenGhep(tenSanXuat, {
+        // Ghép lại từ cột màu / NP / độ li / khổ / mét dài. Không tìm-thay chữ trong tên cũ.
+        const orderDoLi = isDacLiField ? dacDoLiFieldToken : doLiLine;
+        let tenGhep = buildOrderTenGhep(tenSanXuat || catalogProductionName, {
           nhomVthh: selectedProduct?.group,
-          maAmis: selectedProduct?.newCode,
+          maAmis: selectedProduct?.code || productCode,
           cutLengthM: cutLength,
           doLiDm: doLiDmValue || undefined,
-          mang: lineMang || undefined
+          mang: isSouthOrder || lineMang !== undefined ? lineMang : undefined,
+          doLi: orderDoLi || undefined,
+          doDayM: isSongLine || !(Number.isFinite(enteredWidth) && enteredWidth > 0) ? undefined : enteredWidth
         });
-        if (tenGhep && widthDiffersForCode) {
-          tenGhep = replaceCutWidthMeters(
-            tenGhep,
-            enteredWidth,
-            Number.isFinite(catalogWidth) && catalogWidth > 0 ? catalogWidth : undefined,
-            cutLength
-          );
-        }
         if (!tenGhep) return undefined;
-        if (nameHasZem || hasZemInName(tenGhep)) tenGhep = stripDoLiDmLiSegment(tenGhep);
-        tenGhep = applyDacDoLi(tenGhep);
         tenGhep = applyTemDoLi(tenGhep);
         if (isSouthOrder && pxGroup !== 'song' && !nameHasZem) tenGhep = stripDinhMucKgSegment(tenGhep);
-        return isCutLikeOrder ? appendSouthTemToTenGhep(tenGhep, temValue, mauTemValue, danTem2DauValue) : tenGhep;
+        return tenGhep;
       };
+      const withOrderTem = (name: string) =>
+        isCutLikeOrder ? appendSouthTemToTenGhep(name, temValue, mauTemValue, danTem2DauValue) : name;
 
       if (!shouldRecalculateConversion) {
         const storedConversionResults = line.conversionResults
           ?.filter(result => result.unit && Number.isFinite(result.value))
           .map(result => ({ don_vi: result.unit, gia_tri: result.value }));
-        const rawTenSanXuat = line.productionName.trim() || '';
-        const shouldReplaceMang = isSouthOrder ? lineMang !== undefined : Boolean(lineMang);
-        const tenSanXuat = applyTemDoLi(applyDacDoLi(shouldReplaceMang && lineMang !== undefined
-          ? replaceMangInName(rawTenSanXuat, lineMang, variantSpecs?.mang)
-          : rawTenSanXuat));
+        const rawTenSanXuat = line.productionName.trim() || catalogProductionName;
         const quyCachMDaiStored = Number.isFinite(daiM) && daiM > 0
           ? daiM
           : Number.isFinite(Number(line.quyCachMDai)) && Number(line.quyCachMDai) > 0
             ? Number(line.quyCachMDai)
             : undefined;
-        const tenGhep = resolveTenGhep(tenSanXuat, quyCachMDaiStored);
+        const tenSanXuat = resolveTenGhep(rawTenSanXuat, quyCachMDaiStored) || rawTenSanXuat;
+        const tenGhep = withOrderTem(tenSanXuat);
 
         return {
           ...(line.sourceProduct || {}),
@@ -1109,11 +1102,8 @@ export function orderProductLinesToPayload(
 
       const rawTenSanXuat =
         line.productionName.trim() || selectedProduct?.productionName || resolved.productionName || '';
-      const shouldReplaceMangName = isSouthOrder ? lineMang !== undefined : Boolean(lineMang);
-      const tenSanXuat = applyTemDoLi(applyDacDoLi(shouldReplaceMangName && lineMang !== undefined
-        ? replaceMangInName(rawTenSanXuat, lineMang, variantSpecs?.mang)
-        : rawTenSanXuat));
-      const tenGhep = resolveTenGhep(tenSanXuat, quyCachMDai);
+      const tenSanXuat = resolveTenGhep(rawTenSanXuat, quyCachMDai) || rawTenSanXuat;
+      const tenGhep = withOrderTem(tenSanXuat);
 
       return {
         san_pham_id: selectedProduct?.id || line.productId.trim() || undefined,
@@ -1994,7 +1984,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         id: source.product.id, ma_sp: source.product.code, ma_amis: source.product.amisCode, ma_amis_cu: source.product.amisOldCode,
         ten_sp: source.product.name, ten_san_xuat: source.product.productionName,
         ten_ghep: source.product.tenGhep, nhom_vthh: source.product.group, don_vi: source.product.unit,
-        do_dai_m: source.product.doDaiM, do_day_m: source.product.doDayM, do_li_dm: source.product.doLiDm,
+        do_dai_m: source.product.doDaiM, kho_rong: source.product.doDayM, do_li_dm: source.product.doLiDm,
         do_li: source.product.doLi, mang: source.product.mang
       }]);
       const projected = orderProductLinesToPayload([line], [...options, ...productOptions.filter(item => item.id !== match.id)], orderForm.orderType, source.conversions, orderForm.createdAt)[0] as Record<string, unknown> | undefined;
@@ -2069,7 +2059,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     const option = normalizeOrderProducts([{
       id: product.id, ma_sp: product.code, ma_amis: product.amisCode, ma_amis_cu: product.amisOldCode, ten_sp: product.name,
       ten_san_xuat: product.productionName, ten_ghep: product.tenGhep, nhom_vthh: product.group,
-      don_vi: product.unit, do_dai_m: product.doDaiM, do_day_m: product.doDayM,
+      don_vi: product.unit, do_dai_m: product.doDaiM, kho_rong: product.doDayM,
       do_li_dm: product.doLiDm, do_li: product.doLi, mang: product.mang, tong_trong_luong: product.totalWeight
     }])[0];
     if (!option) { setFormError('Không thể chọn sản phẩm đã lưu do thiếu mã AMIS.'); return; }
@@ -2720,6 +2710,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'kgM', label: 'KG/1m' },
                         { key: 'nam', label: 'Nam' },
                         { key: 'qty', label: 'SL (tổng)', required: true },
+                        { key: 'tl1Sp', label: 'Trọng lượng 1 SP' },
                         { key: 'tongKg', label: 'Tổng KG' },
                         { key: 'mang', label: 'Màng' },
                         { key: 'tem', label: 'Tem' },
@@ -2743,6 +2734,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'trung', label: 'Trung' },
                         { key: 'nam', label: 'Nam' },
                         { key: 'qty', label: 'SL (tổng)', required: true },
+                        { key: 'tl1Sp', label: 'Trọng lượng 1 SP' },
                         { key: 'tongKg', label: 'Tổng KG (nhập)' },
                         { key: 'mang', label: 'Màng' },
                         { key: 'tem', label: 'Tem' },
@@ -2766,6 +2758,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           { key: 'trung', label: 'Trung' },
                           { key: 'nam', label: 'Nam' },
                           { key: 'qty', label: 'SL (tổng)', required: true },
+                          { key: 'tl1Sp', label: 'Trọng lượng 1 SP' },
                           { key: 'kg', label: 'KG (nhập)' },
                           { key: 'm2', label: 'M2' },
                           { key: 'mdai', label: 'M dài' },
@@ -2781,6 +2774,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'lsxQty', label: 'SL lệnh SX' },
                         { key: 'unit', label: 'ĐVT' },
                         { key: 'qty', label: 'SL', required: true },
+                        { key: 'tl1Sp', label: 'Trọng lượng 1 SP' },
                         { key: 'kg', label: 'KG (nhập)' },
                         { key: 'm2', label: 'M2' },
                         { key: 'mdai', label: 'M dài' },
@@ -2851,6 +2845,13 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         }
                         return positive(parsePercentInput(String(cutEffectiveUnit === 'Cuộn' ? line.tlCuon || '' : line.tlTam || '')));
                       })();
+                      const cutWeightPerSp = isFormSouthOrder
+                        ? (southScaledTotal !== null && southQty > 0
+                            ? southScaledTotal / southQty
+                            : displayedCutWeight !== null && cutRegionTotal !== null && cutRegionTotal > 0
+                              ? displayedCutWeight / cutRegionTotal
+                              : autoDinhMucKg)
+                        : autoDinhMucKg;
                       return renderProductLineShell(
                         line,
                         index,
@@ -3028,6 +3029,16 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <div className="col-span-1 min-w-0">
                           <input
                             type="text"
+                            value={cutWeightPerSp !== null && Number.isFinite(cutWeightPerSp) ? formatNumber(cutWeightPerSp, 3) : ''}
+                            readOnly
+                            title="Trọng lượng 1 SP (kg) theo ĐVT và định mức/ quy đổi"
+                            className={`${orderFieldClass} bg-zinc-50 text-right font-black tabular-nums`}
+                            placeholder="—"
+                          />
+                        </div>
+                        <div className="col-span-1 min-w-0">
+                          <input
+                            type="text"
                             inputMode="decimal"
                             value={line.manualTongKg
                               ? String(line.tongKg ?? '')
@@ -3139,6 +3150,16 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   const mdaiValue = line.shouldRecalculateConversion
                     ? calculatedConversion.find(([, , unit]) => unit === 'm dài')?.[1] ?? null
                     : readStoredOrderConversion(line, 'm dài');
+                  const weightPerSp = resolveOrderLineWeightPerProduct(
+                    {
+                      ...line,
+                      quantity: effectiveQtyText,
+                      tongKg: kgValue !== null && Number.isFinite(kgValue) ? String(kgValue) : line.tongKg
+                    },
+                    effectiveUnit,
+                    matchedConversion,
+                    matchedLineProduct?.totalWeight
+                  );
 
                   return renderProductLineShell(
                     line,
@@ -3267,6 +3288,22 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           />
                         </div>
                       )}
+                      <div className="col-span-1 min-w-0">
+                        <input
+                          type="text"
+                          value={weightPerSp !== null ? formatNumber(weightPerSp, 3) : ''}
+                          readOnly
+                          title={
+                            isCuonProduct(effectiveUnit)
+                              ? 'Trọng lượng 1 sản phẩm = TL/cuộn (kg)'
+                              : isTamProduct(effectiveUnit)
+                                ? 'Trọng lượng 1 sản phẩm = TL/tấm (kg)'
+                                : 'Trọng lượng 1 sản phẩm (kg) theo danh mục / quy đổi'
+                          }
+                          className={`${orderFieldClass} bg-zinc-50 text-right font-black tabular-nums`}
+                          placeholder="—"
+                        />
+                      </div>
                       <div className="col-span-1 min-w-0">
                         <input
                           type="text"

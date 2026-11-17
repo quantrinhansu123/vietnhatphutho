@@ -22,6 +22,14 @@ export type TongHopHeader = {
   dia_diem: string | null;
   ly_do: string | null;
   ghi_chu: string | null;
+  /** Đợt SX (phiếu liên quan sản xuất). */
+  dot_san_xuat_id?: string | null;
+  dot_so?: string | null;
+  /** Phân xưởng lọc máy: Đặc | Sóng | Rỗng. */
+  phan_xuong?: string | null;
+  /** Phiếu xuất gốc khi nhập lại giữa/cuối đợt. */
+  phieu_xuat_goc_id?: string | null;
+  phieu_xuat_goc_ma?: string | null;
 };
 
 let pendingEdit: TongHopHeader | null = null;
@@ -73,18 +81,25 @@ export function pickNhapCoreWarehouses<T extends { label: string }>(warehouses: 
 }
 
 /** Danh sách loại xuất chuẩn cho phiếu xuất tổng hợp. */
-export const LOAI_XUAT_OPTIONS = [
-  'Xuất kho cho máy theo phiếu tỷ lệ trộn',
-  'Xuất cho trả lại Nhà cung cấp (hàng không đúng quy cách, chất lượng)',
-  'Xuất phế băm cho máy tạo hạt',
-  'Xuất phế cái cho máy băm',
-  'Xuất khác'
-] as const;
+export const LOAI_XUAT_MAY_PTDM = 'Xuất kho cho máy theo phiếu tỷ lệ trộn';
+/** Xuất NVL trực tiếp đến máy, không bắt buộc chọn phiếu tỷ lệ trộn. */
+export const LOAI_XUAT_MAY = 'Xuất theo máy';
+/** Xuất NVL lên máy theo phân xưởng Đặc / Sóng / Rỗng (không bắt buộc PTĐM). */
+export const LOAI_XUAT_PHAN_XUONG = 'Xuất theo phân xưởng';
+export const LOAI_XUAT_TRA_NCC = 'Xuất cho trả lại Nhà cung cấp (hàng không đúng quy cách, chất lượng)';
+export const LOAI_XUAT_PHE_BAM = 'Xuất phế băm cho máy tạo hạt';
+export const LOAI_XUAT_PHE_CAI = 'Xuất phế cái cho máy băm';
+export const LOAI_XUAT_KHAC = 'Xuất khác';
 
-export const LOAI_XUAT_MAY_PTDM = LOAI_XUAT_OPTIONS[0];
-export const LOAI_XUAT_TRA_NCC = LOAI_XUAT_OPTIONS[1];
-export const LOAI_XUAT_PHE_BAM = LOAI_XUAT_OPTIONS[2];
-export const LOAI_XUAT_PHE_CAI = LOAI_XUAT_OPTIONS[3];
+export const LOAI_XUAT_OPTIONS = [
+  LOAI_XUAT_MAY_PTDM,
+  LOAI_XUAT_MAY,
+  LOAI_XUAT_PHAN_XUONG,
+  LOAI_XUAT_TRA_NCC,
+  LOAI_XUAT_PHE_BAM,
+  LOAI_XUAT_PHE_CAI,
+  LOAI_XUAT_KHAC
+] as const;
 
 function foldLoai(value: string) {
   return value
@@ -96,19 +111,101 @@ function foldLoai(value: string) {
     .trim();
 }
 
-/** Nơi hàng xuất đến, suy từ loại xuất. `flex` = kho hoặc máy (Xuất khác / loại tự gõ). */
-export function xuatDenKind(loaiXuat: string): 'may-ptdm' | 'ncc' | 'may' | 'flex' {
+/** Nơi hàng xuất đến, suy từ loại xuất. `flex` = kho hoặc máy (Xuất khác / loại tự gõ). `phan-xuong` = Đặc/Sóng/Rỗng (không chọn máy). */
+export function xuatDenKind(loaiXuat: string): 'may-ptdm' | 'ncc' | 'may' | 'phan-xuong' | 'flex' {
   const value = String(loaiXuat || '').trim();
   const folded = foldLoai(value);
   if (value === LOAI_XUAT_MAY_PTDM || folded.includes('phieu ty le tron')) return 'may-ptdm';
+  if (value === LOAI_XUAT_MAY || folded === 'xuat theo may') return 'may';
   if (value === LOAI_XUAT_TRA_NCC || (folded.includes('tra lai') && folded.includes('nha cung cap'))) return 'ncc';
-  if (value === LOAI_XUAT_PHE_BAM || value === LOAI_XUAT_PHE_CAI || folded.includes('phe bam') || folded.includes('phe cai')) return 'may';
+  if (value === LOAI_XUAT_PHAN_XUONG || folded.includes('theo phan xuong')) return 'phan-xuong';
+  if (
+    value === LOAI_XUAT_PHE_BAM ||
+    value === LOAI_XUAT_PHE_CAI ||
+    folded.includes('phe bam') ||
+    folded.includes('phe cai')
+  ) {
+    return 'may';
+  }
   return 'flex';
+}
+
+export const PHAN_XUONG_OPTIONS = ['Đặc', 'Sóng', 'Rỗng'] as const;
+export type PhanXuong = (typeof PHAN_XUONG_OPTIONS)[number];
+
+/** Đợt sản xuất cố định trên phiếu SX: Đợt 1 … Đợt 10 (lưu `dot_so` = "1"…"10"). */
+export const DOT_SAN_XUAT_OPTIONS = Array.from({ length: 10 }, (_, i) => String(i + 1));
+
+/** Chuẩn hóa snapshot đợt về "1"…"10" (chấp nhận "Đợt 3", "3", …). */
+export function normalizeDotSo(value: string | null | undefined) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const match = raw.match(/(\d{1,2})/);
+  if (!match) return '';
+  const n = Number(match[1]);
+  if (!Number.isFinite(n) || n < 1 || n > 10) return '';
+  return String(n);
+}
+
+export function formatDotSoLabel(dotSo: string) {
+  const n = normalizeDotSo(dotSo);
+  return n ? `Đợt ${n}` : '';
+}
+
+/** Lọc máy theo phân xưởng (Đặc / Sóng / Rỗng) dựa trên mã/tên máy. */
+export function machineMatchesPhanXuong(machineLabel: string, phanXuong: string) {
+  const px = String(phanXuong || '').trim();
+  if (!px) return true;
+  const folded = machineLabel
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+  if (px === 'Đặc') return folded.includes('dac') || /\bst\b|std0|dac/.test(folded);
+  if (px === 'Sóng') return folded.includes('song') || folded.includes('sts');
+  if (px === 'Rỗng') return folded.includes('rong') || folded.includes('ecr');
+  return true;
+}
+
+export function isSxRelatedLoaiNhap(loaiNhap: string) {
+  const folded = foldLoai(loaiNhap);
+  return (
+    folded.includes('nhap lai') ||
+    folded.includes('phe') ||
+    folded.includes('tao hat') ||
+    folded.includes('may bam') ||
+    folded.includes('giua dot') ||
+    folded.includes('cuoi dot')
+  );
+}
+
+export function isNhapLaiTheoPhanXuong(loaiNhap: string) {
+  return foldLoai(loaiNhap).includes('nhap lai theo phan xuong');
+}
+
+export function getMachinesForInboundWorkshop(phanXuong: string) {
+  if (phanXuong === 'Đặc') return ['Máy Đặc 1', 'Máy Sóng 1'];
+  if (phanXuong === 'Sóng') return ['Máy Sóng 2', 'Máy Sóng 1'];
+  if (phanXuong === 'Rỗng') return ['Máy Rỗng'];
+  return [];
+}
+
+export function isSxRelatedLoaiXuat(loaiXuat: string) {
+  const kind = xuatDenKind(loaiXuat);
+  return kind === 'may' || kind === 'may-ptdm' || kind === 'phan-xuong';
+}
+
+/** Chỉ loại xuất này mới hiện / bắt buộc ô Phân xưởng. */
+export function isXuatTheoPhanXuong(loaiXuat: string) {
+  const value = String(loaiXuat || '').trim();
+  if (value === LOAI_XUAT_PHAN_XUONG) return true;
+  return foldLoai(value).includes('theo phan xuong');
 }
 
 /** Danh sách loại nhập chuẩn cho phiếu nhập tổng hợp (cho gõ tay thêm khi cần). */
 export const LOAI_NHAP_OPTIONS = [
   'Nhập kho từ Nhà cung cấp',
+  'Nhập lại theo phân xưởng',
   'Nhập lại từ máy giữa đợt',
   'Nhập lại từ máy cuối đợt',
   'Nhập phế của các máy sóng, rỗng, đặc, tạo hạt',

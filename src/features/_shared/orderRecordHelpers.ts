@@ -124,9 +124,12 @@ export function parseOrderProductsFromRecord(
         const m2 = pickText(row, ['m2', 'dien_tich_m2'], '');
         const mDai = pickText(row, ['m_dai', 'mDai', 'met_dai', 'chieu_dai_m'], '');
         const note = pickText(row, ['ghi_chu', 'note'], '');
-        const soLuongBac = pickText(row, ['so_luong_bac', 'sl_bac', 'slsx_bac', 'bac', 'slBac'], '');
-        const soLuongTrung = pickText(row, ['so_luong_trung', 'sl_trung', 'slsx_trung', 'trung', 'slTrung'], '');
-        const soLuongNam = pickText(row, ['so_luong_nam', 'sl_nam', 'slsx_nam', 'nam', 'slNam'], '');
+        const savedRegionQty = row.sl_sx && typeof row.sl_sx === 'object'
+          ? row.sl_sx as Record<string, unknown>
+          : {};
+        const soLuongBac = pickText(row, ['so_luong_bac', 'sl_bac', 'slsx_bac', 'bac', 'slBac'], '') || formatCell(savedRegionQty.bac);
+        const soLuongTrung = pickText(row, ['so_luong_trung', 'sl_trung', 'slsx_trung', 'trung', 'slTrung'], '') || formatCell(savedRegionQty.trung);
+        const soLuongNam = pickText(row, ['so_luong_nam', 'sl_nam', 'slsx_nam', 'nam', 'slNam'], '') || formatCell(savedRegionQty.nam);
         if (!productCode && !productName) return null;
         return {
           ...(options?.includeSourceProduct ? { sourceProduct: { ...row } } : {}),
@@ -164,6 +167,8 @@ export function parseOrderProductsFromRecord(
           soLuongBac: soLuongBac || undefined,
           soLuongTrung: soLuongTrung || undefined,
           soLuongNam: soLuongNam || undefined,
+          soLuongLenh: pickText(row, ['so_luong_lenh', 'soLuongLenh'], '') || undefined,
+          soLuongDaSx: pickText(row, ['so_luong_da_sx', 'soLuongDaSx'], '') || undefined,
           conversionResults: Array.isArray(row.ket_qua_quy_doi)
             ? row.ket_qua_quy_doi.map(item => {
                 const result = item && typeof item === 'object' ? item as Record<string, unknown> : {};

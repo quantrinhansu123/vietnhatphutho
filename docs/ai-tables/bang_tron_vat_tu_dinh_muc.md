@@ -6,7 +6,7 @@
 
 **API:** `/api/bang-tron-vat-tu-dinh-muc`  
 Query: `ngay`, `ca`, `q`  
-**UI:** `MixingNormMaterialsTab.tsx` · in: `MixingNormRatioPrintSheet.tsx`  
+**UI:** `MixingNormMaterialsTab.tsx` · in: `MixingNormRatioPrintSheet.tsx` · chọn nhanh theo nhóm: `MixingNormProductGroupModal.tsx` + `utils/mixingNormProductCategories.ts` (rule `.ai/Rule_hien_thi_san_pham_phieu_tron.xlsx`)  
 Gợi ý sang form phối trộn: `MixingReportForm.tsx` + `utils/mixingNormSuggestion.ts` (phiếu không ca khớp theo ngày)
 
 **Nghiệp vụ hiện tại:**
@@ -29,6 +29,7 @@ Gợi ý sang form phối trộn: `MixingReportForm.tsx` + `utils/mixingNormSugg
 - `ten_phieu`: Tự động ghép theo quy tắc `PTĐM + ngày + ca + lệnh sản xuất` (ví dụ: `PTĐM - 2026-09-08 - Ca 1 - LSX-001`).
 - `ma_lenh_sx`, `ngay`, `ca`, `ghi_chu`
 - **Memory nghiệp vụ:** Khi chọn lệnh SX, form chỉ tạo **1 block công thức** và nạp toàn bộ sản phẩm của lệnh vào danh sách options của ô multi-select **Sản phẩm**; **không tự động chọn chip nào**. Người dùng tự chọn các sản phẩm trong cùng ô, không tạo mỗi sản phẩm thành một block/dòng riêng. Các dòng cùng `san_pham_id` chỉ hiện 1 chip và được cộng tổng trọng lượng quy đổi trước khi tính hao hụt; khác `san_pham_id` vẫn là các chip riêng trong cùng ô. Hao hụt/SL quy đổi/Tổng Cuộn-Tấm gộp theo `(san_pham_id, quy_cach_m_dai)` (cùng SP khác mét cắt tách dòng); JSON block lưu `san_pham_id`/`san_pham_ids` + `quy_cach_m_dai` (chung) hoặc `quy_cach_m_dai_list` (nhiều mét).
+- **Chọn nhanh theo nhóm:** nút trên **từng block SP**, mở modal full màn hình gom SP lệnh SX theo rule Excel (Sóng/Đặc/Rỗng + **KHÁC**). Modal chỉ hiện SP của block đang mở + SP chưa chọn; SP đã gắn block khác bị ẩn. SP đang gắn block được tick sẵn. Có thể **tick từng SP** hoặc **tick cả nhóm** rồi Add; kéo thả / nút Chuyển để chỉnh cột. Add nhóm → `ten_sp` = tên nhóm; Add từng SP → gộp vào ô mã SP của block đang mở.
 - Chip/label SP và phiếu in dùng **`ten_ghep`** (không hiện raw `ten_san_xuat`). Sau khi chọn SP, khối **Hao hụt theo sản phẩm** tự hiện `Tổng sản phẩm: n Cuộn, n Tấm` theo ĐVT trên lệnh SX.
 - Mỗi SP lưu thêm `so_luong_goc`, `ty_le_hao_hut`, `tong_trong_luong`, `dinh_luong_coi`, `so_lan_tron`, `ten_ghep`.
 - `tong_trong_luong = so_luong_goc × (1 + ty_le_hao_hut / 100)` — % hàng hỏng cộng thêm vào SL quy đổi trước hao hụt (mặc định lấy từ `san_pham.ty_le_hao_hut`), không phải trừ đi.
