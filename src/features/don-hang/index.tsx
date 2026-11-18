@@ -3066,10 +3066,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             inputMode="decimal"
                             value={line.manualTongKg
                               ? String(line.tongKg ?? '')
-                              : isFormSouthOrder
-                              ? (southScaledTotal !== null ? orderDuplicateDecimalText(formatNumber(southScaledTotal, 3)) : '')
                               : displayedCutWeight !== null && Number.isFinite(displayedCutWeight)
-                                ? formatNumber(displayedCutWeight, 3)
+                                ? (isFormSouthOrder
+                                    ? orderDuplicateDecimalText(formatNumber(displayedCutWeight, 3))
+                                    : formatNumber(displayedCutWeight, 3))
                                 : ''}
                             onChange={e => {
                               updateProductLine(line.key, {
@@ -3095,6 +3095,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               ? 'Tổng KG = SL (tổng) × KG/1m × Dài (m) — có thể sửa trực tiếp'
                               : southDinhMucTotal !== null
                               ? 'Tổng KG = Định mức KG × SL tổng — có thể sửa trực tiếp'
+                              : displayedCutWeight !== null
+                              ? 'Tổng KG = Trọng lượng 1 SP theo danh mục × SL tổng — có thể sửa trực tiếp'
                               : 'Có thể nhập Tổng KG của khách hàng để tính lại TL/tấm'}
                             className={`${orderFieldClass} bg-white text-right`}
                             placeholder="Nhập KG"

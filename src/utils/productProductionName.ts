@@ -79,6 +79,8 @@ export interface ProductionNameParts {
 const DO_LI_DM_RE = /\(\s*đm\s*([\d.,]+)\s*(li|kg)(?:\s*\/\s*[\d.,]+\s*m)?\s*\)/iu;
 const TCMB_RE = /\bTCMB\b/iu;
 const SONG_COUNT_RE = /(\d+)\s*sóng\b/iu;
+/** Tên master có thể ghi `5KG/6M` hoặc `5KG/6`, không có nhãn ĐM. */
+const KG_PER_STANDARD_LENGTH_RE = /(\d+(?:[.,]\d+)?)\s*kg\s*\/\s*(\d+(?:[.,]\d+)?)\s*m?\b/iu;
 const AMIS_LI_RE = /-\s*([\d.,]+)\s*li\b/iu;
 const AMIS_DAY_RE = /\*\s*([\d.,]+)\s*m\b/iu;
 const AMIS_ZEM_RE = /(\d+(?:[.,]\d+)?)\s*zem\b/iu;
@@ -152,7 +154,9 @@ export function extractDoLiDmLi(tenSanXuat: string): string {
 /** Chỉ nhánh `(đm n kg)` — lưu cột `dinh_muc_kg`. */
 export function extractDinhMucKg(tenSanXuat: string): string {
   const raw = extractDoLiDm(tenSanXuat);
-  return raw && /\bkg\b/iu.test(raw) ? raw : '';
+  if (raw && /\bkg\b/iu.test(raw)) return raw;
+  const ratio = String(tenSanXuat || '').match(KG_PER_STANDARD_LENGTH_RE);
+  return ratio ? normalizeDinhMucKg(ratio[1]) : '';
 }
 
 /** `TCMB` (tiêu chuẩn miền bắc) trong tên sản xuất. */
@@ -510,9 +514,9 @@ export const SONG_STANDARD_LENGTH_M = 6;
  * Không phải `do_dai_m` (mét dài SP đang cắt).
  */
 export function extractDoDaiTamTieuChuan(tenSanXuat: string): string {
-  const match = String(tenSanXuat || '').match(/(?:đm|dm)?\s*[\d.,]+\s*kg\s*\/\s*([\d.,]+)\s*m\b/iu);
+  const match = String(tenSanXuat || '').match(KG_PER_STANDARD_LENGTH_RE);
   if (!match) return '';
-  const meters = Number(String(match[1]).replace(',', '.'));
+  const meters = Number(String(match[2]).replace(',', '.'));
   if (!Number.isFinite(meters) || meters <= 0) return '';
   return formatMetersLabel(meters);
 }
