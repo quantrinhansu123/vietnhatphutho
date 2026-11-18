@@ -3,8 +3,8 @@ import { normalizeHrBranches } from './hr';
 import { normalizeProducts } from '../san-pham';
 import { availableConvertedUnits, convertProductQuantity, type ProductConvertedUnit } from '../../utils/productUnitConversion';
 import { parsePercentInput } from '../../utils';
-import { truncateTo3Decimals } from '../../utils/weightTruncate';
-import { extractDoLiDmNumber, normalizeDecimalToken, normalizeDoLiToken, parseAmisSpecs } from '../../utils/productProductionName';
+import { truncateTo4Decimals } from '../../utils/weightTruncate';
+import { classifyProductPxGroup, extractDinhMucKg, extractDoLiDmNumber, normalizeDecimalToken, normalizeDoLiToken, parseAmisSpecs, parseDoDaiMLength } from '../../utils/productProductionName';
 
 export const ORDER_TYPE_OPTIONS = ['Đơn bán', 'Đơn sản xuất', 'Đơn theo quy cách của khách đặt', 'Đơn cắt lẻ', 'Đơn miền nam'] as const;
 export const CUT_ORDER_TYPE = 'Đơn theo quy cách của khách đặt';
@@ -356,10 +356,40 @@ export function listProductionNamesByCode(
     direct.length > 0
       ? direct
       : siblingProductsByProductionName(products, productionName);
-  const names = source
+  const names = sortOrderProductOptions([...source].sort((a, b) =>
+    (a.productionName || a.tenGhep).localeCompare(b.productionName || b.tenGhep, 'vi')
+  ))
     .map(product => product.productionName.trim() || product.tenGhep.trim())
     .filter(name => Boolean(name));
-  return [...new Set(names)].sort((a, b) => a.localeCompare(b, 'vi'));
+  return [...new Set(names)];
+}
+
+/** Dropdown đơn hàng: Sóng tăng theo ĐM kg, cùng ĐM tăng theo m dài. */
+export function sortOrderProductOptions(products: OrderProductOption[]): OrderProductOption[] {
+  const song = products.filter(product => classifyProductPxGroup(product.group) === 'song');
+  const sortValues = new Map(song.map(product => {
+    const name = product.productionName || product.tenGhep;
+    const kgText = product.dinhMucKg || extractDinhMucKg(name);
+    const kg = Number(extractDoLiDmNumber(kgText) || normalizeDecimalToken(kgText));
+    // Bỏ tỷ lệ /6m trước khi suy mét dài, không nhầm mét tiêu chuẩn với chiều dài SP.
+    const lengthTokens = [...name.replace(/\d+(?:[.,]\d+)?\s*kg\s*\/\s*\d+(?:[.,]\d+)?\s*m?\b/giu, '')
+      .matchAll(/(\d+(?:[.,]\d+)?)\s*m\b/giu)];
+    const length = parseDoDaiMLength(product.doDaiM)
+      ?? (lengthTokens.length ? Number(lengthTokens[lengthTokens.length - 1][1].replace(',', '.')) : null);
+    return [product, {
+      kg: Number.isFinite(kg) && kg > 0 ? kg : Number.MAX_VALUE,
+      length: length !== null && length > 0 ? length : Number.MAX_VALUE
+    }] as const;
+  }));
+  song.sort((a, b) => {
+    const av = sortValues.get(a)!;
+    const bv = sortValues.get(b)!;
+    return av.kg - bv.kg || av.length - bv.length
+      || a.productionName.localeCompare(b.productionName, 'vi', { numeric: true })
+      || a.code.localeCompare(b.code, 'vi', { numeric: true });
+  });
+  let index = 0;
+  return products.map(product => classifyProductPxGroup(product.group) === 'song' ? song[index++] : product);
 }
 
 /**
@@ -818,8 +848,8 @@ export function calculateCutOrderWeight(
   const length = parsePercentInput(lengthText);
   const quantity = parsePercentInput(quantityText);
   if (!conversion || !Number.isFinite(length) || length <= 0 || !Number.isFinite(quantity) || quantity <= 0) return null;
-  // Quy đổi trọng lượng: giữ 3 chữ số sau dấu phẩy bằng cách cắt số (không làm tròn).
-  const round = (value: number) => truncateTo3Decimals(value);
+  // Quy đổi trọng lượng: giữ 4 chữ số sau dấu phẩy bằng cách cắt số (không làm tròn).
+  const round = (value: number) => truncateTo4Decimals(value);
 
   // Khổ nhập trên dòng (hạ khổ) ưu tiên hơn khổ danh mục để Tổng KG đổi theo khổ.
   const enteredWidth = parsePercentInput(enteredWidthText);

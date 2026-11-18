@@ -1567,6 +1567,38 @@ input[type="number"] {
     line-height: 1.15 !important;
   }
 
+  /* Lệnh SX: dành khoảng 65 mm cho tên, mã ĐH gọn; số và tiêu đề không ngắt dòng. */
+  .production-order-products-table col:nth-child(1) { width: 2.5%; }
+  .production-order-products-table col:nth-child(2) { width: 5.5%; }
+  .production-order-products-table col:nth-child(3) { width: 23.5%; }
+  .production-order-products-table col:nth-child(4) { width: 6.5%; }
+  .production-order-products-table col:nth-child(5) { width: 4%; }
+  .production-order-products-table col:nth-child(6) { width: 5%; }
+  .production-order-products-table col:nth-child(7) { width: 5.5%; }
+  .production-order-products-table col:nth-child(8) { width: 6%; }
+  .production-order-products-table col:nth-child(9) { width: 7%; }
+  .production-order-products-table col:nth-child(10) { width: 6%; }
+  .production-order-products-table col:nth-child(11) { width: 6.5%; }
+  .production-order-products-table col:nth-child(12) { width: 6%; }
+  .production-order-products-table col:nth-child(13) { width: 8%; }
+  .production-order-products-table col:nth-child(14) { width: 8%; }
+
+  .production-order-preview-print-sheet .production-order-products-table th,
+  .production-order-preview-print-sheet .production-order-products-table td:not(:nth-child(3)):not(:nth-child(4)) {
+    white-space: nowrap !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+    letter-spacing: normal !important;
+  }
+
+  .production-order-preview-print-sheet .production-order-products-table td:nth-child(3) {
+    white-space: normal !important;
+    overflow-wrap: break-word !important;
+    word-break: normal !important;
+    line-height: 1.4 !important;
+    text-align: left !important;
+  }
+
   .production-order-preview-print-sheet input,
   .production-order-preview-print-sheet textarea {
     border: none !important;

@@ -1,5 +1,7 @@
 'use client';
 
+import { truncateTo4Decimals } from '../../utils/weightTruncate';
+
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTabAccess } from '../../app/useTabAccess';
@@ -64,7 +66,7 @@ const NUM_INPUT_ERROR_CLASS =
   'h-7 w-full rounded-md border border-rose-400 bg-rose-50 px-1.5 text-right text-xs font-bold tabular-nums text-rose-700 outline-none transition focus:border-rose-500 focus:ring-1 focus:ring-rose-200';
 
 function formatNum(value: number | null): string {
-  return value !== null && Number.isFinite(value) ? value.toFixed(2) : '—';
+  return value !== null && Number.isFinite(value) ? truncateTo4Decimals(value).toFixed(4) : '—';
 }
 
 function formatPlanDate(value: string): string {
@@ -80,9 +82,9 @@ function parsePlanQuantity(value: unknown): number {
 
 /** Tổng TL của kế hoạch ngày tính theo số lượng phân bổ Bắc + Trung + Nam. */
 function calculateTotalWeight(row: Pick<PreviewRow, 'don_vi' | 'kg_cuon' | 'tl_tam' | 'tong_sx'>) {
-  if (isCuonProduct(row.don_vi)) return row.tong_sx * (row.kg_cuon ?? 0);
-  if (isTamProduct(row.don_vi)) return row.tong_sx * (row.tl_tam ?? 0);
-  return row.don_vi.trim().toLowerCase() === 'kg' ? row.tong_sx : 0;
+  if (isCuonProduct(row.don_vi)) return truncateTo4Decimals(row.tong_sx * truncateTo4Decimals(row.kg_cuon ?? 0));
+  if (isTamProduct(row.don_vi)) return truncateTo4Decimals(row.tong_sx * truncateTo4Decimals(row.tl_tam ?? 0));
+  return row.don_vi.trim().toLowerCase() === 'kg' ? truncateTo4Decimals(row.tong_sx) : 0;
 }
 
 export function splitProductNameAndNote(raw: string): { name: string; note: string } {
@@ -540,7 +542,7 @@ export function ProductionPlanPrintPreviewModal({
                               <span className="hidden print:inline">{formatNumber(row.nam, 2)}</span>
                             </td>
                             <td className={`${bodyCell} text-right tabular-nums text-zinc-700`}>{isTamProduct(row.don_vi) ? formatNum(row.tl_tam) : '—'}</td>
-                            <td className={`${bodyCell} text-right font-bold tabular-nums text-zinc-900`}>{row.tongTl.toFixed(2)}</td>
+                            <td className={`${bodyCell} text-right font-bold tabular-nums text-zinc-900`}>{truncateTo4Decimals(row.tongTl).toFixed(4)}</td>
                             <td className={`${bodyCell} bg-zinc-50/60 print:bg-transparent`} />
                           </tr>
                         );

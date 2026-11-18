@@ -1,12 +1,12 @@
 import type { ProductConversionForm } from '../san-pham';
-import { truncateTo3Decimals } from '../../utils/weightTruncate';
+import { truncateTo4Decimals } from '../../utils/weightTruncate';
 
 export const conversionKeys = ['khoTamRongM', 'khoTamDaiM', 'khoCuonRongM', 'khoCuonDaiM', 'dienTichM2', 'trongLuongKgMDai', 'trongLuongKgM2', 'trongLuongKgTam', 'trongLuongKgCuon'] as const;
 export const positiveNumber = (value: unknown): number | null => {
   const number = Number(String(value ?? '').replace(',', '.').replace(/m\s*$/iu, '').trim());
   return Number.isFinite(number) && number > 0 ? number : null;
 };
-const kg = (value: number | null) => value === null ? '' : String(truncateTo3Decimals(value));
+const kg = (value: number | null) => value === null ? '' : String(truncateTo4Decimals(value));
 const area = (value: number | null) => value === null ? '' : String(Math.round((value + Number.EPSILON) * 100) / 100);
 
 /** Tính lại từ suất trọng lượng gốc, không dùng tổng KG/số lượng đơn hàng. */
@@ -42,7 +42,7 @@ export function variantConversion(
     : baseM2 && specs.weightScale !== null ? baseM2 * (specs.weightScale ?? 1) : null;
   const linear = m2Weight && width ? m2Weight * width
     : directSheet && length ? directSheet / length : null;
-  // Đổi mét, giữ khổ: TL/tấm = cắt 3 số của (kg tấm cũ × mét mới / mét cũ) — một lần, không qua kg/m đã cắt.
+  // Đổi mét, giữ khổ: TL/tấm = cắt 4 số của (kg tấm cũ × mét mới / mét cũ) — một lần, không qua kg/m đã cắt.
   const widthUnchanged = !specs.width || (width !== null && oldWidth !== null && Math.abs(width - oldWidth) < 1e-9);
   const lengthChanged =
     Boolean(specs.length) && length !== null && oldLength !== null && Math.abs(length - oldLength) > 1e-9;
