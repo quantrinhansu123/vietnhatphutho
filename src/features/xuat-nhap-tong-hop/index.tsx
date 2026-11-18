@@ -1371,6 +1371,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                 inputClassName={fieldClass}
                 comboboxMode
                 comboboxSearchable
+                dropdownMaxHeight={480}
                 allowCustomValue
                 disabled={viewOnly}
               />
