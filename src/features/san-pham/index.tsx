@@ -49,9 +49,11 @@ import {
   calculateDoLiDm,
   classifyProductPxGroup,
   composeProductionDisplayName,
+  doLiDmWeightScale,
   extractDoLiDm,
   extractDoLiDmLi,
   extractDoLiDmNumber,
+  hasZemInName,
   isDiscontinuedWhiteSuProduct,
   normalizeDinhMucKg,
   normalizeDoLiDm,
@@ -61,6 +63,7 @@ import {
   splitProductionIdentity,
   stripParsedSegmentsFromTenGoc
 } from '../../utils/productProductionName';
+import { variantConversion } from '../don-hang/variantConversions';
 import { showAppToast } from '../../lib/appToast';
 import { matchesWarehouseFilter, normalizeWarehouseName, type InventoryBalanceRow } from '../kho-hang';
 import { waitForPrintImagesReady } from '../../utils/printReady';
@@ -3062,6 +3065,8 @@ export function ProductEditModal({
   const [amisOpen, setAmisOpen] = useState(false);
   const prevDoDaiMRef = useRef('');
   const prevDoDayMRef = useRef('');
+  const prevDoLiRef = useRef('');
+  const prevDoLiDmRef = useRef('');
   const [auditLogs, setAuditLogs] = useState<
     Array<{
       id: number;
@@ -3086,6 +3091,8 @@ export function ProductEditModal({
     setForm(next);
     prevDoDaiMRef.current = next.doDaiM;
     prevDoDayMRef.current = next.doDayM;
+    prevDoLiRef.current = next.doLi;
+    prevDoLiDmRef.current = next.doLiDm;
     // Thêm mới: không phụ thuộc productConversions — tránh reset form khi bảng quy đổi reload.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- conversions chỉ seed lại khi sửa SP.
   }, [defaultWarehouse, mode, product?.id, initialForm, mode === 'edit' ? productConversions : null]);
@@ -3163,6 +3170,39 @@ export function ProductEditModal({
       };
     });
   }, [enableProductionFields, form.doDayM, transformProductionForm]);
+
+  // Đổi Độ li / ĐM (đm li) → nhân hệ số TL (kg/m², kg/1m, kg/Tấm, kg/Cuộn). Hàng ZEM bỏ qua.
+  useEffect(() => {
+    if (!enableProductionFields || transformProductionForm) return;
+    const liChanged = prevDoLiRef.current !== form.doLi;
+    const dmChanged = prevDoLiDmRef.current !== form.doLiDm;
+    if (!liChanged && !dmChanged) return;
+    const prevLi = prevDoLiRef.current;
+    const prevDm = prevDoLiDmRef.current;
+    prevDoLiRef.current = form.doLi;
+    prevDoLiDmRef.current = form.doLiDm;
+    if (hasZemInName(form.productionName, form.name, form.amisCode)) return;
+    const scale = dmChanged
+      ? doLiDmWeightScale(form.doLiDm, prevDm)
+      : doLiDmWeightScale(form.doLi, prevLi);
+    if (scale === null || Math.abs(scale - 1) < 1e-9) return;
+    setForm(prev => {
+      if (!prev.conversions.length) return prev;
+      const conversions = prev.conversions.map(row =>
+        variantConversion(row, {
+          width: prev.doDayM || undefined,
+          length: prev.doDaiM || undefined,
+          weightScale: scale
+        })
+      );
+      const first = conversions[0];
+      const unit = prev.unit.toLocaleLowerCase('vi');
+      const totalWeight = unit === 'cuộn'
+        ? (first?.trongLuongKgCuon || prev.totalWeight)
+        : (first?.trongLuongKgTam || first?.trongLuongKgCuon || prev.totalWeight);
+      return { ...prev, conversions, totalWeight };
+    });
+  }, [enableProductionFields, form.doLi, form.doLiDm, form.productionName, form.name, form.amisCode, transformProductionForm]);
 
   const seedSpecsFromName = (next: Partial<ProductFormState>, base: ProductFormState = form) => {
     const productionName = next.productionName ?? base.productionName;

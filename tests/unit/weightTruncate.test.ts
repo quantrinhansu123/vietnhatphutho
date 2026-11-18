@@ -63,6 +63,23 @@ describe('calculateCutOrderWeight — cắt 3 số lẻ', () => {
     assert.equal(result?.kg1Sp, 0.333);
     assert.equal(result?.tongKg, 0.333);
   });
+
+  it('đổi khổ rộng / độ li phải nhân vào kg/1m dài', () => {
+    const withWidth: OrderProductConversion = {
+      ...conversion,
+      khoTamRongM: 1.08,
+      trongLuongKgMDai: 0.8
+    };
+    // Dài 2m, khổ nhập = khổ chuẩn → 1.6 kg
+    const same = calculateCutOrderWeight('2', '1', withWidth, 'Tấm', '', '', '1.08', null);
+    assert.equal(same?.kg1Sp, 1.6);
+    // Hạ khổ còn 0.54 (×0.5) → 0.8 kg
+    const halfWidth = calculateCutOrderWeight('2', '1', withWidth, 'Tấm', '', '', '0.54', null);
+    assert.equal(halfWidth?.kg1Sp, 0.8);
+    // Độ li ĐM ×2 → 3.2 kg
+    const doubleLi = calculateCutOrderWeight('2', '1', withWidth, 'Tấm', '', '', '1.08', 2);
+    assert.equal(doubleLi?.kg1Sp, 3.2);
+  });
 });
 
 describe('TL/tấm × SL chẵn — luôn đúng, không lệch float', () => {
