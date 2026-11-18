@@ -131,15 +131,17 @@ export function OrderProductCreateModal({ source, projection, specs, projectCode
   }, [source, projection, specs, noZem]);
 
   const transformProductionForm = (next: ProductFormState, previous: ProductFormState): ProductFormState => {
-    const thicknessChanged = next.doLiDm !== previous.doLiDm;
+    const thicknessChanged = next.doLiDm !== previous.doLiDm || next.doLi !== previous.doLi;
     const dimensionsChanged = next.doDayM !== previous.doDayM || next.doDaiM !== previous.doDaiM;
     const base = editedConversion.current ? previous : productToForm(source.product, source.conversions);
-    // Không khóa kgPerSheet từ specs đơn: đổi khổ / mét dài / ĐM phải tính lại kg/Tấm và kg/Cuộn.
+    // Không khóa kgPerSheet từ specs đơn: đổi khổ / mét dài / Độ li / ĐM phải tính lại kg/Tấm và kg/Cuộn.
     const weightScale = !noZem
       ? 1
       : next.doLiDm.trim() && base.doLiDm.trim() && next.doLiDm !== base.doLiDm
-        ? doLiDmWeightScale(next.doLiDm, base.doLiDm)
-        : 1;
+        ? (doLiDmWeightScale(next.doLiDm, base.doLiDm) ?? 1)
+        : next.doLi.trim() && base.doLi.trim() && next.doLi !== base.doLi
+          ? (doLiDmWeightScale(next.doLi, base.doLi) ?? 1)
+          : 1;
     const conversions = thicknessChanged || dimensionsChanged
       ? base.conversions.map(row => variantConversion(row, {
           width: next.doDayM,

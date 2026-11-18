@@ -7473,7 +7473,9 @@ type OrderProductRecord = {
 
 type OrderProductConversionRecord = {
   kho_tam_rong_m: number | null;
+  kho_tam_dai_m: number | null;
   kho_cuon_rong_m: number | null;
+  kho_cuon_dai_m: number | null;
   trong_luong_kg_m_dai: number | null;
   trong_luong_kg_m2: number | null;
   trong_luong_kg_tam: number | null;
@@ -7561,16 +7563,28 @@ function calculateCutOrderWeightServer(
 
   // Trọng lượng giữ 3 chữ số sau dấu phẩy bằng cách cắt số (không làm tròn) — mirror FE `calculateCutOrderWeight`.
   const round = (value: number) => truncateTo3Decimals(value);
+  const catalogWidth = conversion.kho_tam_rong_m || conversion.kho_cuon_rong_m || extractProductWidthServer(productCode, productName);
+  const width = (enteredWidth !== null && Number.isFinite(enteredWidth) && enteredWidth > 0 ? enteredWidth : null)
+    || catalogWidth;
+  const widthScale =
+    enteredWidth !== null && Number.isFinite(enteredWidth) && enteredWidth > 0
+    && catalogWidth !== null && Number.isFinite(catalogWidth) && catalogWidth > 0
+      ? enteredWidth / catalogWidth
+      : 1;
+  const liScale = kgPerM2Scale && kgPerM2Scale > 0 ? kgPerM2Scale : 1;
+
+  // kg/1 m dài: nhân thêm hệ số khổ + độ li (đồng bộ FE).
   const kgPerMeter = conversion.trong_luong_kg_m_dai;
   if (kgPerMeter !== null && kgPerMeter > 0) {
-    const rawKg1Sp = length * kgPerMeter;
+    const scaledLinear = kgPerMeter * widthScale * liScale;
+    const rawKg1Sp = length * scaledLinear;
     const kg1Sp = round(rawKg1Sp);
     return { kg1Sp, tongKg: round(kg1Sp * quantity), source: 'trong_luong_kg_m_dai' };
   }
 
-  const width = (enteredWidth !== null && Number.isFinite(enteredWidth) && enteredWidth > 0 ? enteredWidth : null)
-    || conversion.kho_tam_rong_m || conversion.kho_cuon_rong_m || extractProductWidthServer(productCode, productName);
-  const kgPerM2 = conversion.trong_luong_kg_m2 && kgPerM2Scale ? conversion.trong_luong_kg_m2 * kgPerM2Scale : conversion.trong_luong_kg_m2;
+  const kgPerM2 = conversion.trong_luong_kg_m2 && liScale !== 1
+    ? conversion.trong_luong_kg_m2 * liScale
+    : conversion.trong_luong_kg_m2;
   if (width !== null && width > 0 && kgPerM2 !== null && kgPerM2 > 0) {
     const rawKg1Sp = length * width * kgPerM2;
     const kg1Sp = round(rawKg1Sp);
@@ -7584,9 +7598,15 @@ function calculateCutOrderWeightServer(
       ? conversion.trong_luong_kg_cuon
       : null;
   if (perUnit !== null && perUnit > 0) {
+    const catalogLength = conversion.kho_tam_dai_m || conversion.kho_cuon_dai_m;
+    const lengthScale =
+      catalogLength !== null && Number.isFinite(catalogLength) && catalogLength > 0
+        ? length / catalogLength
+        : 1;
+    const kg1Sp = round(perUnit * lengthScale * widthScale * liScale);
     return {
-      kg1Sp: round(perUnit),
-      tongKg: round(round(perUnit) * quantity),
+      kg1Sp,
+      tongKg: round(kg1Sp * quantity),
       source: normalizedUnit === 'tấm' || normalizedUnit === 'tam' ? 'trong_luong_kg_tam' : 'trong_luong_kg_cuon'
     };
   }
@@ -7962,7 +7982,7 @@ async function fetchConversionMapBySanPhamIds(
 
     const { data: conversions, error } = await supabase
       .from('san_pham_quy_doi')
-      .select('san_pham_id, kho_tam_rong_m, kho_cuon_rong_m, trong_luong_kg_m_dai, trong_luong_kg_m2, trong_luong_kg_tam, trong_luong_kg_cuon')
+      .select('san_pham_id, kho_tam_rong_m, kho_tam_dai_m, kho_cuon_rong_m, kho_cuon_dai_m, trong_luong_kg_m_dai, trong_luong_kg_m2, trong_luong_kg_tam, trong_luong_kg_cuon')
       .in('san_pham_id', uniqueIds);
 
     if (error) {
@@ -7977,7 +7997,9 @@ async function fetchConversionMapBySanPhamIds(
         if (spId) {
           conversionMap.set(spId, {
             kho_tam_rong_m: Number(row.kho_tam_rong_m) || null,
+            kho_tam_dai_m: Number(row.kho_tam_dai_m) || null,
             kho_cuon_rong_m: Number(row.kho_cuon_rong_m) || null,
+            kho_cuon_dai_m: Number(row.kho_cuon_dai_m) || null,
             trong_luong_kg_m_dai: Number(row.trong_luong_kg_m_dai) || null,
             trong_luong_kg_m2: Number(row.trong_luong_kg_m2) || null,
             trong_luong_kg_tam: Number(row.trong_luong_kg_tam) || null,
