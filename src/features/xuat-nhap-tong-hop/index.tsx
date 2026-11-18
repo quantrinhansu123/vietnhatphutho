@@ -613,12 +613,12 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         }
         if (line.srcLoai !== 'may') {
           if (!String(line.sourceInboundLineId || '').trim()) {
-            setError(`Dòng ${line.maHang}: chọn lô nhập (giá) khi xuất từ kho.`);
+            setError(`Dòng ${line.maHang}: không có lô tồn đủ số lượng tại kho đã chọn.`);
             return;
           }
           if (line.lotTonCon !== null && qty > line.lotTonCon + 1e-9) {
             setError(
-              `Dòng ${line.maHang}: SL ${formatQty(qty)} vượt tồn lô ${formatQty(line.lotTonCon)}.`
+              `Dòng ${line.maHang}: SL ${formatQty(qty)} vượt tồn khả dụng ${formatQty(line.lotTonCon)}.`
             );
             return;
           }
