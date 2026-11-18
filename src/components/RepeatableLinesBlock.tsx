@@ -102,7 +102,7 @@ export function RepeatableLinesBlock({
             {columns.map(column => (
               <span
                 key={column.key}
-                className={`min-w-0 text-[10px] font-black uppercase tracking-wider text-zinc-500 ${gridTemplateClass ? 'block' : 'shrink-0'} ${column.className || ''}`}
+                className={`min-w-0 text-[11px] leading-4 font-black uppercase tracking-wider text-zinc-500 ${gridTemplateClass ? 'block' : 'shrink-0'} ${column.className || ''}`}
               >
                 {column.label}
                 {column.required ? ' *' : ''}

@@ -134,6 +134,31 @@ function orderAmisOptionLabel(product: OrderProductOption) {
   const productionName = product.productionName.trim();
   return productionName ? `${product.code} - ${productionName}` : product.code;
 }
+
+/** Chuỗi tìm trên ô Mã AMIS: mã, tên SP, tên SX, tên ghép (dấu phẩy = AND). */
+function orderAmisSearchText(product: OrderProductOption) {
+  return [product.code, product.name, product.productionName, product.tenGhep]
+    .map(part => String(part || '').trim())
+    .filter(Boolean)
+    .join(' ');
+}
+
+/** Getter ổn định — tránh rebuild search index mỗi render trên từng dòng SP. */
+function getOrderAmisValue(item: unknown) {
+  return (item as OrderProductOption).id;
+}
+function getOrderAmisLabel(item: unknown) {
+  return (item as OrderProductOption).code;
+}
+function getOrderAmisOptionLabel(item: unknown) {
+  return orderAmisOptionLabel(item as OrderProductOption);
+}
+function getOrderAmisSearchText(item: unknown) {
+  return orderAmisSearchText(item as OrderProductOption);
+}
+function resolveOrderAmisSelectedItem(options: unknown[], value: string) {
+  return findOrderProductById(options as OrderProductOption[], value);
+}
 export {
   parseOrderProductsFromRecord,
   summarizeOrderProducts,
@@ -2862,19 +2887,18 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             value={line.shouldRecalculateConversion ? (line.productId || line.productCode) : line.productCode}
                             onChange={productId => pickCutOrderProduct(line.key, productId)}
                             options={productOptions}
-                            placeholder="Tìm Mã AMIS"
+                            placeholder="Tìm mã AMIS hoặc tên SX (STD08, sóng trắng…)"
+                            title="Gõ mã AMIS hoặc một phần tên sản xuất. Nhiều từ khóa cách bởi dấu phẩy = phải khớp tất cả."
                             isLoading={isLoadingLookups}
                             skipUnchangedBlurCommit
                             maxResults={ORDER_AMIS_SEARCH_MAX_RESULTS}
+                            commaSearchMode="and"
                             inputClassName={orderFieldClass}
-                            getValue={item => (item as OrderProductOption).id}
-                            getSearchText={item => {
-                              const product = item as OrderProductOption;
-                              return `${product.code} ${product.name} ${product.productionName}`;
-                            }}
-                            getLabel={item => (item as OrderProductOption).code}
-                            getOptionLabel={item => orderAmisOptionLabel(item as OrderProductOption)}
-                            resolveSelectedItem={(options, value) => findOrderProductById(options as OrderProductOption[], value)}
+                            getValue={getOrderAmisValue}
+                            getSearchText={getOrderAmisSearchText}
+                            getLabel={getOrderAmisLabel}
+                            getOptionLabel={getOrderAmisOptionLabel}
+                            resolveSelectedItem={resolveOrderAmisSelectedItem}
                           />
                         </div>
                         <div className="min-w-0">
@@ -3173,19 +3197,18 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             : line.productCode}
                           onChange={productId => pickOrderProduct(line.key, productId)}
                           options={productOptions}
-                          placeholder="Tìm Mã AMIS"
+                          placeholder="Tìm mã AMIS hoặc tên SX (STD08, sóng trắng…)"
+                          title="Gõ mã AMIS hoặc một phần tên sản xuất. Nhiều từ khóa cách bởi dấu phẩy = phải khớp tất cả."
                           isLoading={isLoadingLookups}
                           skipUnchangedBlurCommit
                           maxResults={ORDER_AMIS_SEARCH_MAX_RESULTS}
+                          commaSearchMode="and"
                           inputClassName={orderFieldClass}
-                          getValue={item => (item as OrderProductOption).id}
-                          getSearchText={item => {
-                            const product = item as OrderProductOption;
-                            return `${product.code} ${product.name} ${product.productionName}`;
-                          }}
-                          getLabel={item => (item as OrderProductOption).code}
-                          getOptionLabel={item => orderAmisOptionLabel(item as OrderProductOption)}
-                          resolveSelectedItem={(options, value) => findOrderProductById(options as OrderProductOption[], value)}
+                          getValue={getOrderAmisValue}
+                          getSearchText={getOrderAmisSearchText}
+                          getLabel={getOrderAmisLabel}
+                          getOptionLabel={getOrderAmisOptionLabel}
+                          resolveSelectedItem={resolveOrderAmisSelectedItem}
                         />
                       </div>
                       <div className="min-w-0">
@@ -3333,7 +3356,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             ? `KG do khách hàng nhập${isCuonProduct(effectiveUnit) ? '; dùng để tính TL/cuộn' : isTamProduct(effectiveUnit) ? '; dùng để tính TL/tấm' : ''}`
                             : 'Có thể nhập KG của khách hàng để ưu tiên giá trị thực tế'}
                           placeholder="Nhập KG"
-                          className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
+                          className="h-12 w-full rounded-lg border border-zinc-200 px-3 text-sm leading-6 font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                         />
                       </div>
                       <div className="col-span-1 min-w-0">
@@ -3341,7 +3364,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           type="text"
                           value={m2Value !== null ? formatNumber(m2Value, 3) : ''}
                           readOnly
-                          className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
+                          className="h-12 w-full rounded-lg border border-zinc-200 px-3 text-sm leading-6 font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                         />
                       </div>
                       <div className="col-span-1 min-w-0">
@@ -3349,7 +3372,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           type="text"
                           value={mdaiValue !== null ? formatNumber(mdaiValue, 3) : ''}
                           readOnly
-                          className="h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
+                          className="h-12 w-full rounded-lg border border-zinc-200 px-3 text-sm leading-6 font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                         />
                       </div>
                     </>

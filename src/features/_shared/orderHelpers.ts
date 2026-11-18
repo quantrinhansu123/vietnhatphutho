@@ -431,7 +431,7 @@ export const ORDER_STATUS_DEFAULT = 'Chờ sx';
 export const ORDER_STATUS_OPTIONS = ['Chờ sx', 'Đang sx', 'Hoàn thành', 'Hủy'] as const;
 export const STORAGE_ORDER_UNIT_KEY = 'order_unit_suggestions_v1';
 export const orderFieldClass =
-  'h-11 w-full rounded-lg border border-zinc-200 px-3 text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
+  'h-12 w-full rounded-lg border border-zinc-200 px-3 text-sm leading-6 font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10';
 
 export interface StaffOption {
   code: string;
