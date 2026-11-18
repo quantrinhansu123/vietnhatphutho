@@ -1101,12 +1101,20 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     });
   }, [mixingNorms, productionOrders, machines]);
 
+  const ptdmOptionsForMachine = useMemo(() => {
+    const selectedMachine = xuatDenId.trim().toLocaleLowerCase('vi');
+    if (!selectedMachine) return ptdmOptions;
+    return ptdmOptions.filter(option =>
+      String(option.machineId || '').trim().toLocaleLowerCase('vi') === selectedMachine
+    );
+  }, [ptdmOptions, xuatDenId]);
+
   function applyPtdm(keys: string[]) {
     setPtdmKeys(keys);
-    const selected = ptdmOptions.filter(item => keys.includes(item.key));
+    const selected = ptdmOptionsForMachine.filter(item => keys.includes(item.key));
     if (!selected.length) {
-      setXuatDenId('');
       setLines([emptyLine()]);
+      setInfo('');
       return;
     }
     const machineIds = [...new Set(selected.map(item => item.machineId).filter(Boolean))];
@@ -1527,6 +1535,13 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                       setXuatNccId(id);
                       return;
                     }
+                    if (destKind === 'may-ptdm' && kind === 'may' && id !== xuatDenId && ptdmKeys.length > 0) {
+                      // PTĐM đã chọn gắn với máy cũ; đổi máy thì bỏ lựa chọn/dòng lấy từ PTĐM đó.
+                      setPtdmKeys([]);
+                      setLines([emptyLine()]);
+                      setInfo('');
+                      setError('');
+                    }
                     setXuatDenLoai(kind === 'may' ? 'may' : 'kho');
                     setXuatDenId(id);
                   }}
@@ -1554,7 +1569,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
               {destKind === 'may-ptdm' ? (
                 <div className="space-y-1">
                   <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
-                    Phiếu trộn định mức <span className="font-semibold normal-case tracking-normal text-zinc-400">(tick để tự điền NVL)</span>
+                    Phiếu trộn định mức <span className="font-semibold normal-case tracking-normal text-zinc-400">(chọn máy để lọc danh sách; tick để tự điền NVL)</span>
                   </span>
                   <button
                     type="button"
@@ -1576,11 +1591,11 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                       </div>
                       {loadingNorms ? (
                         <p className="flex items-center gap-1.5 text-xs font-semibold text-zinc-400"><Loader2 className="h-3.5 w-3.5 animate-spin" />Đang tải phiếu trộn định mức...</p>
-                      ) : ptdmOptions.filter(item => item.name.toLocaleLowerCase('vi').includes(ptdmSearch.trim().toLocaleLowerCase('vi'))).length === 0 ? (
-                        <p className="text-xs font-semibold text-zinc-400">Chưa có phiếu trộn định mức (hoặc các PTĐM đều thuộc lệnh đã hoàn thành).</p>
+                      ) : ptdmOptionsForMachine.filter(item => item.name.toLocaleLowerCase('vi').includes(ptdmSearch.trim().toLocaleLowerCase('vi'))).length === 0 ? (
+                        <p className="text-xs font-semibold text-zinc-400">{xuatDenId ? 'Máy đã chọn chưa có lệnh hoặc phiếu trộn định mức khả dụng.' : 'Chưa có phiếu trộn định mức (hoặc các PTĐM đều thuộc lệnh đã hoàn thành).'}</p>
                       ) : (
                         <div className="flex max-h-52 flex-wrap gap-1.5 overflow-y-auto">
-                          {ptdmOptions.filter(item => item.name.toLocaleLowerCase('vi').includes(ptdmSearch.trim().toLocaleLowerCase('vi'))).map(option => {
+                          {ptdmOptionsForMachine.filter(item => item.name.toLocaleLowerCase('vi').includes(ptdmSearch.trim().toLocaleLowerCase('vi'))).map(option => {
                             const checked = ptdmKeys.includes(option.key);
                             return (
                               <label key={option.key} className={`inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold ${checked ? 'border-[#ef1b2d] bg-red-50 text-[#ef1b2d]' : 'border-zinc-200 bg-white text-zinc-700'}`}>

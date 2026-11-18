@@ -17,15 +17,21 @@ function normalizeSearchText(value: string) {
     .replace(/đ/g, 'd');
 }
 
-/** Giới hạn token khi search bằng dấu phẩy (AND) — tránh loop vô ích khi dán chuỗi dài. */
+/** Giới hạn token khi search bằng dấu phẩy — tránh loop vô ích khi dán chuỗi dài. */
 const MAX_COMMA_SEARCH_TOKENS = 16;
+/** Debounce lọc khi danh sách lớn (ô AMIS đơn hàng). Input vẫn cập nhật tức thì. */
+const LARGE_OPTIONS_DEBOUNCE_MS = 120;
+const LARGE_OPTIONS_THRESHOLD = 300;
+
+export type CommaSearchMode = 'and' | 'or';
 
 /**
- * Tách query theo dấu phẩy → nhiều từ khóa AND.
+ * Tách query theo dấu phẩy → nhiều từ khóa.
  * Ví dụ: `Hưng Yên, Phế` → ["hung yen", "phe"] (đã bỏ dấu).
  * Không có dấu phẩy → 1 token như search cũ.
+ * AND: sắp dài → ngắn để `includes` loại sớm.
  */
-function parseCommaAndSearchTokens(query: string): string[] {
+function parseCommaAndSearchTokens(query: string, mode: CommaSearchMode = 'and'): string[] {
   const raw = String(query || '').trim();
   if (!raw) return [];
   const normalized = normalizeSearchText(raw);
@@ -41,6 +47,9 @@ function parseCommaAndSearchTokens(query: string): string[] {
     tokens.push(token);
     if (tokens.length >= MAX_COMMA_SEARCH_TOKENS) break;
   }
+  if (mode === 'and' && tokens.length > 1) {
+    tokens.sort((a, b) => b.length - a.length);
+  }
   return tokens;
 }
 
@@ -49,6 +58,13 @@ function matchesAllSearchTokens(haystack: string, tokens: string[]): boolean {
     if (!haystack.includes(tokens[i])) return false;
   }
   return true;
+}
+
+function matchesAnySearchTokens(haystack: string, tokens: string[]): boolean {
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (haystack.includes(tokens[i])) return true;
+  }
+  return false;
 }
 
 export function SearchableSelect({
@@ -81,7 +97,9 @@ export function SearchableSelect({
   skipUnchangedBlurCommit = false,
   title,
   showAllWhenQueryMatchesSelection = false,
-  revertOnBlurMismatch = false
+  revertOnBlurMismatch = false,
+  /** Dấu phẩy: `and` = mọi từ khóa (mặc định), `or` = khớp ≥1 (vd nhiều mã AMIS). */
+  commaSearchMode = 'and' as CommaSearchMode
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -132,6 +150,7 @@ export function SearchableSelect({
    * Enter / bấm Thêm / click option vẫn chốt bình thường.
    */
   revertOnBlurMismatch?: boolean;
+  commaSearchMode?: CommaSearchMode;
 }) {
   const fieldClass = inputClassName || orderFieldClass;
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -163,21 +182,41 @@ export function SearchableSelect({
 
   const [query, setQuery] = useState(selectedLabel);
   const [open, setOpen] = useState(false);
+  const [debouncedQuery, setDebouncedQuery] = useState(selectedLabel);
+  const useDebouncedFilter = options.length >= LARGE_OPTIONS_THRESHOLD;
 
   useEffect(() => {
     if (!open) {
       setQuery(selectedLabel);
+      setDebouncedQuery(selectedLabel);
     }
   }, [selectedLabel, open]);
 
+  useEffect(() => {
+    if (!useDebouncedFilter) {
+      setDebouncedQuery(query);
+      return;
+    }
+    const timer = window.setTimeout(() => setDebouncedQuery(query), LARGE_OPTIONS_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [query, useDebouncedFilter]);
+
   /** Index search đã normalize sẵn — tránh normalize lại từng option mỗi lần gõ. */
   const optionSearchIndex = useMemo(() => {
-    const searchOf = getSearchText ?? getLabel;
+    // Có getSearchText: chỉ index chuỗi tìm (không nối UUID/value).
+    if (getSearchText) {
+      return options.map(item => ({
+        item,
+        haystack: normalizeSearchText(getSearchText(item))
+      }));
+    }
     return options.map(item => ({
       item,
-      haystack: normalizeSearchText(`${searchOf(item)} ${getValue(item)}`)
+      haystack: normalizeSearchText(`${getLabel(item)} ${getValue(item)}`)
     }));
   }, [options, getSearchText, getLabel, getValue]);
+
+  const filterQuery = useDebouncedFilter ? debouncedQuery : query;
 
   const filteredOptions = useMemo(() => {
     // Combobox không có ô tìm: luôn hiện đủ danh sách.
@@ -186,9 +225,9 @@ export function SearchableSelect({
     if (comboboxMode && !comboboxSearchable) {
       return options.slice(0, maxResults);
     }
-    const tokens = parseCommaAndSearchTokens(query);
+    const tokens = parseCommaAndSearchTokens(filterQuery, commaSearchMode);
     const selectedNormalized = normalizeSearchText(String(selectedLabel || '').trim());
-    const queryNormalized = normalizeSearchText(query.trim());
+    const queryNormalized = normalizeSearchText(filterQuery.trim());
     if (
       showAllWhenQueryMatchesSelection &&
       queryNormalized &&
@@ -201,10 +240,11 @@ export function SearchableSelect({
       return options.slice(0, maxResults);
     }
 
+    const matchTokens = commaSearchMode === 'or' ? matchesAnySearchTokens : matchesAllSearchTokens;
     const list: unknown[] = [];
     for (let i = 0; i < optionSearchIndex.length; i += 1) {
       const row = optionSearchIndex[i];
-      if (!matchesAllSearchTokens(row.haystack, tokens)) continue;
+      if (!matchTokens(row.haystack, tokens)) continue;
       list.push(row.item);
       if (list.length >= maxResults) break;
     }
@@ -212,12 +252,13 @@ export function SearchableSelect({
   }, [
     optionSearchIndex,
     options,
-    query,
+    filterQuery,
     maxResults,
     comboboxMode,
     comboboxSearchable,
     showAllWhenQueryMatchesSelection,
-    selectedLabel
+    selectedLabel,
+    commaSearchMode
   ]);
 
   const commitValue = (nextValue: string, item: unknown | null = null) => {
