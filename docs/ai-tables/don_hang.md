@@ -31,7 +31,7 @@ Helper tự sinh mã: `generateNextOrderCodeFromDb()` ~2924.
 | `src/features/don-hang/index.tsx` | Panel / logic chính |
 | `src/features/don-hang/dacDoLiDm.ts` | Ô Độ li ĐM = số trong `(đm n li)` mọi nhóm, kể cả Đặc; không điền độ li thực |
 | `src/features/don-hang/OrderProductCreateModal.tsx` | Thêm biến thể từ dòng đang chọn; đọc lại SP + quy đổi theo ID, xử lý dùng lại |
-| `src/features/don-hang/variantConversions.ts` | Tính và kiểm tra đủ 9 trường quy đổi của biến thể; trọng lượng cắt 3 số lẻ |
+| `src/features/don-hang/variantConversions.ts` | Tính và kiểm tra đủ 9 trường quy đổi của biến thể; trọng lượng cắt 4 số lẻ |
 | `src/components/shared/Select2.tsx` | Select khách hàng (gõ để tìm) trên form thêm/sửa |
 | `src/features/_shared/orderHelpers.ts` | Panel / logic chính |
 | `src/App.tsx` | Shell routing — import panel, không chứa logic bảng |
@@ -44,12 +44,15 @@ Tạo lệnh SX: `POST /api/lenh-sx/from-don-hang/:id`
 
 ### Form đơn hàng
 
+- **Chọn sản phẩm Sóng**: dropdown Mã AMIS và Tên sản xuất sắp theo ĐM kg tăng dần, cùng ĐM thì mét dài tăng dần (`sortOrderProductOptions` trong `orderHelpers.ts`); so sánh số, không lấy kg/tấm làm ĐM. Ô Tên sản xuất dùng `SearchableSelect multiline`: tối thiểu 2 dòng, tự tăng chiều cao khi tên dài hơn, giữ hành vi tìm/chọn và không nạp lại thông số khi chỉ click rồi rời ô.
+- **KG/1m miền Nam**: `southOrderKgPerMeter` ưu tiên `san_pham_quy_doi.trong_luong_kg_m_dai`, áp dụng cùng nguồn cho hiển thị và payload Tổng KG. Chỉ chia kg tiêu chuẩn / chiều dài khi DB thiếu kg/m hoặc người dùng thay đổi chuẩn so với danh mục. Không chia lại TL/tấm đã cắt 4 số (vd 2.5598 / 2.4) khiến kg/m từ 1.0666 thành 1.0665.
+
 - **Thêm sản phẩm** nằm trong ô STT của từng dòng, ngay trước nút copy/nhân bản; lấy trực tiếp dòng được bấm, không phụ thuộc dòng đang chọn trước đó. Cần có sản phẩm và quyền tạo SP. Dùng chung `ProductEditModal`, lấy thông số dòng, tạo danh mục bằng `createOrReuse`, đọc lại `/api/san-pham/:id/with-conversions` rồi thay sản phẩm của đúng dòng; giữ SL/vùng/ghi chú, không tự lưu đơn. Bộ nhận diện đã tồn tại thì dùng đúng ID và quy đổi đã lưu (khác quy đổi đề xuất phải xác nhận). `VAR-…` là mã nội bộ riêng; Mã AMIS vẫn là mã hiển thị và có thể trùng giữa các tên SX. Biến thể đã lưu, thông số không đổi thì giữ mã AMIS.
 
 - **Khách hàng**: Select2 (gõ để tìm) lấy từ `/api/khach-hang` (bảng danh mục Khách hàng), bắt buộc chọn.
 - **Sản phẩm JSON `san_pham`**: mỗi object có `stt` (1, 2, 3…) theo thứ tự dòng. Form thêm/sửa: kéo thả hoặc cụm action cố định `[Xóa] [↑] [↓]` bên phải; Lên/Xuống disabled ở đầu/cuối. Lưu luôn chuẩn hóa `stt` liên tục. Dữ liệu cũ chưa có `stt` hiển thị theo vị trí mảng.
 - **Quy đổi khi thêm/sửa**: tải `san_pham_quy_doi`, áp dụng quy tắc nhóm VTHH và công thức tại `.ai/spec/tinh_toan_quy_doi.md`. Khi sửa, dòng chưa bị tác động hiển thị/giữ nguyên quy đổi trong JSON `san_pham`; chỉ tính theo bảng mới sau khi người dùng đổi dữ liệu ảnh hưởng quy đổi hoặc chọn lại sản phẩm cũ.
-- **Quy đổi trọng lượng (kg)**: giữ 3 chữ số sau dấu phẩy bằng **cắt số** (`truncateTo3Decimals` trong `src/utils/weightTruncate.ts` — `Math.floor(x*1000 + 1e-6)/1000`, KHÔNG làm tròn) cho KG/1 SP, TL/tấm, TL/cuộn, kg/1m, Định mức kg, Tổng KG. Áp dụng mọi loại đơn (thường, cắt lẻ, miền nam) tại FE `orderProductLinesToPayload`/`calculateCutOrderWeight`/`southWeight.ts` và BE mirror `calculateCutOrderWeightServer`/`enrichOrderProductsWithConversionData` trong `server.ts`. M2 / M dài không phải trọng lượng — giữ làm tròn 2 số lẻ.
+- **Quy đổi trọng lượng (kg)**: giữ 4 chữ số sau dấu phẩy bằng **cắt số** (`truncateTo4Decimals` trong `src/utils/weightTruncate.ts` — `Math.floor(x*1000 + 1e-6)/1000`, KHÔNG làm tròn) cho KG/1 SP, TL/tấm, TL/cuộn, kg/1m, Định mức kg, Tổng KG. Áp dụng mọi loại đơn (thường, cắt lẻ, miền nam) tại FE `orderProductLinesToPayload`/`calculateCutOrderWeight`/`southWeight.ts` và BE mirror `calculateCutOrderWeightServer`/`enrichOrderProductsWithConversionData` trong `server.ts`. M2 / M dài không phải trọng lượng — giữ làm tròn 2 số lẻ.
 - Dòng JSON `san_pham` lưu mã AMIS, `ten_san_xuat`, `ten_ghep` và mảng `ket_qua_quy_doi`; thiếu cấu hình quy đổi vẫn cho phép lưu đơn.
 - **NP/OFF trên mã biến thể**: `productionNameAmisGrade` trong `src/utils/productProductionName.ts` đọc token tường minh trong tên sản xuất: `NP` → `NP`, `OFF/off` → `NP2` (ưu tiên khi có cả NP và OFF). Dùng chung cho miền nam/cắt lẻ và modal thêm SP; bóc token cũ trước khi ghép để không lặp. NP2 đã lưu không bị hạ thành NP chỉ vì tên có NP. Không sửa tên hoặc quy đổi theo nhãn này.
 - **Loại đơn**: `Đơn bán / Đơn sản xuất / Đơn theo quy cách của khách đặt / Đơn cắt lẻ / Đơn miền nam` (`ORDER_TYPE_OPTIONS`). `Đơn theo quy cách của khách đặt` (QC đặt → Lệnh SX) và `Đơn cắt lẻ` (kho → Lệnh cắt lẻ) là 2 loại khác nhau: form quy cách dùng chung (`isCutOrderType` / `isCutLikeOrderType`), nhưng chặn Lệnh SX chỉ theo `isRetailCutOrderType` (server `isRetailCutOrderTypeServer`).

@@ -95,6 +95,7 @@ export function SearchableSelect({
   searchPlaceholder,
   selectedOptionClassName,
   skipUnchangedBlurCommit = false,
+  multiline = false,
   title,
   showAllWhenQueryMatchesSelection = false,
   revertOnBlurMismatch = false,
@@ -137,6 +138,8 @@ export function SearchableSelect({
   selectedOptionClassName?: string;
   /** Rời ô mà giá trị không đổi thì không gọi onChange (tránh nạp lại thông số mặc định khi chỉ click vào ô). */
   skipUnchangedBlurCommit?: boolean;
+  /** Ô tên dài: ít nhất hai dòng, tự tăng chiều cao để hiện đủ nội dung. */
+  multiline?: boolean;
   /** Tooltip khi rê chuột vào ô (vd hiện đủ tên dài bị cắt). */
   title?: string;
   /**
@@ -156,6 +159,7 @@ export function SearchableSelect({
   const anchorRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const multilineInputRef = useRef<HTMLTextAreaElement>(null);
   const [menuStyle, setMenuStyle] = useState<React.CSSProperties | null>(null);
   const selectedItem = useMemo(() => {
     if (!value) return null;
@@ -184,6 +188,19 @@ export function SearchableSelect({
   const [open, setOpen] = useState(false);
   const [debouncedQuery, setDebouncedQuery] = useState(selectedLabel);
   const useDebouncedFilter = options.length >= LARGE_OPTIONS_THRESHOLD;
+
+  useLayoutEffect(() => {
+    if (!multiline) return;
+    const fitText = () => {
+      const input = multilineInputRef.current;
+      if (!input) return;
+      input.style.height = 'auto';
+      input.style.height = `${input.scrollHeight + 2}px`;
+    };
+    fitText();
+    window.addEventListener('resize', fitText);
+    return () => window.removeEventListener('resize', fitText);
+  }, [query, multiline]);
 
   useEffect(() => {
     if (!open) {
@@ -654,6 +671,28 @@ export function SearchableSelect({
             />
           )}
         </button>
+      ) : multiline ? (
+        <textarea
+          ref={multilineInputRef}
+          rows={2}
+          value={query}
+          onChange={event => {
+            setQuery(event.target.value.replace(/[\r\n]+/g, ' '));
+            setOpen(true);
+          }}
+          onKeyDown={event => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            commitTypedOrMatchedValue();
+          }}
+          onFocus={() => { if (!isDisabled) setOpen(true); }}
+          onBlur={handleBlur}
+          disabled={isDisabled}
+          placeholder={emptyText}
+          title={title}
+          className={fieldClass}
+          style={{ height: 'auto', minHeight: '4.25rem', paddingTop: 8, paddingBottom: 8, resize: 'none', overflow: 'hidden', overflowWrap: 'anywhere', display: 'block' }}
+        />
       ) : (
         <input
           value={query}

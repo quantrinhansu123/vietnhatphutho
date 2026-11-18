@@ -1,6 +1,6 @@
 /** Suy luận thông số + ghép tên sản xuất theo nhóm VTHH (Đặc / Sóng / Rỗng). */
 
-import { truncateTo3Decimals } from './weightTruncate';
+import { truncateTo4Decimals } from './weightTruncate';
 
 export type ProductPxGroup = 'dac' | 'song' | 'rong' | 'other';
 
@@ -550,20 +550,20 @@ export function songStandardDinhMucKg(kgPerSheet: unknown, lengthM: unknown): st
   const kg = Number(String(kgPerSheet ?? '').replace(',', '.').replace(/m\s*$/iu, '').trim());
   const length = Number(String(lengthM ?? '').replace(',', '.').replace(/m\s*$/iu, '').trim());
   if (!Number.isFinite(kg) || !Number.isFinite(length) || kg <= 0 || length <= 0) return '';
-  const standard = truncateTo3Decimals((kg / length) * SONG_STANDARD_LENGTH_M);
+  const standard = truncateTo4Decimals((kg / length) * SONG_STANDARD_LENGTH_M);
   if (!(standard > 0)) return '';
   return normalizeDinhMucKg(String(standard));
 }
 
 /**
- * TL/tấm Sóng theo mét dài = cắt 3 số của (kg tấm chuẩn 6m × mét / 6).
+ * TL/tấm Sóng theo mét dài = cắt 4 số của (kg tấm chuẩn 6m × mét / 6).
  * Tính một lần trên tích — không cắt kg/m rồi mới nhân mét (tránh 7.92 thay vì 7.916).
  */
 export function songSheetWeightFromStandardKg(standardKgAt6m: unknown, lengthM: unknown): number | null {
   const kg = Number(String(standardKgAt6m ?? '').replace(',', '.').replace(/m\s*$/iu, '').trim());
   const length = Number(String(lengthM ?? '').replace(',', '.').replace(/m\s*$/iu, '').trim());
   if (!Number.isFinite(kg) || !Number.isFinite(length) || kg <= 0 || length <= 0) return null;
-  const value = truncateTo3Decimals((kg * length) / SONG_STANDARD_LENGTH_M);
+  const value = truncateTo4Decimals((kg * length) / SONG_STANDARD_LENGTH_M);
   return value > 0 ? value : null;
 }
 

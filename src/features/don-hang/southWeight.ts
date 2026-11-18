@@ -1,5 +1,5 @@
 import { formatNumber, parseLocalizedNumber, parsePercentInput } from '../../utils';
-import { truncateTo3Decimals } from '../../utils/weightTruncate';
+import { truncateTo4Decimals } from '../../utils/weightTruncate';
 import { extractDoLiDmLi, extractDoLiDmNumber, hasZemInName, parseProductionNameParts } from '../../utils/productProductionName';
 
 /** Số cho ô Độ li ĐM. `(đm n kg)` không điền vào ô này. */
@@ -39,22 +39,22 @@ export function inferSpecsFromProductionName(
   };
 }
 
-/** Đơn cắt lẻ + miền nam: chuẩn hóa Định mức KG/tấm (giữ 3 số lẻ bằng cắt số, không làm tròn). Không hợp lệ / <= 0 = null. */
+/** Đơn cắt lẻ + miền nam: chuẩn hóa Định mức KG/tấm (giữ 4 số lẻ bằng cắt số, không làm tròn). Không hợp lệ / <= 0 = null. */
 export function parseSouthDinhMucKg(value: unknown): number | null {
   const parsed = parsePercentInput(String(value ?? ''));
-  return Number.isFinite(parsed) && parsed > 0 ? truncateTo3Decimals(parsed) : null;
+  return Number.isFinite(parsed) && parsed > 0 ? truncateTo4Decimals(parsed) : null;
 }
 
-/** Đơn cắt lẻ + miền nam: Tổng KG = Định mức KG (3 số lẻ, cắt số) × SL tổng — cắt 3 số lẻ để khớp ĐM × SL. Thiếu ĐM/SL = null. */
+/** Đơn cắt lẻ + miền nam: Tổng KG = Định mức KG (4 số lẻ, cắt số) × SL tổng — cắt 4 số lẻ để khớp ĐM × SL. Thiếu ĐM/SL = null. */
 export function southDinhMucKgTotal(dinhMucKg: unknown, quantity: unknown): number | null {
   const dm = parseSouthDinhMucKg(dinhMucKg);
   const qty = Number(quantity);
   if (dm === null || !Number.isFinite(qty) || qty <= 0) return null;
-  return truncateTo3Decimals(dm * qty);
+  return truncateTo4Decimals(dm * qty);
 }
 
 /**
- * Miền nam: TL/tấm = kg/1m × Dài × hệ số, cắt 3 số lẻ; Tổng KG = TL/tấm × SL (cắt 3 số lẻ)
+ * Miền nam: TL/tấm = kg/1m × Dài × hệ số, cắt 4 số lẻ; Tổng KG = TL/tấm × SL (cắt 4 số lẻ)
  * để tích khớp tuyệt đối. `scale` = hệ số khổ × hệ số độ li (mặc định 1 = đúng chuẩn danh mục).
  */
 export function southScaledTlAndTotal(
@@ -63,11 +63,11 @@ export function southScaledTlAndTotal(
   quantity: number,
   scale = 1
 ): { tl: number; total: number } {
-  const tl = truncateTo3Decimals(kgPerMeter * daiM * scale);
-  return { tl, total: truncateTo3Decimals(tl * quantity) };
+  const tl = truncateTo4Decimals(kgPerMeter * daiM * scale);
+  return { tl, total: truncateTo4Decimals(tl * quantity) };
 }
 
-/** Thiếu độ dài tấm tiêu chuẩn: TL/tấm = Định mức tiêu chuẩn × hệ số (cắt 3 số lẻ); Tổng = TL/tấm × SL (cắt 3 số lẻ). */
+/** Thiếu độ dài tấm tiêu chuẩn: TL/tấm = Định mức tiêu chuẩn × hệ số (cắt 4 số lẻ); Tổng = TL/tấm × SL (cắt 4 số lẻ). */
 export function southFallbackTlAndTotal(
   dinhMucKg: unknown,
   quantity: number,
@@ -75,8 +75,8 @@ export function southFallbackTlAndTotal(
 ): { tl: number; total: number } | null {
   const dm = parseSouthDinhMucKg(dinhMucKg);
   if (dm === null || !Number.isFinite(quantity) || quantity <= 0) return null;
-  const tl = truncateTo3Decimals(dm * scale);
-  return { tl, total: truncateTo3Decimals(tl * quantity) };
+  const tl = truncateTo4Decimals(dm * scale);
+  return { tl, total: truncateTo4Decimals(tl * quantity) };
 }
 
 /** Hệ số khổ = khổ nhập / khổ chuẩn của sản phẩm. Thiếu một trong hai → null (không điều chỉnh). */
@@ -87,25 +87,39 @@ export function southKhoScale(enteredKho: unknown, standardKho: unknown): number
   return entered / standard;
 }
 
-/** Tổng KG đơn hàng luôn lưu tối đa 3 số sau dấu phẩy bằng cắt số (không làm tròn). Không hợp lệ / <= 0 = null. */
-export function truncateTotalKg3(value: unknown): number | null {
+/** Tổng KG đơn hàng luôn lưu tối đa 4 số sau dấu phẩy bằng cắt số (không làm tròn). Không hợp lệ / <= 0 = null. */
+export function truncateTotalKg4(value: unknown): number | null {
   const parsed = parsePercentInput(String(value ?? ''));
-  return Number.isFinite(parsed) && parsed > 0 ? truncateTo3Decimals(parsed) : null;
+  return Number.isFinite(parsed) && parsed > 0 ? truncateTo4Decimals(parsed) : null;
 }
 
 /**
- * Đơn miền nam: kg/1m = định mức tiêu chuẩn (kg) / độ dài tấm tiêu chuẩn (m).
- * Ưu tiên kg nhập trên đơn, rồi TL tấm danh mục. Không chia được thì lấy kg/1m dài của danh mục.
+ * Đơn miền nam: ưu tiên kg/1m đã lưu trên bảng quy đổi, không chia lại TL/tấm đã cắt số.
+ * Nếu người dùng đổi ĐM kg/chiều dài tiêu chuẩn so với danh mục thì tính theo số đã sửa.
+ * Thiếu kg/1m danh mục mới suy từ kg tiêu chuẩn / chiều dài tiêu chuẩn.
  */
 export function southOrderKgPerMeter(
   enteredStandardKg: unknown,
   catalogSheetKg: unknown,
   catalogKgPerMeter: unknown,
-  doDaiTamTieuChuan: unknown
+  doDaiTamTieuChuan: unknown,
+  catalogSheetLength?: unknown
 ): number | null {
+  const catalogRate = parseSouthDinhMucKg(catalogKgPerMeter);
+  if (catalogRate !== null) {
+    const enteredKg = parseSouthDinhMucKg(enteredStandardKg);
+    const catalogKg = parseSouthDinhMucKg(catalogSheetKg);
+    const enteredLength = parsePercentInput(String(doDaiTamTieuChuan ?? ''));
+    const catalogLength = parsePercentInput(String(catalogSheetLength ?? ''));
+    const kgChanged = enteredKg !== null && catalogKg !== null && enteredKg !== catalogKg;
+    const lengthChanged = enteredLength > 0 && catalogLength > 0 && enteredLength !== catalogLength;
+    if (kgChanged || lengthChanged) {
+      return southKgPerStandardMeter(enteredStandardKg, doDaiTamTieuChuan) ?? catalogRate;
+    }
+    return catalogRate;
+  }
   return southKgPerStandardMeter(enteredStandardKg, doDaiTamTieuChuan)
-    ?? southKgPerStandardMeter(catalogSheetKg, doDaiTamTieuChuan)
-    ?? parseSouthDinhMucKg(catalogKgPerMeter);
+    ?? southKgPerStandardMeter(catalogSheetKg, doDaiTamTieuChuan);
 }
 
 /** kg/1m = định mức tiêu chuẩn (kg) / độ dài tấm tiêu chuẩn (m). */
@@ -116,11 +130,11 @@ export function southKgPerStandardMeter(
   const kg = parseSouthDinhMucKg(standardKg);
   const sheetLength = parsePercentInput(String(doDaiTamTieuChuan ?? ''));
   if (kg === null || !Number.isFinite(sheetLength) || sheetLength <= 0) return null;
-  // Không làm tròn trung gian: tránh lệch 0.01 kg khi nhân lại với Dài (hiển thị KG/1m làm tròn ở UI).
+  // Không làm tròn trung gian; UI cắt 4 số lẻ khi hiển thị.
   return kg / sheetLength;
 }
 
-/** Tổng trọng lượng miền nam = kg/1m × m dài × số lượng (giữ 3 số sau dấu phẩy bằng cắt số). */
+/** Tổng trọng lượng miền nam = kg/1m × m dài × số lượng (giữ 4 số sau dấu phẩy bằng cắt số). */
 export function southLengthScaledTotalKg(
   standardKg: unknown,
   doDaiTamTieuChuan: unknown,
@@ -131,7 +145,7 @@ export function southLengthScaledTotalKg(
   const length = parsePercentInput(String(daiM ?? ''));
   const qty = parsePercentInput(String(quantity ?? ''));
   if (perMeter === null || !Number.isFinite(length) || length <= 0 || !Number.isFinite(qty) || qty <= 0) return null;
-  return truncateTo3Decimals(perMeter * length * qty);
+  return truncateTo4Decimals(perMeter * length * qty);
 }
 
 function orderDecimalFractionDigits(text: string): number {

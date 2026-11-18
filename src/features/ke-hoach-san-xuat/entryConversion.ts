@@ -1,4 +1,4 @@
-import { truncateTo3Decimals } from '../../utils/weightTruncate';
+import { truncateTo3Decimals, truncateTo4Decimals } from '../../utils/weightTruncate';
 
 export type ProductionConversionRates = {
   kg?: number;
@@ -85,12 +85,12 @@ export function scaleProductionEntryQuantity<T extends EntryConversionLine>(
   const keptKg = manualText(flags.manualKg, line.tongKg);
   const keptM2 = manualText(flags.manualM2, line.m2);
   const keptMDai = manualText(flags.manualMDai, line.mDai);
-  const scaled = (rate: number | undefined) => {
+  const scaled = (rate: number | undefined, isWeight = false) => {
     if (!rate || qty <= 0) return '';
-    const value = truncateEntryConversion(rate * qty);
+    const value = isWeight ? truncateTo4Decimals(rate * qty) : truncateEntryConversion(rate * qty);
     return value > 0 ? String(value) : '';
   };
-  const kg = keptKg ?? scaled(rates.kg);
+  const kg = keptKg ?? scaled(rates.kg, true);
   const m2 = keptM2 ?? scaled(rates.m2);
   const mDai = keptMDai ?? scaled(rates.mDai);
   const kept = (line.conversionResults || []).filter(item => {
@@ -141,7 +141,7 @@ export function setManualEntryConversionValue<T extends EntryConversionLine & Ma
     const qty = parseQty(cleared.quantity);
     const rate = rates?.[rateKey];
     if (rate && qty > 0) {
-      const value = truncateEntryConversion(rate * qty);
+      const value = unit === 'kg' ? truncateTo4Decimals(rate * qty) : truncateEntryConversion(rate * qty);
       const text = value > 0 ? String(value) : '';
       return {
         ...cleared,

@@ -38,6 +38,7 @@ import {
   isCuonProduct,
   isTamProduct,
   listProductionNamesByCode,
+  sortOrderProductOptions,
   matchOrderProductByCodeAndProductionName,
   catalogMatchesProductionName,
   buildAllocatedQtyMap,
@@ -54,7 +55,7 @@ import { detectOrderLineWidthMismatch, doLiDmWeightScale, extractMang, buildCutA
 import {
   orderDuplicateDecimalText,
   parseSouthDinhMucKg,
-  truncateTotalKg3,
+  truncateTotalKg4,
   southDinhMucKgTotal,
   southOrderKgPerMeter,
   southScaledTlAndTotal,
@@ -66,14 +67,14 @@ import {
 export {
   orderDuplicateDecimalText,
   parseSouthDinhMucKg,
-  truncateTotalKg3,
+  truncateTotalKg4,
   southDinhMucKgTotal,
   southKgPerStandardMeter,
   southLengthScaledTotalKg,
   southOrderKgPerMeter,
   southScaledTlAndTotal
 } from './southWeight';
-import { truncateTo3Decimals } from '../../utils/weightTruncate';
+import { truncateTo4Decimals } from '../../utils/weightTruncate';
 import { productionNameAmisGrade } from '../../utils/productProductionName';
 import {
   parseOrderProductsFromRecord,
@@ -642,7 +643,7 @@ function resolveOrderLineWeightPerProduct(
 ): number | null {
   const positive = (value: unknown): number | null => {
     const n = typeof value === 'number' ? value : parsePercentInput(String(value ?? ''));
-    return Number.isFinite(n) && n > 0 ? truncateTo3Decimals(n) : null;
+    return Number.isFinite(n) && n > 0 ? truncateTo4Decimals(n) : null;
   };
   if (isCuonProduct(effectiveUnit)) {
     return (
@@ -664,7 +665,7 @@ function resolveOrderLineWeightPerProduct(
   if (fromKg1) return fromKg1;
   const qty = positive(line.quantity);
   const tong = positive(line.tongKg);
-  if (qty && tong) return truncateTo3Decimals(tong / qty);
+  if (qty && tong) return truncateTo4Decimals(tong / qty);
   return null;
 }
 
@@ -1001,22 +1002,23 @@ export function orderProductLinesToPayload(
       const sanPhamId = selectedProduct?.id || (line.productId?.trim() ? line.productId.trim() : undefined);
       const conversion = sanPhamId ? productConversions.find(item => item.sanPhamId === sanPhamId) : undefined;
       const roundConversionValue = (value: number) => Math.round(value * 100) / 100;
-      // Trọng lượng (kg): giữ 3 chữ số sau dấu phẩy bằng cách cắt số (không làm tròn).
-      const kg3 = (value: number) => truncateTo3Decimals(value);
+      // Trọng lượng (kg): giữ 4 chữ số sau dấu phẩy bằng cách cắt số (không làm tròn).
+      const kg4 = (value: number) => truncateTo4Decimals(value);
       const parsedManualKg = line.manualTongKg ? parsePercentInput(String(line.tongKg ?? '')) : Number.NaN;
-      // Tổng KG lưu tối đa 3 số sau dấu phẩy (cắt số, không làm tròn).
+      // Tổng KG lưu tối đa 4 số sau dấu phẩy (cắt số, không làm tròn).
       const manualTotalKg = Number.isFinite(parsedManualKg) && parsedManualKg > 0
-        ? kg3(parsedManualKg)
+        ? kg4(parsedManualKg)
         : null;
       // Đơn cắt lẻ: số nhập tay ưu tiên — Tổng KG = số đã nhập.
-      // Đơn miền nam: KG/1m = định mức tiêu chuẩn (kg) / độ dài tấm tiêu chuẩn (m).
+      // Đơn miền nam: lấy KG/1m danh mục; chỉ chia khi thiếu hoặc người dùng sửa chuẩn.
       const dinhMucKgPerUnit = isCutLikeOrder && !isSouthOrder ? parseSouthDinhMucKg(line.dinhMucKg) : null;
       const southKgPerMeter = isSouthOrder
         ? southOrderKgPerMeter(
             line.dinhMucTieuChuanKg,
-            null,
-            null,
-            line.doDaiTamTieuChuan
+            conversion?.trongLuongKgTam ?? selectedProduct?.totalWeight,
+            conversion?.trongLuongKgMDai,
+            line.doDaiTamTieuChuan,
+            conversion?.khoTamDaiM
           )
         : null;
       // Có độ dài tấm tiêu chuẩn: Tổng = kg/1m × Dài × SL. Thiếu thì Tổng = Định mức tiêu chuẩn (kg) × SL (tổng).
@@ -1032,9 +1034,9 @@ export function orderProductLinesToPayload(
         : null;
       const southUnitTl = isSouthOrder
         ? (southHasLength
-            ? kg3((southKgPerMeter as number) * daiM * southSpecScale)
+            ? kg4((southKgPerMeter as number) * daiM * southSpecScale)
             : (southFallback?.tl ?? (parseSouthDinhMucKg(line.dinhMucTieuChuanKg) !== null
-                ? kg3((parseSouthDinhMucKg(line.dinhMucTieuChuanKg) as number) * southSpecScale)
+                ? kg4((parseSouthDinhMucKg(line.dinhMucTieuChuanKg) as number) * southSpecScale)
                 : null)))
         : null;
       const southScaledTotalKg = isSouthOrder && Number.isFinite(quantity) && quantity > 0
@@ -1044,7 +1046,7 @@ export function orderProductLinesToPayload(
         : null;
       const dinhMucTotalKg = southScaledTotalKg ?? (
         dinhMucKgPerUnit !== null && Number.isFinite(quantity) && quantity > 0
-          ? kg3(dinhMucKgPerUnit * quantity)
+          ? kg4(dinhMucKgPerUnit * quantity)
           : null
       );
       // Số nhập tay luôn ưu tiên hơn số tự tính (kể cả đơn miền nam đã cho sửa Tổng KG).
@@ -1070,24 +1072,24 @@ export function orderProductLinesToPayload(
           }
         }
 
-        // Làm tròn 2 số lẻ chỉ áp cho M2 / M dài (không phải trọng lượng); KG dùng kg3 (cắt 3 số lẻ).
+        // Làm tròn 2 số lẻ chỉ áp cho M2 / M dài (không phải trọng lượng); KG dùng kg4 (cắt 4 số lẻ).
         const manualKgPerUnit = effectiveManualTotalKg !== null && Number.isFinite(quantity) && quantity > 0
-          ? kg3(effectiveManualTotalKg / quantity)
+          ? kg4(effectiveManualTotalKg / quantity)
           : null;
         if (manualKgPerUnit !== null && isCuonProduct(unit)) {
           cutTlCuon = manualKgPerUnit;
         } else if (isCuonProduct(unit) && cutWeight?.kg1Sp) {
           // ĐVT Cuộn: TL/cuộn = TL tính theo Dài (m) đặt, không dùng số cố định của danh mục.
-          cutTlCuon = kg3(cutWeight.kg1Sp);
+          cutTlCuon = kg4(cutWeight.kg1Sp);
         } else if (conversion?.trongLuongKgCuon) {
-          cutTlCuon = kg3(conversion.trongLuongKgCuon);
+          cutTlCuon = kg4(conversion.trongLuongKgCuon);
         }
         if (manualKgPerUnit !== null && isTamProduct(unit)) {
           cutTlTam = manualKgPerUnit;
         } else if (cutWeight?.kg1Sp && !isCuonProduct(unit)) {
-          cutTlTam = kg3(cutWeight.kg1Sp);
+          cutTlTam = kg4(cutWeight.kg1Sp);
         } else if (conversion?.trongLuongKgTam) {
-          cutTlTam = kg3(conversion.trongLuongKgTam);
+          cutTlTam = kg4(conversion.trongLuongKgTam);
         }
         // Định mức KG chính là TL/tấm, ghi đúng giá trị đã nhập.
         // Miền nam có độ dài tiêu chuẩn: TL/tấm = kg/1m × m dài đặt.
@@ -1097,7 +1099,7 @@ export function orderProductLinesToPayload(
           if (isCuonProduct(unit)) cutTlCuon = southUnitTl;
           else cutTlTam = southUnitTl;
         } else if (effectiveManualTotalKg === null && southScaledTotalKg !== null && isTamProduct(unit) && Number.isFinite(quantity) && quantity > 0) {
-          cutTlTam = kg3(southScaledTotalKg / quantity);
+          cutTlTam = kg4(southScaledTotalKg / quantity);
         } else if (effectiveManualTotalKg === null && dinhMucKgPerUnit !== null && isTamProduct(unit)) {
           cutTlTam = dinhMucKgPerUnit;
         }
@@ -1110,10 +1112,10 @@ export function orderProductLinesToPayload(
           : undefined;
 
       const cutResults: Array<{ don_vi: string; gia_tri: number }> = [];
-      // Tổng KG lưu tối đa 3 số sau dấu phẩy (cắt số, không làm tròn).
-      // Số nhập tay giữ nguyên phần lẻ tới 3 chữ số; số tự tính = TL (cắt 3 số lẻ) × SL đã cắt 3 số lẻ để tích luôn khớp.
+      // Tổng KG lưu tối đa 4 số sau dấu phẩy (cắt số, không làm tròn).
+      // Số nhập tay giữ nguyên phần lẻ tới 3 chữ số; số tự tính = TL (cắt 4 số lẻ) × SL đã cắt 4 số lẻ để tích luôn khớp.
       const finalCutTotalKg = manualTotalKg !== null
-        ? truncateTotalKg3(manualTotalKg)
+        ? truncateTotalKg4(manualTotalKg)
         : (dinhMucTotalKg !== null && dinhMucTotalKg > 0 ? dinhMucTotalKg : (cutWeight?.tongKg && cutWeight.tongKg > 0 ? cutWeight.tongKg : null));
       if (finalCutTotalKg !== null && finalCutTotalKg > 0) {
         cutResults.push({ don_vi: 'kg', gia_tri: finalCutTotalKg });
@@ -1159,7 +1161,7 @@ export function orderProductLinesToPayload(
         ...(finalCutTotalKg !== null
           ? {
               ...(effectiveManualTotalKg === null && cutWeight?.kg1Sp && cutWeight.kg1Sp > 0 && cutWeight.kg1Sp !== cutTlTam && cutWeight.kg1Sp !== cutTlCuon
-                ? { kg_1_sp: kg3(cutWeight.kg1Sp) }
+                ? { kg_1_sp: kg4(cutWeight.kg1Sp) }
                 : {}),
               tong_kg: finalCutTotalKg,
               // Lưu luôn Định mức KG tự tính (TL/Tấm hoặc TL/Cuộn theo ĐVT) để DB có sẵn giá trị.
@@ -1305,6 +1307,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
   const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>([]);
   const [productOptions, setProductOptions] = useState<OrderProductOption[]>([]);
+  const sortedProductOptions = useMemo(() => sortOrderProductOptions(productOptions), [productOptions]);
   const [productConversions, setProductConversions] = useState<OrderProductConversion[]>([]);
   const [isLoadingLookups, setIsLoadingLookups] = useState(false);
   const [lookupError, setLookupError] = useState('');
@@ -1723,6 +1726,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       disabled={!line.productCode.trim()}
       skipUnchangedBlurCommit
       openUpward
+      multiline
       showAllWhenQueryMatchesSelection
       maxResults={ORDER_AMIS_SEARCH_MAX_RESULTS}
       selectedOptionClassName="bg-yellow-50 font-black text-yellow-800 ring-2 ring-inset ring-yellow-400"
@@ -1792,9 +1796,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     const liScale = hasZemInName(line.productionName, line.productName, line.productCode)
       ? 1
       : (doLiDmWeightScale(line.doLiDm, catalogWeightLi(product)) ?? 1);
-    // Độ dài tấm tiêu chuẩn giữ theo sản phẩm; ĐM tiêu chuẩn = kg tấm chuẩn × hệ số khổ × hệ số độ li (cắt 3 số lẻ).
+    // Độ dài tấm tiêu chuẩn giữ theo sản phẩm; ĐM tiêu chuẩn = kg tấm chuẩn × hệ số khổ × hệ số độ li (cắt 4 số lẻ).
     // Tổng KG tự nhân thêm Dài m qua KG/1m = ĐM tiêu chuẩn ÷ độ dài tấm tiêu chuẩn.
-    const nextDm = truncateTo3Decimals(stdKg * khoScale * liScale);
+    const nextDm = truncateTo4Decimals(stdKg * khoScale * liScale);
     if (!(nextDm > 0)) return null;
     return {
       dinhMucTieuChuanKg: orderDuplicateDecimalText(String(nextDm)),
@@ -2215,8 +2219,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         const parsedManualKg = sourceLine?.manualTongKg
           ? parsePercentInput(String(sourceLine.tongKg ?? ''))
           : Number.NaN;
-        // Tổng KG lưu tối đa 3 số sau dấu phẩy (cắt số, không làm tròn).
-        const manualTotalKg = Number.isFinite(parsedManualKg) && parsedManualKg > 0 ? truncateTo3Decimals(parsedManualKg) : null;
+        // Tổng KG lưu tối đa 4 số sau dấu phẩy (cắt số, không làm tròn).
+        const manualTotalKg = Number.isFinite(parsedManualKg) && parsedManualKg > 0 ? truncateTo4Decimals(parsedManualKg) : null;
 
         let kgVal: number | null = null;
         let m2Val: number | null = null;
@@ -2236,31 +2240,31 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
         if (manualTotalKg !== null) kgVal = manualTotalKg;
 
-        // Trọng lượng: giữ 3 chữ số sau dấu phẩy bằng cách cắt số (không làm tròn).
-        if (kgVal !== null && Number.isFinite(kgVal)) kgVal = truncateTo3Decimals(kgVal);
+        // Trọng lượng: giữ 4 chữ số sau dấu phẩy bằng cách cắt số (không làm tròn).
+        if (kgVal !== null && Number.isFinite(kgVal)) kgVal = truncateTo4Decimals(kgVal);
 
         const normUnit = product.don_vi.trim().toLowerCase();
-        if (kgVal === null && (normUnit === 'kg' || normUnit === 'kilogram')) kgVal = truncateTo3Decimals(qty);
+        if (kgVal === null && (normUnit === 'kg' || normUnit === 'kilogram')) kgVal = truncateTo4Decimals(qty);
         if (m2Val === null && (normUnit === 'm2' || normUnit === 'm 2' || normUnit === 'mét vuông')) m2Val = qty;
         if (mDaiVal === null && (normUnit === 'm' || normUnit === 'm dài' || normUnit === 'mét')) mDaiVal = qty;
 
-        // Trọng lượng (kg): giữ 3 chữ số sau dấu phẩy bằng cách cắt số (không làm tròn).
-        if (kgVal !== null && Number.isFinite(kgVal)) kgVal = truncateTo3Decimals(kgVal);
+        // Trọng lượng (kg): giữ 4 chữ số sau dấu phẩy bằng cách cắt số (không làm tròn).
+        if (kgVal !== null && Number.isFinite(kgVal)) kgVal = truncateTo4Decimals(kgVal);
         // roundVal (2 số lẻ) áp cho M2 / M dài (không phải trọng lượng).
         const roundVal = (v: number | null) => (v !== null && Number.isFinite(v) && v > 0 ? Math.round(v * 100) / 100 : null);
         const rKg = kgVal !== null && Number.isFinite(kgVal) && kgVal > 0 ? kgVal : null;
         const rM2 = roundVal(m2Val);
         const rMDai = roundVal(mDaiVal);
-        const manualKgPerUnit = manualTotalKg !== null && qty > 0 ? truncateTo3Decimals(manualTotalKg / qty) : null;
+        const manualKgPerUnit = manualTotalKg !== null && qty > 0 ? truncateTo4Decimals(manualTotalKg / qty) : null;
         const rTlCuon = manualKgPerUnit !== null && isCuonProduct(product.don_vi)
           ? manualKgPerUnit
           : conversion?.trongLuongKgCuon
-            ? truncateTo3Decimals(conversion.trongLuongKgCuon)
+            ? truncateTo4Decimals(conversion.trongLuongKgCuon)
             : null;
         const rTlTam = manualKgPerUnit !== null && isTamProduct(product.don_vi)
           ? manualKgPerUnit
           : conversion?.trongLuongKgTam
-            ? truncateTo3Decimals(conversion.trongLuongKgTam)
+            ? truncateTo4Decimals(conversion.trongLuongKgTam)
             : null;
 
         const results: Array<{ don_vi: string; gia_tri: number }> = [];
@@ -2299,7 +2303,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         if (!finalTlCuon && spId) {
           const matchedConv = productConversions.find(item => item.sanPhamId === spId);
           if (matchedConv?.trongLuongKgCuon) {
-            finalTlCuon = truncateTo3Decimals(matchedConv.trongLuongKgCuon);
+            finalTlCuon = truncateTo4Decimals(matchedConv.trongLuongKgCuon);
           }
         }
 
@@ -2830,9 +2834,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       const kgPerStandardMeter = isFormSouthOrder
                         ? southOrderKgPerMeter(
                             line.dinhMucTieuChuanKg,
-                            null,
-                            null,
-                            line.doDaiTamTieuChuan
+                            matchedConversion?.trongLuongKgTam ?? matchedLineProduct?.totalWeight,
+                            matchedConversion?.trongLuongKgMDai,
+                            line.doDaiTamTieuChuan,
+                            matchedConversion?.khoTamDaiM
                           )
                         : null;
                       const southLengthM = parsePercentInput(line.daiM);
@@ -2861,7 +2866,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         const positive = (n: number) => (Number.isFinite(n) && n > 0 ? n : null);
                         if (line.manualTongKg) {
                           const manualTotal = positive(parsePercentInput(String(line.tongKg ?? '')));
-                          return manualTotal !== null && qtyNum > 0 ? truncateTo3Decimals(manualTotal / qtyNum) : null;
+                          return manualTotal !== null && qtyNum > 0 ? truncateTo4Decimals(manualTotal / qtyNum) : null;
                         }
                         if (line.shouldRecalculateConversion) {
                           // TL/đơn vị không phụ thuộc SL → tính với SL = 1 để dòng mới (chưa nhập SL) vẫn tự fill.
@@ -2886,7 +2891,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           <SearchableSelect
                             value={line.shouldRecalculateConversion ? (line.productId || line.productCode) : line.productCode}
                             onChange={productId => pickCutOrderProduct(line.key, productId)}
-                            options={productOptions}
+                            options={sortedProductOptions}
                             placeholder="Tìm mã AMIS hoặc tên SX (STD08, sóng trắng…)"
                             title="Gõ mã AMIS hoặc một phần tên sản xuất. Nhiều từ khóa cách bởi dấu phẩy = phải khớp tất cả."
                             isLoading={isLoadingLookups}
@@ -2968,10 +2973,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               // Tự fill TL/Tấm hoặc TL/Cuộn theo ĐVT đã chọn; nhập số để ghi đè (Tổng KG = số nhập × SL).
                               // " " (1 dấu cách) = người dùng vừa xóa trống để gõ số mới; lưu đơn vẫn tính như tự tính.
                               value={String(line.dinhMucKg ?? '') === '' && autoDinhMucKg !== null
-                                ? formatNumber(autoDinhMucKg, 3)
+                                ? formatNumber(truncateTo4Decimals(autoDinhMucKg), 4)
                                 : String(line.dinhMucKg ?? '').trim()}
                               onChange={e => updateConversionProductLine(line.key, { dinhMucKg: e.target.value === '' ? ' ' : e.target.value })}
-                              title={`Định mức KG/${cutEffectiveUnit === 'Cuộn' ? 'cuộn' : 'tấm'} (= ${cutEffectiveUnit === 'Cuộn' ? 'TL/Cuộn' : 'TL/Tấm'} theo ĐVT đã chọn)${autoDinhMucKg !== null ? ` — tự tính ${formatNumber(autoDinhMucKg, 3)}, đổi theo Dài, Khổ, Độ li ĐM` : ''}. Nhập số để ghi đè: Tổng KG = số này × SL tổng`}
+                              title={`Định mức KG/${cutEffectiveUnit === 'Cuộn' ? 'cuộn' : 'tấm'} (= ${cutEffectiveUnit === 'Cuộn' ? 'TL/Cuộn' : 'TL/Tấm'} theo ĐVT đã chọn)${autoDinhMucKg !== null ? ` — tự tính ${formatNumber(truncateTo4Decimals(autoDinhMucKg), 4)}, đổi theo Dài, Khổ, Độ li ĐM` : ''}. Nhập số để ghi đè: Tổng KG = số này × SL tổng`}
                               className={`${orderFieldClass} bg-white text-right ${String(line.dinhMucKg ?? '').trim() === '' ? 'font-bold text-zinc-600' : ''}`}
                               placeholder="ĐM KG"
                             />
@@ -2999,9 +3004,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             </div>
                             <div className="col-span-1 min-w-0">
                               <input
-                                value={kgPerStandardMeter !== null ? orderDuplicateDecimalText(formatNumber(kgPerStandardMeter, 3)) : ''}
+                                value={kgPerStandardMeter !== null ? orderDuplicateDecimalText(formatNumber(truncateTo4Decimals(kgPerStandardMeter), 4)) : ''}
                                 readOnly
-                                title="KG/1m = định mức tiêu chuẩn (kg) / độ dài tấm tiêu chuẩn (m)"
+                                title="Ưu tiên KG/1m đã lưu trong bảng quy đổi. Khi thiếu hoặc sửa định mức/chiều dài tiêu chuẩn, tính từ ĐM kg ÷ chiều dài tiêu chuẩn."
                                 className={`${orderFieldClass} bg-zinc-50 text-right font-black`}
                                 placeholder="—"
                               />
@@ -3053,7 +3058,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <div className="col-span-1 min-w-0">
                           <input
                             type="text"
-                            value={cutWeightPerSp !== null && Number.isFinite(cutWeightPerSp) ? formatNumber(cutWeightPerSp, 3) : ''}
+                            value={cutWeightPerSp !== null && Number.isFinite(cutWeightPerSp) ? formatNumber(truncateTo4Decimals(cutWeightPerSp), 4) : ''}
                             readOnly
                             title="Trọng lượng 1 SP (kg) theo ĐVT và định mức/ quy đổi"
                             className={`${orderFieldClass} bg-zinc-50 text-right font-black tabular-nums`}
@@ -3068,8 +3073,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               ? String(line.tongKg ?? '')
                               : displayedCutWeight !== null && Number.isFinite(displayedCutWeight)
                                 ? (isFormSouthOrder
-                                    ? orderDuplicateDecimalText(formatNumber(displayedCutWeight, 3))
-                                    : formatNumber(displayedCutWeight, 3))
+                                    ? orderDuplicateDecimalText(formatNumber(truncateTo4Decimals(displayedCutWeight), 4))
+                                    : formatNumber(truncateTo4Decimals(displayedCutWeight), 4))
                                 : ''}
                             onChange={e => {
                               updateProductLine(line.key, {
@@ -3090,7 +3095,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               });
                             }}
                             title={line.manualTongKg
-                              ? 'Tổng KG nhập tay (giữ tối đa 3 số sau dấu phẩy, cắt số); TL/tấm = Tổng KG / SL'
+                              ? 'Tổng KG nhập tay (giữ tối đa 4 số sau dấu phẩy, cắt số); TL/tấm = Tổng KG / SL'
                               : southScaledTotal !== null
                               ? 'Tổng KG = SL (tổng) × KG/1m × Dài (m) — có thể sửa trực tiếp'
                               : southDinhMucTotal !== null
@@ -3198,7 +3203,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             ? (matchedLineProduct?.id || line.productId || line.productCode)
                             : line.productCode}
                           onChange={productId => pickOrderProduct(line.key, productId)}
-                          options={productOptions}
+                          options={sortedProductOptions}
                           placeholder="Tìm mã AMIS hoặc tên SX (STD08, sóng trắng…)"
                           title="Gõ mã AMIS hoặc một phần tên sản xuất. Nhiều từ khóa cách bởi dấu phẩy = phải khớp tất cả."
                           isLoading={isLoadingLookups}
@@ -3316,7 +3321,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       <div className="col-span-1 min-w-0">
                         <input
                           type="text"
-                          value={weightPerSp !== null ? formatNumber(weightPerSp, 3) : ''}
+                          value={weightPerSp !== null ? formatNumber(truncateTo4Decimals(weightPerSp), 4) : ''}
                           readOnly
                           title={
                             isCuonProduct(effectiveUnit)
@@ -3336,7 +3341,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           value={line.manualTongKg
                             ? String(line.tongKg ?? '')
                             : kgValue !== null && Number.isFinite(kgValue)
-                              ? formatNumber(truncateTo3Decimals(kgValue), 3)
+                              ? formatNumber(truncateTo4Decimals(kgValue), 4)
                               : ''}
                           onChange={e => updateProductLine(line.key, {
                             tongKg: e.target.value,
@@ -3489,7 +3494,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {line.conversionResults?.filter(result => result.unit !== 'kg/1 SP').map(result => (
                             <span key={result.unit} className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-800">
-                              {formatNumber(result.value, 3)} {result.unit}
+                              {formatNumber(result.value, result.unit.toLowerCase() === 'kg' ? 4 : 3)} {result.unit}
                             </span>
                           ))}
                           {showTlCuon ? (
@@ -3703,7 +3708,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           <div className="mt-1 flex flex-wrap gap-1">
                             {line.conversionResults.filter(r => r.unit !== 'kg/1 SP').map(r => (
                               <span key={r.unit} className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
-                                {formatNumber(r.value, 3)} {r.unit}
+                                {formatNumber(r.value, r.unit.toLowerCase() === 'kg' ? 4 : 3)} {r.unit}
                               </span>
                             ))}
                           </div>

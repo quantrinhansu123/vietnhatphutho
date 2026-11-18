@@ -1,5 +1,7 @@
 'use client';
 
+import { truncateTo4Decimals } from '../../utils/weightTruncate';
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Loader2, Printer, Save, X } from 'lucide-react';
@@ -118,17 +120,16 @@ function blankIfZero(value: string): string {
 }
 
 function formatNum(value: number | null): string {
-  // Trọng lượng lưu 3 số lẻ (cắt số) → bản in hiển thị đủ 3 số lẻ.
-  return value !== null && Number.isFinite(value) ? value.toFixed(3) : '—';
+  return value !== null && Number.isFinite(value) ? truncateTo4Decimals(value).toFixed(4) : '—';
 }
 
-/** Tổng TL / Tổng trọng lượng: phần nghìn `,`, thập phân `.`, đủ 3 số lẻ (VD: 1,234.567). */
+/** Tổng TL / Tổng trọng lượng: đủ 4 số lẻ, cắt số trước khi hiển thị. */
 function formatTongTl(value: number): string {
-  if (!Number.isFinite(value)) return '0.000';
+  if (!Number.isFinite(value)) return '0.0000';
   return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3
-  }).format(value);
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4
+  }).format(truncateTo4Decimals(value));
 }
 
 /** Tổng TL luôn tính từ Tổng SX, không phụ thuộc phân bổ Bắc/Trung/Nam. */
@@ -145,13 +146,13 @@ function calculateTotalWeightByUnit(
   const totalProduction = Number.isFinite(row.so_luong) && row.so_luong > 0 ? row.so_luong : 0;
 
   if (normalizedUnit === 'cuon' || normalizedUnit === 'roll') {
-    return totalProduction * (row.kg_cuon ?? 0);
+    return truncateTo4Decimals(totalProduction * truncateTo4Decimals(row.kg_cuon ?? 0));
   }
   if (normalizedUnit === 'tam' || normalizedUnit === 'sheet') {
-    return totalProduction * (row.tl_tam ?? 0);
+    return truncateTo4Decimals(totalProduction * truncateTo4Decimals(row.tl_tam ?? 0));
   }
   if (normalizedUnit === 'kg' || normalizedUnit === 'kilogram') {
-    return totalProduction;
+    return truncateTo4Decimals(totalProduction);
   }
   return 0;
 }
@@ -620,43 +621,28 @@ export function ProductionOrderPrintPreviewModal({
               )}
               <div className="mx-auto max-w-[1400px] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm print:max-w-none print:overflow-visible print:rounded-none print:border-0 print:shadow-none">
                 <div className="overflow-x-auto print:overflow-hidden">
-                  <table className="w-full border-collapse text-xs print:[&_td]:border print:[&_td]:border-gray-400 print:[&_th]:border print:[&_th]:border-gray-400">
+                  <table className="production-order-products-table w-full border-collapse text-xs print:[&_td]:border print:[&_td]:border-gray-400 print:[&_th]:border print:[&_th]:border-gray-400">
+                    <colgroup>
+                      {Array.from({ length: 14 }, (_, index) => <col key={index} />)}
+                    </colgroup>
                     <thead className="sticky top-0 z-10 bg-zinc-950 text-[10px] uppercase tracking-wide text-white print:static print:bg-gray-100 print:text-black">
                       <tr>
                         <th className={`${numHeadCell} w-10`}>STT</th>
-                        <th className={`${textHeadCell} min-w-28`}>Mã đơn hàng</th>
+                        <th className={`${textHeadCell} w-16`}>Mã ĐH</th>
                         <th className={`${textHeadCell} min-w-72`}>Tên sản xuất</th>
                         <th className={`${textHeadCell} min-w-48`}>Ghi chú</th>
                         <th className={`${numHeadCell} w-14`}>ĐVT</th>
-                        <th className={`${numHeadCell} production-order-preview-th-stack w-16`}>
-                          <span className="block leading-tight">Tồn</span>
-                          <span className="block leading-tight">kho</span>
-                        </th>
-                        <th className={`${numHeadCell} production-order-preview-th-stack w-16`}>
-                          <span className="block leading-tight">Tổng</span>
-                          <span className="block leading-tight">SX</span>
-                        </th>
-                        <th className={`${numHeadCell} production-order-preview-th-stack w-16 bg-zinc-900 print:bg-gray-100`}>
-                          <span className="block leading-tight">SLSX</span>
-                          <span className="block leading-tight">Bắc</span>
-                        </th>
-                        <th className={`${numHeadCell} production-order-preview-th-stack w-16 bg-zinc-900 print:bg-gray-100`}>
-                          <span className="block leading-tight">SLSX</span>
-                          <span className="block leading-tight">Trung</span>
-                        </th>
-                        <th className={`${numHeadCell} production-order-preview-th-stack w-16 bg-zinc-900 print:bg-gray-100`}>
-                          <span className="block leading-tight">SLSX</span>
-                          <span className="block leading-tight">Nam</span>
-                        </th>
+                        <th className={`${numHeadCell} w-16`}>Tồn kho</th>
+                        <th className={`${numHeadCell} w-16`}>Tổng SX</th>
+                        <th className={`${numHeadCell} w-16 bg-zinc-900 print:bg-gray-100`}>SLSX Bắc</th>
+                        <th className={`${numHeadCell} w-16 bg-zinc-900 print:bg-gray-100`}>SLSX Trung</th>
+                        <th className={`${numHeadCell} w-16 bg-zinc-900 print:bg-gray-100`}>SLSX Nam</th>
                         <th className={`${numHeadCell} production-order-preview-th-nowrap w-16`}>
                           TL/cuộn
                         </th>
                         <th className={`${numHeadCell} w-14`}>TL/Tấm</th>
                         <th className={`${numHeadCell} w-16`}>Tổng TL</th>
-                        <th className={`${numHeadCell} production-order-preview-th-stack w-16`}>
-                          <span className="block leading-tight">Thực tế</span>
-                          <span className="block leading-tight">SX</span>
-                        </th>
+                        <th className={`${numHeadCell} w-16`}>Thực tế SX</th>
                       </tr>
                     </thead>
                     <tbody>

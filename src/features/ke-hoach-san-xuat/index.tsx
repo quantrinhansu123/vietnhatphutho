@@ -7578,7 +7578,7 @@ export function AddProductionOrderModal({
                             <input
                               type="text"
                               inputMode="decimal"
-                              value={line.manualKg ? (line.tongKg ?? '') : (kgValue !== null ? formatNumber(kgValue, 3) : '')}
+                              value={line.manualKg ? (line.tongKg ?? '') : (kgValue !== null ? formatNumber(kgValue, 4) : '')}
                               onChange={e => updateEntryLine(line.key, setManualEntryConversionValue(line, 'kg', e.target.value))}
                               title="KG — tự tính theo SL, có thể sửa tay (xóa trắng để về tự động)"
                               placeholder="KG"
@@ -9419,7 +9419,7 @@ export function EditProductionOrderModal({
                             <input
                               type="text"
                               inputMode="decimal"
-                              value={line.manualKg ? (line.tongKg ?? '') : (kgValue !== null ? formatNumber(kgValue, 3) : '')}
+                              value={line.manualKg ? (line.tongKg ?? '') : (kgValue !== null ? formatNumber(kgValue, 4) : '')}
                               onChange={e => updateEntryLine(line.key, setManualEntryConversionValue(line, 'kg', e.target.value))}
                               title="KG — tự tính theo SL, có thể sửa tay (xóa trắng để về tự động)"
                               placeholder="KG"

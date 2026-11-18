@@ -1,14 +1,12 @@
-/**
- * Giữ 3 chữ số sau dấu phẩy cho các giá trị quy đổi trọng lượng (KG/1 SP, TL/tấm,
- * TL/cuộn, Tổng KG, Định mức kg, kg/1m) bằng cách **cắt số** (truncate) — không làm tròn.
- *
- * Giá trị 12.34567 → 12.345; 12.3459 → 12.345 (thay vì 12.346).
- *
- * Cộng thêm 1e-6 (thang phần nghìn) trước `Math.floor` để bù sai số nhị phân của
- * phép nhân/chia trong JS: kết quả "đúng 3 số lẻ" do tính toán có thể ra
- * `2343.9999999999995` thay vì `2344` — không cộng bù thì sẽ bị cắt nhầm thành
- * 2.343. Nghiệm thật với ≥10 chữ số 9 liên tiếp sau chữ số thứ 3 coi như không xảy ra.
+/** Trọng lượng: cắt tối đa 4 số lẻ, không làm tròn (12.34567 → 12.3456).
+ * Bù sai số nhị phân trước Math.floor để phép nhân/chia không hụt 0.0001.
  */
+export function truncateTo4Decimals(value: number): number {
+  if (!Number.isFinite(value)) return value;
+  return Math.floor(value * 10000 + 1e-6) / 10000;
+}
+
+/** Legacy: chỉ giữ cho nơi yêu cầu rõ 3 số lẻ; trọng lượng dùng truncateTo4Decimals. */
 export function truncateTo3Decimals(value: number): number {
   if (!Number.isFinite(value)) return value;
   return Math.floor(value * 1000 + 1e-6) / 1000;
