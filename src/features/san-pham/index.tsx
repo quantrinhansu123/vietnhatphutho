@@ -670,26 +670,17 @@ function findDuplicateProductIdentity(
 ) {
   const amisCode = normalizeProductIdentity(form.amisCode);
   const name = normalizeProductIdentity(form.name);
-  // ten_san_xuat / ten_ghep cùng nội dung (khác cột) — trùng nếu khớp một trong hai.
-  const identityNames = new Set(
-    [form.productionName, form.tenGhepManual]
-      .map(value => normalizeProductIdentity(value || ''))
-      .filter(Boolean)
-  );
-  if (!amisCode || !name || identityNames.size === 0) return '';
+  const productionName = normalizeProductIdentity(form.productionName || '');
+  if (!amisCode || !name || !productionName) return '';
 
   const duplicate = products.find(product => {
     if (product.id === currentProductId) return false;
     if (normalizeProductIdentity(product.amisCode) !== amisCode) return false;
     if (normalizeProductIdentity(product.name) !== name) return false;
-    const existingNames = [
-      normalizeProductIdentity(product.productionName || ''),
-      normalizeProductIdentity(product.tenGhep || '')
-    ].filter(Boolean);
-    return existingNames.some(existing => identityNames.has(existing));
+    return normalizeProductIdentity(product.productionName || '') === productionName;
   });
   return duplicate
-    ? 'Trùng bộ Mã AMIS + Tên sản phẩm + (Tên sản xuất hoặc Tên ghép). Vui lòng nhập giá trị khác.'
+    ? 'Trùng bộ Mã AMIS + Tên sản phẩm + Tên sản xuất. Vui lòng nhập giá trị khác.'
     : '';
 }
 
@@ -2761,13 +2752,14 @@ export function normalizeUnitForForm(unit: string): string {
 
 export function productToForm(product: ProductRow, conversions: ProductConversionFactors[] = []): ProductFormState {
   const identity = splitProductionIdentity(product.tenGoc || product.productionName || '');
+  const nameIdentity = splitProductionIdentity(product.productionName || '');
   const storedMau = productCellToInput(product.mau || '');
   let hangPhe = productCellToInput(product.hangPhe);
   const hangPheIsGiaRe = /giá\s*rẻ/iu.test(hangPhe);
   if (hangPheIsGiaRe) hangPhe = '';
   if (!hangPhe) {
-    if (/^OFF$/iu.test(product.off || '') || identity.off === 'OFF') hangPhe = 'hàng chạy 100% NS Off';
-    else if (/^NP$/iu.test(product.np || '') || identity.np === 'NP') hangPhe = 'hàng nguyên phế';
+    if (/^OFF$/iu.test(product.off || '') || identity.off === 'OFF' || nameIdentity.off === 'OFF') hangPhe = 'hàng chạy 100% NS Off';
+    else if (/^NP$/iu.test(product.np || '') || identity.np === 'NP' || nameIdentity.np === 'NP') hangPhe = 'hàng nguyên phế';
   }
   const grade = deriveNpOffFromHangPhe(hangPhe);
   return {
@@ -2938,19 +2930,9 @@ export function productFormToPayload(
     nature: form.nature.trim(),
     group: form.group.trim(),
     unit: form.unit.trim(),
-    warehouse: form.warehouse.trim(),
-    totalWeight: form.totalWeight.trim(),
-    rollWidth: form.rollWidth.trim(),
-    rollLength: form.rollLength.trim(),
-    coreWeight: form.coreWeight.trim(),
-    bagWeight: form.bagWeight.trim(),
-    plasticWeight: form.plasticWeight.trim(),
+    // Không lưu cột đã DROP: nguon_goc / tinh_chat / ten_kho / nhap-xuat / sl_ton / trọng lượng cuộn…
     openingStock: form.openingStock.trim(),
-    inbound: form.inbound.trim(),
-    outbound: form.outbound.trim(),
-    stock: form.stock.trim(),
     minStock: form.minStock.trim(),
-    origin: form.origin.trim(),
     description: form.description.trim()
   };
   if (!includeProduction) return base;
@@ -2995,7 +2977,6 @@ export function productFormToPayload(
     doDaiM: form.doDaiM.trim(),
     mang: form.mang.trim(),
     hangPhe: form.hangPhe.trim(),
-    tenGhep: composed,
     wastePercent: form.wastePercent.trim().replace(',', '.'),
     conversions: form.conversions.map(item => ({
       sheetWidthM: item.khoTamRongM.trim(),
@@ -4523,10 +4504,19 @@ export function ProductsPanel({
           continue;
         }
 
+        // Giữ chuỗi thập phân từ Excel (`,`→`.`) — không Number() sớm để tránh mất số lẻ.
         const validateNum = (val: string) => {
-          if (!val.trim()) return null;
-          const num = Number(val.replace(',', '.'));
-          return Number.isFinite(num) && num > 0 ? num : 'invalid';
+          const text = val.trim().replace(/\s/g, '');
+          if (!text) return null;
+          const normalized = text.includes(',') && text.includes('.')
+            ? text.lastIndexOf(',') > text.lastIndexOf('.')
+              ? text.replace(/\./g, '').replace(',', '.')
+              : text.replace(/,/g, '')
+            : text.replace(',', '.');
+          const num = Number(normalized);
+          if (!Number.isFinite(num) || num <= 0) return 'invalid';
+          if (/^\d+(\.\d+)?$/.test(normalized)) return normalized;
+          return num;
         };
 
         const fields: Record<string, unknown> = { san_pham_id: product.id };

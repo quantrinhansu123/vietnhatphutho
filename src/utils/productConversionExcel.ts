@@ -58,9 +58,17 @@ function normalizeHeader(value: unknown) {
     .replace(/\s+/g, ' ');
 }
 
+/** Giữ đủ chữ số từ ô số (raw:true); không lấy format hiển thị Excel (raw:false hay làm tròn). */
 function cellToText(value: unknown) {
   if (value === null || value === undefined) return '';
-  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (Object.is(value, -0)) return '0';
+    if (Number.isInteger(value)) return String(value);
+    // Bỏ nhiễu float (4.925000000000001) — không Math.round 2dp.
+    const precise = value.toPrecision(15);
+    if (/e/i.test(precise)) return String(value);
+    return precise.replace(/(\.\d*?[1-9])0+$/u, '$1').replace(/\.0+$/u, '');
+  }
   return String(value).trim();
 }
 
@@ -91,7 +99,7 @@ function pickConversionSheet(workbook: XLSX.WorkBook): XLSX.WorkSheet | null {
     const matrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[preferred], {
       header: 1,
       defval: '',
-      raw: false
+      raw: true
     }) as unknown[][];
     const headers = (matrix[0] || []).map(normalizeHeader);
     if (sheetHasConversionHeaders(headers)) return workbook.Sheets[preferred];
@@ -103,7 +111,7 @@ function pickConversionSheet(workbook: XLSX.WorkBook): XLSX.WorkSheet | null {
     const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
       header: 1,
       defval: '',
-      raw: false
+      raw: true
     }) as unknown[][];
     const headers = (matrix[0] || []).map(normalizeHeader);
     if (sheetHasConversionHeaders(headers)) return sheet;
@@ -117,10 +125,11 @@ export async function parseProductConversionExcel(file: File): Promise<ProductCo
   const sheet = pickConversionSheet(workbook);
   if (!sheet) return [];
 
+  // raw:true = giá trị ô thật (không theo format hiển thị 0.00 → làm tròn khi đọc).
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
     header: 1,
     defval: '',
-    raw: false
+    raw: true
   }) as unknown[][];
   if (matrix.length === 0) return [];
 

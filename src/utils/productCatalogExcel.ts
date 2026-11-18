@@ -155,9 +155,16 @@ function normalizeHeader(value: unknown) {
     .trim();
 }
 
+/** Giữ đủ chữ số từ ô số (raw:true); không lấy format hiển thị Excel. */
 function cellToText(value: unknown) {
   if (value === null || value === undefined) return '';
-  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (Object.is(value, -0)) return '0';
+    if (Number.isInteger(value)) return String(value);
+    const precise = value.toPrecision(15);
+    if (/e/i.test(precise)) return String(value);
+    return precise.replace(/(\.\d*?[1-9])0+$/u, '$1').replace(/\.0+$/u, '');
+  }
   return String(value).trim();
 }
 
@@ -193,7 +200,7 @@ function pickCatalogSheet(workbook: XLSX.WorkBook): XLSX.WorkSheet | null {
     const matrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[preferred], {
       header: 1,
       defval: '',
-      raw: false
+      raw: true
     }) as unknown[][];
     const headers = (matrix[0] || []).map(normalizeHeader);
     if (sheetLooksLikeCatalog(headers)) return workbook.Sheets[preferred];
@@ -205,7 +212,7 @@ function pickCatalogSheet(workbook: XLSX.WorkBook): XLSX.WorkSheet | null {
     const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
       header: 1,
       defval: '',
-      raw: false
+      raw: true
     }) as unknown[][];
     const headers = (matrix[0] || []).map(normalizeHeader);
     if (sheetLooksLikeCatalog(headers)) return sheet;
@@ -230,7 +237,7 @@ export async function parseProductCatalogExcel(file: File): Promise<ProductCatal
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
     header: 1,
     defval: '',
-    raw: false
+    raw: true
   }) as unknown[][];
   if (matrix.length === 0) return [];
 
@@ -527,10 +534,11 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
   const doDayM = (row.doDayM.trim() || seeded.doDayM).replace(/,/g, '.');
   const doDaiM = (row.doDaiM.trim() || seeded.doDaiM).replace(/,/g, '.');
   const mang = row.mang.trim() || seeded.mang;
-  const hangPhe = row.hangPhe.trim() || seeded.hangPhe;
+  // NP trong tên SX cũng phải điền Hàng phế để form giữ NP khi ghép lại tên.
+  const hangPhe = row.hangPhe.trim() || seeded.hangPhe || (seeded.np === 'NP' ? 'hàng nguyên phế' : '');
   const unit = normalizeImportUnit(row.unit);
-  // Canonical: ten_san_xuat = chuỗi đã ghép; ten_ghep mirror cùng giá trị (legacy).
-  const tenGhep = composeProductionDisplayName(
+  // Canonical: chỉ lưu ten_san_xuat (chuỗi đã ghép) — đã bỏ ten_ghep trên danh mục SP.
+  const composedName = composeProductionDisplayName(
     {
       tenGoc,
       mau,
@@ -560,7 +568,7 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
     amisCode,
     amisOldCode: row.amisOldCode.trim(),
     name: row.name.trim(),
-    productionName: tenGhep || productionName,
+    productionName: composedName || productionName,
     tenGoc,
     mau,
     giaRe,
@@ -576,23 +584,13 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
     doDaiM,
     mang,
     hangPhe,
-    tenGhep,
     nature: row.nature.trim() || 'Thành phẩm',
     group,
     unit,
-    totalWeight: row.totalWeight.trim(),
     wastePercent: row.wastePercent.trim().replace(',', '.'),
-    rollWidth: row.rollWidth.trim(),
-    rollLength: row.rollLength.trim(),
-    coreWeight: row.coreWeight.trim(),
-    bagWeight: row.bagWeight.trim(),
-    plasticWeight: row.plasticWeight.trim(),
+    // Không lưu cột đã DROP trên san_pham (nguon_goc / nhap-xuat / sl_ton / trọng lượng cuộn…).
     openingStock: row.openingStock.trim(),
-    inbound: row.inbound.trim(),
-    outbound: row.outbound.trim(),
-    stock: row.stock.trim(),
     minStock: row.minStock.trim(),
-    origin: row.origin.trim(),
     description: row.description.trim()
   };
 }

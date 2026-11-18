@@ -1317,11 +1317,12 @@ export function composeProductionDisplayName(
   const identity = splitProductionIdentity(sourceTenGoc);
   const group = classifyProductPxGroup(nhomVthh);
   const mau = canonicalProductColor(parts.mau !== undefined ? String(parts.mau || '') : identity.mau);
-  const np = parts.np !== undefined ? (/^NP$/iu.test(String(parts.np || '')) ? 'NP' : '') : identity.np;
+  const hangPheRaw = String(parts.hangPhe || '').trim();
+  const np = (parts.np !== undefined ? (/^NP$/iu.test(String(parts.np || '')) ? 'NP' : '') : identity.np)
+    || (group === 'song' && /^(?:hàng\s+)?nguyên\s+phế$/iu.test(hangPheRaw) ? 'NP' : '');
   const tcmn = parts.tcmn !== undefined ? (/tcmn/iu.test(String(parts.tcmn || '')) ? 'TCMN' : '') : identity.tcmn;
   const off = parts.off !== undefined ? (/^OFF$/iu.test(String(parts.off || '')) ? 'OFF' : '') : identity.off;
   const giaReField = parts.giaRe !== undefined ? String(parts.giaRe || '').trim() : identity.giaRe;
-  const hangPheRaw = String(parts.hangPhe || '').trim();
   const giaFromPhe = /^\(?\s*giá\s*rẻ\s*\)?$/iu.test(hangPheRaw);
   const showOff = group === 'dac' && (off === 'OFF' || /^OFF$/iu.test(hangPheRaw) || BARE_OFF_TOKEN_RE.test(sourceTenGoc));
   const giaRe = showOff ? '' : (giaReField || (giaFromPhe ? 'Giá rẻ' : ''));
@@ -1344,7 +1345,9 @@ export function composeProductionDisplayName(
     extractZemToken(String(parts.tenGoc || '')) ||
     extractZemToken(rawDoLi);
   const tcmb = String(parts.tcmb || '').trim() || extractTcmb(String(parts.tenGoc || ''));
-  const soSong = String(parts.soSong || '').trim().replace(/[^\d]/g, '') || extractSoSong(sourceTenGoc);
+  // Excel có thể trả số nguyên dạng "11.0"; bỏ dấu chấm sẽ biến thành 110.
+  const songCount = String(parts.soSong || '').trim().match(/^(\d+)(?:[.,]0+)?(?:\s*SÓNG)?$/iu);
+  const soSong = songCount ? String(Number(songCount[1])) : extractSoSong(sourceTenGoc);
   const songSegment = [soSong ? `${soSong} SÓNG` : '', zem].filter(Boolean).join(' ');
   const doLi = zem ? '' : rawDoLi;
   const mang = String(parts.mang || '').trim();

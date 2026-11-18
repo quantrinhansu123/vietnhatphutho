@@ -6,9 +6,10 @@
 | **Tab** | Không còn route riêng; nhập trong `/san-pham` |
 | **SQL** | `supabase-san-pham-quy-doi.sql`, `supabase-san-pham-quy-doi-trong-luong-cuon.sql`, `supabase-san-pham-quy-doi-bo-don-vi-tinh.sql` |
 
-**API:** CRUD `/api/bang-quy-doi-san-pham`; import lô `POST /api/bang-quy-doi-san-pham/import` (giữ nguyên số file — `,` → `.`, **không làm tròn** `trong_luong_kg_tam` / `trong_luong_kg_cuon`); export CSV `GET /api/export-bang-quy-doi-san-pham` trong `server.ts`  
+**API:** CRUD `/api/bang-quy-doi-san-pham`; import lô `POST /api/bang-quy-doi-san-pham/import` (**đúng số trong file** — `,` → `.`, giữ chuỗi thập phân gửi Postgres; **không làm tròn / không cắt / không suy công thức** điền ô trống); export CSV `GET /api/export-bang-quy-doi-san-pham` trong `server.ts`  
 **UI:** `src/features/san-pham/index.tsx`  
-**Công thức dùng chung:** `src/utils/productConversionCalculation.ts`
+**Công thức dùng chung:** `src/utils/productConversionCalculation.ts` (form tay vẫn làm tròn 2dp; import không chạy công thức)  
+**Excel:** `src/utils/productConversionExcel.ts` — đọc `raw: true` (giá trị ô thật, không theo format hiển thị 0.00)  
 **CSV:** `src/utils/productConversionCsv.ts`  
 **Menu:** Nhà máy → QC (`factory-qc`)
 
