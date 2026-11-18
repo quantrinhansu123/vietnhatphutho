@@ -2680,13 +2680,11 @@ function parseProductPatchBody(
     'unit', 'don_vi', 'openingStock', 'ton_dau_ky', 'inbound', 'nhap_trong_ky', 'outbound', 'xuat_trong_ky',
     'stock', 'sl_ton', 'minStock', 'so_luong_ton_toi_thieu',
     'origin', 'nguon_goc', 'description', 'mo_ta',
-    'totalWeight', 'tong_trong_luong', 'rollWidth', 'kho_cuon', 'rollLength', 'chieu_dai_cuon',
-    'coreWeight', 'trong_luong_loi', 'bagWeight', 'trong_luong_tui', 'plasticWeight', 'trong_luong_nhua',
     'wastePercent', 'ty_le_hao_hut',
     'tenGoc', 'ten_goc', 'mau', 'np', 'tcmn', 'giaRe', 'gia_re', 'off', 'doLi', 'do_li', 'doLiDm', 'do_li_dm', 'doDayM', 'do_day_m', 'khoRong', 'kho_rong',
     'dinhMucKg', 'dinh_muc_kg', 'doDaiTamTieuChuan', 'do_dai_tam_tieu_chuan',
     'zem', 'soSong', 'so_song', 'tcmb',
-    'doDaiM', 'do_dai_m', 'mang', 'hangPhe', 'hang_phe', 'tenGhep', 'ten_ghep'
+    'doDaiM', 'do_dai_m', 'mang', 'hangPhe', 'hang_phe'
   ].some(key => Object.prototype.hasOwnProperty.call(source, key));
 
   if (!hasProductField) {
@@ -2703,12 +2701,8 @@ function parseProductPatchBody(
   if (Object.prototype.hasOwnProperty.call(source, 'productionName') || Object.prototype.hasOwnProperty.call(source, 'tenSanXuat') || Object.prototype.hasOwnProperty.call(source, 'ten_san_xuat')) {
     record.ten_san_xuat = productionName || null;
   }
-  if (Object.prototype.hasOwnProperty.call(source, 'newCode') || Object.prototype.hasOwnProperty.call(source, 'ma_sp_moi')) {
-    record.ma_sp_moi = parseMaterialText(source.newCode ?? source.ma_sp_moi) || null;
-  }
-  if (Object.prototype.hasOwnProperty.call(source, 'nature') || Object.prototype.hasOwnProperty.call(source, 'tinh_chat')) {
-    record.tinh_chat = parseMaterialText(source.nature ?? source.tinh_chat) || null;
-  }
+  // Đã bỏ cột ma_sp_moi / tinh_chat / nguon_goc / nhap-xuat / sl_ton / np / off / ten_kho / npl_phan_tram
+  // (xem supabase-san-pham-mau-tcmn-gia-re.sql).
   if (Object.prototype.hasOwnProperty.call(source, 'group') || Object.prototype.hasOwnProperty.call(source, 'nhom_vthh')) {
     const rule = normalizeProductVthhGroup(source.group ?? source.nhom_vthh);
     if (!rule) return { error: 'Nhóm VTHH phải là TP; PX Rỗng, TP; PX Đặc, TP; PX Sóng, TP; NVL, NVL hoặc Khác.' };
@@ -2744,20 +2738,8 @@ function parseProductPatchBody(
   if (Object.prototype.hasOwnProperty.call(source, 'openingStock') || Object.prototype.hasOwnProperty.call(source, 'ton_dau_ky')) {
     record.ton_dau_ky = parseOptionalMaterialNumber(source.openingStock ?? source.ton_dau_ky);
   }
-  if (Object.prototype.hasOwnProperty.call(source, 'inbound') || Object.prototype.hasOwnProperty.call(source, 'nhap_trong_ky')) {
-    record.nhap_trong_ky = parseOptionalMaterialNumber(source.inbound ?? source.nhap_trong_ky);
-  }
-  if (Object.prototype.hasOwnProperty.call(source, 'outbound') || Object.prototype.hasOwnProperty.call(source, 'xuat_trong_ky')) {
-    record.xuat_trong_ky = parseOptionalMaterialNumber(source.outbound ?? source.xuat_trong_ky);
-  }
-  if (Object.prototype.hasOwnProperty.call(source, 'stock') || Object.prototype.hasOwnProperty.call(source, 'sl_ton')) {
-    record.sl_ton = parseOptionalMaterialNumber(source.stock ?? source.sl_ton);
-  }
   if (Object.prototype.hasOwnProperty.call(source, 'minStock') || Object.prototype.hasOwnProperty.call(source, 'so_luong_ton_toi_thieu')) {
     record.so_luong_ton_toi_thieu = parseOptionalMaterialNumber(source.minStock ?? source.so_luong_ton_toi_thieu);
-  }
-  if (Object.prototype.hasOwnProperty.call(source, 'origin') || Object.prototype.hasOwnProperty.call(source, 'nguon_goc')) {
-    record.nguon_goc = parseMaterialText(source.origin ?? source.nguon_goc) || null;
   }
   if (Object.prototype.hasOwnProperty.call(source, 'description') || Object.prototype.hasOwnProperty.call(source, 'mo_ta')) {
     record.mo_ta = parseMaterialText(source.description ?? source.mo_ta) || null;
@@ -2767,9 +2749,6 @@ function parseProductPatchBody(
   }
   if (Object.prototype.hasOwnProperty.call(source, 'amisOldCode') || Object.prototype.hasOwnProperty.call(source, 'ma_amis_cu')) {
     record.ma_amis_cu = parseMaterialText(source.amisOldCode ?? source.ma_amis_cu) || null;
-  }
-  if (Object.prototype.hasOwnProperty.call(source, 'totalWeight') || Object.prototype.hasOwnProperty.call(source, 'tong_trong_luong')) {
-    record.tong_trong_luong = parseOptionalMaterialDecimalText(source.totalWeight ?? source.tong_trong_luong);
   }
   if (Object.prototype.hasOwnProperty.call(source, 'wastePercent') || Object.prototype.hasOwnProperty.call(source, 'ty_le_hao_hut')) {
     // Nếu user cung cấp giá trị, dùng giá trị đó; nếu không, dùng mặc định từ nhóm
@@ -2786,21 +2765,8 @@ function parseProductPatchBody(
       // Nếu không có user value và không có rule mặc định, không set gì (giữ giá trị cũ)
     }
   }
-  if (Object.prototype.hasOwnProperty.call(source, 'rollWidth') || Object.prototype.hasOwnProperty.call(source, 'kho_cuon')) {
-    record.kho_cuon = parseOptionalMaterialDecimalText(source.rollWidth ?? source.kho_cuon);
-  }
-  if (Object.prototype.hasOwnProperty.call(source, 'rollLength') || Object.prototype.hasOwnProperty.call(source, 'chieu_dai_cuon')) {
-    record.chieu_dai_cuon = parseOptionalMaterialDecimalText(source.rollLength ?? source.chieu_dai_cuon);
-  }
-  if (Object.prototype.hasOwnProperty.call(source, 'coreWeight') || Object.prototype.hasOwnProperty.call(source, 'trong_luong_loi')) {
-    record.trong_luong_loi = parseOptionalMaterialDecimalText(source.coreWeight ?? source.trong_luong_loi);
-  }
-  if (Object.prototype.hasOwnProperty.call(source, 'bagWeight') || Object.prototype.hasOwnProperty.call(source, 'trong_luong_tui')) {
-    record.trong_luong_tui = parseOptionalMaterialDecimalText(source.bagWeight ?? source.trong_luong_tui);
-  }
-  if (Object.prototype.hasOwnProperty.call(source, 'plasticWeight') || Object.prototype.hasOwnProperty.call(source, 'trong_luong_nhua')) {
-    record.trong_luong_nhua = parseOptionalMaterialDecimalText(source.plasticWeight ?? source.trong_luong_nhua);
-  }
+  // Đã bỏ cột tong_trong_luong / kho_cuon / chieu_dai_cuon / trong_luong_* trên san_pham.
+  // Khổ cuộn & trọng lượng quy đổi lưu ở bảng san_pham_quy_doi.
 
   // Thông số sản xuất (không đụng unique ma_amis+ten_sp+ten_san_xuat)
   if (Object.prototype.hasOwnProperty.call(source, 'tenGoc') || Object.prototype.hasOwnProperty.call(source, 'ten_goc')) {
@@ -2809,17 +2775,12 @@ function parseProductPatchBody(
   if (Object.prototype.hasOwnProperty.call(source, 'mau')) {
     record.mau = parseMaterialText(source.mau) || null;
   }
-  if (Object.prototype.hasOwnProperty.call(source, 'np')) {
-    record.np = /^NP$/iu.test(parseMaterialText(source.np)) ? 'NP' : null;
-  }
+  // np / off đã bỏ — dùng hang_phe.
   if (Object.prototype.hasOwnProperty.call(source, 'tcmn')) {
     record.tcmn = /tcmn/iu.test(parseMaterialText(source.tcmn)) ? 'TCMN' : null;
   }
   if (Object.prototype.hasOwnProperty.call(source, 'giaRe') || Object.prototype.hasOwnProperty.call(source, 'gia_re')) {
     record.gia_re = /giá\s*rẻ/iu.test(parseMaterialText(source.giaRe ?? source.gia_re)) ? 'Giá rẻ' : null;
-  }
-  if (Object.prototype.hasOwnProperty.call(source, 'off')) {
-    record.off = /^OFF$/iu.test(parseMaterialText(source.off)) ? 'OFF' : null;
   }
   if (Object.prototype.hasOwnProperty.call(source, 'doLi') || Object.prototype.hasOwnProperty.call(source, 'do_li')) {
     record.do_li = parseMaterialText(source.doLi ?? source.do_li) || null;
@@ -2856,16 +2817,14 @@ function parseProductPatchBody(
   if (Object.prototype.hasOwnProperty.call(source, 'hangPhe') || Object.prototype.hasOwnProperty.call(source, 'hang_phe')) {
     record.hang_phe = parseMaterialText(source.hangPhe ?? source.hang_phe) || null;
   }
-  if (Object.prototype.hasOwnProperty.call(source, 'tenGhep') || Object.prototype.hasOwnProperty.call(source, 'ten_ghep')) {
-    record.ten_ghep = parseMaterialText(source.tenGhep ?? source.ten_ghep) || null;
-  }
-  // Soft-remove ten_ghep: ten_san_xuat là nguồn canonical; mirror ten_ghep khi thiếu/lệch.
-  {
-    const sx = typeof record.ten_san_xuat === 'string' ? record.ten_san_xuat.trim() : '';
-    const tg = typeof record.ten_ghep === 'string' ? record.ten_ghep.trim() : '';
-    if (sx && !tg) record.ten_ghep = sx;
-    else if (tg && !sx) record.ten_san_xuat = tg;
-    else if (sx && tg && sx !== tg) record.ten_ghep = sx;
+  // Đã bỏ cột ten_ghep trên danh mục SP — chỉ dùng ten_san_xuat.
+  // Client cũ gửi tenGhep: nếu thiếu ten_san_xuat thì lấy làm tên SX.
+  if (
+    !Object.prototype.hasOwnProperty.call(record, 'ten_san_xuat')
+    && (Object.prototype.hasOwnProperty.call(source, 'tenGhep') || Object.prototype.hasOwnProperty.call(source, 'ten_ghep'))
+  ) {
+    const legacy = parseMaterialText(source.tenGhep ?? source.ten_ghep);
+    if (legacy) record.ten_san_xuat = legacy;
   }
 
   const hasDoLiDmField =
@@ -2933,7 +2892,6 @@ const PRODUCT_AUDIT_FIELD_LABELS: Record<string, string> = {
   ma_sp_moi: 'Mã mới',
   ten_sp: 'Tên sản phẩm',
   ten_san_xuat: 'Tên sản xuất',
-  ten_ghep: 'Tên ghép',
   ten_goc: 'Tên gốc',
   mau: 'Màu',
   np: 'NP',
@@ -2956,12 +2914,6 @@ const PRODUCT_AUDIT_FIELD_LABELS: Record<string, string> = {
   nhom_vthh: 'Nhóm VTHH',
   don_vi: 'Đơn vị',
   ty_le_hao_hut: 'Tỷ lệ hàng hỏng (%)',
-  tong_trong_luong: 'Tổng TL (kg)',
-  kho_cuon: 'Khổ cuộn (m)',
-  chieu_dai_cuon: 'Chiều dài mét/cuộn',
-  trong_luong_loi: 'TL lõi',
-  trong_luong_tui: 'TL túi',
-  trong_luong_nhua: 'TL nhựa',
   ton_dau_ky: 'Tồn đầu',
   nhap_trong_ky: 'Nhập',
   xuat_trong_ky: 'Xuất',
@@ -3085,12 +3037,16 @@ function withProductActorStamp(
   return next;
 }
 
-/** Bỏ cột actor stamp nếu DB chưa chạy migration audit. */
+/** Bỏ cột nếu DB chưa chạy migration (actor stamp / ten_ghep / thông số SX…). */
 function stripMissingProductActorColumns(
   record: Record<string, unknown>,
   message: string
 ): Record<string, unknown> | null {
-  const column = message.match(/'([^']+)'/)?.[1];
+  const text = String(message || '');
+  const column =
+    text.match(/'([^']+)'/)?.[1]
+    || text.match(/column\s+(?:[\w.]+\.)?(\w+)\s+does\s+not\s+exist/i)?.[1]
+    || text.match(/Could not find the '(\w+)' column/i)?.[1];
   if (
     !column ||
     ![
@@ -3103,18 +3059,62 @@ function stripMissingProductActorColumns(
       'np',
       'tcmn',
       'gia_re',
-      'off'
+      'off',
+      'ten_ghep',
+      'ten_goc',
+      'do_li',
+      'do_li_dm',
+      'dinh_muc_kg',
+      'do_dai_tam_tieu_chuan',
+      'kho_rong',
+      'do_dai_m',
+      'mang',
+      'hang_phe',
+      'zem',
+      'so_song',
+      'tcmb',
+      'ma_amis_cu',
+      'ty_le_hao_hut'
     ].includes(column)
   ) {
     return null;
   }
+  if (!Object.prototype.hasOwnProperty.call(record, column)) return null;
   const next = { ...record };
   delete next[column];
   return next;
 }
 
+const DROPPED_SAN_PHAM_COLUMNS = [
+  'ten_ghep',
+  'ma_sp_moi',
+  'np',
+  'off',
+  'sl_ton',
+  'ton_kho',
+  'nhap_trong_ky',
+  'xuat_trong_ky',
+  'tong_trong_luong',
+  'kho_cuon',
+  'chieu_dai_cuon',
+  'trong_luong_loi',
+  'trong_luong_tui',
+  'trong_luong_nhua',
+  'ten_kho',
+  'tinh_chat',
+  'nguon_goc',
+  'ten_may_san_xuat',
+  'npl_phan_tram'
+] as const;
+
+function stripDroppedSanPhamColumns(record: Record<string, unknown>) {
+  const next = { ...record };
+  for (const column of DROPPED_SAN_PHAM_COLUMNS) delete next[column];
+  return next;
+}
+
 async function insertSanPhamWithActorCompat(record: Record<string, unknown>) {
-  let payload = { ...record };
+  let payload = stripDroppedSanPhamColumns(record);
   for (let attempt = 0; attempt < 6; attempt += 1) {
     const { data, error } = await supabase!
       .from(SUPABASE_PRODUCTS_TABLE)
@@ -3130,7 +3130,7 @@ async function insertSanPhamWithActorCompat(record: Record<string, unknown>) {
 }
 
 async function updateSanPhamWithActorCompat(id: string, record: Record<string, unknown>) {
-  let payload = { ...record };
+  let payload = stripDroppedSanPhamColumns(record);
   for (let attempt = 0; attempt < 6; attempt += 1) {
     const { data, error } = await supabase!
       .from(SUPABASE_PRODUCTS_TABLE)
@@ -3157,31 +3157,25 @@ function productUniqueViolationColumn(error: { code?: string; message?: string; 
 async function findDuplicateProductIdentity(record: Record<string, unknown>, excludeId?: string) {
   const amisCode = String(record.ma_amis ?? '').trim();
   const name = String(record.ten_sp ?? '').trim();
-  // ten_san_xuat (canonical) và ten_ghep (legacy mirror) cùng nội dung, có thể lệch cột.
-  // Trùng nếu: (ma_amis + ten_sp + ten_sx) HOẶC (ma_amis + ten_sp + ten_ghep).
+  // Unique nhận diện: ma_amis + ten_sp + ten_san_xuat (đã bỏ ten_ghep).
   const tenSx = String(record.ten_san_xuat ?? '').trim();
-  const tenGhep = String(record.ten_ghep ?? '').trim();
-  const identityNames = new Set([tenSx, tenGhep].filter(Boolean));
-  if (!amisCode || !name || identityNames.size === 0) return {};
+  if (!amisCode || !name || !tenSx) return {};
 
   let query = supabase!
     .from(SUPABASE_PRODUCTS_TABLE)
-    .select('id, ten_san_xuat, ten_ghep')
+    .select('id, ten_san_xuat')
     .eq('ma_amis', amisCode)
-    .eq('ten_sp', name);
+    .eq('ten_sp', name)
+    .eq('ten_san_xuat', tenSx);
   if (excludeId) query = query.neq('id', excludeId);
 
   const { data, error } = await query;
   if (error) return { error: productWriteErrorMessage(error) };
-  const hit = (data || []).find(row => {
-    const existingSx = String(row.ten_san_xuat ?? '').trim();
-    const existingGhep = String(row.ten_ghep ?? '').trim();
-    return identityNames.has(existingSx) || identityNames.has(existingGhep);
-  });
+  const hit = (data || [])[0];
   if (hit) {
     return {
       duplicateId: String(hit.id),
-      duplicate: 'Trùng bộ Mã AMIS + Tên sản phẩm + (Tên sản xuất hoặc Tên ghép). Vui lòng nhập giá trị khác.'
+      duplicate: 'Trùng bộ Mã AMIS + Tên sản phẩm + Tên sản xuất. Vui lòng nhập giá trị khác.'
     };
   }
   return {};
@@ -3192,7 +3186,7 @@ function productWriteErrorMessage(error: { code?: string; message?: string; deta
     return `Bảng ${SUPABASE_PRODUCTS_TABLE} chưa tồn tại trên Supabase.`;
   }
   if (isMissingColumnError(error)) {
-    return `Bảng ${SUPABASE_PRODUCTS_TABLE} đang thiếu cột (${error.message}). Hãy chạy các migration san_pham liên quan, gồm supabase-san-pham-thong-so-sx.sql, supabase-san-pham-ty-le-hao-hut.sql, supabase-san-pham-ma-amis-cu.sql và supabase-san-pham-tcmb-zem-so-song.sql.`;
+    return `Bảng ${SUPABASE_PRODUCTS_TABLE} đang thiếu cột (${error.message}). Hãy chạy migration san_pham tương ứng trong Supabase SQL Editor.`;
   }
   if (productUniqueViolationColumn(error) === 'ma_amis') {
     return `Bảng ${SUPABASE_PRODUCTS_TABLE} đang chặn trùng mã AMIS. Hãy chạy supabase-san-pham-ma-amis-khong-unique.sql trong Supabase SQL Editor rồi tải Excel lại.`;
@@ -3202,7 +3196,7 @@ function productWriteErrorMessage(error: { code?: string; message?: string; deta
 
 const PRODUCT_CONVERSION_SELECT = `*`;
 
-function parsePositiveConversionNumber(value: unknown): number | null | 'invalid' {
+function parsePositiveConversionNumber(value: unknown): number | string | null | 'invalid' {
   if (value === null || value === undefined || String(value).trim() === '') return null;
   const text = String(value).trim().replace(/\s/g, '');
   const emptyText = text.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
@@ -3213,10 +3207,16 @@ function parsePositiveConversionNumber(value: unknown): number | null | 'invalid
       : text.replace(/,/g, '')
     : text.replace(',', '.');
   const num = Number(normalized);
-  return Number.isFinite(num) && num > 0 ? num : 'invalid';
+  if (!Number.isFinite(num) || num <= 0) return 'invalid';
+  // Chuỗi thập phân sạch → giữ nguyên text gửi Postgres numeric (không ép IEEE double).
+  if (/^\d+(\.\d+)?$/.test(normalized)) return normalized;
+  return num;
 }
 
-function parseProductConversionBody(body: unknown) {
+function parseProductConversionBody(
+  body: unknown,
+  options?: { mode?: 'ui' | 'import' }
+) {
   const source = body && typeof body === 'object' ? body as Record<string, unknown> : {};
   const forbiddenProductNameKeys = ['name', 'productName', 'product_name', 'tenSp', 'ten_sp', 'tenSanPham', 'ten_san_pham'];
   if (forbiddenProductNameKeys.some(key => Object.prototype.hasOwnProperty.call(source, key))) {
@@ -3242,6 +3242,11 @@ function parseProductConversionBody(body: unknown) {
     record[field] = value;
   }
 
+  // Import Excel: chỉ lưu đúng số trong file — không suy công thức, không làm tròn/cắt.
+  if (options?.mode === 'import') {
+    return { record } as const;
+  }
+
   const tamRong = record.kho_tam_rong_m as number | null;
   const tamDai = record.kho_tam_dai_m as number | null;
   const cuonRong = record.kho_cuon_rong_m as number | null;
@@ -3259,7 +3264,7 @@ function parseProductConversionBody(body: unknown) {
     kgPerM2: kgM2
   });
 
-  // API/Excel giữ giá trị được cung cấp; công thức chỉ điền các trường còn trống.
+  // Form/API tay: giữ giá trị người dùng; công thức chỉ điền ô còn trống.
   if (!record.dien_tich_m2 && formulas.areaM2 !== null) record.dien_tich_m2 = formulas.areaM2;
   if (!record.trong_luong_kg_m_dai && formulas.kgPerLinearM !== null) record.trong_luong_kg_m_dai = formulas.kgPerLinearM;
   if (!record.trong_luong_kg_tam && formulas.kgPerSheet !== null) record.trong_luong_kg_tam = formulas.kgPerSheet;
@@ -9775,7 +9780,7 @@ export function createApp() {
 
       const { data, error } = await supabase
         .from(SUPABASE_PRODUCTS_TABLE)
-        .select('ten_sp, ma_sp, ma_sp_moi')
+        .select('ten_sp, ma_sp, ma_amis')
         .not('ten_sp', 'is', null)
         .order('ten_sp', { ascending: true });
 
@@ -9790,7 +9795,7 @@ export function createApp() {
       (data || []).forEach((row) => {
         const productName = String(row.ten_sp ?? '').trim();
         const productCode = String(row.ma_sp ?? '').trim();
-        const newCode = String(row.ma_sp_moi ?? '').trim();
+        const newCode = String(row.ma_amis ?? '').trim();
         if (!productName) return;
         const key = `${productCode}|${productName}`;
         if (!unique.has(key)) {
@@ -10201,12 +10206,10 @@ export function createApp() {
         'unit', 'don_vi', 'openingStock', 'ton_dau_ky', 'inbound', 'nhap_trong_ky', 'outbound', 'xuat_trong_ky',
         'stock', 'sl_ton', 'minStock', 'so_luong_ton_toi_thieu',
         'origin', 'nguon_goc', 'description', 'mo_ta',
-        'totalWeight', 'tong_trong_luong', 'rollWidth', 'kho_cuon', 'rollLength', 'chieu_dai_cuon',
-        'coreWeight', 'trong_luong_loi', 'bagWeight', 'trong_luong_tui', 'plasticWeight', 'trong_luong_nhua',
         'tenGoc', 'ten_goc', 'doLi', 'do_li', 'doLiDm', 'do_li_dm', 'dinhMucKg', 'dinh_muc_kg',
         'doDaiTamTieuChuan', 'do_dai_tam_tieu_chuan',
         'zem', 'soSong', 'so_song', 'tcmb', 'doDayM', 'do_day_m', 'khoRong', 'kho_rong', 'doDaiM', 'do_dai_m',
-        'mang', 'hangPhe', 'hang_phe', 'tenGhep', 'ten_ghep', 'wastePercent', 'ty_le_hao_hut'
+        'mang', 'hangPhe', 'hang_phe', 'wastePercent', 'ty_le_hao_hut'
       ];
       const hasProductFields = productFieldKeys.some(key => Object.prototype.hasOwnProperty.call(body, key));
 
@@ -10327,7 +10330,7 @@ export function createApp() {
     try {
       const { data: product, error: productError } = await supabase
         .from(SUPABASE_PRODUCTS_TABLE)
-        .select('id, ma_sp, ma_amis, ma_sp_moi, ten_sp, don_vi, ten_kho')
+        .select('id, ma_sp, ma_amis, ma_amis_cu, ten_sp, don_vi')
         .eq('id', id)
         .maybeSingle();
 
@@ -10340,7 +10343,7 @@ export function createApp() {
 
       const codes = [
         ...new Set(
-          [product.ma_sp, product.ma_amis, product.ma_sp_moi]
+          [product.ma_sp, product.ma_amis, product.ma_amis_cu]
             .map(code => String(code ?? '').trim())
             .filter(Boolean)
         )
@@ -10350,7 +10353,7 @@ export function createApp() {
       }
 
       const codeKeys = new Set(codes.map(code => normalizeKiemKhoMaGoc(code)).filter(Boolean));
-      const tenKho = String(product.ten_kho ?? '').trim();
+      const tenKho = '';
 
       // Doc gop bang tach (nhap/xuat theo ?loai) + bang cu fallback, dedupe theo id.
       // loai_kho lưu mã kho — đọc cả mã cũ + mã kho nhóm thành phẩm.
@@ -10507,13 +10510,15 @@ export function createApp() {
       const errors: Array<{ rowNumber: number; error: string }> = [];
       items.forEach((item: unknown, index: number) => {
         const body = item && typeof item === 'object' ? item as Record<string, unknown> : {};
-        const parsed = parseProductConversionBody(body);
+        // Import: đúng số trong file — không suy công thức, không làm tròn/cắt.
+        const parsed = parseProductConversionBody(body, { mode: 'import' });
         const rowNumber = Number(body.rowNumber) || index + 1;
         if ('error' in parsed) errors.push({ rowNumber, error: parsed.error });
         else {
-          // Import giữ nguyên độ chính xác file (`,` đã đổi `.` khi parse; không làm tròn).
-          parsed.record.trong_luong_kg_tam = roundImportedConversionWeight(parsed.record.trong_luong_kg_tam) as number | null;
-          parsed.record.trong_luong_kg_cuon = roundImportedConversionWeight(parsed.record.trong_luong_kg_cuon) as number | null;
+          parsed.record.trong_luong_kg_m_dai = roundImportedConversionWeight(parsed.record.trong_luong_kg_m_dai) as number | string | null;
+          parsed.record.trong_luong_kg_m2 = roundImportedConversionWeight(parsed.record.trong_luong_kg_m2) as number | string | null;
+          parsed.record.trong_luong_kg_tam = roundImportedConversionWeight(parsed.record.trong_luong_kg_tam) as number | string | null;
+          parsed.record.trong_luong_kg_cuon = roundImportedConversionWeight(parsed.record.trong_luong_kg_cuon) as number | string | null;
           valid.push({ rowNumber, record: parsed.record });
         }
       });
@@ -24480,17 +24485,17 @@ async function loadKiemKhoLiveTongHopForDot(
       });
       if (missingCodes.size > 0) {
         const codeList = Array.from(missingCodes);
-        const [byCode, byAmisCode, byNewCode] = await Promise.all([
-          supabase.from(SUPABASE_PRODUCTS_TABLE).select('id, ma_sp, ma_amis, ma_sp_moi').in('ma_sp', codeList),
-          supabase.from(SUPABASE_PRODUCTS_TABLE).select('id, ma_sp, ma_amis, ma_sp_moi').in('ma_amis', codeList),
-          supabase.from(SUPABASE_PRODUCTS_TABLE).select('id, ma_sp, ma_amis, ma_sp_moi').in('ma_sp_moi', codeList)
+        const [byCode, byAmisCode, byAmisCu] = await Promise.all([
+          supabase.from(SUPABASE_PRODUCTS_TABLE).select('id, ma_sp, ma_amis, ma_amis_cu').in('ma_sp', codeList),
+          supabase.from(SUPABASE_PRODUCTS_TABLE).select('id, ma_sp, ma_amis, ma_amis_cu').in('ma_amis', codeList),
+          supabase.from(SUPABASE_PRODUCTS_TABLE).select('id, ma_sp, ma_amis, ma_amis_cu').in('ma_amis_cu', codeList)
         ]);
-        const products = [...(byCode.data || []), ...(byAmisCode.data || []), ...(byNewCode.data || [])];
+        const products = [...(byCode.data || []), ...(byAmisCode.data || []), ...(byAmisCu.data || [])];
         products.forEach(row => {
           const rec = row as Record<string, unknown>;
           const pid = String(rec.id ?? '').trim();
           if (!pid) return;
-          [rec.ma_sp, rec.ma_amis, rec.ma_sp_moi].forEach(value => {
+          [rec.ma_sp, rec.ma_amis, rec.ma_amis_cu].forEach(value => {
             const code = String(value ?? '').trim();
             if (code) {
               idByCode.set(code, pid);
