@@ -3,6 +3,7 @@ import { Loader2, Search } from 'lucide-react';
 import { VnCalendarPicker } from '../so-che-do-may';
 import type { ShiftOption } from '../../utils/shiftSettings';
 import { formatMoney, formatQty } from '../../utils';
+import SearchableMultiSelect from '../../components/SearchableMultiSelect';
 
 type Option = { id: string; label: string };
 type SoTronHandoverLine = {
@@ -90,7 +91,7 @@ export function MachineStockTab({
 }) {
   const [date, setDate] = useState('');
   const [shift, setShift] = useState('');
-  const [machineId, setMachineId] = useState('');
+  const [machineIds, setMachineIds] = useState<string[]>([]);
   const [reports, setReports] = useState<SoTronReport[]>([]);
   const [selectedReportId, setSelectedReportId] = useState('');
   const [stockRows, setStockRows] = useState<MachineStockRow[]>([]);
@@ -104,8 +105,10 @@ export function MachineStockTab({
   const exportHeaders = loadedExports;
   const returnHeaders = loadedReturns;
 
-  const selectedMachine = machines.find(item => item.id === machineId);
-  const allMachinesMode = machineId === ALL_MACHINES;
+  const allMachinesMode = machineIds.includes(ALL_MACHINES);
+  const selectedMachineIds = allMachinesMode ? machines.map(item => item.id) : machineIds;
+  const selectedMachine = selectedMachineIds.length === 1 ? machines.find(item => item.id === selectedMachineIds[0]) : undefined;
+  const multiMachineMode = selectedMachineIds.length !== 1;
   const selectedReport = reports.find(report => report.id === selectedReportId) || reports[0] || null;
   const sourceHistory = useMemo(() => {
     const result = new Map<string, Map<string, SourcePriceGroup>>();
@@ -184,8 +187,8 @@ export function MachineStockTab({
   }, []);
 
   async function loadStock() {
-    if (!date || !shift || !machineId) {
-      setError('Chọn ngày, ca và máy hoặc “Tất cả máy” để kiểm tra tồn cuối ca.');
+    if (!date || !shift || selectedMachineIds.length === 0) {
+      setError('Chọn ngày, ca và ít nhất một máy để kiểm tra tồn cuối ca.');
       return;
     }
     setLoading(true);
@@ -196,7 +199,6 @@ export function MachineStockTab({
     setReports([]);
     try {
       const reportParams = new URLSearchParams({ ngay: date, ca: shift, limit: '1000' });
-      if (!allMachinesMode) reportParams.set('ma_may', machineId);
       const reportResponse = await fetch(`/api/so-tron?${reportParams.toString()}`);
       const reportData = await reportResponse.json().catch(() => ({}));
       if (!reportResponse.ok) throw new Error(reportData.error || 'Không tải được Sổ trộn.');
@@ -204,16 +206,15 @@ export function MachineStockTab({
       matched = matched.filter(report =>
         text(report.ngay).slice(0, 10) === date &&
         fold(report.ca) === fold(shift) &&
-        (allMachinesMode || [report.ma_may, report.ten_may].some(value => {
-          const machineName = selectedMachine?.label.split('—').slice(1).join('—').trim() || '';
-          return fold(value) === fold(machineId) || (machineName && fold(value) === fold(machineName));
-        }))
+        selectedMachineIds.some(id => {
+          const option = machines.find(item => item.id === id);
+          const machineName = option?.label.split('—').slice(1).join('—').trim() || '';
+          return [report.ma_may, report.ten_may].some(value => fold(value) === fold(id) || (machineName && fold(value) === fold(machineName)));
+        })
       );
       if (matched.length === 0) {
         setLoaded(true);
-        setNotice(allMachinesMode
-          ? 'Không có phiếu Sổ trộn khớp ngày và ca đã chọn ở các máy.'
-          : 'Không có phiếu Sổ trộn khớp chính xác ngày, ca và máy đã chọn.');
+        setNotice('Không có phiếu Sổ trộn khớp ngày, ca và máy đã chọn.');
         return;
       }
 
@@ -325,7 +326,7 @@ export function MachineStockTab({
       };
     }).filter(line => Boolean(line.code));
   }), [reports, machines, catalog, exportHeaders, returnHeaders]);
-  const displayedRows = allMachinesMode ? allMachineRows : stockRows;
+  const displayedRows = multiMachineMode ? allMachineRows : stockRows;
   const displayedTotalQuantity = displayedRows.reduce((sum, row) => sum + row.quantity, 0);
   return (
     <div className="space-y-3">
@@ -344,11 +345,22 @@ export function MachineStockTab({
           </label>
           <label className="block min-w-0 space-y-1">
             <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Máy</span>
-            <select value={machineId} onChange={event => setMachineId(event.target.value)} className="h-10 w-full rounded-lg border border-zinc-300 bg-white px-2 text-xs font-semibold text-zinc-700">
-              <option value="">Chọn máy</option>
-              <option value={ALL_MACHINES}>Tất cả máy</option>
-              {machines.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
-            </select>
+            <SearchableMultiSelect<Option>
+              values={allMachinesMode ? [{ id: ALL_MACHINES, label: 'Tất cả máy' }] : machines.filter(item => machineIds.includes(item.id))}
+              options={[{ id: ALL_MACHINES, label: 'Tất cả máy' }, ...machines]}
+              onChange={values => {
+                if (values.some(item => item.id === ALL_MACHINES)) {
+                  const selectedActualMachines = values.filter(item => item.id !== ALL_MACHINES).map(item => item.id);
+                  setMachineIds(allMachinesMode && selectedActualMachines.length ? selectedActualMachines : [ALL_MACHINES]);
+                }
+                else setMachineIds(values.map(item => item.id).filter(id => id !== ALL_MACHINES));
+              }}
+              getValue={item => item.id}
+              getLabel={item => item.label}
+              placeholder="Chọn một hoặc nhiều máy"
+              allowCustomValues={false}
+              inputClassName="min-h-10 w-full min-w-0 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-700"
+            />
           </label>
           <button type="button" onClick={() => void loadStock()} disabled={loading} className="flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white disabled:opacity-60">
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
@@ -360,7 +372,7 @@ export function MachineStockTab({
       {error ? <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p> : null}
       {notice ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">{notice}</p> : null}
 
-      {loaded && reports.length > 1 && !allMachinesMode ? (
+      {loaded && reports.length > 1 && !multiMachineMode ? (
         <label className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
           Có nhiều phiếu Sổ trộn đúng ngày, ca, máy. Chọn phiếu cần kiểm tra:
           <select value={selectedReportId} onChange={event => setSelectedReportId(event.target.value)} className="min-w-48 rounded-md border border-amber-300 bg-white px-2 py-1.5 text-xs">
@@ -369,25 +381,25 @@ export function MachineStockTab({
         </label>
       ) : null}
 
-      {loaded && (allMachinesMode ? reports.length > 0 : Boolean(selectedReport)) ? (
+      {loaded && (multiMachineMode ? reports.length > 0 : Boolean(selectedReport)) ? (
         <>
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-zinc-600">
             <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-zinc-200">{formatDateVN(date)} · {shift}</span>
-            <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-zinc-200">{allMachinesMode ? `Tất cả máy · ${reports.length} phiếu Sổ trộn` : selectedMachine?.label || selectedReport?.ten_may || selectedReport?.ma_may}</span>
+            <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-zinc-200">{allMachinesMode ? `Tất cả máy · ${reports.length} phiếu Sổ trộn` : multiMachineMode ? `${selectedMachineIds.length} máy · ${reports.length} phiếu Sổ trộn` : selectedMachine?.label || selectedReport?.ten_may || selectedReport?.ma_may}</span>
             <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-black text-emerald-800 ring-1 ring-emerald-200">Tổng tồn cuối ca: {formatQty(displayedTotalQuantity)}</span>
             <span className="text-zinc-500">Số lượng lấy theo cột “Tồn cuối ca” của Sổ trộn.</span>
           </div>
           <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
             <table className="min-w-[940px] w-full text-xs">
               <thead><tr className="bg-zinc-900 text-left text-white">
-                {allMachinesMode ? <th className="px-3 py-2">Máy</th> : null}<th className="px-3 py-2">Mã NVL</th><th className="px-3 py-2">Tên NVL</th><th className="px-3 py-2">ĐVT</th>
+                {multiMachineMode ? <th className="px-3 py-2">Máy</th> : null}<th className="px-3 py-2">Mã NVL</th><th className="px-3 py-2">Tên NVL</th><th className="px-3 py-2">ĐVT</th>
                 <th className="px-3 py-2 text-right">Tồn cuối ca</th><th className="px-3 py-2">Kho đã cấp · giá</th>
               </tr></thead>
               <tbody>
                 {displayedRows.map((row, index) => {
                   return (
                     <tr key={`${row.reportId || selectedReport?.id || 'machine'}-${row.code}-${index}`} className="border-b border-zinc-100 align-top hover:bg-zinc-50">
-                      {allMachinesMode ? <td className="px-3 py-2 font-semibold">{row.machine || '—'}</td> : null}
+                      {multiMachineMode ? <td className="px-3 py-2 font-semibold">{row.machine || '—'}</td> : null}
                       <td className="px-3 py-2 font-mono font-bold text-zinc-900">{row.code}</td>
                       <td className="px-3 py-2"><div className="font-semibold">{row.name || '—'}</div>{row.productionName && row.productionName !== row.name ? <div className="mt-0.5 text-[11px] text-zinc-500">{row.productionName}</div> : null}</td>
                       <td className="px-3 py-2">{row.unit || '—'}</td>
@@ -402,14 +414,14 @@ export function MachineStockTab({
                     </tr>
                   );
                 })}
-                {!displayedRows.length ? <tr><td colSpan={allMachinesMode ? 6 : 5} className="px-3 py-8 text-center font-semibold text-zinc-500">Phiếu Sổ trộn chưa có dòng bàn giao NVL.</td></tr> : null}
+                {!displayedRows.length ? <tr><td colSpan={multiMachineMode ? 6 : 5} className="px-3 py-8 text-center font-semibold text-zinc-500">Phiếu Sổ trộn chưa có dòng bàn giao NVL.</td></tr> : null}
               </tbody>
             </table>
           </div>
         </>
       ) : null}
 
-      {loaded && !selectedReport && !notice ? <div className="rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-8 text-center text-sm font-semibold text-zinc-500">Chọn ngày, ca và máy hoặc “Tất cả máy” rồi bấm “Kiểm tra tồn”.</div> : null}
+      {loaded && !selectedReport && !notice ? <div className="rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-8 text-center text-sm font-semibold text-zinc-500">Chọn ngày, ca và ít nhất một máy rồi bấm “Kiểm tra tồn”.</div> : null}
 
     </div>
   );
