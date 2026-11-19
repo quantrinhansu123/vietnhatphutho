@@ -1,7 +1,7 @@
 import React, { startTransition, useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowDown, ArrowUp, Archive, Eye, GripVertical, Loader2, PackagePlus, Pencil, Plus, Printer, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, Archive, Eye, GripVertical, Loader2, PackagePlus, Pencil, Plus, Printer, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { useTabAccess } from '../../app/useTabAccess';
 import { formatNumber, formatMoney, formatPercent, parseMoneyInput, parsePercentInput, sanitizeMoneyInput } from '../../utils';
 import { convertProductQuantity } from '../../utils/productUnitConversion';
@@ -41,7 +41,6 @@ import {
   isCuonProduct,
   isTamProduct,
   listProductionNamesByCode,
-  sortOrderProductOptions,
   matchOrderProductByCodeAndProductionName,
   catalogMatchesProductionName,
   buildAllocatedQtyMap,
@@ -51,6 +50,7 @@ import {
   resolveOrderRegion,
   orderTypeOptionsForRegion,
   resolveOrderTypeFromRegion,
+  orderProductMatchesRegion,
   filterOrderProductsByRegion,
   type OrderRegion,
   type OrderProductOption,
@@ -121,8 +121,8 @@ interface OrderRowExt extends OrderRow {
 
 const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[980px]';
 const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1100px]';
-const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2500px]';
-const ORDER_MIEN_NAM_TABLE_MIN_WIDTH = 'min-w-[2800px]';
+const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[1250px]';
+const ORDER_MIEN_NAM_TABLE_MIN_WIDTH = 'min-w-[1350px]';
 export { PRODUCTION_ORDER_TYPE };
 /** Dòng 1 đơn thường/SX: STT | Mã AMIS | Tên SP | Màng | Ghi chú | actions — Tên SX nằm riêng ngay trên hàng ĐVT/SL/KG. */
 const orderProductRow1GridClass =
@@ -377,6 +377,19 @@ function resolveOrderLineProduct(products: OrderProductOption[], line: Pick<Orde
   return null;
 }
 
+function isOrderLineOutsideRegion(
+  line: OrderProductFormLine,
+  product: OrderProductOption | null,
+  region: OrderRegion
+) {
+  if (!line.productId && !line.productCode) return false;
+  if (product) return !orderProductMatchesRegion(product, region);
+
+  const sourceProduct = line.sourceProduct;
+  if (!sourceProduct || !Object.prototype.hasOwnProperty.call(sourceProduct, 'mien')) return false;
+  return !orderProductMatchesRegion({ mien: String(sourceProduct.mien ?? '') }, region);
+}
+
 export function newOrderProductFormLine(): OrderProductFormLine {
   return {
     key: `order-product-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -533,6 +546,7 @@ function OrderProductLineShell({
   index,
   total,
   selected,
+  mismatched,
   dragging,
   gridTemplateClass,
   nameRow,
@@ -555,6 +569,7 @@ function OrderProductLineShell({
   index: number;
   total: number;
   selected: boolean;
+  mismatched: boolean;
   dragging: boolean;
   gridTemplateClass: string;
   /** Tên sản xuất full-width, nằm ngay phía trên hàng ĐVT/SL/KG. */
@@ -671,8 +686,11 @@ function OrderProductLineShell({
       onClick={() => {
         startTransition(() => onSelect());
       }}
-      className={`group rounded-lg ${selected ? 'bg-red-50/70' : ''} ${dragging ? 'opacity-70' : ''}`}
+      className={`group rounded-lg transition-colors ${mismatched
+        ? 'bg-amber-100 ring-2 ring-inset ring-amber-400 [&_input:not([type=checkbox])]:!bg-amber-50 [&_select]:!bg-amber-50 [&_textarea]:!bg-amber-50'
+        : selected ? 'bg-red-50/70' : ''} ${dragging ? 'opacity-70' : ''}`}
     >
+      {mismatched ? <div className="px-2 pt-1 text-[10px] font-black uppercase tracking-wider text-amber-800">Sản phẩm không thuộc miền đang chọn</div> : null}
       {secondRow || nameRow ? (
         <div className="space-y-1.5 py-2">
           <div className={`grid items-start gap-2 ${gridTemplateClass}`}>
@@ -1390,13 +1408,17 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
   const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>([]);
   const [productOptions, setProductOptions] = useState<OrderProductOption[]>([]);
-  const sortedProductOptions = useMemo(() => sortOrderProductOptions(productOptions), [productOptions]);
   const [productConversions, setProductConversions] = useState<OrderProductConversion[]>([]);
   const [isLoadingLookups, setIsLoadingLookups] = useState(false);
   const [lookupError, setLookupError] = useState('');
   const [isSyncingProducts, setIsSyncingProducts] = useState(false);
   const [productSyncMessage, setProductSyncMessage] = useState('');
   const [orderForm, setOrderForm] = useState<OrderFormState>(emptyOrderForm);
+  const [pendingOrderScopeChange, setPendingOrderScopeChange] = useState<{
+    orderType: string;
+    region: OrderRegion;
+    label: string;
+  } | null>(null);
   const [orderFormOverlayEl, setOrderFormOverlayEl] = useState<HTMLDivElement | null>(null);
   const [selectedProductLineKey, setSelectedProductLineKey] = useState<string | null>(null);
   const [dragProductIndex, setDragProductIndex] = useState<number | null>(null);
@@ -1922,38 +1944,57 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     }));
   };
 
-  const changeOrderRegion = (regionValue: string) => {
-    const region = (ORDER_REGION_OPTIONS as readonly string[]).includes(regionValue)
-      ? (regionValue as OrderRegion)
-      : resolveOrderRegion('', regionValue);
+  const applyOrderScopeChange = (orderType: string, region: OrderRegion) => {
     setOrderForm(prev => {
-      const nextType = resolveOrderTypeFromRegion(region, prev.orderType, canSeeProductionOrder);
-      const regionChanged = prev.khu_vuc !== region;
-      const typeChanged = prev.orderType !== nextType;
+      const changed = prev.orderType !== orderType || resolveOrderRegion(prev.orderType, prev.khu_vuc) !== region;
       return {
         ...prev,
         khu_vuc: region,
-        orderType: nextType,
-        productLines: regionChanged || typeChanged
+        orderType,
+        productLines: changed
           ? prev.productLines.map(line => ({ ...line, shouldRecalculateConversion: true }))
           : prev.productLines
       };
     });
   };
 
+  const requestOrderScopeChange = (orderType: string, region: OrderRegion, label: string) => {
+    if (orderForm.orderType === orderType && resolveOrderRegion(orderForm.orderType, orderForm.khu_vuc) === region) return;
+    const hasSelectedProducts = orderForm.productLines.some(line =>
+      Boolean(line.productId || line.productCode || line.productName || line.productionName)
+    );
+    if (!hasSelectedProducts) {
+      applyOrderScopeChange(orderType, region);
+      return;
+    }
+    setPendingOrderScopeChange({ orderType, region, label });
+  };
+
+  const changeOrderRegion = (regionValue: string) => {
+    const region = (ORDER_REGION_OPTIONS as readonly string[]).includes(regionValue)
+      ? (regionValue as OrderRegion)
+      : resolveOrderRegion('', regionValue);
+    const nextType = isAdmin
+      ? region === 'Miền Nam'
+        ? (orderForm.orderType === PRODUCTION_ORDER_TYPE ? PRODUCTION_ORDER_TYPE : SOUTH_ORDER_TYPE)
+        : (orderForm.orderType === SOUTH_ORDER_TYPE ? SALE_ORDER_TYPE : orderForm.orderType)
+      : resolveOrderTypeFromRegion(region, orderForm.orderType, canSeeProductionOrder);
+    requestOrderScopeChange(nextType, region, 'Miền');
+  };
+
   const changeOrderType = (orderType: string) => {
-    setOrderForm(prev => {
-      const region = resolveOrderRegion(prev.orderType, prev.khu_vuc);
-      const nextType = resolveOrderTypeFromRegion(region, orderType, canSeeProductionOrder);
-      return {
-        ...prev,
-        khu_vuc: region,
-        orderType: nextType,
-        productLines: prev.orderType === nextType
-          ? prev.productLines
-          : prev.productLines.map(line => ({ ...line, shouldRecalculateConversion: true }))
-      };
-    });
+    const region = resolveOrderRegion(orderForm.orderType, orderForm.khu_vuc);
+    const nextType = isAdmin && (ORDER_TYPE_OPTIONS as readonly string[]).includes(orderType)
+      ? orderType
+      : resolveOrderTypeFromRegion(region, orderType, canSeeProductionOrder);
+    const nextRegion = isAdmin
+      ? nextType === SOUTH_ORDER_TYPE
+        ? 'Miền Nam'
+        : region === 'Miền Nam' && nextType !== PRODUCTION_ORDER_TYPE
+          ? 'Miền Bắc'
+          : region
+      : region;
+    requestOrderScopeChange(nextType, nextRegion, 'loại đơn');
   };
 
   const moveProductLine = (from: number, to: number) => {
@@ -2594,8 +2635,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const isFormProductionOrder = orderForm.orderType === PRODUCTION_ORDER_TYPE;
   const formRegion = resolveOrderRegion(orderForm.orderType, orderForm.khu_vuc);
   const formOrderTypeOptions = useMemo(
-    () => orderTypeOptionsForRegion(formRegion, canSeeProductionOrder),
-    [formRegion, canSeeProductionOrder]
+    () => isAdmin ? [...ORDER_TYPE_OPTIONS] : orderTypeOptionsForRegion(formRegion, canSeeProductionOrder),
+    [formRegion, canSeeProductionOrder, isAdmin]
   );
   const regionProductOptions = useMemo(
     () => filterOrderProductsByRegion(productOptions, formRegion),
@@ -2649,7 +2690,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     children: React.ReactNode,
     secondRow?: React.ReactNode,
     secondRowGridClass?: string,
-    nameRow?: React.ReactNode
+    nameRow?: React.ReactNode,
+    mismatched = false
   ) => (
     <OrderProductLineShell
       key={line.key}
@@ -2657,6 +2699,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       total={orderForm.productLines.length}
       selected={selectedProductLineKey === line.key}
       dragging={dragProductIndex === index}
+      mismatched={mismatched}
       gridTemplateClass={gridTemplateClass}
       nameRow={nameRow}
       secondRow={secondRow}
@@ -2846,9 +2889,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               <RepeatableLinesBlock
                 title="Sản phẩm"
                 required
-                showColumnHeaders={isFormCutLikeOrder}
-                alwaysShowColumnHeaders={isFormCutLikeOrder}
-                stickyColumnHeaders={isFormCutLikeOrder}
+                showColumnHeaders={false}
+                alwaysShowColumnHeaders={false}
+                stickyColumnHeaders={false}
                 linesClassName="flex flex-col gap-2"
                 gridTemplateClass={productGridClass}
                 onAdd={() =>
@@ -2858,61 +2901,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   }))
                 }
                 addButtonClassName="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-100"
-                columns={
-                  isFormSouthOrder
-                    ? [
-                        { key: 'stt', label: 'STT' },
-                        { key: 'code', label: 'Mã AMIS', required: true },
-                        { key: 'productionName', label: 'Tên sản xuất' },
-                        { key: 'unit', label: 'ĐVT' },
-                        { key: 'daiM', label: 'Dài (m)', required: true },
-                        { key: 'khoRong', label: 'Khổ rộng (m)' },
-                        { key: 'doLi', label: 'Độ li ĐM' },
-                        { key: 'daiTc', label: 'Độ dài tấm tiêu chuẩn' },
-                        { key: 'daiDm', label: 'Định mức tiêu chuẩn (kg)' },
-                        { key: 'kgM', label: 'KG/1m' },
-                        { key: 'nam', label: 'Nam' },
-                        { key: 'qty', label: 'SL (tổng)', required: true },
-                        { key: 'tl1Sp', label: 'Trọng lượng 1 SP' },
-                        { key: 'tongKg', label: 'Tổng KG' },
-                        { key: 'mang', label: 'Màng' },
-                        { key: 'tem', label: 'Tem' },
-                        { key: 'mauTem', label: 'Màu tem' },
-                        { key: 'haiDau', label: '2 Đầu' },
-                        { key: 'note', label: 'Ghi chú' },
-                        { key: 'lsxQty', label: 'SL lệnh SX' },
-                        { key: 'actions', label: '' }
-                      ]
-                    : isFormCutLikeOrder
-                    ? [
-                        { key: 'stt', label: 'STT' },
-                        { key: 'code', label: 'Mã AMIS', required: true },
-                        { key: 'productionName', label: 'Tên sản xuất' },
-                        { key: 'unit', label: 'ĐVT' },
-                        { key: 'daiM', label: 'Dài (m)', required: true },
-                        { key: 'khoRong', label: 'Hạ khổ rộng (m)' },
-                        { key: 'doLi', label: 'Độ li ĐM' },
-                        { key: 'dinhMucKg', label: 'Định mức KG' },
-                        { key: 'bac', label: 'Bắc' },
-                        { key: 'trung', label: 'Trung' },
-                        { key: 'nam', label: 'Nam' },
-                        { key: 'qty', label: 'SL (tổng)', required: true },
-                        { key: 'tl1Sp', label: 'Trọng lượng 1 SP' },
-                        { key: 'tongKg', label: 'Tổng KG (nhập)' },
-                        { key: 'mang', label: 'Màng' },
-                        { key: 'tem', label: 'Tem' },
-                        { key: 'mauTem', label: 'Màu tem' },
-                        { key: 'haiDau', label: '2 Đầu' },
-                        { key: 'note', label: 'Ghi chú' },
-                        { key: 'lsxQty', label: 'SL lệnh SX' },
-                        { key: 'actions', label: '' }
-                      ]
-                    : []
-                }
+                columns={[]}
               >
                 {isFormCutLikeOrder
                   ? orderForm.productLines.map((line, index) => {
                       const matchedLineProduct = resolveOrderLineProduct(productOptions, line);
+                      const mismatched = isOrderLineOutsideRegion(line, matchedLineProduct, formRegion);
                       const lineSanPhamId = String(matchedLineProduct?.id || line.productId || '').trim();
                       const matchedConversion = lineSanPhamId ? productConversions.find(item => item.sanPhamId === lineSanPhamId) : undefined;
                       // Cắt lẻ: SL tổng = Bắc + Trung + Nam. Miền nam chỉ còn Nam.
@@ -2984,31 +2978,57 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       return renderProductLineShell(
                         line,
                         index,
-                        isFormSouthOrder ? orderMienNamProductGridClass : orderSouthProductGridClass,
+                        orderProductRow1GridClass,
                         <>
-                        <div className="min-w-0">
-                          <SearchableSelect
-                            value={line.shouldRecalculateConversion ? (line.productId || line.productCode) : line.productCode}
-                            onChange={productId => pickCutOrderProduct(line.key, productId)}
-                            options={sortedProductOptions}
-                            placeholder="Tìm mã AMIS hoặc tên SX (STD08, sóng trắng…)"
-                            title="Gõ mã AMIS hoặc một phần tên sản xuất. Nhiều từ khóa cách bởi dấu phẩy = phải khớp tất cả."
-                            isLoading={isLoadingLookups}
-                            skipUnchangedBlurCommit
-                            maxResults={ORDER_AMIS_SEARCH_MAX_RESULTS}
-                            commaSearchMode="and"
-                            inputClassName={orderFieldClass}
-                            getValue={getOrderAmisValue}
-                            getSearchText={getOrderAmisSearchText}
-                            getLabel={getOrderAmisLabel}
-                            getOptionLabel={getOrderAmisOptionLabel}
-                            resolveSelectedItem={resolveOrderAmisSelectedItem}
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          {renderProductionNameSelect(line)}
-                        </div>
-                        <div className="col-span-1 min-w-0">
+                          <OrderLineField label="Mã AMIS" required>
+                            <SearchableSelect
+                              value={line.shouldRecalculateConversion ? (line.productId || line.productCode) : line.productCode}
+                              onChange={productId => pickCutOrderProduct(line.key, productId)}
+                              options={regionProductOptions}
+                              placeholder="Tìm mã AMIS hoặc tên SX (STD08, sóng trắng…)"
+                              title="Gõ mã AMIS hoặc một phần tên sản xuất. Nhiều từ khóa cách bởi dấu phẩy = phải khớp tất cả. Chỉ hiện SP đúng miền đơn."
+                              isLoading={isLoadingLookups}
+                              skipUnchangedBlurCommit
+                              maxResults={ORDER_AMIS_SEARCH_MAX_RESULTS}
+                              commaSearchMode="and"
+                              inputClassName={orderFieldClass}
+                              getValue={getOrderAmisValue}
+                              getSearchText={getOrderAmisSearchText}
+                              getLabel={getOrderAmisLabel}
+                              getOptionLabel={getOrderAmisOptionLabel}
+                              resolveSelectedItem={resolveOrderAmisSelectedItem}
+                            />
+                          </OrderLineField>
+                          <OrderLineField label="Tên sản phẩm">
+                            <input
+                              value={line.productName}
+                              onChange={event => updateProductLine(line.key, { productName: event.target.value })}
+                              readOnly={Boolean(matchedLineProduct)}
+                              className={`${orderFieldClass} ${matchedLineProduct ? 'bg-zinc-50 text-zinc-800' : 'bg-white'}`}
+                            />
+                          </OrderLineField>
+                          <OrderLineField label="Màng">
+                            <input
+                              type="text"
+                              value={line.mang ?? ''}
+                              onChange={event => updateConversionProductLine(line.key, { mang: event.target.value })}
+                              className={orderFieldClass}
+                              placeholder="SUN PC"
+                              title="Màng (tự điền khi sản phẩm có màng; để trống nếu không có, tự đổi trong tên sản xuất)"
+                            />
+                          </OrderLineField>
+                          <OrderLineField label="Ghi chú">
+                            <input
+                              value={line.note}
+                              onChange={event => updateProductLine(line.key, { note: event.target.value })}
+                              className={orderFieldClass}
+                              placeholder="Ghi chú"
+                            />
+                          </OrderLineField>
+                        </>,
+                        <div className="space-y-2">
+                          <div className={`grid items-start gap-2 ${isFormSouthOrder ? 'grid-cols-7' : 'grid-cols-5'}`}>
+                            <OrderLineField label="ĐVT">
                           {unitProduct && cutAllowedUnits.length > 1 ? (
                             <select
                               value={cutEffectiveUnit}
@@ -3025,16 +3045,16 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               className={`${orderFieldClass} bg-zinc-100 text-center font-bold text-zinc-600`}
                             />
                           )}
-                        </div>
-                        <div className="col-span-1 min-w-0">
+                            </OrderLineField>
+                            <OrderLineField label="Dài (m)" required>
                           <OrderNumberInput
                             value={line.daiM}
                             onChange={e => updateConversionProductLine(line.key, { daiM: e.target.value, manualTongKg: false, tongKg: '', dinhMucKg: '' })}
                             className={orderFieldClass}
                             placeholder="2.8"
                           />
-                        </div>
-                        <div className="col-span-1 min-w-0">
+                            </OrderLineField>
+                            <OrderLineField label={isFormSouthOrder ? 'Khổ rộng (m)' : 'Hạ khổ rộng (m)'}>
                           <OrderNumberInput
                             value={isSongOrderLine
                               ? (matchedLineProduct?.doDayM
@@ -3051,8 +3071,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                                 ? 'Khổ rộng (m) — ghi vào mã AMIS mới khi khác khổ danh mục'
                                 : 'Hạ khổ rộng (m) — ghi vào mã AMIS mới khi khác khổ tấm chính'}
                           />
-                        </div>
-                        <div className="col-span-1 min-w-0">
+                            </OrderLineField>
+                            <OrderLineField label="Độ li ĐM">
                           <OrderNumberInput
                             value={line.doLiDm || ''}
                             onChange={e => updateConversionProductLine(line.key, {
@@ -3065,9 +3085,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             placeholder="0.75"
                             title="Độ li định mức — chỉ nhập số, tự hiểu là (đm n li). Không phải độ li thực của tấm"
                           />
-                        </div>
-                        {!isFormSouthOrder ? (
-                          <div className="col-span-1 min-w-0">
+                            </OrderLineField>
+                            {!isFormSouthOrder ? (
+                              <OrderLineField label="Định mức KG">
                             <OrderNumberInput
                               // Tự fill TL/Tấm hoặc TL/Cuộn theo ĐVT đã chọn; nhập số để ghi đè (Tổng KG = số nhập × SL).
                               // " " (1 dấu cách) = người dùng vừa xóa trống để gõ số mới; lưu đơn vẫn tính như tự tính.
@@ -3079,11 +3099,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               className={`${orderFieldClass} bg-white text-right ${String(line.dinhMucKg ?? '').trim() === '' ? 'font-bold text-zinc-600' : ''}`}
                               placeholder="ĐM KG"
                             />
-                          </div>
-                        ) : null}
-                        {isFormSouthOrder ? (
-                          <>
-                            <div className="col-span-1 min-w-0">
+                              </OrderLineField>
+                            ) : (
+                              <>
+                              <OrderLineField label="Độ dài tấm tiêu chuẩn">
                               <OrderNumberInput
                                 value={line.doDaiTamTieuChuan ?? ''}
                                 onChange={e => updateConversionProductLine(line.key, { doDaiTamTieuChuan: e.target.value })}
@@ -3091,8 +3110,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                                 className={`${orderFieldClass} bg-white text-right`}
                                 placeholder="m"
                               />
-                            </div>
-                            <div className="col-span-1 min-w-0">
+                              </OrderLineField>
+                              <OrderLineField label="Định mức tiêu chuẩn (kg)">
                               <OrderNumberInput
                                 value={line.dinhMucTieuChuanKg ?? ''}
                                 onChange={e => updateConversionProductLine(line.key, { dinhMucTieuChuanKg: e.target.value })}
@@ -3100,8 +3119,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                                 className={`${orderFieldClass} bg-white text-right`}
                                 placeholder="kg"
                               />
-                            </div>
-                            <div className="col-span-1 min-w-0">
+                              </OrderLineField>
+                              <OrderLineField label="KG/1m">
                               <input
                                 value={kgPerStandardMeter !== null ? orderDuplicateDecimalText(formatNumber(truncateTo4Decimals(kgPerStandardMeter), 4)) : ''}
                                 readOnly
@@ -3109,11 +3128,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                                 className={`${orderFieldClass} bg-zinc-50 text-right font-black`}
                                 placeholder="—"
                               />
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="col-span-1 min-w-0">
+                              </OrderLineField>
+                              </>
+                            )}
+                          </div>
+                          <div className={`grid items-start gap-2 ${isFormSouthOrder ? 'grid-cols-5' : 'grid-cols-7'}`}>
+                            {!isFormSouthOrder ? (
+                              <>
+                                <OrderLineField label="Bắc">
                               <OrderNumberInput
                                 value={line.slBac ?? ''}
                                 onChange={e => updateConversionProductLine(line.key, { slBac: e.target.value })}
@@ -3121,8 +3143,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                                 placeholder="0"
                                 title="SL Bắc"
                               />
-                            </div>
-                            <div className="col-span-1 min-w-0">
+                                </OrderLineField>
+                                <OrderLineField label="Trung">
                               <OrderNumberInput
                                 value={line.slTrung ?? ''}
                                 onChange={e => updateConversionProductLine(line.key, { slTrung: e.target.value })}
@@ -3130,10 +3152,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                                 placeholder="0"
                                 title="SL Trung"
                               />
-                            </div>
-                          </>
-                        )}
-                        <div className="col-span-1 min-w-0">
+                                </OrderLineField>
+                              </>
+                            ) : null}
+                            <OrderLineField label="Nam">
                           <OrderNumberInput
                             value={line.slNam ?? ''}
                             onChange={e => updateConversionProductLine(line.key, { slNam: e.target.value })}
@@ -3141,8 +3163,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             placeholder="0"
                             title="SL Nam"
                           />
-                        </div>
-                        <div className="col-span-1 min-w-0">
+                            </OrderLineField>
+                            <OrderLineField label="SL (tổng)" required>
                           <input
                             type="text"
                             value={cutRegionTotal !== null ? formatNumber(cutRegionTotal, 3) : ''}
@@ -3153,8 +3175,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             className={`${orderFieldClass} bg-zinc-50 text-right font-black`}
                             placeholder="Tự tính"
                           />
-                        </div>
-                        <div className="col-span-1 min-w-0">
+                            </OrderLineField>
+                            <OrderLineField label="Trọng lượng 1 SP">
                           <input
                             type="text"
                             value={cutWeightPerSp !== null && Number.isFinite(cutWeightPerSp) ? formatNumber(truncateTo4Decimals(cutWeightPerSp), 4) : ''}
@@ -3163,8 +3185,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             className={`${orderFieldClass} bg-zinc-50 text-right font-black tabular-nums`}
                             placeholder="—"
                           />
-                        </div>
-                        <div className="col-span-1 min-w-0">
+                            </OrderLineField>
+                            <OrderLineField label={isFormSouthOrder ? 'Tổng KG' : 'Tổng KG (nhập)'}>
                           <input
                             type="text"
                             inputMode="decimal"
@@ -3205,44 +3227,38 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             className={`${orderFieldClass} bg-white text-right`}
                             placeholder="Nhập KG"
                           />
-                        </div>
-                        <div className="col-span-1 min-w-0">
-                          <input
-                            type="text"
-                            value={line.mang ?? ''}
-                            // Màng quản lý ở ô riêng: không đổi ô Tên sản xuất; màng chỉ vào tên đã lưu sau khi submit.
-                            onChange={e => updateConversionProductLine(line.key, { mang: e.target.value })}
-                            className={orderFieldClass}
-                            placeholder="SUN PC"
-                            title="Màng (tự điền khi sản phẩm có màng; để trống nếu không có, tự đổi trong tên sản xuất)"
-                          />
-                        </div>
-                        <SouthOrderTemCells
-                          tem={line.tem || ''}
-                          mauTem={line.mauTem || ''}
-                          danTem2Dau={Boolean(line.danTem2Dau)}
-                          onPatch={patch => updateProductLine(line.key, patch)}
-                        />
-                        <div className="min-w-0">
-                          <input
-                            value={line.note}
-                            onChange={e => updateProductLine(line.key, { note: e.target.value })}
-                            className={orderFieldClass}
-                            placeholder="Ghi chú"
-                          />
-                        </div>
-                        {renderAllocatedQtyCell(line.savedStt ? getAllocatedQtyFromMap(allocatedQtyMap, orderForm.orderCode, {
+                            </OrderLineField>
+                            <div className="min-w-0">
+                              {renderAllocatedQtyCell(line.savedStt ? getAllocatedQtyFromMap(allocatedQtyMap, orderForm.orderCode, {
                           productId: line.productId || matchedLineProduct?.id,
                           productCode: line.productCode,
                           productionName: line.productionName,
                           tenGhep: line.tenGhep,
                           stt: duplicateLineStt(orderForm.productLines, index) ? line.savedStt : undefined
-                        }) : 0)}
-                        </>
+                              }) : 0, true)}
+                            </div>
+                          </div>
+                          <div className="grid items-start gap-2 grid-cols-3">
+                            <SouthOrderTemCells
+                              tem={line.tem || ''}
+                              mauTem={line.mauTem || ''}
+                              danTem2Dau={Boolean(line.danTem2Dau)}
+                              onPatch={patch => updateProductLine(line.key, patch)}
+                              showLabels
+                            />
+                          </div>
+                        </div>,
+                        'grid-cols-[9.5rem_minmax(0,1fr)]',
+                        <div className="min-w-0 space-y-1">
+                          <span className={orderLineFieldLabelClass}>Tên sản xuất</span>
+                          {renderProductionNameSelect(line)}
+                        </div>,
+                        mismatched
                       );
                     })
                   : orderForm.productLines.map((line, index) => {
                   const matchedLineProduct = resolveOrderLineProduct(productOptions, line);
+                  const mismatched = isOrderLineOutsideRegion(line, matchedLineProduct, formRegion);
                   const lineSanPhamId = String(matchedLineProduct?.id || line.productId || '').trim();
                   const productConversionOptions = lineSanPhamId ? productConversions.filter(item => item.sanPhamId === lineSanPhamId) : [];
                   const matchedConversion = productConversionOptions.find(item => conversionSupportsUnit(item, line.unit)) || productConversionOptions[0];
@@ -3302,9 +3318,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             ? (matchedLineProduct?.id || line.productId || line.productCode)
                             : line.productCode}
                           onChange={productId => pickOrderProduct(line.key, productId)}
-                          options={sortedProductOptions}
+                          options={regionProductOptions}
                           placeholder="Tìm mã AMIS hoặc tên SX (STD08, sóng trắng…)"
-                          title="Gõ mã AMIS hoặc một phần tên sản xuất. Nhiều từ khóa cách bởi dấu phẩy = phải khớp tất cả."
+                          title="Gõ mã AMIS hoặc một phần tên sản xuất. Nhiều từ khóa cách bởi dấu phẩy = phải khớp tất cả. Chỉ hiện SP đúng miền đơn."
                           isLoading={isLoadingLookups}
                           skipUnchangedBlurCommit
                           maxResults={ORDER_AMIS_SEARCH_MAX_RESULTS}
@@ -3485,7 +3501,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                     <div className="min-w-0 space-y-1">
                       <span className={orderLineFieldLabelClass}>Tên sản xuất</span>
                       {renderProductionNameSelect(line)}
-                    </div>
+                    </div>,
+                    mismatched
                   );
                 })}
               </RepeatableLinesBlock>
@@ -3522,6 +3539,62 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         </div>,
         document.body
       )}
+
+      {pendingOrderScopeChange ? createPortal(
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-zinc-950/55 p-4 backdrop-blur-sm"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) setPendingOrderScopeChange(null);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="order-scope-change-title"
+            aria-describedby="order-scope-change-description"
+            className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl"
+          >
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                <AlertTriangle className="h-5 w-5" />
+              </span>
+              <div>
+                <h3 id="order-scope-change-title" className="text-sm font-black text-zinc-950">
+                  Xác nhận đổi {pendingOrderScopeChange.label}
+                </h3>
+                <p className="mt-1 text-xs font-bold text-zinc-500">
+                  {pendingOrderScopeChange.region} · {pendingOrderScopeChange.orderType}
+                </p>
+                <p id="order-scope-change-description" className="mt-2 text-sm leading-6 text-zinc-600">
+                  Thông tin quy đổi của các sản phẩm đang chọn sẽ được tính lại. Sản phẩm có thể không còn phù hợp với Miền hoặc loại đơn mới. Bạn muốn tiếp tục?
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                autoFocus
+                onClick={() => setPendingOrderScopeChange(null)}
+                className="h-10 rounded-lg border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-700 transition hover:bg-zinc-50"
+              >
+                Giữ nguyên
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const pending = pendingOrderScopeChange;
+                  setPendingOrderScopeChange(null);
+                  applyOrderScopeChange(pending.orderType, pending.region);
+                }}
+                className="h-10 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c]"
+              >
+                Tiếp tục
+              </button>
+            </div>
+          </section>
+        </div>,
+        document.body
+      ) : null}
 
       {viewingOrder && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">

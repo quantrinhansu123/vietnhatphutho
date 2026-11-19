@@ -22,7 +22,7 @@
 | File | Nội dung |
 |------|----------|
 | `src/features/thong-ke-nvl/index.tsx` | `ThongKeNvlPanel`: tab Nhập–xuất và tab Kiểm tra tồn theo máy |
-| `src/features/thong-ke-nvl/MachineStockTab.tsx` | Lọc Sổ trộn theo ngày/ca/máy (có chọn tất cả máy); kiểm tra tồn cuối ca và theo dõi kho cấp/đơn giá, chỉ xem, không tạo phiếu nhập lại |
+| `src/features/thong-ke-nvl/MachineStockTab.tsx` | Lọc Sổ trộn theo ngày/ca và chọn một/nhiều máy hoặc tất cả; kiểm tra tồn cuối ca và theo dõi kho cấp/đơn giá, chỉ xem, không tạo phiếu nhập lại |
 | `src/features/xuat-nhap-tong-hop/registerRoutes.ts` | Kiểm tra nhập lại từ máy theo Sổ trộn đã chọn, tổng lượng đã nhập trước đó và số dư từng lớp giá |
 | `src/features/xuat-nhap-tong-hop/machineReturnPriceGroups.ts` | Tạo khóa và kiểm tra hạn mức nhập lại theo mã NVL + kho nguồn + đơn giá |
 

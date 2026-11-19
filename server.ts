@@ -10933,10 +10933,9 @@ export function createApp() {
           .eq('nhan_su', staffName)
           .maybeSingle();
 
-        if (staffData) {
-          source.khu_vuc = staffData.khu_vuc || '';
-        } else {
-          source.khu_vuc = '';
+        // Giữ miền người dùng đã chọn trên form; miền nhân viên chỉ là giá trị dự phòng.
+        if (!String(source.khu_vuc ?? '').trim()) {
+          source.khu_vuc = staffData?.khu_vuc || '';
         }
       }
 
@@ -10998,10 +10997,9 @@ export function createApp() {
           .eq('nhan_su', staffName)
           .maybeSingle();
 
-        if (staffData) {
-          source.khu_vuc = staffData.khu_vuc || '';
-        } else {
-          source.khu_vuc = '';
+        // Giữ miền người dùng đã chọn trên form; miền nhân viên chỉ là giá trị dự phòng.
+        if (!String(source.khu_vuc ?? '').trim()) {
+          source.khu_vuc = staffData?.khu_vuc || '';
         }
       }
 
