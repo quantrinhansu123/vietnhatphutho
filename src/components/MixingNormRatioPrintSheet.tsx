@@ -2,7 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import type { MixingNormLine, MixingNormProduct, MixingNormRow } from './MixingNormMaterialsTab';
-import { formatMixingNormSlipName, stripMixingNormStdPrefix } from '../utils/mixingNormAuxiliary';
+import { collectWorkshopPxLabels, formatMixingNormSlipName, stripMixingNormStdPrefix } from '../utils/mixingNormAuxiliary';
 import { parseLocalizedNumber } from '../utils';
 
 export type MixingNormRatioPrintDoc = {
@@ -16,7 +16,7 @@ export type MixingNormRatioPrintDoc = {
   actualValues?: Array<Array<{ percent: number | null; weight: number | null }>>;
   actualRounds?: Array<Array<Array<{ percent: number | null; weight: number | null }>>>;
   intro?: string;
-  products: Array<MixingNormProduct & { print_name?: string }>;
+  products: Array<MixingNormProduct & { print_name?: string; loai_px?: string }>;
 };
 
 function formatPrintDateLong(iso: string) {
@@ -192,7 +192,8 @@ function chunks<T>(items: T[], size: number) {
 /** Một phiếu DB → một tờ in (nhiều khối SP). */
 export function toPrintDoc(
   row: MixingNormRow,
-  resolveProductName?: (code: string) => string
+  resolveProductName?: (code: string) => string,
+  resolvePxLabel?: (product: MixingNormProduct) => string
 ): MixingNormRatioPrintDoc {
   return {
     tenPhieu: row.ten_phieu || formatMixingNormSlipName(row.may || row.ca, row.ma_lenh_sx),
@@ -206,9 +207,19 @@ export function toPrintDoc(
       .sort(comparePrintProducts)
       .map(product => ({
         ...product,
-        print_name: resolveProductPrintName(product, resolveProductName)
+        print_name: resolveProductPrintName(product, resolveProductName),
+        loai_px:
+          String(resolvePxLabel?.(product) || '').trim() ||
+          collectWorkshopPxLabels([product.ten_ghep, product.ten_sp]).join(' · ')
       }))
   };
+}
+
+function resolvePrintPxLabel(product: MixingNormProduct & { print_name?: string; loai_px?: string }): string {
+  return (
+    String(product.loai_px || '').trim() ||
+    collectWorkshopPxLabels([product.ten_ghep, product.print_name, product.ten_sp]).join(' · ')
+  );
 }
 
 function NormPrintProductSection({
@@ -217,7 +228,7 @@ function NormPrintProductSection({
   mode,
   isActual
 }: {
-  product: MixingNormProduct & { print_name?: string };
+  product: MixingNormProduct & { print_name?: string; loai_px?: string };
   index: number;
   mode: 'primary' | 'secondary';
   isActual?: boolean;
@@ -235,6 +246,7 @@ function NormPrintProductSection({
   const techName = String(product.print_name || product.ten_ghep || '').trim();
   const maSp = String(product.ma_sp || '').trim();
   const displayName = workerName || techName || maSp || 'SẢN PHẨM';
+  const pxLabel = resolvePrintPxLabel(product);
   const subParts: string[] = [];
   // Phiếu định mức: ẩn hẳn dòng phụ dưới tên hiển thị cho CN
   // (không Mã SP, không ten_ghep). Phiếu thực tế giữ nguyên.
@@ -249,6 +261,7 @@ function NormPrintProductSection({
       <h2 className="mixing-norm-ratio-print-product">
         <span className="mixing-norm-ratio-print-product-title">
           <span className="mixing-norm-ratio-print-ordinal">{index + 1}.</span>
+          {pxLabel ? <span className="mixing-norm-ratio-print-px">{pxLabel}</span> : null}
           <span className="mixing-norm-ratio-print-product-code">{displayName}</span>
         </span>
         {subLine ? <span className="mixing-norm-ratio-print-product-name">{subLine}</span> : null}
@@ -381,6 +394,11 @@ function NormPrintProductSection({
 export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDoc }) {
   const dateParts = formatPrintDateLong(doc.ngay || '');
   const intro = doc.intro?.trim() || 'Hiện tại BPSX thay đổi tỷ lệ như sau';
+  const pxSummary = collectWorkshopPxLabels(
+    doc.products
+      .filter(product => product.loai !== 'nvl_phu')
+      .flatMap(product => resolvePrintPxLabel(product).split('·'))
+  ).join(' · ');
   const formulaProducts = doc.products.filter(
     product => product.loai !== 'nvl_phu' && ((product.chi_tiet?.length ?? 0) > 0 || (product.lan_tron?.length ?? 0) > 0)
   );
@@ -414,6 +432,12 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
               <span className="mixing-norm-ratio-print-meta-sep">·</span>
             </>
           ) : null}
+          {pxSummary ? (
+            <>
+              Loại: <strong>{pxSummary}</strong>
+              <span className="mixing-norm-ratio-print-meta-sep">·</span>
+            </>
+          ) : null}
           Lệnh SX: <strong>{doc.maLenhSx || '—'}</strong>
           <span className="mixing-norm-ratio-print-meta-sep">·</span>
           Ngày: <strong>{`${dateParts.day}/${dateParts.month}/${dateParts.year}`}</strong>
@@ -442,6 +466,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
               const techName = String(product.print_name || product.ten_ghep || '').trim();
               const maSp = String(product.ma_sp || '').trim();
               const displayName = workerName || techName || maSp || 'SẢN PHẨM';
+              const pxLabel = resolvePrintPxLabel(product);
               const subParts: string[] = [];
               if (maSp && maSp !== displayName) subParts.push(`Mã SP: ${maSp}`);
               if (techName && techName !== displayName) subParts.push(techName);
@@ -454,6 +479,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                   <h2 className="mixing-norm-ratio-print-product">
                     <span className="mixing-norm-ratio-print-product-title">
                       <span className="mixing-norm-ratio-print-ordinal">{index + 1}.</span>
+                      {pxLabel ? <span className="mixing-norm-ratio-print-px">{pxLabel}</span> : null}
                       <span className="mixing-norm-ratio-print-product-code">
                         {displayName}
                       </span>

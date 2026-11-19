@@ -19,7 +19,8 @@ import {
 /** Máy bổ sung (không thuộc danh_sach_may) — luôn có trong dropdown chọn máy. */
 const EXTRA_MACHINE_OPTS = [
   { code: 'CONG_VIEC_KHAC', name: 'Công việc khác' },
-  { code: 'HANH_CHINH', name: 'Hành chính' }
+  { code: 'HANH_CHINH', name: 'Hành chính' },
+  { code: 'KHONG_CHAY', name: 'Không chạy' }
 ] as const;
 
 /** Vai trò cố định theo nhóm máy (thêm form lịch). */
@@ -48,7 +49,11 @@ function normalizeMachineText(value: string) {
 function resolveFixedRolesForMachine(machineName: string, machineCode = ''): string[] {
   const text = normalizeMachineText(`${machineName} ${machineCode}`);
   // Máy bổ sung: không áp vai trò cố định — để trống cho người dùng tự nhập.
-  if (text.includes('cong viec khac') || text.includes('hanh chinh')) {
+  if (
+    text.includes('cong viec khac') ||
+    text.includes('hanh chinh') ||
+    text.includes('khong chay')
+  ) {
     return [];
   }
   if (
@@ -121,6 +126,8 @@ type PersonForm = {
   key: string;
   vaiTro: string;
   maNhanSu: string;
+  /** Mô tả công việc theo dòng (lưu vào ghi_chu). */
+  congViec: string;
   thoiGianBatDau: string;
   thoiGianKetThuc: string;
   removable: boolean;
@@ -133,6 +140,11 @@ type ScheduleBlock = {
   maMay: string;
   /** Mỗi block chỉ 1 ca (yêu cầu #4). */
   caLamViec: string;
+  /** Công việc tổng của máy/ca — fill xuống dòng trống khi đổi. */
+  congViec: string;
+  /** Giờ từ–đến tổng của công việc — fill xuống dòng chưa có giờ. */
+  thoiGianBatDau: string;
+  thoiGianKetThuc: string;
   people: PersonForm[];
 };
 
@@ -270,7 +282,7 @@ function normalizeMachines(data: unknown): MachineOpt[] {
     const key = code || name;
     if (!byCode.has(key)) byCode.set(key, { code: code || name, name: name || code });
   }
-  // Bổ sung máy: Công việc khác, Hành chính (yêu cầu #1).
+  // Bổ sung máy: Công việc khác, Hành chính, Không chạy.
   for (const extra of EXTRA_MACHINE_OPTS) {
     if (!byCode.has(extra.code)) byCode.set(extra.code, { code: extra.code, name: extra.name });
   }
@@ -311,12 +323,13 @@ function normalizeStaff(data: unknown): StaffOpt[] {
 const emptyPerson = (
   vaiTro: string,
   removable: boolean,
-  times: { start?: string; end?: string } = {},
+  times: { start?: string; end?: string; congViec?: string } = {},
   thueNgoai = false
 ): PersonForm => ({
   key: uid(),
   vaiTro,
   maNhanSu: '',
+  congViec: times.congViec || '',
   thoiGianBatDau: times.start || '',
   thoiGianKetThuc: times.end || '',
   removable,
@@ -419,6 +432,7 @@ function buildPeopleForMachineRoles(
       key: prev?.key || uid(),
       vaiTro: role,
       maNhanSu: prev?.maNhanSu || '',
+      congViec: prev?.congViec || '',
       thoiGianBatDau: prev?.thoiGianBatDau || times.start || '',
       thoiGianKetThuc: prev?.thoiGianKetThuc || times.end || '',
       removable: false,
@@ -432,6 +446,7 @@ function buildPeopleForMachineRoles(
     key: prevEmpty?.key || uid(),
     vaiTro: prevEmpty?.vaiTro || '',
     maNhanSu: prevEmpty?.maNhanSu || '',
+    congViec: prevEmpty?.congViec || '',
     thoiGianBatDau: prevEmpty?.thoiGianBatDau || times.start || '',
     thoiGianKetThuc: prevEmpty?.thoiGianKetThuc || times.end || '',
     removable: true,
@@ -444,6 +459,7 @@ function buildPeopleForMachineRoles(
       key: prev.key,
       vaiTro: prev.vaiTro,
       maNhanSu: prev.maNhanSu,
+      congViec: prev.congViec || '',
       thoiGianBatDau: prev.thoiGianBatDau,
       thoiGianKetThuc: prev.thoiGianKetThuc,
       removable: true,
@@ -460,11 +476,15 @@ const emptyBlock = (
   key: uid(),
   maMay: overrides.maMay ?? '',
   caLamViec: overrides.caLamViec ?? '',
+  congViec: overrides.congViec ?? '',
+  thoiGianBatDau: overrides.thoiGianBatDau ?? '',
+  thoiGianKetThuc: overrides.thoiGianKetThuc ?? '',
   people: overrides.people
     ? overrides.people.map(p => ({
         key: uid(),
         vaiTro: p.vaiTro,
         maNhanSu: p.maNhanSu,
+        congViec: p.congViec || '',
         thoiGianBatDau: p.thoiGianBatDau || '',
         thoiGianKetThuc: p.thoiGianKetThuc || '',
         removable: p.removable,
@@ -484,11 +504,16 @@ function groupToBlock(group: SchedGroup): ScheduleBlock {
       personFromStoredCode(row.ma_nhan_su, {
         key: uid(),
         vaiTro: row.vai_tro || '',
+        congViec: row.ghi_chu || '',
         thoiGianBatDau: row.thoi_gian_bat_dau || '',
         thoiGianKetThuc: row.thoi_gian_ket_thuc || '',
         removable: true
       })
     );
+
+  const congViecTong = group.ghi_chu || people.find(p => p.congViec.trim())?.congViec || '';
+  const thoiGianBatDau = people.find(p => p.thoiGianBatDau)?.thoiGianBatDau || '';
+  const thoiGianKetThuc = people.find(p => p.thoiGianKetThuc)?.thoiGianKetThuc || '';
 
   if (people.length === 0) {
     const label = group.ten_may || group.ma_may || '';
@@ -496,6 +521,9 @@ function groupToBlock(group: SchedGroup): ScheduleBlock {
       key: uid(),
       maMay: group.ma_may,
       caLamViec: group.ca_lam_viec,
+      congViec: congViecTong,
+      thoiGianBatDau: '',
+      thoiGianKetThuc: '',
       people: buildPeopleForMachineRoles(label, group.ma_may, [])
     };
   }
@@ -504,6 +532,9 @@ function groupToBlock(group: SchedGroup): ScheduleBlock {
     key: uid(),
     maMay: group.ma_may,
     caLamViec: group.ca_lam_viec,
+    congViec: congViecTong,
+    thoiGianBatDau,
+    thoiGianKetThuc,
     people
   };
 }
@@ -571,36 +602,38 @@ function PersonEditorRow({
   person,
   activeStaff,
   directory,
-  rowClassName,
   onPatch,
   onRemove
 }: {
   person: PersonForm;
   activeStaff: StaffOpt[];
   directory: Map<string, StaffOpt>;
-  rowClassName: string;
   onPatch: (patch: Partial<PersonForm>) => void;
   onRemove: () => void;
 }) {
+  const timeClass =
+    'h-9 w-[58px] rounded-md border border-zinc-200 bg-white px-1 text-center text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]';
   return (
-    <div className={rowClassName}>
-      <input
-        value={person.vaiTro}
-        onChange={e => onPatch({ vaiTro: e.target.value })}
-        className={`${inputClass} h-9 min-w-0`}
-        placeholder="Vai trò (VD: Trưởng ca)"
-      />
-      <div className="min-w-0">
+    <tr className="border-t border-zinc-100 hover:bg-zinc-50/80">
+      <td className="px-2 py-1.5 align-middle">
+        <input
+          value={person.vaiTro}
+          onChange={e => onPatch({ vaiTro: e.target.value })}
+          className={`${inputClass} h-9 min-w-[7rem]`}
+          placeholder="Vai trò"
+        />
+      </td>
+      <td className="min-w-[11rem] px-2 py-1.5 align-middle">
         {person.thueNgoai ? (
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-800">
+            <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-800">
               Thuê ngoài
             </span>
             <input
               value={person.maNhanSu}
               onChange={e => onPatch({ maNhanSu: e.target.value })}
               className={`${inputClass} h-9 min-w-0`}
-              placeholder="Nhập tên người thuê ngoài"
+              placeholder="Tên thuê ngoài"
             />
           </div>
         ) : (
@@ -611,30 +644,97 @@ function PersonEditorRow({
             directory={directory}
           />
         )}
-      </div>
-      <div className="flex items-center gap-1 whitespace-nowrap">
+      </td>
+      <td className="min-w-[9rem] px-2 py-1.5 align-middle">
+        <input
+          value={person.congViec}
+          onChange={e => onPatch({ congViec: e.target.value })}
+          className={`${inputClass} h-9 min-w-0`}
+          placeholder="Công việc"
+        />
+      </td>
+      <td className="whitespace-nowrap px-2 py-1.5 align-middle">
         <TimePicker24h
           value={person.thoiGianBatDau}
           onChange={v => onPatch({ thoiGianBatDau: v })}
           aria-label="Từ giờ"
-          className="w-[54px] rounded-md border border-zinc-200 bg-white px-1 py-1.5 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
+          className={timeClass}
         />
-        <span className="shrink-0 text-[11px] font-black text-zinc-400">→</span>
+      </td>
+      <td className="whitespace-nowrap px-2 py-1.5 align-middle">
         <TimePicker24h
           value={person.thoiGianKetThuc}
           onChange={v => onPatch({ thoiGianKetThuc: v })}
           aria-label="Đến giờ"
-          className="w-[54px] rounded-md border border-zinc-200 bg-white px-1 py-1.5 text-xs font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
+          className={timeClass}
         />
+      </td>
+      <td className="px-2 py-1.5 text-center align-middle">
+        <button
+          type="button"
+          onClick={onRemove}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
+          title="Xóa dòng"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+function PeopleEditorTable({
+  people,
+  activeStaff,
+  directory,
+  onPatch,
+  onRemove,
+  emptyLabel = 'Chưa có nhân sự — bấm Thêm người.'
+}: {
+  people: PersonForm[];
+  activeStaff: StaffOpt[];
+  directory: Map<string, StaffOpt>;
+  onPatch: (personKey: string, patch: Partial<PersonForm>) => void;
+  onRemove: (personKey: string) => void;
+  emptyLabel?: string;
+}) {
+  const sorted = sortPeopleForPreview(people);
+  return (
+    <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[42rem] border-collapse text-left text-sm">
+          <thead className="bg-zinc-950 text-[11px] uppercase tracking-wider text-white">
+            <tr>
+              <th className="px-2 py-2 font-black">Vai trò</th>
+              <th className="px-2 py-2 font-black">Nhân sự</th>
+              <th className="px-2 py-2 font-black">Công việc</th>
+              <th className="w-[4.5rem] px-2 py-2 font-black">Từ</th>
+              <th className="w-[4.5rem] px-2 py-2 font-black">Đến</th>
+              <th className="w-10 px-2 py-2 text-center font-black">Xóa</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-3 py-6 text-center text-xs font-bold text-zinc-400">
+                  {emptyLabel}
+                </td>
+              </tr>
+            ) : (
+              sorted.map(person => (
+                <PersonEditorRow
+                  key={person.key}
+                  person={person}
+                  activeStaff={activeStaff}
+                  directory={directory}
+                  onPatch={patch => onPatch(person.key, patch)}
+                  onRemove={() => onRemove(person.key)}
+                />
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
-      <button
-        type="button"
-        onClick={onRemove}
-        className="inline-flex h-9 w-9 items-center justify-center justify-self-start rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 xl:justify-self-center"
-        title="Xóa dòng"
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
     </div>
   );
 }
@@ -676,6 +776,9 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
   const [batchDate, setBatchDate] = useState('');
   const [batchMachine, setBatchMachine] = useState('');
   const [batchCa, setBatchCa] = useState('');
+  const [batchCongViec, setBatchCongViec] = useState('');
+  const [batchThoiGianBatDau, setBatchThoiGianBatDau] = useState('');
+  const [batchThoiGianKetThuc, setBatchThoiGianKetThuc] = useState('');
   const [batchPeople, setBatchPeople] = useState<PersonForm[]>([]);
   const [batchSaving, setBatchSaving] = useState(false);
   const [batchError, setBatchError] = useState('');
@@ -845,6 +948,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
               personFromStoredCode(row.ma_nhan_su, {
                 key: row.id,
                 vaiTro: row.vai_tro || '',
+                congViec: row.ghi_chu || '',
                 thoiGianBatDau: row.thoi_gian_bat_dau || '',
                 thoiGianKetThuc: row.thoi_gian_ket_thuc || '',
                 removable: row.removable
@@ -888,6 +992,8 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
       return {
         ...block,
         caLamViec: ca,
+        thoiGianBatDau: block.thoiGianBatDau || times.start,
+        thoiGianKetThuc: block.thoiGianKetThuc || times.end,
         people: block.people.map(p => ({
           ...p,
           thoiGianBatDau: p.thoiGianBatDau || times.start,
@@ -896,6 +1002,28 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
       };
     }));
   }, [shiftTimeMap]);
+
+  /** Đổi công việc / giờ tổng → fill xuống dòng còn trống. */
+  const applyBlockWorkTotals = (
+    blockKey: string,
+    patch: Partial<Pick<ScheduleBlock, 'congViec' | 'thoiGianBatDau' | 'thoiGianKetThuc'>>
+  ) => {
+    setFormBlocks(prev =>
+      prev.map(block => {
+        if (block.key !== blockKey) return block;
+        const next = { ...block, ...patch };
+        return {
+          ...next,
+          people: block.people.map(p => ({
+            ...p,
+            congViec: p.congViec.trim() ? p.congViec : next.congViec || p.congViec,
+            thoiGianBatDau: p.thoiGianBatDau || next.thoiGianBatDau || '',
+            thoiGianKetThuc: p.thoiGianKetThuc || next.thoiGianKetThuc || ''
+          }))
+        };
+      })
+    );
+  };
 
   // ── Sửa lịch theo ngày & máy (1 máy + 1 ca) ────────────────────────────────
   const batchMatchingGroups = useMemo(() => {
@@ -943,6 +1071,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
               personFromStoredCode(row.ma_nhan_su, {
                 key: row.id,
                 vaiTro: row.vai_tro || '',
+                congViec: row.ghi_chu || '',
                 thoiGianBatDau: row.thoi_gian_bat_dau || '',
                 thoiGianKetThuc: row.thoi_gian_ket_thuc || '',
                 removable: row.removable
@@ -974,6 +1103,9 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
   const loadBatchDataForMachineAndDate = useCallback((date: string, machineCode: string, caValue = '') => {
     if (!date || !machineCode) {
       setBatchCa('');
+      setBatchCongViec('');
+      setBatchThoiGianBatDau('');
+      setBatchThoiGianKetThuc('');
       setBatchPeople([emptyPerson('', true)]);
       return;
     }
@@ -985,6 +1117,9 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
     if (matching.length === 0) {
       const times = caValue ? lookupShiftTimes(caValue, shiftTimeMap) : { start: '', end: '' };
       setBatchCa(caValue);
+      setBatchCongViec('');
+      setBatchThoiGianBatDau(times.start);
+      setBatchThoiGianKetThuc(times.end);
       setBatchPeople(buildPeopleForMachineRoles(label, machineCode, [], times));
       return;
     }
@@ -995,16 +1130,21 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
         personFromStoredCode(row.ma_nhan_su, {
           key: uid(),
           vaiTro: row.vai_tro || '',
+          congViec: row.ghi_chu || '',
           thoiGianBatDau: row.thoi_gian_bat_dau || '',
           thoiGianKetThuc: row.thoi_gian_ket_thuc || '',
           removable: true
         })
       );
+    const shiftTimes = lookupShiftTimes(target.ca_lam_viec, shiftTimeMap);
     setBatchCa(target.ca_lam_viec);
+    setBatchCongViec(target.ghi_chu || people.find(p => p.congViec.trim())?.congViec || '');
+    setBatchThoiGianBatDau(people.find(p => p.thoiGianBatDau)?.thoiGianBatDau || shiftTimes.start);
+    setBatchThoiGianKetThuc(people.find(p => p.thoiGianKetThuc)?.thoiGianKetThuc || shiftTimes.end);
     setBatchPeople(
       people.length > 0
         ? people
-        : buildPeopleForMachineRoles(label, machineCode, [], lookupShiftTimes(target.ca_lam_viec, shiftTimeMap))
+        : buildPeopleForMachineRoles(label, machineCode, [], shiftTimes)
     );
   }, [groups, machineName, shiftTimeMap]);
 
@@ -1015,6 +1155,9 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
     setBatchDate(initDate);
     setBatchMachine(initMachine);
     setBatchCa(initCa);
+    setBatchCongViec('');
+    setBatchThoiGianBatDau('');
+    setBatchThoiGianKetThuc('');
     setBatchError('');
     setBatchMessage('');
     loadBatchDataForMachineAndDate(initDate, initMachine, initCa);
@@ -1026,9 +1169,37 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
     setBatchDate('');
     setBatchMachine('');
     setBatchCa('');
+    setBatchCongViec('');
+    setBatchThoiGianBatDau('');
+    setBatchThoiGianKetThuc('');
     setBatchPeople([emptyPerson('', true)]);
     setBatchError('');
     setBatchMessage('');
+  };
+
+  const applyBatchWorkTotals = (
+    patch: Partial<{ congViec: string; thoiGianBatDau: string; thoiGianKetThuc: string }>
+  ) => {
+    if (patch.congViec !== undefined) setBatchCongViec(patch.congViec);
+    if (patch.thoiGianBatDau !== undefined) setBatchThoiGianBatDau(patch.thoiGianBatDau);
+    if (patch.thoiGianKetThuc !== undefined) setBatchThoiGianKetThuc(patch.thoiGianKetThuc);
+    setBatchPeople(prev =>
+      prev.map(p => ({
+        ...p,
+        congViec:
+          p.congViec.trim()
+            ? p.congViec
+            : patch.congViec !== undefined
+              ? patch.congViec
+              : p.congViec,
+        thoiGianBatDau:
+          p.thoiGianBatDau ||
+          (patch.thoiGianBatDau !== undefined ? patch.thoiGianBatDau : batchThoiGianBatDau),
+        thoiGianKetThuc:
+          p.thoiGianKetThuc ||
+          (patch.thoiGianKetThuc !== undefined ? patch.thoiGianKetThuc : batchThoiGianKetThuc)
+      }))
+    );
   };
 
   const updateBatchPerson = (key: string, patch: Partial<PersonForm>) => {
@@ -1036,12 +1207,22 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
   };
 
   const addBatchPerson = () => {
-    const times = batchCa ? lookupShiftTimes(batchCa, shiftTimeMap) : { start: '', end: '' };
+    const shiftTimes = batchCa ? lookupShiftTimes(batchCa, shiftTimeMap) : { start: '', end: '' };
+    const times = {
+      start: batchThoiGianBatDau || shiftTimes.start,
+      end: batchThoiGianKetThuc || shiftTimes.end,
+      congViec: batchCongViec
+    };
     setBatchPeople(prev => [...prev, emptyPerson('', true, times)]);
   };
 
   const addBatchExternalPerson = () => {
-    const times = batchCa ? lookupShiftTimes(batchCa, shiftTimeMap) : { start: '', end: '' };
+    const shiftTimes = batchCa ? lookupShiftTimes(batchCa, shiftTimeMap) : { start: '', end: '' };
+    const times = {
+      start: batchThoiGianBatDau || shiftTimes.start,
+      end: batchThoiGianKetThuc || shiftTimes.end,
+      congViec: batchCongViec
+    };
     setBatchPeople(prev => [...prev, emptyPerson('', true, times, true)]);
   };
 
@@ -1115,6 +1296,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
         ma_nhan_su: storedStaffCode(p),
         thoi_gian_bat_dau: p.thoiGianBatDau || '',
         thoi_gian_ket_thuc: p.thoiGianKetThuc || '',
+        ghi_chu: p.congViec.trim() || batchCongViec.trim() || '',
         removable: p.removable
       }));
       const payload = {
@@ -1122,7 +1304,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
         may: machineName(batchMachine.trim()),
         ngay_lam_viec: batchDate.trim(),
         ca_lam_viec: batchCa,
-        ghi_chu: '',
+        ghi_chu: batchCongViec.trim(),
         nhan_su: nhanSuList
       };
       const res = await fetch('/api/phan-cong-nhan-su/nhom', {
@@ -1169,12 +1351,16 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
         emptyBlock({
           maMay: last.maMay,
           caLamViec: '',
+          congViec: last.congViec,
+          thoiGianBatDau: last.thoiGianBatDau,
+          thoiGianKetThuc: last.thoiGianKetThuc,
           people: last.people.map(p => ({
             ...p,
             key: uid(),
             maNhanSu: '',
-            thoiGianBatDau: '',
-            thoiGianKetThuc: ''
+            congViec: last.congViec || p.congViec || '',
+            thoiGianBatDau: last.thoiGianBatDau || '',
+            thoiGianKetThuc: last.thoiGianKetThuc || ''
           }))
         })
       ];
@@ -1193,10 +1379,17 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
           return { ...block, people: [emptyPerson('', true)] };
         }
         const label = machineName(block.maMay);
-        const times = block.caLamViec ? lookupShiftTimes(block.caLamViec, shiftTimeMap) : { start: '', end: '' };
+        const shiftTimes = block.caLamViec ? lookupShiftTimes(block.caLamViec, shiftTimeMap) : { start: '', end: '' };
+        const times = {
+          start: block.thoiGianBatDau || shiftTimes.start,
+          end: block.thoiGianKetThuc || shiftTimes.end
+        };
         return {
           ...block,
-          people: buildPeopleForMachineRoles(label, block.maMay, [], times)
+          people: buildPeopleForMachineRoles(label, block.maMay, [], times).map(p => ({
+            ...p,
+            congViec: block.congViec || p.congViec
+          }))
         };
       })
     );
@@ -1236,7 +1429,12 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
     setFormBlocks(prev =>
       prev.map(block => {
         if (block.key !== blockKey) return block;
-        const times = block.caLamViec ? lookupShiftTimes(block.caLamViec, shiftTimeMap) : { start: '', end: '' };
+        const shiftTimes = block.caLamViec ? lookupShiftTimes(block.caLamViec, shiftTimeMap) : { start: '', end: '' };
+        const times = {
+          start: block.thoiGianBatDau || shiftTimes.start,
+          end: block.thoiGianKetThuc || shiftTimes.end,
+          congViec: block.congViec
+        };
         return { ...block, people: [...block.people, emptyPerson('', true, times, thueNgoai)] };
       })
     );
@@ -1323,6 +1521,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
           ma_nhan_su: storedStaffCode(p),
           thoi_gian_bat_dau: p.thoiGianBatDau || '',
           thoi_gian_ket_thuc: p.thoiGianKetThuc || '',
+          ghi_chu: p.congViec.trim() || block.congViec.trim() || '',
           removable: p.removable
         }));
         const payload = {
@@ -1330,7 +1529,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
           may: machineName(block.maMay.trim()),
           ngay_lam_viec: formNgayLamViec.trim(),
           ca_lam_viec: ca,
-          ghi_chu: '',
+          ghi_chu: block.congViec.trim(),
           nhan_su: nhanSuList
         };
         const res = await fetch('/api/phan-cong-nhan-su/nhom', {
@@ -1730,12 +1929,13 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
 
               {formBlocks.map((block, blockIndex) => {
                 const blockShiftOptions = getBlockShiftOptions(block);
+                const filledCount = block.people.filter(p => p.maNhanSu.trim()).length;
                 return (
                   <div
                     key={block.key}
-                    className="space-y-4 rounded-2xl border border-zinc-200 bg-zinc-50/60 p-3 sm:p-4"
+                    className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm"
                   >
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center justify-between gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2.5">
                       <p className="text-xs font-black uppercase tracking-wider text-zinc-700">
                         Máy / ca {blockIndex + 1}
                         {formBlocks.length > 1 ? (
@@ -1743,6 +1943,9 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                             / {formBlocks.length}
                           </span>
                         ) : null}
+                        <span className="ml-2 font-semibold normal-case text-zinc-400">
+                          · {filledCount} người
+                        </span>
                       </p>
                       {formBlocks.length > 1 ? (
                         <button
@@ -1757,111 +1960,143 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                       ) : null}
                     </div>
 
-                    <label className="block space-y-1.5">
-                      <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
-                        Máy <span className="text-[#ef1b2d]">*</span>
-                      </span>
-                      <SearchableSelect
-                        value={block.maMay}
-                        onChange={value => {
-                          const label =
-                            machines.find(item => item.code === value)?.name ||
-                            machineName(value) ||
-                            value;
-                          setFormBlocks(prev =>
-                            prev.map(item =>
-                              item.key !== block.key
-                                ? item
-                                : {
-                                    ...item,
-                                    maMay: value,
-                                    caLamViec: '',
-                                    people: buildPeopleForMachineRoles(label, value, [], { start: '', end: '' })
-                                  }
-                            )
-                          );
-                        }}
-                        options={machines}
-                        placeholder="Chọn máy..."
-                        getValue={item => (item as MachineOpt).code}
-                        getLabel={item => (item as MachineOpt).name}
-                        getSearchText={item => `${(item as MachineOpt).code} ${(item as MachineOpt).name}`}
-                        maxResults={80}
-                      />
-                    </label>
+                    <div className="space-y-3 border-b border-zinc-100 p-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <label className="block space-y-1">
+                          <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                            Máy <span className="text-[#ef1b2d]">*</span>
+                          </span>
+                          <SearchableSelect
+                            value={block.maMay}
+                            onChange={value => {
+                              const label =
+                                machines.find(item => item.code === value)?.name ||
+                                machineName(value) ||
+                                value;
+                              setFormBlocks(prev =>
+                                prev.map(item =>
+                                  item.key !== block.key
+                                    ? item
+                                    : {
+                                        ...item,
+                                        maMay: value,
+                                        caLamViec: '',
+                                        congViec: '',
+                                        thoiGianBatDau: '',
+                                        thoiGianKetThuc: '',
+                                        people: buildPeopleForMachineRoles(label, value, [], { start: '', end: '' })
+                                      }
+                                )
+                              );
+                            }}
+                            options={machines}
+                            placeholder="Chọn máy..."
+                            getValue={item => (item as MachineOpt).code}
+                            getLabel={item => (item as MachineOpt).name}
+                            getSearchText={item => `${(item as MachineOpt).code} ${(item as MachineOpt).name}`}
+                            maxResults={80}
+                          />
+                        </label>
 
-                    <div className="space-y-1.5">
-                      <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
-                        Ca làm việc <span className="text-[#ef1b2d]">*</span>
-                        {(!block.maMay || !formNgayLamViec) && (
-                          <span className="ml-1 font-normal normal-case text-zinc-400">— hãy chọn ngày và máy trước</span>
-                        )}
-                        {block.maMay && formNgayLamViec && (
-                          <span className="ml-1 font-normal normal-case text-zinc-400">(chỉ hiển thị ca chưa có lịch — chọn 1 ca)</span>
-                        )}
-                      </span>
-                      <SingleShiftSelect
-                        value={block.caLamViec}
-                        onChange={val => applyShiftTimesToBlock(block.key, val)}
-                        options={blockShiftOptions}
-                        disabled={!block.maMay || !formNgayLamViec}
-                      />
-                      {block.caLamViec && shiftTimeMap.size > 0 ? (
-                        <p className="text-[11px] font-semibold text-zinc-400">
-                          Giờ ca: {lookupShiftTimes(block.caLamViec, shiftTimeMap).start || '--:--'} →{' '}
-                          {lookupShiftTimes(block.caLamViec, shiftTimeMap).end || '--:--'} (tự fill xuống từng người, có thể sửa/bỏ trống)
-                        </p>
-                      ) : null}
-                    </div>
+                        <div className="space-y-1">
+                          <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                            Ca làm việc <span className="text-[#ef1b2d]">*</span>
+                            {(!block.maMay || !formNgayLamViec) && (
+                              <span className="ml-1 font-normal normal-case text-zinc-400">— chọn ngày & máy trước</span>
+                            )}
+                          </span>
+                          <SingleShiftSelect
+                            value={block.caLamViec}
+                            onChange={val => applyShiftTimesToBlock(block.key, val)}
+                            options={blockShiftOptions}
+                            disabled={!block.maMay || !formNgayLamViec}
+                          />
+                          {block.caLamViec && shiftTimeMap.size > 0 ? (
+                            <p className="text-[11px] font-semibold text-zinc-400">
+                              Giờ ca: {lookupShiftTimes(block.caLamViec, shiftTimeMap).start || '--:--'} →{' '}
+                              {lookupShiftTimes(block.caLamViec, shiftTimeMap).end || '--:--'}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-xs font-black uppercase tracking-wider text-zinc-500">
-                        Nhân sự theo vai trò ({block.people.filter(p => p.maNhanSu.trim()).length} người)
-                      </p>
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {block.people.some(p => p.maNhanSu.trim()) && (
-                          <button
-                            type="button"
-                            onClick={() => clearBlockPeople(block.key)}
-                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-bold text-zinc-600 hover:bg-zinc-50"
-                            title="Xóa trắng danh sách nhân sự đang chọn"
-                          >
-                            <RotateCcw className="h-3.5 w-3.5" />
-                            Xóa trắng
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => addPerson(block.key)}
-                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d]/20 bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] hover:bg-red-100"
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                          Thêm người
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => addPerson(block.key, true)}
-                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-[11px] font-extrabold text-amber-800 hover:bg-amber-100"
-                          title="Nhập tên người thuê ngoài, không chọn trong danh sách nhân viên"
-                        >
-                          <UserPlus className="h-3.5 w-3.5" />
-                          Thêm thuê ngoài
-                        </button>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                        <label className="block space-y-1">
+                          <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                            Công việc
+                          </span>
+                          <input
+                            value={block.congViec}
+                            onChange={e => applyBlockWorkTotals(block.key, { congViec: e.target.value })}
+                            className={inputClass}
+                            placeholder="Mô tả công việc tổng..."
+                          />
+                        </label>
+                        <div className="space-y-1">
+                          <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Từ</span>
+                          <TimePicker24h
+                            value={block.thoiGianBatDau}
+                            onChange={v => applyBlockWorkTotals(block.key, { thoiGianBatDau: v })}
+                            aria-label="Giờ bắt đầu công việc tổng"
+                            className="h-10 w-[72px] rounded-lg border border-zinc-200 bg-white px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Đến</span>
+                          <TimePicker24h
+                            value={block.thoiGianKetThuc}
+                            onChange={v => applyBlockWorkTotals(block.key, { thoiGianKetThuc: v })}
+                            aria-label="Giờ kết thúc công việc tổng"
+                            className="h-10 w-[72px] rounded-lg border border-zinc-200 bg-white px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
+                          />
+                        </div>
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      {sortPeopleForPreview(block.people).map(person => (
-                        <PersonEditorRow
-                          key={person.key}
-                          person={person}
-                          activeStaff={activeStaff}
-                          directory={staffByCode}
-                          rowClassName="grid grid-cols-1 gap-2 rounded-xl border border-zinc-200 bg-white p-2.5 xl:grid-cols-[150px_minmax(0,1fr)_auto_36px] xl:items-center"
-                          onPatch={patch => updatePerson(block.key, person.key, patch)}
-                          onRemove={() => removePerson(block.key, person.key)}
-                        />
-                      ))}
+                    <div className="space-y-2 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-[11px] font-black uppercase tracking-wider text-zinc-500">
+                          Nhân sự theo vai trò
+                        </p>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {block.people.some(p => p.maNhanSu.trim()) && (
+                            <button
+                              type="button"
+                              onClick={() => clearBlockPeople(block.key)}
+                              className="inline-flex h-8 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-bold text-zinc-600 hover:bg-zinc-50"
+                              title="Xóa trắng danh sách nhân sự đang chọn"
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" />
+                              Xóa trắng
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => addPerson(block.key)}
+                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d]/20 bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] hover:bg-red-100"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            Thêm người
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => addPerson(block.key, true)}
+                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-[11px] font-extrabold text-amber-800 hover:bg-amber-100"
+                            title="Nhập tên người thuê ngoài, không chọn trong danh sách nhân viên"
+                          >
+                            <UserPlus className="h-3.5 w-3.5" />
+                            Thêm thuê ngoài
+                          </button>
+                        </div>
+                      </div>
+
+                      <PeopleEditorTable
+                        people={block.people}
+                        activeStaff={activeStaff}
+                        directory={staffByCode}
+                        onPatch={(personKey, patch) => updatePerson(block.key, personKey, patch)}
+                        onRemove={personKey => removePerson(block.key, personKey)}
+                      />
                     </div>
                   </div>
                 );
@@ -2027,6 +2262,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                     <tr>
                       <th className="px-3 py-2 font-black">Vai trò</th>
                       <th className="px-3 py-2 font-black">Nhân sự</th>
+                      <th className="px-3 py-2 font-black">Công việc</th>
                       <th className="px-3 py-2 font-black">Giờ</th>
                       <th className="px-3 py-2 text-center font-black">Điều động</th>
                       {canDelete ? <th className="px-3 py-2 text-center font-black">Xóa</th> : null}
@@ -2046,6 +2282,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                             ) : null}
                           </span>
                         </td>
+                        <td className="px-3 py-2 font-semibold text-zinc-700">{row.ghi_chu || '—'}</td>
                         <td className="px-3 py-2 font-bold text-zinc-600">
                           {(row.thoi_gian_bat_dau || row.thoi_gian_ket_thuc)
                             ? `${row.thoi_gian_bat_dau || '--:--'} → ${row.thoi_gian_ket_thuc || '--:--'}`
@@ -2081,7 +2318,7 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                     ))}
                     {detailGroup.rows.filter(r => r.ma_nhan_su).length === 0 ? (
                       <tr>
-                        <td colSpan={canDelete ? 5 : 4} className="px-3 py-6 text-center font-bold text-zinc-400">
+                        <td colSpan={canDelete ? 6 : 5} className="px-3 py-6 text-center font-bold text-zinc-400">
                           Chưa có nhân sự.
                         </td>
                       </tr>
@@ -2165,6 +2402,8 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                       setBatchCa(val);
                       if (batchDate && batchMachine) {
                         const times = val ? lookupShiftTimes(val, shiftTimeMap) : { start: '', end: '' };
+                        setBatchThoiGianBatDau(prev => prev || times.start);
+                        setBatchThoiGianKetThuc(prev => prev || times.end);
                         setBatchPeople(prev => prev.map(p => ({
                           ...p,
                           thoiGianBatDau: p.thoiGianBatDau || times.start,
@@ -2196,44 +2435,70 @@ export default function SapXepLichLamViecPanel({ onBack }: Props) {
                     </div>
                   ) : null}
 
-                  {/* 3. Danh sách nhân viên theo vai trò — mỗi ô 1 người + giờ */}
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs font-black uppercase tracking-wider text-zinc-500">
-                      Nhân sự theo vai trò ({batchPeople.filter(p => p.maNhanSu.trim()).length} người)
-                    </p>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={addBatchPerson}
-                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d]/20 bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] hover:bg-red-100"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                        Thêm người
-                      </button>
-                      <button
-                        type="button"
-                        onClick={addBatchExternalPerson}
-                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-[11px] font-extrabold text-amber-800 hover:bg-amber-100"
-                        title="Nhập tên người thuê ngoài, không chọn trong danh sách nhân viên"
-                      >
-                        <UserPlus className="h-3.5 w-3.5" />
-                        Thêm thuê ngoài
-                      </button>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                    <label className="space-y-1.5">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Công việc</span>
+                      <input
+                        value={batchCongViec}
+                        onChange={e => applyBatchWorkTotals({ congViec: e.target.value })}
+                        className={inputClass}
+                        placeholder="Mô tả công việc tổng..."
+                      />
+                    </label>
+                    <div className="space-y-1.5">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Từ</span>
+                      <TimePicker24h
+                        value={batchThoiGianBatDau}
+                        onChange={v => applyBatchWorkTotals({ thoiGianBatDau: v })}
+                        aria-label="Giờ bắt đầu công việc tổng"
+                        className="h-10 w-[72px] rounded-lg border border-zinc-200 bg-white px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Đến</span>
+                      <TimePicker24h
+                        value={batchThoiGianKetThuc}
+                        onChange={v => applyBatchWorkTotals({ thoiGianKetThuc: v })}
+                        aria-label="Giờ kết thúc công việc tổng"
+                        className="h-10 w-[72px] rounded-lg border border-zinc-200 bg-white px-1 text-center text-sm font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d]"
+                      />
                     </div>
                   </div>
 
+                  {/* 3. Danh sách nhân viên theo vai trò — bảng Vai trò | Nhân sự | Công việc | Từ | Đến */}
                   <div className="space-y-2">
-                    {sortPeopleForPreview(batchPeople).map(person => (
-                      <PersonEditorRow
-                        key={person.key}
-                        person={person}
-                        activeStaff={activeStaff}
-                        directory={staffByCode}
-                        rowClassName="grid grid-cols-1 gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-2.5 xl:grid-cols-[150px_minmax(0,1fr)_auto_36px] xl:items-center"
-                        onPatch={patch => updateBatchPerson(person.key, patch)}
-                        onRemove={() => removeBatchPerson(person.key)}
-                      />
-                    ))}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                        Nhân sự theo vai trò ({batchPeople.filter(p => p.maNhanSu.trim()).length} người)
+                      </p>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={addBatchPerson}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#ef1b2d]/20 bg-red-50 px-2.5 text-[11px] font-extrabold text-[#ef1b2d] hover:bg-red-100"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Thêm người
+                        </button>
+                        <button
+                          type="button"
+                          onClick={addBatchExternalPerson}
+                          className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-[11px] font-extrabold text-amber-800 hover:bg-amber-100"
+                          title="Nhập tên người thuê ngoài, không chọn trong danh sách nhân viên"
+                        >
+                          <UserPlus className="h-3.5 w-3.5" />
+                          Thêm thuê ngoài
+                        </button>
+                      </div>
+                    </div>
+
+                    <PeopleEditorTable
+                      people={batchPeople}
+                      activeStaff={activeStaff}
+                      directory={staffByCode}
+                      onPatch={updateBatchPerson}
+                      onRemove={removeBatchPerson}
+                    />
                   </div>
                 </>
               )}

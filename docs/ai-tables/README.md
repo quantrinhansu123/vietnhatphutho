@@ -50,6 +50,7 @@ Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...
 | `tuyen_giao_hang_xe` | `/danh-sach-xe` | [danh_sach_xe.md](./danh_sach_xe.md) |
 | `thu_tien_khach_hang` | `/danh-sach-xe` | [thu_tien_khach_hang.md](./thu_tien_khach_hang.md) |
 | `cai_dat_thoi_gian` | `/cai-dat` | [cai_dat_thoi_gian.md](./cai_dat_thoi_gian.md) |
+| *(schema public)* | `/data` (Quản trị → Data) | [data_schema.md](./data_schema.md) |
 | `bao_cao_phoi_tron` | `/bao-cao-phoi-tron` | [bao_cao_phoi_tron.md](./bao_cao_phoi_tron.md) |
 | `bang_tron_vat_tu_dinh_muc` | `/danh-sach-bao-cao-phoi-tron` (tab định mức) | [bang_tron_vat_tu_dinh_muc.md](./bang_tron_vat_tu_dinh_muc.md) |
 | `phieu_tron_thuc_te` | `/danh-sach-bao-cao-phoi-tron` (tab thực tế) | [phieu_tron_thuc_te.md](./phieu_tron_thuc_te.md) |

@@ -40,7 +40,8 @@ import {
   pickPreferredSecondaryMaterials,
   formatMixingNormSlipName,
   normalizeMixingSlipOrderCodes,
-  hasMixingNormMaterialWeightChanges
+  hasMixingNormMaterialWeightChanges,
+  collectWorkshopPxLabels
 } from '../utils/mixingNormAuxiliary';
 
 function buildMixingNormLsxDhRef(orderCode?: string | null, salesOrderCode?: string | null) {
@@ -682,6 +683,58 @@ function expandProductCodeLookupKeys(
     if (option) productOptionLookupKeys(option).forEach(item => keys.add(item));
   }
   return keys;
+}
+
+const PX_MARK_CLASS: Record<string, string> = {
+  Sóng: 'border-sky-200 bg-sky-50 text-sky-900',
+  Đặc: 'border-amber-200 bg-amber-50 text-amber-900',
+  Rỗng: 'border-emerald-200 bg-emerald-50 text-emerald-900'
+};
+
+function PxTypeMarks({ labels }: { labels: string[] }) {
+  if (labels.length === 0) return null;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1 align-middle">
+      {labels.map(label => (
+        <span
+          key={label}
+          className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-black normal-case leading-none tracking-normal ${PX_MARK_CLASS[label] || 'border-zinc-200 bg-zinc-50 text-zinc-700'}`}
+        >
+          {label}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function pxLabelsForCatalogHit(hit: { nhomVthh?: string; tenGhep?: string; tenSanXuat?: string; name?: string } | undefined): string[] {
+  if (!hit) return [];
+  const fromGroup = collectWorkshopPxLabels([hit.nhomVthh]);
+  if (fromGroup.length > 0) return fromGroup;
+  return collectWorkshopPxLabels([hit.tenGhep, hit.tenSanXuat, hit.name]);
+}
+
+function pxLabelsForNormProduct(
+  product: Pick<MixingNormProduct, 'san_pham_id' | 'san_pham_ids' | 'ma_sp' | 'ten_sp' | 'ten_ghep'>,
+  catalogById: Map<string, ProductOption>,
+  catalogProducts: ProductOption[]
+): string[] {
+  const ids = [product.san_pham_id, ...(product.san_pham_ids || [])]
+    .map(id => baseProductId(String(id || '')))
+    .filter(Boolean);
+  const fromIds = collectWorkshopPxLabels(ids.flatMap(id => pxLabelsForCatalogHit(catalogById.get(id))));
+  if (fromIds.length > 0) return fromIds;
+  const fromCodes = collectWorkshopPxLabels(
+    String(product.ma_sp || '')
+      .split(/[,;/]+/)
+      .flatMap(code => pxLabelsForCatalogHit(findCatalogProductByAnyCode(catalogProducts, code.trim())))
+  );
+  if (fromCodes.length > 0) return fromCodes;
+  return collectWorkshopPxLabels([product.ten_ghep, product.ten_sp]);
+}
+
+function pxLabelsForProductOption(option: Pick<ProductOption, 'nhomVthh' | 'tenGhep' | 'tenSanXuat' | 'name'>): string[] {
+  return pxLabelsForCatalogHit(option);
 }
 
 function findCatalogProductByAnyCode(products: ProductOption[], value: string) {
@@ -3349,7 +3402,7 @@ export default function MixingNormMaterialsTab() {
   const handlePrintRow = (row: MixingNormRow) => {
     setError('');
     setMessage('');
-    setPrintDocs([toPrintDoc(row, resolvePrintProductName)]);
+    setPrintDocs([toPrintDoc(row, resolvePrintProductName, product => pxLabelsForNormProduct(product, catalogProductsById, catalogProducts).join(' · '))]);
     setPendingPrint(true);
   };
 
@@ -3361,7 +3414,7 @@ export default function MixingNormMaterialsTab() {
     }
     setError('');
     setMessage('');
-    setPrintDocs(filtered.map(row => toPrintDoc(row, resolvePrintProductName)));
+    setPrintDocs(filtered.map(row => toPrintDoc(row, resolvePrintProductName, product => pxLabelsForNormProduct(product, catalogProductsById, catalogProducts).join(' · '))));
     setPendingPrint(true);
   };
 
@@ -3426,7 +3479,19 @@ export default function MixingNormMaterialsTab() {
               {filtered.map(row => (
                 <tr key={row.id} className="hover:bg-red-50/40">
                   <td className="max-w-[180px] break-words px-3 py-2.5 font-mono text-xs font-bold text-zinc-900">
-                    {row.ten_phieu || formatMixingNormSlipName(getMachineDisplayName(row.may || row.ca), row.ma_lenh_sx)}
+                    <div>{row.ten_phieu || formatMixingNormSlipName(getMachineDisplayName(row.may || row.ca), row.ma_lenh_sx)}</div>
+                    {(() => {
+                      const labels = collectWorkshopPxLabels(
+                        row.products
+                          .filter(isFormulaNormProduct)
+                          .flatMap(product => pxLabelsForNormProduct(product, catalogProductsById, catalogProducts))
+                      );
+                      return labels.length > 0 ? (
+                        <div className="mt-1 font-sans">
+                          <PxTypeMarks labels={labels} />
+                        </div>
+                      ) : null;
+                    })()}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-zinc-800">
                     {row.ngay || '—'}
@@ -3458,7 +3523,8 @@ export default function MixingNormMaterialsTab() {
                     ) : (
                       <div className="space-y-1">
                       {row.products.filter(isFormulaNormProduct).map((product, index) => (
-                        <div key={`${row.id}-sp-${index}`}>
+                        <div key={`${row.id}-sp-${index}`} className="flex flex-wrap items-center gap-1">
+                          <PxTypeMarks labels={pxLabelsForNormProduct(product, catalogProductsById, catalogProducts)} />
                           <span>{String(product.ten_sp || '').trim() || product.ten_ghep || product.ma_sp || '—'}</span>
                           {product.tong_trong_luong !== null &&
                           product.tong_trong_luong !== undefined ? (
@@ -3504,8 +3570,9 @@ export default function MixingNormMaterialsTab() {
                           );
                           return (
                           <div key={`${row.id}-nvl-${pIndex}`}>
-                            <p className="mb-0.5 font-black text-zinc-800">
-                              {String(product.ten_sp || '').trim() || product.ten_ghep || product.ma_sp || `SP #${pIndex + 1}`}
+                            <p className="mb-0.5 flex flex-wrap items-center gap-1 font-black text-zinc-800">
+                              <PxTypeMarks labels={pxLabelsForNormProduct(product, catalogProductsById, catalogProducts)} />
+                              <span>{String(product.ten_sp || '').trim() || product.ten_ghep || product.ma_sp || `SP #${pIndex + 1}`}</span>
                             </p>
                             {materials.length === 0 ? (
                               <span className="text-zinc-400">Chưa có NVL</span>
@@ -3761,9 +3828,12 @@ export default function MixingNormMaterialsTab() {
                       className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 shadow-sm"
                     >
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-xs font-black uppercase tracking-wider text-zinc-600">
-                          SP #{productIndex + 1}
-                          {product.maSp ? ` · ${product.maSp}` : ''}
+                        <p className="flex flex-wrap items-center gap-1.5 text-xs font-black uppercase tracking-wider text-zinc-600">
+                          <span>
+                            SP #{productIndex + 1}
+                            {product.maSp ? ` · ${product.maSp}` : ''}
+                          </span>
+                          <PxTypeMarks labels={collectWorkshopPxLabels(selectedProductOptions.flatMap(option => pxLabelsForProductOption(option)))} />
                         </p>
                         <div className="flex flex-wrap items-center gap-2">
                           <button
@@ -3810,6 +3880,7 @@ export default function MixingNormMaterialsTab() {
                                     key={valueKey}
                                     className="inline-flex max-w-full items-start gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-[11px] font-semibold text-zinc-800"
                                   >
+                                    <PxTypeMarks labels={pxLabelsForProductOption(option)} />
                                     <span className="min-w-0 flex-1 leading-snug">{productLabel(option)}</span>
                                     <button
                                       type="button"

@@ -135,6 +135,47 @@ export function parseDoDaiMLength(raw: string): number | null {
   return parseMeterNumber(text.replace(/\s*m\s*$/iu, ''));
 }
 
+/** Giá trị kg để sort danh sách SP (thiếu → Infinity = xếp cuối). */
+export function productSortKgValue(totalWeight?: string | null, dinhMucKg?: string | null): number {
+  const fromTotal = parseMeterNumber(String(totalWeight || '').trim());
+  if (fromTotal !== null && fromTotal > 0) return fromTotal;
+  const dinhMucMatch = String(dinhMucKg || '').match(/(\d+(?:[.,]\d+)?)/);
+  if (dinhMucMatch) {
+    const fromDinhMuc = parseMeterNumber(dinhMucMatch[1]);
+    if (fromDinhMuc !== null && fromDinhMuc > 0) return fromDinhMuc;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+/** Mét dài để sort danh sách SP (thiếu → Infinity = xếp cuối). */
+export function productSortMetersValue(doDaiM?: string | null): number {
+  return parseDoDaiMLength(String(doDaiM || '')) ?? Number.POSITIVE_INFINITY;
+}
+
+/** Sort tăng dần: kg → số m → mã. */
+export function compareProductsByKgThenMeters(
+  a: { totalWeight?: string | null; dinhMucKg?: string | null; doDaiM?: string | null; code?: string | null; name?: string | null },
+  b: { totalWeight?: string | null; dinhMucKg?: string | null; doDaiM?: string | null; code?: string | null; name?: string | null }
+): number {
+  const byKg = productSortKgValue(a.totalWeight, a.dinhMucKg) - productSortKgValue(b.totalWeight, b.dinhMucKg);
+  if (byKg !== 0) return byKg;
+  const byMeters = productSortMetersValue(a.doDaiM) - productSortMetersValue(b.doDaiM);
+  if (byMeters !== 0) return byMeters;
+  const byCode = String(a.code || '').localeCompare(String(b.code || ''), 'vi');
+  if (byCode !== 0) return byCode;
+  return String(a.name || '').localeCompare(String(b.name || ''), 'vi');
+}
+
+export function sortProductsByKgThenMeters<T extends {
+  totalWeight?: string | null;
+  dinhMucKg?: string | null;
+  doDaiM?: string | null;
+  code?: string | null;
+  name?: string | null;
+}>(products: T[]): T[] {
+  return [...products].sort(compareProductsByKgThenMeters);
+}
+
 /** Extract `(đm n li)` hoặc `(đm n kg)` (sóng) từ ten_san_xuat → chuỗi lưu cột `do_li_dm`. */
 export function extractDoLiDm(tenSanXuat: string): string | null {
   const text = String(tenSanXuat || '');
@@ -395,7 +436,7 @@ export function extractMang(tenSanXuat: string): string {
  * cho sản phẩm thường rồi lọt vào tên ghép.
  * Đặc + token OFF / NS Off: chuẩn hóa `hàng chạy 100% NS Off` (xem `resolveDacHangPhe`).
  */
-function extractHangPhe(tenSanXuat: string): string {
+export function extractHangPhe(tenSanXuat: string): string {
   const fromName = String(tenSanXuat || '').match(NAME_HANG_PHE_RE);
   if (!fromName) return '';
   const t = fromName[1].trim();

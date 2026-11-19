@@ -16,6 +16,9 @@ import {
   ORDER_TYPE_OPTIONS,
   ORDER_STATUS_OPTIONS,
   ORDER_STATUS_DEFAULT,
+  ORDER_REGION_OPTIONS,
+  PRODUCTION_ORDER_TYPE,
+  SALE_ORDER_TYPE,
   isCutOrderType,
   isRetailCutOrderType,
   SOUTH_ORDER_TYPE,
@@ -45,11 +48,17 @@ import {
   getAllocatedQtyFromMap,
   duplicateLineStt,
   orderDacDoLiRealNumber,
+  resolveOrderRegion,
+  orderTypeOptionsForRegion,
+  resolveOrderTypeFromRegion,
+  filterOrderProductsByRegion,
+  type OrderRegion,
   type OrderProductOption,
   type OrderProductConversion,
   type StaffOption,
   type CustomerOption
 } from '../_shared/orderHelpers';
+import { useAccessControl } from '../../app/accessControl';
 import { catalogWeightLi, resolveOrderDoLiDmField } from './dacDoLiDm';
 import { detectOrderLineWidthMismatch, doLiDmWeightScale, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, buildSouthOrderProductAmis, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, replaceDoLiTokenInTenGhep, replaceMangInName, seedProductionSpecs, stripDinhMucKgSegment, hasZemInName, stripDoLiDmLiSegment } from '../../utils/productProductionName';
 import {
@@ -110,15 +119,48 @@ interface OrderRowExt extends OrderRow {
   khu_vuc?: string;
 }
 
-const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[1520px]';
-const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1760px]';
+const ORDER_PRODUCT_TABLE_MIN_WIDTH = 'min-w-[980px]';
+const ORDER_PRODUCTION_TABLE_MIN_WIDTH = 'min-w-[1100px]';
 const ORDER_SOUTH_TABLE_MIN_WIDTH = 'min-w-[2500px]';
 const ORDER_MIEN_NAM_TABLE_MIN_WIDTH = 'min-w-[2800px]';
-export const PRODUCTION_ORDER_TYPE = 'Đơn sản xuất';
-const orderProductGridClass =
-  'grid-cols-[9.5rem_minmax(9.5rem,1.05fr)_minmax(12rem,1.35fr)_minmax(22rem,2.5fr)_6rem_minmax(7rem,0.9fr)_5rem_7rem_4.75rem_5.75rem_5.25rem_5.25rem_5.25rem_6.5rem]';
-const orderProductionProductGridClass =
-  'grid-cols-[9.5rem_minmax(9rem,1fr)_minmax(11rem,1.25fr)_minmax(22rem,2.5fr)_6rem_minmax(6.5rem,0.85fr)_5rem_7rem_4.5rem_4.5rem_4.5rem_5rem_5.75rem_5rem_5rem_5rem_6.5rem]';
+export { PRODUCTION_ORDER_TYPE };
+/** Dòng 1 đơn thường/SX: STT | Mã AMIS | Tên SP | Màng | Ghi chú | actions — Tên SX nằm riêng ngay trên hàng ĐVT/SL/KG. */
+const orderProductRow1GridClass =
+  'grid-cols-[9.5rem_minmax(10rem,1.1fr)_minmax(14rem,1.6fr)_6.5rem_minmax(10rem,1.2fr)_5.5rem]';
+/** Dòng qty đơn thường: indent | SL lệnh SX | ĐVT | SL | TL 1 SP | KG | M2 | M dài */
+const orderProductRow2GridClass =
+  'grid-cols-[9.5rem_7.5rem_5.5rem_6.5rem_minmax(8rem,1fr)_7rem_5.5rem_5.5rem]';
+/** Dòng 1 đơn SX — cùng hàng 1; dòng qty thêm Bắc/Trung/Nam. */
+const orderProductionRow1GridClass = orderProductRow1GridClass;
+const orderProductionRow2GridClass =
+  'grid-cols-[9.5rem_7.5rem_5.5rem_4.5rem_4.5rem_4.5rem_6rem_minmax(8rem,1fr)_7rem_5.5rem_5.5rem]';
+/** Hàng Tên sản xuất full-width ngay trên ĐVT/SL/KG. */
+const orderProductNameRowGridClass = 'grid-cols-[9.5rem_minmax(0,1fr)]';
+const orderLineFieldLabelClass = 'block text-[10px] font-black uppercase tracking-wider text-zinc-500';
+
+function OrderLineField({
+  label,
+  required,
+  className = '',
+  children
+}: {
+  label: string;
+  required?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`col-span-1 min-w-0 space-y-1 ${className}`}>
+      <span className={orderLineFieldLabelClass}>
+        {label}
+        {required ? ' *' : ''}
+      </span>
+      {children}
+    </div>
+  );
+}
+const orderProductGridClass = orderProductRow1GridClass;
+const orderProductionProductGridClass = orderProductionRow1GridClass;
 const orderSouthProductGridClass =
   'grid-cols-[9.5rem_minmax(9rem,1fr)_minmax(22rem,2.5fr)_7rem_5rem_6rem_8.5rem_6rem_4.5rem_4.5rem_4.5rem_5rem_6rem_6rem_6rem_6.5rem_6.5rem_5rem_minmax(8rem,1fr)_5rem_6.5rem]';
 const orderMienNamProductGridClass =
@@ -370,7 +412,7 @@ export type OrderFormState = {
 
 const emptyOrderForm = (): OrderFormState => ({
   orderCode: '',
-  orderType: ORDER_TYPE_OPTIONS[0],
+  orderType: SALE_ORDER_TYPE,
   staffName: '',
   customer: '',
   productLines: [newOrderProductFormLine()],
@@ -378,7 +420,7 @@ const emptyOrderForm = (): OrderFormState => ({
   status: ORDER_STATUS_DEFAULT,
   createdAt: new Date().toISOString().slice(0, 10),
   deliveryDate: '',
-  khu_vuc: ''
+  khu_vuc: 'Miền Bắc'
 });
 
 function reorderList<T>(items: T[], from: number, to: number): T[] {
@@ -493,6 +535,9 @@ function OrderProductLineShell({
   selected,
   dragging,
   gridTemplateClass,
+  nameRow,
+  secondRowGridClass,
+  secondRow,
   onSelect,
   onDelete,
   onMoveUp,
@@ -512,6 +557,11 @@ function OrderProductLineShell({
   selected: boolean;
   dragging: boolean;
   gridTemplateClass: string;
+  /** Tên sản xuất full-width, nằm ngay phía trên hàng ĐVT/SL/KG. */
+  nameRow?: React.ReactNode;
+  /** Khi có: mỗi SP = nhiều dòng (identity → tên → ĐVT/SL/KG). */
+  secondRowGridClass?: string;
+  secondRow?: React.ReactNode;
   onSelect: () => void;
   onDelete: () => void;
   onMoveUp: () => void;
@@ -526,6 +576,91 @@ function OrderProductLineShell({
   onDragEnd: () => void;
   children: React.ReactNode;
 }) {
+  const sttCell = (
+    <div
+      draggable={total > 1}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onClick={event => event.stopPropagation()}
+      title="Kéo để đổi thứ tự"
+      className="flex h-11 cursor-grab items-center gap-1 active:cursor-grabbing"
+    >
+      <GripVertical className="h-4 w-4 shrink-0 text-zinc-400" />
+      <span className="text-xs font-black tabular-nums text-zinc-500">{index + 1}</span>
+      {moveButtonsInStt ? (
+        <span className="ml-auto flex flex-col gap-0.5">
+          <button
+            type="button"
+            title="Chuyển lên"
+            disabled={index === 0}
+            className="inline-flex h-5 w-5 items-center justify-center rounded border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-30"
+            onClick={event => {
+              event.stopPropagation();
+              onMoveUp();
+            }}
+          >
+            <ArrowUp className="h-3 w-3" />
+          </button>
+          <button
+            type="button"
+            title="Chuyển xuống"
+            disabled={index === total - 1}
+            className="inline-flex h-5 w-5 items-center justify-center rounded border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-30"
+            onClick={event => {
+              event.stopPropagation();
+              onMoveDown();
+            }}
+          >
+            <ArrowDown className="h-3 w-3" />
+          </button>
+        </span>
+      ) : null}
+      {onCreateProduct ? (
+        <button
+          type="button"
+          title="Thêm sản phẩm mới từ thông số của dòng này"
+          disabled={createProductDisabled}
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-sky-300 bg-sky-50 text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-40"
+          onClick={event => {
+            event.stopPropagation();
+            onCreateProduct();
+          }}
+        >
+          <PackagePlus className="h-4 w-4" />
+          <span className="sr-only">Thêm sản phẩm</span>
+        </button>
+      ) : null}
+      {moveButtonsInStt && onDuplicate ? (
+        <button
+          type="button"
+          title="Thêm dòng giống sản phẩm này ở bên dưới"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100"
+          onClick={event => {
+            event.stopPropagation();
+            onDuplicate();
+          }}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          <span className="sr-only">Nhân bản dòng bên dưới</span>
+        </button>
+      ) : null}
+    </div>
+  );
+
+  const actionsCell = (
+    <div className="flex justify-end self-center">
+      <OrderProductActions
+        index={index}
+        total={total}
+        onDelete={onDelete}
+        onMoveUp={onMoveUp}
+        onMoveDown={onMoveDown}
+        onDuplicate={onDuplicate}
+        moveButtonsInStt={moveButtonsInStt}
+      />
+    </div>
+  );
+
   return (
     <div
       onDragOver={onDragOver}
@@ -538,88 +673,33 @@ function OrderProductLineShell({
       }}
       className={`group rounded-lg ${selected ? 'bg-red-50/70' : ''} ${dragging ? 'opacity-70' : ''}`}
     >
-      <RepeatableLineRow gridTemplateClass={gridTemplateClass} className="!py-2 first:!pt-2 last:!pb-2">
-        <div
-          draggable={total > 1}
-          onDragStart={onDragStart}
-          onDragEnd={onDragEnd}
-          onClick={event => event.stopPropagation()}
-          title="Kéo để đổi thứ tự"
-          className="flex h-11 cursor-grab items-center gap-1 active:cursor-grabbing"
-        >
-          <GripVertical className="h-4 w-4 shrink-0 text-zinc-400" />
-          <span className="text-xs font-black tabular-nums text-zinc-500">{index + 1}</span>
-          {moveButtonsInStt ? (
-            <span className="ml-auto flex flex-col gap-0.5">
-              <button
-                type="button"
-                title="Chuyển lên"
-                disabled={index === 0}
-                className="inline-flex h-5 w-5 items-center justify-center rounded border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-30"
-                onClick={event => {
-                  event.stopPropagation();
-                  onMoveUp();
-                }}
-              >
-                <ArrowUp className="h-3 w-3" />
-              </button>
-              <button
-                type="button"
-                title="Chuyển xuống"
-                disabled={index === total - 1}
-                className="inline-flex h-5 w-5 items-center justify-center rounded border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-30"
-                onClick={event => {
-                  event.stopPropagation();
-                  onMoveDown();
-                }}
-              >
-                <ArrowDown className="h-3 w-3" />
-              </button>
-            </span>
+      {secondRow || nameRow ? (
+        <div className="space-y-1.5 py-2">
+          <div className={`grid items-start gap-2 ${gridTemplateClass}`}>
+            {sttCell}
+            {children}
+            {actionsCell}
+          </div>
+          {nameRow ? (
+            <div className={`grid items-start gap-2 ${orderProductNameRowGridClass}`}>
+              <div aria-hidden className="min-w-0" />
+              <div className="min-w-0">{nameRow}</div>
+            </div>
           ) : null}
-          {onCreateProduct ? (
-            <button
-              type="button"
-              title="Thêm sản phẩm mới từ thông số của dòng này"
-              disabled={createProductDisabled}
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-sky-300 bg-sky-50 text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-40"
-              onClick={event => {
-                event.stopPropagation();
-                onCreateProduct();
-              }}
-            >
-              <PackagePlus className="h-4 w-4" />
-              <span className="sr-only">Thêm sản phẩm</span>
-            </button>
-          ) : null}
-          {moveButtonsInStt && onDuplicate ? (
-            <button
-              type="button"
-              title="Thêm dòng giống sản phẩm này ở bên dưới"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100"
-              onClick={event => {
-                event.stopPropagation();
-                onDuplicate();
-              }}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span className="sr-only">Nhân bản dòng bên dưới</span>
-            </button>
+          {secondRow ? (
+            <div className={`grid items-start gap-2 ${secondRowGridClass || ''}`}>
+              <div aria-hidden className="min-w-0" />
+              {secondRow}
+            </div>
           ) : null}
         </div>
-        {children}
-        <div className="flex justify-end self-center">
-          <OrderProductActions
-            index={index}
-            total={total}
-            onDelete={onDelete}
-            onMoveUp={onMoveUp}
-            onMoveDown={onMoveDown}
-            onDuplicate={onDuplicate}
-            moveButtonsInStt={moveButtonsInStt}
-          />
-        </div>
-      </RepeatableLineRow>
+      ) : (
+        <RepeatableLineRow gridTemplateClass={gridTemplateClass} className="!py-2 first:!pt-2 last:!pb-2">
+          {sttCell}
+          {children}
+          {actionsCell}
+        </RepeatableLineRow>
+      )}
     </div>
   );
 }
@@ -1273,13 +1353,16 @@ export function orderToForm(order: OrderRow): OrderFormState {
         : ORDER_STATUS_DEFAULT,
     createdAt: orderCreatedAtToInput(order.createdAt || order.orderDate),
     deliveryDate: order.deliveryDate || '',
-    khu_vuc: order.khu_vuc || ''
+    khu_vuc: resolveOrderRegion(orderType, order.khu_vuc)
   };
 }
 
 export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const { canCreate, canEdit, canDelete } = useTabAccess('orders');
   const { canCreate: canCreateProduct } = useTabAccess('products');
+  const { canView, isAdmin } = useAccessControl();
+  /** Quản Đốc (hoặc admin) thấy Đơn sản xuất ở cả miền Bắc và Nam. */
+  const canSeeProductionOrder = isAdmin || canView('factory-quan-doc');
   const [isPreparingProduct, setIsPreparingProduct] = useState(false);
   const productPreparation = useRef(0);
   const [productCreation, setProductCreation] = useState<{
@@ -1714,7 +1797,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     });
   };
 
-  /** Ô Tên sản xuất: dropdown mở ngược lên trên, mục đang chọn viền vàng/chữ vàng đậm trên nền vàng. */
+  /** Ô Tên sản xuất: hiện 2 dòng chữ, dropdown mở lên, mục đang chọn viền vàng. */
   const renderProductionNameSelect = (line: OrderProductFormLine) => (
     <SearchableSelect
       value={line.productionName}
@@ -1730,7 +1813,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       showAllWhenQueryMatchesSelection
       maxResults={ORDER_AMIS_SEARCH_MAX_RESULTS}
       selectedOptionClassName="bg-yellow-50 font-black text-yellow-800 ring-2 ring-inset ring-yellow-400"
-      inputClassName={orderFieldClass}
+      inputClassName={`${orderFieldClass} h-auto min-h-[3.25rem] items-start py-1.5`}
+      selectedTextClassName="line-clamp-2 whitespace-normal break-words text-left leading-snug"
       getLabel={item => String(item)}
       getValue={item => String(item)}
       allowEmpty
@@ -1838,14 +1922,38 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     }));
   };
 
+  const changeOrderRegion = (regionValue: string) => {
+    const region = (ORDER_REGION_OPTIONS as readonly string[]).includes(regionValue)
+      ? (regionValue as OrderRegion)
+      : resolveOrderRegion('', regionValue);
+    setOrderForm(prev => {
+      const nextType = resolveOrderTypeFromRegion(region, prev.orderType, canSeeProductionOrder);
+      const regionChanged = prev.khu_vuc !== region;
+      const typeChanged = prev.orderType !== nextType;
+      return {
+        ...prev,
+        khu_vuc: region,
+        orderType: nextType,
+        productLines: regionChanged || typeChanged
+          ? prev.productLines.map(line => ({ ...line, shouldRecalculateConversion: true }))
+          : prev.productLines
+      };
+    });
+  };
+
   const changeOrderType = (orderType: string) => {
-    setOrderForm(prev => ({
-      ...prev,
-      orderType,
-      productLines: prev.orderType === orderType
-        ? prev.productLines
-        : prev.productLines.map(line => ({ ...line, shouldRecalculateConversion: true }))
-    }));
+    setOrderForm(prev => {
+      const region = resolveOrderRegion(prev.orderType, prev.khu_vuc);
+      const nextType = resolveOrderTypeFromRegion(region, orderType, canSeeProductionOrder);
+      return {
+        ...prev,
+        khu_vuc: region,
+        orderType: nextType,
+        productLines: prev.orderType === nextType
+          ? prev.productLines
+          : prev.productLines.map(line => ({ ...line, shouldRecalculateConversion: true }))
+      };
+    });
   };
 
   const moveProductLine = (from: number, to: number) => {
@@ -2342,6 +2450,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     const payload = {
       orderCode: orderForm.orderCode.trim(),
       orderType: orderForm.orderType,
+      khu_vuc: resolveOrderRegion(orderForm.orderType, orderForm.khu_vuc),
       staffName: orderForm.staffName,
       customer: orderForm.customer,
       products: withNormalizedProductStt(productsWithConversion),
@@ -2483,6 +2592,15 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const isFormSouthOrder = orderForm.orderType === SOUTH_ORDER_TYPE;
   const isFormCutLikeOrder = isCutOrderType(orderForm.orderType) || isFormSouthOrder;
   const isFormProductionOrder = orderForm.orderType === PRODUCTION_ORDER_TYPE;
+  const formRegion = resolveOrderRegion(orderForm.orderType, orderForm.khu_vuc);
+  const formOrderTypeOptions = useMemo(
+    () => orderTypeOptionsForRegion(formRegion, canSeeProductionOrder),
+    [formRegion, canSeeProductionOrder]
+  );
+  const regionProductOptions = useMemo(
+    () => filterOrderProductsByRegion(productOptions, formRegion),
+    [productOptions, formRegion]
+  );
   const productGridClass = isFormSouthOrder
     ? orderMienNamProductGridClass
     : isFormCutLikeOrder
@@ -2507,8 +2625,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     .join('|')}`;
 
   /** Ô readonly "SL lệnh SX": tổng SL đã lập lệnh SX cho dòng đơn (tra map memo). */
-  const renderAllocatedQtyCell = (value: number) => (
-    <div className="col-span-1 min-w-0">
+  const renderAllocatedQtyCell = (value: number, withLabel = false) => {
+    const input = (
       <input
         value={formatNumber(value, 3)}
         readOnly
@@ -2516,14 +2634,22 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         className={`${orderFieldClass} bg-yellow-50 text-right font-black text-yellow-800 ring-2 ring-inset ring-yellow-400`}
         placeholder="0"
       />
-    </div>
-  );
+    );
+    return withLabel ? (
+      <OrderLineField label="SL lệnh SX">{input}</OrderLineField>
+    ) : (
+      <div className="col-span-1 min-w-0">{input}</div>
+    );
+  };
 
   const renderProductLineShell = (
     line: OrderProductFormLine,
     index: number,
     gridTemplateClass: string,
-    children: React.ReactNode
+    children: React.ReactNode,
+    secondRow?: React.ReactNode,
+    secondRowGridClass?: string,
+    nameRow?: React.ReactNode
   ) => (
     <OrderProductLineShell
       key={line.key}
@@ -2532,6 +2658,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       selected={selectedProductLineKey === line.key}
       dragging={dragProductIndex === index}
       gridTemplateClass={gridTemplateClass}
+      nameRow={nameRow}
+      secondRow={secondRow}
+      secondRowGridClass={secondRowGridClass}
       onSelect={() => setSelectedProductLineKey(current => (current === line.key ? current : line.key))}
       onDelete={() => removeProductLine(line.key)}
       onMoveUp={() => moveProductLine(index, index - 1)}
@@ -2597,8 +2726,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               </div>
             )}
             <div className="min-h-0 flex-1 overflow-y-auto">
-              <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4 sm:p-5">
-              <label className="space-y-1.5">
+              <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-7 sm:p-5">
+              {/* Dòng 1: thông tin đơn gọn */}
+              <label className="space-y-1">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Mã đơn *</span>
                 <input
                   value={orderForm.orderCode}
@@ -2606,12 +2736,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   readOnly={formMode === 'add'}
                   className={orderFieldClass}
                   placeholder="DH001"
+                  title={formMode === 'add' ? 'Mã tự tăng theo thứ tự DH001, DH002…' : undefined}
                 />
-                {formMode === 'add' ? (
-                  <p className="text-[11px] font-semibold text-zinc-400">Mã tự tăng theo thứ tự DH001, DH002, DH003...</p>
-                ) : null}
               </label>
-              <label className="space-y-1.5">
+              <label className="space-y-1">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày tạo *</span>
                 <input
                   type="date"
@@ -2620,16 +2748,29 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   className={orderFieldClass}
                 />
               </label>
-              <label className="space-y-1.5">
+              <label className="space-y-1">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày giao hàng</span>
                 <input type="date" value={orderForm.deliveryDate} onChange={e => setOrderForm(prev => ({ ...prev, deliveryDate: e.target.value }))} className={orderFieldClass} />
               </label>
-              <label className="space-y-1.5">
+              <label className="space-y-1">
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Miền *</span>
+                <SearchableSelect
+                  value={formRegion}
+                  onChange={changeOrderRegion}
+                  options={[...ORDER_REGION_OPTIONS]}
+                  placeholder="Chọn miền"
+                  getLabel={item => String(item)}
+                  getValue={item => String(item)}
+                  allowEmpty={false}
+                  comboboxMode
+                />
+              </label>
+              <label className="space-y-1">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Loại đơn</span>
                 <SearchableSelect
                   value={orderForm.orderType}
                   onChange={changeOrderType}
-                  options={[...ORDER_TYPE_OPTIONS]}
+                  options={formOrderTypeOptions}
                   placeholder="Chọn loại đơn"
                   getLabel={item => String(item)}
                   getValue={item => String(item)}
@@ -2637,7 +2778,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   comboboxMode
                 />
               </label>
-              <label className="space-y-1.5">
+              <label className="space-y-1">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Trạng thái</span>
                 <SearchableSelect
                   value={orderForm.status}
@@ -2648,11 +2789,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   getValue={item => String(item)}
                   allowEmpty={false}
                 />
-                {formMode === 'add' ? (
-                  <p className="text-[11px] font-semibold text-zinc-400">Mặc định: {ORDER_STATUS_DEFAULT}</p>
-                ) : null}
               </label>
-              <label className="space-y-1.5">
+              <label className="space-y-1">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Nhân viên</span>
                 <SearchableSelect
                   value={orderForm.staffName}
@@ -2670,7 +2808,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   allowCustomValue={false}
                 />
               </label>
-              <label className="space-y-1.5 sm:col-span-2">
+              {/* Dòng 2: khách hàng + ghi chú */}
+              <label className="space-y-1 sm:col-span-2 xl:col-span-3">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Khách hàng *</span>
                 <Select2
                   value={orderForm.customer}
@@ -2694,27 +2833,22 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                     </option>
                   ))}
                 </Select2>
-                {!isLoadingLookups && customerOptions.length === 0 ? (
-                  <span className="block text-[11px] font-semibold text-amber-700">
-                    Chưa có khách hàng trong danh mục /khach-hang.
-                  </span>
-                ) : null}
               </label>
 
-              <label className="col-span-1 space-y-1.5 sm:col-span-2 xl:col-span-4">
+              <label className="space-y-1 sm:col-span-2 xl:col-span-4">
                 <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú đơn hàng</span>
-                <textarea value={orderForm.note} onChange={e => setOrderForm(prev => ({ ...prev, note: e.target.value }))} className={`${orderFieldClass} min-h-20 py-2`} placeholder="Nhập ghi chú đơn hàng" />
+                <textarea value={orderForm.note} onChange={e => setOrderForm(prev => ({ ...prev, note: e.target.value }))} className={`${orderFieldClass} min-h-11 py-2`} placeholder="Nhập ghi chú đơn hàng" />
               </label>
 
-              <div className="col-span-1 min-w-0 sm:col-span-2 xl:col-span-4">
+              <div className="col-span-1 min-w-0 sm:col-span-2 xl:col-span-7">
               <div className="max-h-[65vh] overflow-auto">
               <div className={isFormProductionOrder ? ORDER_PRODUCTION_TABLE_MIN_WIDTH : isFormSouthOrder ? ORDER_MIEN_NAM_TABLE_MIN_WIDTH : isFormCutLikeOrder ? ORDER_SOUTH_TABLE_MIN_WIDTH : ORDER_PRODUCT_TABLE_MIN_WIDTH}>
               <RepeatableLinesBlock
                 title="Sản phẩm"
                 required
-                showColumnHeaders
-                alwaysShowColumnHeaders
-                stickyColumnHeaders
+                showColumnHeaders={isFormCutLikeOrder}
+                alwaysShowColumnHeaders={isFormCutLikeOrder}
+                stickyColumnHeaders={isFormCutLikeOrder}
                 linesClassName="flex flex-col gap-2"
                 gridTemplateClass={productGridClass}
                 onAdd={() =>
@@ -2773,42 +2907,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         { key: 'lsxQty', label: 'SL lệnh SX' },
                         { key: 'actions', label: '' }
                       ]
-                    : isFormProductionOrder
-                      ? [
-                          { key: 'stt', label: 'STT' },
-                          { key: 'code', label: 'Mã AMIS', required: true },
-                          { key: 'name', label: 'Tên sản phẩm' },
-                          { key: 'productionName', label: 'Tên sản xuất' },
-                          { key: 'mang', label: 'Màng' },
-                          { key: 'note', label: 'Ghi chú' },
-                          { key: 'lsxQty', label: 'SL lệnh SX' },
-                          { key: 'unit', label: 'ĐVT' },
-                          { key: 'bac', label: 'Bắc' },
-                          { key: 'trung', label: 'Trung' },
-                          { key: 'nam', label: 'Nam' },
-                          { key: 'qty', label: 'SL (tổng)', required: true },
-                          { key: 'tl1Sp', label: 'Trọng lượng 1 SP' },
-                          { key: 'kg', label: 'KG (nhập)' },
-                          { key: 'm2', label: 'M2' },
-                          { key: 'mdai', label: 'M dài' },
-                          { key: 'actions', label: '' }
-                        ]
-                      : [
-                        { key: 'stt', label: 'STT' },
-                        { key: 'code', label: 'Mã AMIS', required: true },
-                        { key: 'name', label: 'Tên sản phẩm' },
-                        { key: 'productionName', label: 'Tên sản xuất' },
-                        { key: 'mang', label: 'Màng' },
-                        { key: 'note', label: 'Ghi chú' },
-                        { key: 'lsxQty', label: 'SL lệnh SX' },
-                        { key: 'unit', label: 'ĐVT' },
-                        { key: 'qty', label: 'SL', required: true },
-                        { key: 'tl1Sp', label: 'Trọng lượng 1 SP' },
-                        { key: 'kg', label: 'KG (nhập)' },
-                        { key: 'm2', label: 'M2' },
-                        { key: 'mdai', label: 'M dài' },
-                        { key: 'actions', label: '' }
-                      ]
+                    : []
                 }
               >
                 {isFormCutLikeOrder
@@ -3197,7 +3296,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                     index,
                     productGridClass,
                     <>
-                    <div className="min-w-0">
+                      <OrderLineField label="Mã AMIS" required>
                         <SearchableSelect
                           value={line.shouldRecalculateConversion
                             ? (matchedLineProduct?.id || line.productId || line.productCode)
@@ -3217,8 +3316,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           getOptionLabel={getOrderAmisOptionLabel}
                           resolveSelectedItem={resolveOrderAmisSelectedItem}
                         />
-                      </div>
-                      <div className="min-w-0">
+                      </OrderLineField>
+                      <OrderLineField label="Tên sản phẩm">
                         <input
                           value={line.productName}
                           readOnly={Boolean(matchedLineProduct)}
@@ -3226,11 +3325,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           className={`${orderFieldClass} ${matchedLineProduct ? 'bg-zinc-50 text-zinc-800' : 'bg-white'}`}
                           placeholder={matchedLineProduct ? '' : 'Tự động theo mã SP'}
                         />
-                      </div>
-                      <div className="min-w-0">
-                        {renderProductionNameSelect(line)}
-                      </div>
-                      <div className="col-span-1 min-w-0">
+                      </OrderLineField>
+                      <OrderLineField label="Màng">
                         <input
                           type="text"
                           value={line.mang ?? ''}
@@ -3249,28 +3345,30 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           placeholder="Màng"
                           title="Màng (để trống nếu không có, tự đổi trong tên sản xuất)"
                         />
-                      </div>
-                      <div className="min-w-0">
+                      </OrderLineField>
+                      <OrderLineField label="Ghi chú">
                         <input
                           value={line.note}
                           onChange={e => updateProductLine(line.key, { note: e.target.value })}
                           className={orderFieldClass}
                           placeholder="Ghi chú"
                         />
-                      </div>
+                      </OrderLineField>
+                    </>,
+                    <>
                       {renderAllocatedQtyCell(line.savedStt ? getAllocatedQtyFromMap(allocatedQtyMap, orderForm.orderCode, {
                         productId: line.productId || matchedLineProduct?.id,
                         productCode: line.productCode,
                         productionName: line.productionName,
                         tenGhep: line.tenGhep,
                         stt: duplicateLineStt(orderForm.productLines, index) ? line.savedStt : undefined
-                      }) : 0)}
-                      <div className="col-span-1 min-w-0">
+                      }) : 0, true)}
+                      <OrderLineField label="ĐVT">
                         {matchedLineProduct ? <select value={effectiveUnit} onChange={e => updateConversionProductLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateConversionProductLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
-                      </div>
+                      </OrderLineField>
                       {isFormProductionOrder ? (
                         <>
-                          <div className="col-span-1 min-w-0">
+                          <OrderLineField label="Bắc">
                             <OrderNumberInput
                               value={line.slBac ?? ''}
                               onChange={e => updateConversionProductLine(line.key, { slBac: e.target.value })}
@@ -3278,8 +3376,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               placeholder="0"
                               title="SL Bắc"
                             />
-                          </div>
-                          <div className="col-span-1 min-w-0">
+                          </OrderLineField>
+                          <OrderLineField label="Trung">
                             <OrderNumberInput
                               value={line.slTrung ?? ''}
                               onChange={e => updateConversionProductLine(line.key, { slTrung: e.target.value })}
@@ -3287,8 +3385,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               placeholder="0"
                               title="SL Trung"
                             />
-                          </div>
-                          <div className="col-span-1 min-w-0">
+                          </OrderLineField>
+                          <OrderLineField label="Nam">
                             <OrderNumberInput
                               value={line.slNam ?? ''}
                               onChange={e => updateConversionProductLine(line.key, { slNam: e.target.value })}
@@ -3296,8 +3394,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               placeholder="0"
                               title="SL Nam"
                             />
-                          </div>
-                          <div className="col-span-1 min-w-0">
+                          </OrderLineField>
+                          <OrderLineField label="SL (tổng)" required>
                             <input
                               type="text"
                               value={regionQtyTotal !== null ? formatNumber(regionQtyTotal, 3) : ''}
@@ -3306,19 +3404,19 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               className={`${orderFieldClass} bg-zinc-50 text-right font-black`}
                               placeholder="Tự tính"
                             />
-                          </div>
+                          </OrderLineField>
                         </>
                       ) : (
-                        <div className="col-span-1 min-w-0">
+                        <OrderLineField label="SL" required>
                           <OrderNumberInput
                             value={line.quantity}
                             onChange={e => updateConversionProductLine(line.key, { quantity: e.target.value })}
                             className={`${orderFieldClass} bg-white`}
                             placeholder="0"
                           />
-                        </div>
+                        </OrderLineField>
                       )}
-                      <div className="col-span-1 min-w-0">
+                      <OrderLineField label="Trọng lượng 1 SP">
                         <input
                           type="text"
                           value={weightPerSp !== null ? formatNumber(truncateTo4Decimals(weightPerSp), 4) : ''}
@@ -3333,8 +3431,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           className={`${orderFieldClass} bg-zinc-50 text-right font-black tabular-nums`}
                           placeholder="—"
                         />
-                      </div>
-                      <div className="col-span-1 min-w-0">
+                      </OrderLineField>
+                      <OrderLineField label="KG (nhập)">
                         <input
                           type="text"
                           inputMode="decimal"
@@ -3346,7 +3444,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           onChange={e => updateProductLine(line.key, {
                             tongKg: e.target.value,
                             manualTongKg: e.target.value.trim() !== '',
-                              manualFromSaved: false,
+                            manualFromSaved: false,
                             shouldRecalculateConversion: true
                           })}
                           onBlur={e => {
@@ -3355,7 +3453,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             updateProductLine(line.key, {
                               tongKg: next,
                               manualTongKg: next.trim() !== '',
-                                manualFromSaved: false,
+                              manualFromSaved: false,
                               shouldRecalculateConversion: true
                             });
                           }}
@@ -3365,24 +3463,29 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           placeholder="Nhập KG"
                           className="h-12 w-full rounded-lg border border-zinc-200 px-3 text-sm leading-6 font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                         />
-                      </div>
-                      <div className="col-span-1 min-w-0">
+                      </OrderLineField>
+                      <OrderLineField label="M2">
                         <input
                           type="text"
                           value={m2Value !== null ? formatNumber(m2Value, 3) : ''}
                           readOnly
                           className="h-12 w-full rounded-lg border border-zinc-200 px-3 text-sm leading-6 font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                         />
-                      </div>
-                      <div className="col-span-1 min-w-0">
+                      </OrderLineField>
+                      <OrderLineField label="M dài">
                         <input
                           type="text"
                           value={mdaiValue !== null ? formatNumber(mdaiValue, 3) : ''}
                           readOnly
                           className="h-12 w-full rounded-lg border border-zinc-200 px-3 text-sm leading-6 font-semibold text-zinc-800 outline-none focus:border-[#ef1b2d] focus:ring-2 focus:ring-red-500/10 bg-white"
                         />
-                      </div>
-                    </>
+                      </OrderLineField>
+                    </>,
+                    isFormProductionOrder ? orderProductionRow2GridClass : orderProductRow2GridClass,
+                    <div className="min-w-0 space-y-1">
+                      <span className={orderLineFieldLabelClass}>Tên sản xuất</span>
+                      {renderProductionNameSelect(line)}
+                    </div>
                   );
                 })}
               </RepeatableLinesBlock>
@@ -3437,6 +3540,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 ['Mã đơn', viewingOrder.orderCode],
                 ['Ngày tạo', formatOrderCreatedAt(viewingOrder.createdAt)],
                 ['Ngày giao hàng', viewingOrder.deliveryDate ? formatOrderCreatedAt(viewingOrder.deliveryDate) : '-'],
+                ['Miền', resolveOrderRegion(viewingOrder.orderType, viewingOrder.khu_vuc)],
                 ['Loại đơn', viewingOrder.orderType],
                 ['Trạng thái', viewingOrder.status],
                 ['Nhân viên', viewingOrder.staffName],
@@ -3628,8 +3732,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             <TableHeadCell className="min-w-[140px]">Ghi chú chung</TableHeadCell>
             <TableHeadCell>Nhân viên</TableHeadCell>
             <TableHeadCell>Khách hàng</TableHeadCell>
-            <TableHeadCell className="min-w-[520px]">
-              <div className="grid grid-cols-[2rem_minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px_64px] gap-2">
+            <TableHeadCell className="min-w-[560px]">
+              <div className="grid grid-cols-[2rem_minmax(120px,1.15fr)_minmax(140px,1.45fr)_64px_48px_56px] gap-2">
                 <span>STT</span>
                 <span>Mã SP</span>
                 <span>Tên SP / Tên ghép</span>
@@ -3682,9 +3786,14 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                   <td className="px-3 py-2.5 align-top">
                     {line ? (
                       <>
-                        <div className="grid grid-cols-[2rem_minmax(72px,0.9fr)_minmax(120px,1.6fr)_72px_56px_64px] gap-2 text-xs font-semibold text-zinc-700">
+                        <div className="grid grid-cols-[2rem_minmax(120px,1.15fr)_minmax(140px,1.45fr)_64px_48px_56px] gap-2 text-xs font-semibold text-zinc-700">
                           <span className="font-black tabular-nums text-zinc-500">{line.stt || index + 1}</span>
-                          <span className="font-black text-zinc-950">{line.productCode || '-'}</span>
+                          <span
+                            className="break-words font-black leading-snug text-zinc-950 [overflow-wrap:anywhere]"
+                            title={line.productCode || undefined}
+                          >
+                            {line.productCode || '-'}
+                          </span>
                           <span className="text-zinc-800">{line.tenGhep || '-'}</span>
                           <span className="text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
                           <span className="font-bold text-zinc-600">{line.unit || '-'}</span>

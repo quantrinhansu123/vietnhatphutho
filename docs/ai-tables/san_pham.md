@@ -39,7 +39,9 @@
 
 `ma_sp`, `ten_sp`, `ten_san_xuat`, `don_vi` (`m`, `m2`, `Tấm`), `nhom_vthh`, `ton_dau_ky`, `npl_phan_tram` (JSON NPL, mỗi dòng lưu thêm `ten_nvl_sx` tương ứng từ Kho NVL).
 
-**Mã AMIS mới (lệnh cắt lẻ kho):** `ma_amis` của dòng biến thể CHÍNH LÀ mã mới (hạ khổ/hạ li/hạ mét/dán tem, sinh bằng `buildMaAmisMoi` trong `src/utils/productProductionName.ts`, mỗi biến thể một dòng SP) + `ma_amis_cu` (mã chuẩn gốc để truy vết/tổng hợp). Migration `supabase-san-pham-ma-amis-cu.sql`. Lookup mã nhận `ma_sp/ma_amis/ma_sp_moi/ma_amis_cu`. Unique: `ma_amis + ten_sp + ten_san_xuat`.
+**Thứ tự danh sách hiển thị:** tăng dần theo **kg** (`tong_trong_luong` / `dinh_muc_kg`) rồi **số m** (`do_dai_m`) — `sortProductsByKgThenMeters` (`src/utils/productProductionName.ts`). Cùng luật trên dropdown Mã AMIS form đơn hàng (`normalizeOrderProducts` / `filterOrderProductsByRegion`).
+
+**Mã AMIS mới (lệnh cắt lẻ kho):** `ma_amis` của dòng biến thể CHÍNH LÀ mã mới (hạ khổ/hạ li/hạ mét/dán tem, sinh bằng `buildMaAmisMoi` trong `src/utils/productProductionName.ts`, mỗi biến thể một dòng SP) + `ma_amis_cu` (mã chuẩn gốc để truy vết/tổng hợp). Migration `supabase-san-pham-ma-amis-cu.sql`. Lookup mã nhận `ma_sp/ma_amis/ma_sp_moi/ma_amis_cu`. Unique: `ma_amis + ten_sp + ten_san_xuat` **hoặc** `ma_amis + ten_sp + ten_ghep`.
 
 Thông số sản xuất (migration `supabase-san-pham-thong-so-sx.sql` + `supabase-san-pham-tcmb-zem-so-song.sql` + `supabase-san-pham-mau-np-tcmn.sql` + `supabase-san-pham-do-dai-tam-tieu-chuan.sql`): `ten_goc`, `mau`, `np`, `tcmn`, `gia_re`, `off`, `do_li`, `do_li_dm` (**chỉ** `(đm n li)`), `dinh_muc_kg` (`(đm n kg)`), `do_dai_tam_tieu_chuan` (mét dài tấm tiêu chuẩn của ĐM kg Sóng, vd `6m` trong `ĐM 9.5KG/6M` — **không** phải `do_dai_m`), `zem`, `so_song`, `tcmb` (boolean), `kho_rong`, `do_dai_m`, `mang`, `hang_phe`.  
 **`mau`**: cột riêng. `Trắng` và `trắng sữa` là hai màu khác nhau; `trắng xứ` chuẩn hóa thành `trắng sữa`. Ghép tên lấy màu từ cột này, không cắt chữ `trắng` ra khỏi `trắng sữa`.  
@@ -72,9 +74,11 @@ Danh sách chỉ hiển thị `Thành phẩm`; mỗi sản phẩm là nhóm dòn
 - Mẫu gọn theo miền nam v2: `Mã AMIS`, `Tên sản phẩm`, `Tên sản xuất mới`, `Loại`, `ĐVT`, `Tên gốc` (chỉ loại: `NHỰA SÓNG` / `Tấm nhựa đặc` / `Tấm nhựa rỗng`), thông số SX (`ZEM`, `Số sóng`, `ĐM`, `Mét dài ĐM`, `Màu`…) — **không** cột tồn kho / lõi túi
 - Parser vẫn đọc file cũ (`Mã SP`, `Nhóm`, `Đơn vị`…); thiếu `Mã SP` thì lấy `Mã AMIS`; ưu tiên sheet tên `Sản phẩm`
 - Quy đổi: `productConversionExcel.ts` ưu tiên sheet `Import quy doi` (file 2 sheet Phú Thọ); đọc Excel `raw: true` — **không làm tròn** theo format ô
-- Catalog Excel cũng `raw: true` (`productCatalogExcel.ts`) — giữ đủ số lẻ trọng lượng / khổ
-- **Ô trống vẫn đẩy lên** (chỉ bắt buộc có Mã AMIS/Mã SP hoặc Tên)
-- Upsert theo `ma_sp` — API chặn trùng `ma_amis + ten_sp + ten_san_xuat` bằng truy vấn tồn tại trực tiếp trong DB
+- Catalog Excel cũng `raw: true` (`productCatalogExcel.ts`) — giữ đủ số lẻ trọng lượng / khổ (`cellToText` / `toPrecision(15)`)
+- **Ô trống khi cập nhật giữ nguyên DB** (`productCatalogRowToPayload(..., { forUpdate: true })` bỏ field tương ứng ô Excel trống). Thêm mới vẫn điền đủ field.
+- **Xem trước trước khi ghi:** modal báo thêm/cập nhật, mã trùng trong file (last-wins dòng cuối), cảnh báo cùng mã khác tên/tên SX; xác nhận mới gọi `POST /api/san-pham/import-batch` (chunk ~150).
+- **Hàng phế:** chỉ cột Excel hoặc marker tường minh trong tên SX (`resolveImportHangPhe` / Đặc+OFF); **không** suy từ token `NP`.
+- Upsert theo `ma_sp` — API chặn trùng `ma_amis + ten_sp + (ten_san_xuat hoặc ten_ghep)` bằng truy vấn tồn tại trực tiếp trong DB
 - Nếu DB còn unique `ma_amis`: chạy `supabase-san-pham-ma-amis-khong-unique.sql`
 - File mẫu cũ kiểu Tên NVL/Loại/Giá trị → báo lỗi hướng dẫn dùng mẫu danh mục
 - Định mức NVL riêng: **Mẫu định mức NVL** / **Nhập định mức NVL**

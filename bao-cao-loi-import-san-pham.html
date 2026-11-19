@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Báo cáo lỗi import sản phẩm</title>
+  <style>
+    :root {
+      --bg: #f4f4f5;
+      --card: #fff;
+      --text: #18181b;
+      --muted: #71717a;
+      --line: #e4e4e7;
+      --ok: #166534;
+      --ok-bg: #dcfce7;
+      --warn: #92400e;
+      --warn-bg: #fef3c7;
+      --bad: #9f1239;
+      --bad-bg: #ffe4e6;
+      --head: #09090b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.35rem;
+      font-weight: 700;
+    }
+    .meta {
+      margin: 0 0 20px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .card h2 {
+      margin: 0;
+      padding: 12px 16px;
+      font-size: 0.95rem;
+      border-bottom: 1px solid var(--line);
+      background: #fafafa;
+    }
+    .note {
+      padding: 12px 16px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    .wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: var(--head);
+      color: #fff;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:nth-child(even) td { background: #fafafa; }
+    .stt { width: 48px; font-weight: 700; color: var(--muted); }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .badge-ok { background: var(--ok-bg); color: var(--ok); }
+    .badge-warn { background: var(--warn-bg); color: var(--warn); }
+    .badge-bad { background: var(--bad-bg); color: var(--bad); }
+    code {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 0.8em;
+      background: #f4f4f5;
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+    ul { margin: 0; padding-left: 1.1rem; }
+    li + li { margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Tổng hợp lỗi và rủi ro khi import sản phẩm</h1>
+    <p class="meta">
+      Ngày rà soát: 18/11/2026 · Cập nhật trạng thái sửa: 19/11/2026 ·
+      Phạm vi: import danh mục SP và bảng quy đổi từ Excel/CSV
+    </p>
+
+    <section class="card">
+      <h2>Kết luận làm tròn số</h2>
+      <p class="note">
+        Importer không luôn giữ nguyên tuyệt đối mọi chữ số. Trước đây
+        <code>cellToText()</code> dùng <code>toPrecision(15)</code> — đã bỏ.
+        Parser hiện dùng <code>raw: false</code> + chuỗi thập phân đầy đủ.
+        Số thường như <code>1.23456</code> không bị ép về 2 chữ số;
+        nếu UI hiện <code>1,23</code> cần đối chiếu Excel → payload → DB → format hiển thị.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Bảng rủi ro / trạng thái sửa</h2>
+      <div class="wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Rủi ro</th>
+              <th>Ảnh hưởng</th>
+              <th>Hướng xử lý</th>
+              <th>Trạng thái</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="stt">1</td>
+              <td>
+                <strong>Mất độ chính xác số nhiều chữ số</strong>
+                <ul>
+                  <li>Trước: <code>toPrecision(15)</code></li>
+                  <li>Excel float cũng có thể mất chữ số trước khi đọc</li>
+                </ul>
+              </td>
+              <td>Trọng lượng, khổ, mét dài, hệ số quy đổi có thể lệch phần cuối</td>
+              <td>Bỏ <code>toPrecision</code>; ưu tiên chuỗi định dạng Excel</td>
+              <td><span class="badge badge-ok">Đã sửa</span></td>
+            </tr>
+            <tr>
+              <td class="stt">2</td>
+              <td>
+                <strong>Ô trống xóa giá trị đang có</strong>
+                <ul>
+                  <li>Update gửi field rỗng → API ghi <code>null</code></li>
+                </ul>
+              </td>
+              <td>File thiếu cột có thể xóa dữ liệu cũ ngoài ý muốn</td>
+              <td>Update bỏ field tương ứng ô Excel trống (<code>forUpdate: true</code>)</td>
+              <td><span class="badge badge-ok">Đã sửa</span></td>
+            </tr>
+            <tr>
+              <td class="stt">3</td>
+              <td>
+                <strong>Ghép nhầm sản phẩm theo mã</strong>
+                <ul>
+                  <li>Thiếu Mã SP → dùng Mã AMIS</li>
+                  <li>Cùng mã khác tên/tên SX</li>
+                  <li>Mã lặp trong file</li>
+                </ul>
+              </td>
+              <td>Cập nhật nhầm biến thể / ghi đè không kiểm soát</td>
+              <td>Preview cảnh báo; mã trùng last-wins (giữ dòng cuối)</td>
+              <td><span class="badge badge-ok">Đã sửa</span></td>
+            </tr>
+            <tr>
+              <td class="stt">4</td>
+              <td>
+                <strong>Tên sản xuất được dựng lại từ cột thông số</strong>
+              </td>
+              <td>Tên DB có thể khác chuỗi Excel nếu cột chi tiết mâu thuẫn</td>
+              <td>Giữ compose canonical; hiện tên SX sau ghép trên preview</td>
+              <td><span class="badge badge-warn">Theo thiết kế</span></td>
+            </tr>
+            <tr>
+              <td class="stt">5</td>
+              <td>
+                <strong>Nhầm độ li / ZEM / ĐM kg</strong>
+                <ul>
+                  <li>File cũ ghi (đm n kg) vào cột đm li</li>
+                  <li>Đặc/Rỗng không nhận ĐM kg</li>
+                </ul>
+              </td>
+              <td>Sai thông số sản xuất</td>
+              <td>Route đm kg; Đặc/Rỗng xóa ĐM kg — đã có trong parser</td>
+              <td><span class="badge badge-ok">Đã có sẵn</span></td>
+            </tr>
+            <tr>
+              <td class="stt">6</td>
+              <td>
+                <strong>Nhầm NP với Hàng phế</strong>
+              </td>
+              <td>Gán sai loại phế</td>
+              <td>Chỉ cột Excel hoặc marker tường minh; không suy từ token NP</td>
+              <td><span class="badge badge-ok">Đã sửa</span></td>
+            </tr>
+            <tr>
+              <td class="stt">7</td>
+              <td>
+                <strong>Import lưu một phần rồi mới báo lỗi</strong>
+                <ul>
+                  <li>Gửi từng dòng, không rollback</li>
+                  <li>Chưa có xem trước</li>
+                </ul>
+              </td>
+              <td>DB lệch một phần khi giữa chừng lỗi</td>
+              <td>Modal xem trước + <code>import-batch</code> theo chunk</td>
+              <td><span class="badge badge-ok">Đã sửa</span></td>
+            </tr>
+            <tr>
+              <td class="stt">8</td>
+              <td>
+                <strong>Danh mục và quy đổi là hai luồng riêng</strong>
+              </td>
+              <td>File danh mục không thay file quy đổi; dễ ghép sai biến thể</td>
+              <td>Giữ 2 nút import riêng; quy đổi khớp theo mã/tên/tên SX</td>
+              <td><span class="badge badge-warn">Theo thiết kế</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Checklist đối chiếu làm tròn (4 bước)</h2>
+      <div class="wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Bước</th>
+              <th>Nếu khác bước trước</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="stt">1</td>
+              <td>Giá trị thực trong ô Excel (không chỉ format hiển thị)</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td class="stt">2</td>
+              <td>Chuỗi sau <code>cellToText()</code> / payload trước API</td>
+              <td>Lỗi đọc / chuyển kiểu</td>
+            </tr>
+            <tr>
+              <td class="stt">3</td>
+              <td>Giá trị API / DB sau import</td>
+              <td>Lỗi API / schema</td>
+            </tr>
+            <tr>
+              <td class="stt">4</td>
+              <td>Giá trị hiển thị trên bảng sản phẩm</td>
+              <td>Lỗi định dạng UI</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Mã nguồn liên quan</h2>
+      <div class="wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Vai trò</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>src/utils/productCatalogExcel.ts</code></td>
+              <td>Parser danh mục, payload, kế hoạch import / preview</td>
+            </tr>
+            <tr>
+              <td><code>src/utils/productConversionExcel.ts</code></td>
+              <td>Parser bảng quy đổi</td>
+            </tr>
+            <tr>
+              <td><code>src/features/san-pham/index.tsx</code></td>
+              <td>UI xem trước + gọi <code>import-batch</code></td>
+            </tr>
+            <tr>
+              <td><code>server.ts</code></td>
+              <td>API cập nhật SP / import-batch</td>
+            </tr>
+            <tr>
+              <td><code>docs/ai-tables/san_pham.md</code></td>
+              <td>Quy ước dữ liệu và hướng dẫn import</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

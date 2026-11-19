@@ -36,6 +36,31 @@ export function resolveWorkshopType(nhomVthh: string): WorkshopType {
   return 'unknown';
 }
 
+const WORKSHOP_PX_SHORT_LABEL: Record<Exclude<WorkshopType, 'unknown'>, string> = {
+  song: 'Sóng',
+  dac: 'Đặc',
+  rong: 'Rỗng'
+};
+
+const WORKSHOP_PX_SHORT_ORDER = ['Sóng', 'Đặc', 'Rỗng'] as const;
+
+/** Nhãn ngắn Đặc / Rỗng / Sóng. Chuỗi không thuộc 3 phân xưởng thì trả về rỗng. */
+export function workshopPxShortLabel(value: string): string {
+  const type = resolveWorkshopType(value);
+  if (type === 'unknown') return '';
+  return WORKSHOP_PX_SHORT_LABEL[type];
+}
+
+/** Gom nhãn Đặc / Rỗng / Sóng, mỗi loại một lần, thứ tự Sóng → Đặc → Rỗng. */
+export function collectWorkshopPxLabels(sources: Array<string | null | undefined>): string[] {
+  const found = new Set<string>();
+  for (const source of sources) {
+    const label = workshopPxShortLabel(String(source || ''));
+    if (label) found.add(label);
+  }
+  return WORKSHOP_PX_SHORT_ORDER.filter(label => found.has(label));
+}
+
 export function roundWeight4(val: number): number {
   return Math.round(val * 10000) / 10000;
 }

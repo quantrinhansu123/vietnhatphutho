@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 import * as XLSX from 'xlsx';
 import {
   PRODUCT_CATALOG_EXCEL_HEADERS,
+  buildProductCatalogImportPlan,
+  cellToText,
   normalizeImportUnit,
   parseProductCatalogExcel,
   productCatalogRowToPayload,
+  resolveImportHangPhe,
   type ProductCatalogExcelRow
 } from './productCatalogExcel.ts';
 
@@ -53,6 +56,71 @@ function makeRow(patch: Partial<ProductCatalogExcelRow> = {}): ProductCatalogExc
     ...patch
   };
 }
+
+test('cellToText: không dùng toPrecision; giữ thập phân số thường', () => {
+  assert.equal(cellToText('1.23456'), '1.23456');
+  assert.equal(cellToText(1.23456), '1.23456');
+  assert.equal(cellToText(12), '12');
+  assert.equal(cellToText(''), '');
+});
+
+test('hangPhe: token NP đơn không suy thành hàng nguyên phế', () => {
+  assert.equal(
+    resolveImportHangPhe({
+      productionName: 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG - 1.2li - 4m',
+      group: 'TP; PX Sóng'
+    }),
+    ''
+  );
+  const payload = productCatalogRowToPayload(
+    makeRow({
+      code: 'STS06-1.2li- NP',
+      name: 'Tấm nhựa sóng',
+      productionName: 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG - 1.2li - 4m',
+      group: 'TP; PX Sóng'
+    })
+  );
+  assert.equal(payload.hangPhe, '');
+});
+
+test('update: ô trống không đẩy field để tránh xóa giá trị DB', () => {
+  const payload = productCatalogRowToPayload(
+    makeRow({
+      code: 'SP-KEEP',
+      name: 'SP giữ tồn',
+      productionName: 'Tấm nhựa đặc màu TRẮNG - STD - 2li - 1.22m - 9m',
+      group: 'TP; PX Đặc',
+      openingStock: '',
+      totalWeight: '',
+      hangPhe: ''
+    }),
+    { forUpdate: true }
+  );
+  assert.equal('openingStock' in payload, false);
+  assert.equal('totalWeight' in payload, false);
+  // Có tên SX → ghép lại thông số; hangPhe vẫn chỉ theo marker (không có thì rỗng nhưng có trong payload khi recomposite).
+  assert.ok('productionName' in payload);
+  assert.equal(payload.hangPhe, '');
+});
+
+test('import plan: báo mã trùng trong file và phân loại create/update', () => {
+  const plan = buildProductCatalogImportPlan(
+    [
+      makeRow({ code: 'SP-A', name: 'A1', productionName: 'Tên A1', group: 'TP; PX Đặc', rowNumber: 2 }),
+      makeRow({ code: 'SP-A', name: 'A2', productionName: 'Tên A2', group: 'TP; PX Đặc', rowNumber: 3 }),
+      makeRow({ code: 'SP-B', name: 'B1', productionName: 'Tên B1', group: 'TP; PX Đặc', rowNumber: 4 })
+    ],
+    [{ id: '11111111-1111-4111-8111-111111111111', code: 'SP-B', name: 'B cũ', productionName: 'Tên B cũ' }]
+  );
+  assert.equal(plan.createCount, 1);
+  assert.equal(plan.updateCount, 1);
+  assert.equal(plan.duplicateCodeGroups.length, 1);
+  assert.deepEqual(plan.duplicateCodeGroups[0].rowNumbers, [2, 3]);
+  const keptDup = plan.items.find(item => item.code === 'SP-A');
+  assert.equal(keptDup?.rowNumber, 3);
+  assert.equal(keptDup?.name, 'A2');
+  assert.ok(plan.items.some(item => item.action === 'update' && item.warnings.length > 0));
+});
 
 test('normalizeImportUnit: CUỘN, TẤM về Tấm', () => {
   assert.equal(normalizeImportUnit('CUỘN, TẤM'), 'Tấm');

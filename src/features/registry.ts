@@ -29,6 +29,7 @@ export type TableId =
   | 'nhat_ky_xe'
   | 'thu_tien_khach_hang'
   | 'cai_dat_thoi_gian'
+  | 'data_schema'
   | 'bao_cao_phoi_tron'
   | 'bang_tron_vat_tu_dinh_muc'
   | 'phieu_tron_thuc_te'
@@ -387,6 +388,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
       'src/features/cai-dat-thoi-gian/staffAssignments.ts',
       'src/features/nhan-su/menuViews.ts'
     ]
+  },
+  data_schema: {
+    table: '(information_schema / public.*)',
+    label: 'Data — quản lý bảng & cột Supabase',
+    sql: [],
+    apiPrefix: '/api/data',
+    serverLines: 'serverDataAdmin.ts + openSupabasePostgresClient trong server.ts',
+    appTab: 'data',
+    appLines: 'src/features/data/index.tsx',
+    components: ['src/features/data/index.tsx'],
+    utils: ['serverDataAdmin.ts']
   },
   bao_cao_phoi_tron: {
     table: 'bao_cao_phoi_tron',

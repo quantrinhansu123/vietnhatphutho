@@ -54,7 +54,7 @@ import calendarPlain3d from '@iconify-icons/fluent-emoji/calendar';
 import ledger3d from '@iconify-icons/fluent-emoji/ledger';
 import {
   FilePlus2, Layers, History, UsersRound, Building2, BriefcaseBusiness, Package, Cpu, Boxes,
-  ClipboardList, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, ArrowLeftRight, Scale, Settings,
+  ClipboardList, Database, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, ArrowLeftRight, Scale, Settings,
   CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity, Truck,
   ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, AlertTriangle, Coins, Scissors
 } from 'lucide-react';
@@ -364,6 +364,13 @@ export const ADMIN_MENU_ITEMS: MenuCardConfig[] = [
     icon: Settings,
     icon3d: toolbox3d,
     tab: 'settings'
+  },
+  {
+    title: 'Data',
+    desc: 'Quản lý bảng, cột schema public và dữ liệu trên Supabase (có DDL).',
+    icon: Database,
+    icon3d: books3d,
+    tab: 'data'
   },
   {
     title: 'Danh mục dùng chung',
@@ -1050,6 +1057,7 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Dashboard quản trị', tab: 'dashboard' },
       { label: 'Người dùng và phân quyền', tab: 'settings' },
       { label: 'Cấu hình hệ thống', tab: 'settings' },
+      { label: 'Data', tab: 'data' },
       { label: 'Danh mục dùng chung', tab: 'quan-tri', disabled: true }
     ]
   },
@@ -1225,6 +1233,8 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'damaged-goods-warehouse': { group: 'Kho', sub: 'Kho hàng hỏng' },
   'ton-kho': { group: 'Kho', sub: 'Tồn kho' },
   'settings': { group: 'Quản trị', sub: 'Người dùng và phân quyền / Cấu hình hệ thống' },
+  'data': { group: 'Quản trị', sub: 'Data — bảng & cột Supabase' },
+  'dashboard': { group: 'Quản trị', sub: 'Dashboard quản trị' },
   'hr': { group: 'HCNS', sub: 'Hồ sơ nhân sự' },
   'chi-phi-nhan-cong': { group: 'HCNS', sub: 'Chi phí nhân công' },
   'chi-phi-dien': { group: 'HCNS', sub: 'Chi phí điện' },
@@ -1239,8 +1249,7 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'factory-quan-doc': { group: 'Trang chủ', sub: 'Quản Đốc' },
   'factory-qc': { group: 'Trang chủ', sub: 'QC' },
   'factory-cong-nhan': { group: 'Trang chủ', sub: 'Sản xuất' },
-  'factory-kho': { group: 'Trang chủ', sub: 'Kho' },
-  'dashboard': { group: 'Quản trị', sub: 'Dashboard quản trị' }
+  'factory-kho': { group: 'Trang chủ', sub: 'Kho' }
 };
 
 export function getActivePageMeta(tab: AppTab): { group: string; sub: string } {

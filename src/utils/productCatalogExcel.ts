@@ -7,6 +7,8 @@ import {
   normalizeDinhMucKg,
   normalizeDoLiDm,
   normalizeDoLiToken,
+  extractHangPhe,
+  resolveDacHangPhe,
   resolveSongDoDaiTamTieuChuan,
   seedProductionSpecs,
   stripDuplicateLiFromTenGoc
@@ -156,8 +158,9 @@ function normalizeHeader(value: unknown) {
 }
 
 /** Giữ đủ chữ số từ ô số (raw:true); không lấy format hiển thị Excel. */
-function cellToText(value: unknown) {
+export function cellToText(value: unknown) {
   if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
   if (typeof value === 'number' && Number.isFinite(value)) {
     if (Object.is(value, -0)) return '0';
     if (Number.isInteger(value)) return String(value);
@@ -165,6 +168,7 @@ function cellToText(value: unknown) {
     if (/e/i.test(precise)) return String(value);
     return precise.replace(/(\.\d*?[1-9])0+$/u, '$1').replace(/\.0+$/u, '');
   }
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
   return String(value).trim();
 }
 
@@ -484,7 +488,30 @@ export function normalizeSoSongCell(value: unknown): string {
   return m ? String(Number(m[0])) : '';
 }
 
-export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
+/** Hàng phế: chỉ lấy cột Excel hoặc marker tường minh trong tên SX — không suy từ token NP. */
+export function resolveImportHangPhe(input: {
+  hangPheExcel?: string;
+  productionName?: string;
+  group?: string;
+}): string {
+  const fromExcel = String(input.hangPheExcel || '').trim();
+  if (fromExcel) {
+    if (/GIÁ\s+RẺ/iu.test(fromExcel)) return '(GIÁ RẺ)';
+    if (/^100%\s*NS$/iu.test(fromExcel)) return '100% NS';
+    if (/NS\s*Off/iu.test(fromExcel)) return 'hàng chạy 100% NS Off';
+    return fromExcel;
+  }
+  const productionName = String(input.productionName || '').trim();
+  const fromName = extractHangPhe(productionName);
+  if (classifyProductPxGroup(input.group || '') === 'dac') {
+    return resolveDacHangPhe(productionName, fromName);
+  }
+  return fromName;
+}
+
+export type ProductCatalogPayload = ReturnType<typeof buildProductCatalogPayload>;
+
+function buildProductCatalogPayload(row: ProductCatalogExcelRow) {
   const productionName = row.productionName.trim();
   const group = row.group.trim();
   const amisCode = (row.amisCode.trim() || row.code.trim());
@@ -534,8 +561,11 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
   const doDayM = (row.doDayM.trim() || seeded.doDayM).replace(/,/g, '.');
   const doDaiM = (row.doDaiM.trim() || seeded.doDaiM).replace(/,/g, '.');
   const mang = row.mang.trim() || seeded.mang;
-  // NP trong tên SX cũng phải điền Hàng phế để form giữ NP khi ghép lại tên.
-  const hangPhe = row.hangPhe.trim() || seeded.hangPhe || (seeded.np === 'NP' ? 'hàng nguyên phế' : '');
+  const hangPhe = resolveImportHangPhe({
+    hangPheExcel: row.hangPhe,
+    productionName,
+    group
+  });
   const unit = normalizeImportUnit(row.unit);
   // Canonical: chỉ lưu ten_san_xuat (chuỗi đã ghép) — đã bỏ ten_ghep trên danh mục SP.
   const composedName = composeProductionDisplayName(
@@ -560,8 +590,6 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
     },
     group
   );
-  // Chuỗi rỗng vẫn gửi lên — API map thành null / bỏ trống, không chặn import.
-  // Sóng: do_dai_m lấy đúng theo tên SX dòng (không max).
   return {
     code,
     newCode: row.newCode.trim(),
@@ -579,7 +607,7 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
     doDaiTamTieuChuan,
     zem,
     soSong,
-    tcmb: tcmb ? true : false,
+    tcmb: Boolean(tcmb),
     doDayM,
     doDaiM,
     mang,
@@ -592,5 +620,272 @@ export function productCatalogRowToPayload(row: ProductCatalogExcelRow) {
     openingStock: row.openingStock.trim(),
     minStock: row.minStock.trim(),
     description: row.description.trim()
+  };
+}
+
+/** Cột Excel tương ứng field payload — ô trống khi update thì bỏ field để giữ giá trị DB. */
+const UPDATE_OMIT_WHEN_EXCEL_EMPTY: Array<{
+  excel: keyof ProductCatalogExcelRow;
+  payload: Array<keyof ReturnType<typeof buildProductCatalogPayload>>;
+}> = [
+  { excel: 'newCode', payload: ['newCode'] },
+  { excel: 'amisOldCode', payload: ['amisOldCode'] },
+  { excel: 'name', payload: ['name'] },
+  { excel: 'nature', payload: ['nature'] },
+  { excel: 'group', payload: ['group'] },
+  { excel: 'unit', payload: ['unit'] },
+  { excel: 'totalWeight', payload: ['totalWeight'] },
+  { excel: 'wastePercent', payload: ['wastePercent'] },
+  { excel: 'rollWidth', payload: ['rollWidth'] },
+  { excel: 'rollLength', payload: ['rollLength'] },
+  { excel: 'coreWeight', payload: ['coreWeight'] },
+  { excel: 'bagWeight', payload: ['bagWeight'] },
+  { excel: 'plasticWeight', payload: ['plasticWeight'] },
+  { excel: 'openingStock', payload: ['openingStock'] },
+  { excel: 'inbound', payload: ['inbound'] },
+  { excel: 'outbound', payload: ['outbound'] },
+  { excel: 'stock', payload: ['stock'] },
+  { excel: 'minStock', payload: ['minStock'] },
+  { excel: 'origin', payload: ['origin'] },
+  { excel: 'description', payload: ['description'] },
+  { excel: 'tenGoc', payload: ['tenGoc'] },
+  { excel: 'mau', payload: ['mau'] },
+  { excel: 'giaRe', payload: ['giaRe'] },
+  { excel: 'tcmn', payload: ['tcmn'] },
+  { excel: 'doLi', payload: ['doLi'] },
+  { excel: 'doLiDm', payload: ['doLiDm'] },
+  { excel: 'dinhMucKg', payload: ['dinhMucKg'] },
+  { excel: 'doDaiTamTieuChuan', payload: ['doDaiTamTieuChuan'] },
+  { excel: 'zem', payload: ['zem'] },
+  { excel: 'soSong', payload: ['soSong'] },
+  { excel: 'tcmb', payload: ['tcmb'] },
+  { excel: 'doDayM', payload: ['doDayM'] },
+  { excel: 'doDaiM', payload: ['doDaiM'] },
+  { excel: 'mang', payload: ['mang'] },
+  { excel: 'hangPhe', payload: ['hangPhe'] }
+];
+
+function excelCellFilled(row: ProductCatalogExcelRow, key: keyof ProductCatalogExcelRow) {
+  return String(row[key] ?? '').trim() !== '';
+}
+
+/**
+ * Payload import danh mục.
+ * `forUpdate: true` → bỏ field tương ứng ô Excel trống (giữ giá trị đang có trong DB).
+ * Khi có `Tên sản xuất mới` thì vẫn ghép lại ten_san_xuat / ten_ghep + thông số suy từ tên.
+ */
+export function productCatalogRowToPayload(
+  row: ProductCatalogExcelRow,
+  options?: { forUpdate?: boolean }
+) {
+  const full = buildProductCatalogPayload(row);
+  if (!options?.forUpdate) return full;
+
+  const next: Record<string, unknown> = {
+    code: full.code,
+    amisCode: full.amisCode
+  };
+
+  const hasProductionName = excelCellFilled(row, 'productionName');
+  if (hasProductionName) {
+    next.productionName = full.productionName;
+    next.tenGhep = full.tenGhep;
+    next.tenGoc = full.tenGoc;
+    next.mau = full.mau;
+    next.giaRe = full.giaRe;
+    next.tcmn = full.tcmn;
+    next.doLi = full.doLi;
+    next.doLiDm = full.doLiDm;
+    next.dinhMucKg = full.dinhMucKg;
+    next.doDaiTamTieuChuan = full.doDaiTamTieuChuan;
+    next.zem = full.zem;
+    next.soSong = full.soSong;
+    next.tcmb = full.tcmb;
+    next.doDayM = full.doDayM;
+    next.doDaiM = full.doDaiM;
+    next.mang = full.mang;
+    next.hangPhe = full.hangPhe;
+  }
+
+  for (const rule of UPDATE_OMIT_WHEN_EXCEL_EMPTY) {
+    if (!excelCellFilled(row, rule.excel)) continue;
+    // productionName đã gắn cụm thông số ở trên; cột lẻ vẫn ghi đè khi có giá trị Excel.
+    for (const key of rule.payload) {
+      next[key] = full[key];
+    }
+  }
+
+  if (excelCellFilled(row, 'name')) next.name = full.name;
+  if (excelCellFilled(row, 'nature')) next.nature = full.nature;
+
+  return next as typeof full & { id?: string };
+}
+
+export type ProductCatalogImportExisting = {
+  id: string;
+  code: string;
+  amisCode?: string;
+  name: string;
+  productionName?: string;
+};
+
+export type ProductCatalogImportPlanItem = {
+  rowNumber: number;
+  action: 'create' | 'update' | 'skip';
+  code: string;
+  name: string;
+  productionName: string;
+  existingId?: string;
+  warnings: string[];
+  clearedFields: string[];
+  payload: Record<string, unknown>;
+};
+
+export type ProductCatalogImportPlan = {
+  items: ProductCatalogImportPlanItem[];
+  duplicateCodeGroups: Array<{ code: string; rowNumbers: number[] }>;
+  createCount: number;
+  updateCount: number;
+  skipCount: number;
+  warningCount: number;
+};
+
+function normalizeImportCodeKey(code: string) {
+  return String(code || '')
+    .trim()
+    .replace(/[\s\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000\uFEFF]+/g, '')
+    .toUpperCase();
+}
+
+function normalizeImportNameKey(value: string) {
+  return String(value || '')
+    .trim()
+    .toLocaleLowerCase('vi')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\s+/g, '');
+}
+
+/** Lập kế hoạch import: tạo/cập nhật, mã trùng trong file, cảnh báo khớp sai nhận diện. */
+export function buildProductCatalogImportPlan(
+  rows: ProductCatalogExcelRow[],
+  existingProducts: ProductCatalogImportExisting[]
+): ProductCatalogImportPlan {
+  const byCode = new Map<string, ProductCatalogImportExisting>();
+  for (const product of existingProducts) {
+    const keys = [product.code, product.amisCode || '']
+      .map(normalizeImportCodeKey)
+      .filter(Boolean);
+    for (const key of keys) {
+      if (!byCode.has(key)) byCode.set(key, product);
+    }
+  }
+
+  const codeRows = new Map<string, number[]>();
+  for (const row of rows) {
+    const code = normalizeImportCodeKey(row.code.trim() || row.amisCode.trim());
+    if (!code) continue;
+    const list = codeRows.get(code) || [];
+    list.push(row.rowNumber);
+    codeRows.set(code, list);
+  }
+  const duplicateCodeGroups = [...codeRows.entries()]
+    .filter(([, rowNumbers]) => rowNumbers.length > 1)
+    .map(([code, rowNumbers]) => ({ code, rowNumbers }));
+
+  const draftItems: ProductCatalogImportPlanItem[] = [];
+  for (const row of rows) {
+    const warnings: string[] = [];
+    const code = (row.code.trim() || row.amisCode.trim());
+    const name = row.name.trim();
+    if (!code && !name) {
+      draftItems.push({
+        rowNumber: row.rowNumber,
+        action: 'skip',
+        code: '',
+        name: '',
+        productionName: '',
+        warnings: [`dòng ${row.rowNumber}: thiếu mã SP và tên`],
+        clearedFields: [],
+        payload: {}
+      });
+      continue;
+    }
+
+    const codeKey = normalizeImportCodeKey(code);
+    const existing = codeKey ? byCode.get(codeKey) : undefined;
+    const duplicate = duplicateCodeGroups.find(group => group.code === codeKey);
+    if (duplicate) {
+      warnings.push(
+        `Mã ${code} trùng ${duplicate.rowNumbers.length} dòng trong file (dòng ${duplicate.rowNumbers.join(', ')}); giữ dòng cuối.`
+      );
+    }
+
+    if (existing) {
+      const sameName =
+        !name ||
+        normalizeImportNameKey(name) === normalizeImportNameKey(existing.name);
+      const excelProduction = row.productionName.trim();
+      const sameProduction =
+        !excelProduction ||
+        normalizeImportNameKey(excelProduction) ===
+          normalizeImportNameKey(existing.productionName || '');
+      if (!sameName || !sameProduction) {
+        warnings.push(
+          `Cùng mã ${existing.code} nhưng khác tên/tên SX so với bản ghi đang có — sẽ cập nhật ID ${existing.id}.`
+        );
+      }
+    }
+
+    const payload = productCatalogRowToPayload(row, { forUpdate: Boolean(existing) });
+    const clearedFields: string[] = [];
+    // Preview: các cột Excel trống sẽ không đụng DB (không còn bị xóa).
+    if (existing) {
+      for (const rule of UPDATE_OMIT_WHEN_EXCEL_EMPTY) {
+        if (!excelCellFilled(row, rule.excel)) {
+          clearedFields.push(String(rule.excel));
+        }
+      }
+    }
+
+    draftItems.push({
+      rowNumber: row.rowNumber,
+      action: existing ? 'update' : 'create',
+      code: String(payload.code || code),
+      name: String(payload.name || name),
+      productionName: String(payload.productionName || row.productionName.trim()),
+      existingId: existing?.id,
+      warnings,
+      clearedFields,
+      payload: existing ? { ...payload, id: existing.id } : payload
+    });
+  }
+
+  // Mã trùng trong file: last-wins — chỉ giữ dòng cuối cùng của mỗi mã.
+  const lastByCode = new Map<string, ProductCatalogImportPlanItem>();
+  const items: ProductCatalogImportPlanItem[] = [];
+  for (const item of draftItems) {
+    if (item.action === 'skip') {
+      items.push(item);
+      continue;
+    }
+    const key = normalizeImportCodeKey(item.code);
+    if (!key) {
+      items.push(item);
+      continue;
+    }
+    lastByCode.set(key, item);
+  }
+  items.push(...lastByCode.values());
+  items.sort((a, b) => a.rowNumber - b.rowNumber);
+
+  return {
+    items,
+    duplicateCodeGroups,
+    createCount: items.filter(item => item.action === 'create').length,
+    updateCount: items.filter(item => item.action === 'update').length,
+    skipCount: items.filter(item => item.action === 'skip').length,
+    warningCount: items.reduce((sum, item) => sum + item.warnings.length, 0)
   };
 }

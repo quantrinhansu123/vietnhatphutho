@@ -17,6 +17,7 @@ import {
 } from './src/features/so-tron/soTronPhanQuyen';
 import { signSoTronToken, verifySoTronToken } from './src/features/so-tron/soTronToken';
 import { aggregateSlipOwnsCode, registerXuatNhapTongHopRoutes } from './src/features/xuat-nhap-tong-hop/registerRoutes';
+import { registerDataAdminRoutes } from './serverDataAdmin';
 import { normalizeAssignablePositions } from './src/features/cai-dat-thoi-gian/staffAssignments';
 import { isExternalStaffCode, resolveScheduleStaffName } from './src/utils/externalStaff';
 import { calculateProductConversionFormulas, roundImportedConversionWeight } from './src/utils/productConversionCalculation';
@@ -7257,25 +7258,31 @@ async function loadNhapKhoThanhPhamPeriodRows(options: {
   };
 }
 
-async function ensureWarehouseSlipNumericColumns() {
+function getSupabasePostgresCandidates(): string[] {
   const password = process.env.SUPABASE_DB_PASSWORD?.trim();
-  if (!password || !SUPABASE_URL) return;
-
-  const ref = SUPABASE_URL.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1];
-  if (!ref) return;
-
-  const sqlPath = path.join(process.cwd(), 'supabase-phieu-xuat-nhap-kho-so-luong-numeric.sql');
-  if (!fs.existsSync(sqlPath)) return;
-
-  const sql = fs.readFileSync(sqlPath, 'utf8');
   const customUrl = process.env.SUPABASE_DB_URL?.trim();
-  const candidates = [
+  const ref = SUPABASE_URL?.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1];
+  return [
     customUrl,
-    `postgresql://postgres:${encodeURIComponent(password)}@db.${ref}.supabase.co:5432/postgres`,
-    `postgresql://postgres.${ref}:${encodeURIComponent(password)}@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres`,
-    `postgresql://postgres.${ref}:${encodeURIComponent(password)}@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres`
+    password && ref
+      ? `postgresql://postgres:${encodeURIComponent(password)}@db.${ref}.supabase.co:5432/postgres`
+      : '',
+    password && ref
+      ? `postgresql://postgres.${ref}:${encodeURIComponent(password)}@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres`
+      : '',
+    password && ref
+      ? `postgresql://postgres.${ref}:${encodeURIComponent(password)}@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres`
+      : ''
   ].filter((value): value is string => Boolean(value));
+}
 
+/** Mở 1 kết nối Postgres tới DB chính (Data Admin / migration). Caller phải `end()`. */
+async function openSupabasePostgresClient(): Promise<{
+  query: (text: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>;
+  end: () => Promise<void>;
+} | null> {
+  const candidates = getSupabasePostgresCandidates();
+  if (candidates.length === 0) return null;
   try {
     const pg = await import('pg');
     for (const connectionString of candidates) {
@@ -7283,14 +7290,13 @@ async function ensureWarehouseSlipNumericColumns() {
         connectionString,
         ssl: { rejectUnauthorized: false }
       });
-
       try {
         await client.connect();
-        await client.query(sql);
-        console.log('[warehouse] Đã chuyển cột so_luong/don_gia/thanh_tien sang numeric.');
-        await client.end();
-        return;
-      } catch (error) {
+        return client as unknown as {
+          query: (text: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>;
+          end: () => Promise<void>;
+        };
+      } catch {
         try {
           await client.end();
         } catch {
@@ -7298,8 +7304,31 @@ async function ensureWarehouseSlipNumericColumns() {
         }
       }
     }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function ensureWarehouseSlipNumericColumns() {
+  const sqlPath = path.join(process.cwd(), 'supabase-phieu-xuat-nhap-kho-so-luong-numeric.sql');
+  if (!fs.existsSync(sqlPath)) return;
+
+  const sql = fs.readFileSync(sqlPath, 'utf8');
+  const client = await openSupabasePostgresClient();
+  if (!client) return;
+
+  try {
+    await client.query(sql);
+    console.log('[warehouse] Đã chuyển cột so_luong/don_gia/thanh_tien sang numeric.');
   } catch (error) {
     console.warn('[warehouse] Không thể tự chạy migration numeric:', error);
+  } finally {
+    try {
+      await client.end();
+    } catch {
+      // ignore
+    }
   }
 }
 
@@ -9398,6 +9427,13 @@ export function createApp() {
     }
 
     next();
+  });
+
+  registerDataAdminRoutes(app, {
+    supabase,
+    openPg: openSupabasePostgresClient,
+    supabaseUrl: SUPABASE_URL,
+    serviceKey: process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || null
   });
 
   app.get('/api/health', (_req, res) => {
@@ -11610,6 +11646,8 @@ export function createApp() {
           return res.status(400).json({ error: `Giờ bắt đầu không hợp lệ (${resolveScheduleStaffName(maNhanSu)}).` });
         if (ketThuc && !PHAN_CONG_TIME_RE.test(ketThuc))
           return res.status(400).json({ error: `Giờ kết thúc không hợp lệ (${resolveScheduleStaffName(maNhanSu)}).` });
+        const rowGhiChu =
+          pickRowField(item, ['ghi_chu', 'ghiChu', 'cong_viec', 'congViec', 'note'], '') || ghiChu || '';
         rows.push({
           id_lenh_sx: lenh ? lenh.id : null,
           ma_lenh_sx: lenh ? lenh.ma_lenh_sx || null : null,
@@ -11621,7 +11659,7 @@ export function createApp() {
           may: tenMay || null,
           thoi_gian_bat_dau: batDau || null,
           thoi_gian_ket_thuc: ketThuc || null,
-          ghi_chu: ghiChu || null,
+          ghi_chu: rowGhiChu || null,
           removable: Boolean((item as { removable?: unknown }).removable)
         });
       }

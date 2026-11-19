@@ -105,6 +105,7 @@ export const BACK_TAB_MAP: Record<string, string> = {
   'chi-phi-dien': 'hcns',
   'vehicles': 'menu',
   'settings': 'quan-tri',
+  'data': 'quan-tri',
   'orders': 'business',
   'customers': 'business',
   'suppliers': 'factory-kho',

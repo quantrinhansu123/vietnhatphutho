@@ -78,6 +78,7 @@ export function SearchableSelect({
   getLabel,
   getValue,
   inputClassName,
+  selectedTextClassName,
   maxResults = 50,
   allowEmpty = true,
   allowCustomValue = false,
@@ -113,6 +114,8 @@ export function SearchableSelect({
   getLabel: (item: unknown) => string;
   getValue: (item: unknown) => string;
   inputClassName?: string;
+  /** Class cho nhãn đã chọn (combobox). Mặc định truncate 1 dòng; truyền line-clamp-2 để hiện 2 dòng. */
+  selectedTextClassName?: string;
   maxResults?: number;
   allowEmpty?: boolean;
   /** Cho phép giữ giá trị người dùng tự nhập dù không có trong danh sách gợi ý. */
@@ -658,16 +661,16 @@ export function SearchableSelect({
           }}
           aria-haspopup="listbox"
           aria-expanded={open}
-          className={`${fieldClass} flex items-center justify-between gap-3 text-left disabled:cursor-not-allowed disabled:opacity-60`}
+          className={`${fieldClass} flex ${selectedTextClassName ? 'items-start' : 'items-center'} justify-between gap-3 text-left disabled:cursor-not-allowed disabled:opacity-60`}
         >
-          <span className={`min-w-0 truncate ${selectedItem || value ? 'text-zinc-800' : 'text-zinc-400'}`}>
+          <span className={`min-w-0 flex-1 ${selectedTextClassName || 'truncate'} ${selectedItem || value ? 'text-zinc-800' : 'text-zinc-400'}`}>
             {isLoading ? 'Đang tải...' : selectedLabel || placeholder}
           </span>
           {isLoading ? (
-            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-zinc-400" />
+            <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-zinc-400" />
           ) : (
             <ChevronDown
-              className={`h-4 w-4 shrink-0 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`}
+              className={`mt-0.5 h-4 w-4 shrink-0 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`}
             />
           )}
         </button>
