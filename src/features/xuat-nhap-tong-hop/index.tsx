@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, ChevronDown, Loader2, Plus, Printer, Search, Trash2 } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Loader2, Plus, Printer, Search, Trash2, X } from 'lucide-react';
 import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from '../../components/WarehouseSlipPrintModal';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { VnCalendarPicker } from '../so-che-do-may';
@@ -198,6 +198,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
   /** Xuất trả NCC: nhà cung cấp nhận hàng (chọn dưới danh sách chi tiết). */
   const [xuatNccId, setXuatNccId] = useState('');
   const [ptdmKeys, setPtdmKeys] = useState<string[]>([]);
+  const [orderProductsOpen, setOrderProductsOpen] = useState(false);
   const [ptdmOpen, setPtdmOpen] = useState(false);
   const [ptdmSearch, setPtdmSearch] = useState('');
   const [mixingNorms, setMixingNorms] = useState<Array<Record<string, unknown>>>([]);
@@ -448,6 +449,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     setXuatDenId('');
     setXuatNccId('');
     setPtdmKeys([]);
+    setOrderProductsOpen(false);
     setNguoiLap('');
     setNguoiGiao('');
     setDiaDiem('');
@@ -708,6 +710,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         : ''
     );
     setPtdmKeys([]);
+    setOrderProductsOpen(false);
     setNguoiLap(row.nguoi_lap || '');
     setNguoiGiao(row.nguoi_giao || '');
     setDiaDiem(row.dia_diem || '');
@@ -1109,10 +1112,26 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     );
   }, [ptdmOptions, xuatDenId]);
 
+  const selectedPtdmOptions = useMemo(
+    () => ptdmOptionsForMachine.filter(item => ptdmKeys.includes(item.key)),
+    [ptdmOptionsForMachine, ptdmKeys]
+  );
+  const selectedProductionOrders = useMemo(() => {
+    const orderCodes = new Set(
+      selectedPtdmOptions.flatMap(item => String(item.record.ma_lenh_sx ?? '')
+        .split(/[,;|/]+/)
+        .map(code => normalizeMaterialKey(code.trim()))
+        .filter(Boolean))
+    );
+    return productionOrders.filter(order => orderCodes.has(normalizeMaterialKey(order.orderCode)));
+  }, [selectedPtdmOptions, productionOrders]);
+  const selectedOrderProductCount = selectedProductionOrders.reduce((sum, order) => sum + order.lines.length, 0);
+
   function applyPtdm(keys: string[]) {
     setPtdmKeys(keys);
     const selected = ptdmOptionsForMachine.filter(item => keys.includes(item.key));
     if (!selected.length) {
+      setOrderProductsOpen(false);
       setLines([emptyLine()]);
       setInfo('');
       return;
@@ -1356,6 +1375,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                   setXuatDenId('');
                   setXuatNccId('');
                   setPtdmKeys([]);
+                  setOrderProductsOpen(false);
                   if (!isXuatTheoPhanXuong(value)) setPhanXuong('');
                   const kind = xuatDenKind(value);
                   setXuatDenLoai(kind === 'may' || kind === 'may-ptdm' ? 'may' : 'kho');
@@ -1539,6 +1559,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                     if (destKind === 'may-ptdm' && kind === 'may' && id !== xuatDenId && ptdmKeys.length > 0) {
                       // PTĐM đã chọn gắn với máy cũ; đổi máy thì bỏ lựa chọn/dòng lấy từ PTĐM đó.
                       setPtdmKeys([]);
+                      setOrderProductsOpen(false);
                       setLines([emptyLine()]);
                       setInfo('');
                       setError('');
@@ -1617,6 +1638,18 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                       </div>
                     </div>,
                     document.body
+                  ) : null}
+                  {ptdmKeys.length > 0 ? (
+                    <button
+                      type="button"
+                      aria-expanded={orderProductsOpen}
+                      onClick={() => setOrderProductsOpen(open => !open)}
+                      className="mt-1 inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] font-extrabold text-zinc-700 hover:border-zinc-400"
+                    >
+                      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${orderProductsOpen ? 'rotate-90' : '-rotate-90'}`} />
+                      {orderProductsOpen ? 'Ẩn sản phẩm theo lệnh' : 'Xem sản phẩm theo lệnh'}
+                      <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px]">{selectedOrderProductCount}</span>
+                    </button>
                   ) : null}
                 </div>
               ) : null}
@@ -1945,6 +1978,81 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
           </button>
         </div>
       </section>
+
+      {orderProductsOpen && selectedPtdmOptions.length > 0 ? (
+        <div
+          className="fixed inset-0 z-[280] bg-black/35"
+          role="presentation"
+          onMouseDown={event => { if (event.target === event.currentTarget) setOrderProductsOpen(false); }}
+        >
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="xuat-nvl-order-products-title"
+            className="absolute inset-y-0 right-0 flex w-[min(680px,96vw)] flex-col bg-white shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-zinc-200 px-5 py-4">
+              <div className="min-w-0">
+                <h2 id="xuat-nvl-order-products-title" className="text-base font-black text-zinc-950">Sản phẩm theo lệnh sản xuất</h2>
+                <p className="mt-1 text-xs font-medium text-zinc-500">Danh sách lấy từ lệnh SX liên kết với phiếu tỷ lệ trộn định mức.</p>
+              </div>
+              <button type="button" onClick={() => setOrderProductsOpen(false)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50" aria-label="Đóng danh sách sản phẩm theo lệnh">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 space-y-4 overflow-y-auto p-4">
+              {selectedProductionOrders.length ? selectedProductionOrders.map(order => (
+                <section key={order.id} className="overflow-hidden rounded-xl border border-zinc-200">
+                  <div className="flex flex-wrap items-center justify-between gap-2 bg-zinc-50 px-3 py-2.5">
+                    <div>
+                      <h3 className="text-sm font-black text-zinc-900">Lệnh {order.orderCode}</h3>
+                      <p className="mt-0.5 text-[11px] font-semibold text-zinc-500">{order.machine || 'Chưa có máy'}{order.shift ? ` · ${order.shift}` : ''}{order.startDate ? ` · ${order.startDate.split('-').reverse().join('/')}` : ''}</p>
+                    </div>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-zinc-600 ring-1 ring-zinc-200">{order.lines.length} sản phẩm</span>
+                  </div>
+                  {order.lines.length ? (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-[620px] w-full text-xs">
+                        <thead>
+                          <tr className="bg-zinc-900 text-left text-white">
+                            <th className="px-3 py-2">Mã SP</th>
+                            <th className="min-w-48 px-3 py-2">Tên sản phẩm theo lệnh</th>
+                            <th className="px-3 py-2">ĐVT</th>
+                            <th className="px-3 py-2 text-right">SL</th>
+                            <th className="px-3 py-2 text-right">KG</th>
+                            <th className="px-3 py-2 text-right">M²</th>
+                            <th className="px-3 py-2 text-right">M dài</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {order.lines.map((line, index) => (
+                            <tr key={`${line.code}-${line.amisCode || ''}-${index}`} className="border-t border-zinc-100 align-top">
+                              <td className="whitespace-nowrap px-3 py-2 font-mono font-bold text-zinc-800">{line.code || line.amisCode || '—'}</td>
+                              <td className="px-3 py-2">
+                                <div className="font-semibold text-zinc-900">{line.productionName || line.name || '—'}</div>
+                                {line.name && line.name !== line.productionName ? <div className="mt-0.5 text-[11px] text-zinc-500">{line.name}</div> : null}
+                              </td>
+                              <td className="whitespace-nowrap px-3 py-2">{line.unit || '—'}</td>
+                              <td className="whitespace-nowrap px-3 py-2 text-right font-semibold">{line.quantity == null ? '—' : formatQty(line.quantity)}</td>
+                              <td className="whitespace-nowrap px-3 py-2 text-right">{line.weightKg == null ? '—' : formatQty(line.weightKg)}</td>
+                              <td className="whitespace-nowrap px-3 py-2 text-right">{line.areaM2 == null ? '—' : formatQty(line.areaM2)}</td>
+                              <td className="whitespace-nowrap px-3 py-2 text-right">{line.lengthM == null ? '—' : formatQty(line.lengthM)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : <p className="px-3 py-5 text-center text-xs font-semibold text-zinc-500">Lệnh này chưa có dòng sản phẩm.</p>}
+                </section>
+              )) : (
+                <div className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm font-semibold text-zinc-500">
+                  Không tìm thấy lệnh sản xuất liên kết hoặc chưa có sản phẩm trong lệnh.
+                </div>
+              )}
+            </div>
+          </aside>
+        </div>
+      ) : null}
 
       <WarehouseSlipPrintModal open={Boolean(printSlips)} slips={printSlips} onClose={() => setPrintSlips(null)} />
     </div>

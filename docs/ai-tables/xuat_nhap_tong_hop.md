@@ -21,6 +21,8 @@
 
 `src/features/xuat-nhap-tong-hop/index.tsx` — `TongHopPanel` (form). `list.tsx` — `TongHopListPanel` (in, sửa, hủy + lọc từ–đến ngày, đa chọn máy/kho; tải riêng nhập + xuất rồi gộp, khớp phiếu theo giá trị qua `thong-ke-nvl`: `buildPartyAliasKind`/`collectLineTokens`/`matchTokenFilter`, phiếu khớp khi có ≥1 dòng liên quan). **Ca bắt buộc** trên mọi phiếu nhập/xuất (multi-select cùng loại ca từ `/cai-dat`). **In đúng 1 phiếu** theo loại nhập/xuất (`printSlips.ts` → `WarehouseSlipPrintModal`): không tách xuất+nhập, không chia theo kho/máy.
 
+Khi xuất theo PTĐM, sau khi chọn phiếu tỷ lệ trộn định mức có thể mở ngăn trượt bên phải để xem các sản phẩm của lệnh sản xuất liên kết, theo các trường in trên phiếu lệnh. NVL trùng theo mã + tên sản xuất được cộng khối lượng thành một dòng trước; sau đó chọn một đơn giá cho dòng đã gộp.
+
 API tests: `tests/api/nvlWarehouseFlow.test.ts` (opt-in integration test, 10 mã × 4 đơn giá, đủ 7 loại xuất; mặc định hủy phiếu và xóa danh mục test, đặt thêm `NVL_API_TEST_KEEP_DATA=1` để giữ dữ liệu cho kiểm tra UI). Chạy bằng `NVL_API_BASE_URL=<test-api>`, `NVL_API_TEST_ALLOW_WRITES=1`, rồi `npx tsx --test tests/api/nvlWarehouseFlow.test.ts`.
 
 ## Quy ước phiếu xuất (kho vật tư)
