@@ -28,12 +28,14 @@ export function SouthOrderTemCells({
   tem,
   mauTem,
   danTem2Dau,
-  onPatch
+  onPatch,
+  showLabels = false
 }: {
   tem: string;
   mauTem: string;
   danTem2Dau: boolean;
   onPatch: (patch: TemPatch) => void;
+  showLabels?: boolean;
 }) {
   const [temValue, setTemValue] = useState(tem);
   const [colorValue, setColorValue] = useState(mauTem);
@@ -55,7 +57,8 @@ export function SouthOrderTemCells({
 
   return (
     <>
-      <div className="min-w-0" onMouseDown={stopRowClick} onClick={stopRowClick}>
+      <div className="min-w-0 space-y-1" onMouseDown={stopRowClick} onClick={stopRowClick}>
+        {showLabels ? <span className="block text-[10px] font-black uppercase tracking-wider text-zinc-500">Tem</span> : null}
         <SearchableSelect
           value={temValue}
           onChange={next => {
@@ -73,7 +76,8 @@ export function SouthOrderTemCells({
           inputClassName={orderFieldClass}
         />
       </div>
-      <div className="min-w-0" onMouseDown={stopRowClick} onClick={stopRowClick}>
+      <div className="min-w-0 space-y-1" onMouseDown={stopRowClick} onClick={stopRowClick}>
+        {showLabels ? <span className="block text-[10px] font-black uppercase tracking-wider text-zinc-500">Màu tem</span> : null}
         <SearchableSelect
           value={colorValue}
           onChange={next => {
@@ -94,10 +98,11 @@ export function SouthOrderTemCells({
         />
       </div>
       <div
-        className="flex min-w-0 items-center justify-center"
+        className="min-w-0 space-y-1"
         onMouseDown={stopRowClick}
         onClick={stopRowClick}
       >
+        {showLabels ? <span className="block text-[10px] font-black uppercase tracking-wider text-zinc-500">Tùy chọn</span> : null}
         <label className="flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-200 px-2 text-xs font-bold text-zinc-700 hover:bg-zinc-50" title="Dán Tem 2 Đầu">
           <input
             type="checkbox"
