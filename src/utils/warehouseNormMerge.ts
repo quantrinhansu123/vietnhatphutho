@@ -160,9 +160,14 @@ export function mergeNormMaterialLines(sources: NormMaterialSource[], materials:
     // ĐỐI VỚI BĂNG DÍNH VÀ TEM: nếu giống về VTHH thì mới gộp (phân tách theo canonicalVthh)
     // ĐỐI VỚI NVL KHÁC (NVL chính hoặc NVL phụ thông thường): gộp chung theo vật tư, không phân biệt VTHH
     const vthhKey = isTapeOrStamp ? (normalizeMaterialKey(canonicalVthh) || '__chua_chon_vthh__') : '';
-    const materialKey = materialId
-      ? `id:${materialId}`
-      : `legacy:${normalizeMaterialKey(effectiveCode || effectiveName)}`;
+    // Gộp NVL trùng theo mã + tên sản xuất, không theo UUID
+    // của dòng danh mục. Cùng một NVL có thể được PTĐM lưu với nhiều material_id;
+    // chọn giá chỉ diễn ra sau khi lượng định mức đã được cộng thành một dòng.
+    const materialIdentity = JSON.stringify([
+      normalizeMaterialKey(effectiveCode),
+      normalizeMaterialKey(productionName)
+    ]);
+    const materialKey = `material:${materialIdentity}`;
     const key = `${normalizeMaterialKey(normalizedMachine) || 'chua-xac-dinh'}::${warehouseClass}::${materialKey}::${vthhKey}`;
 
     const current = merged.get(key);

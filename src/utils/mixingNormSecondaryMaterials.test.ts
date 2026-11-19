@@ -215,11 +215,12 @@ test('mergeNormMaterialLines: Bang Dinh va Tem cung VTHH thi gop, khac VTHH thi 
   assert.equal(mangQuan.nhomVthh, '', 'NVL phụ khác không mang nhomVthh');
 });
 
-test('mergeNormMaterialLines uu tien material_id thay vi ma vat tu', async () => {
+test('mergeNormMaterialLines gop theo ma va ten san xuat, khong theo material_id hay ten NVL', async () => {
   const { mergeNormMaterialLines } = await import('./warehouseNormMerge.ts');
   const catalog = [
-    { id: 'material-a', code: 'BD02', name: 'Bang dinh A', unit: 'Cuon', nhomVatTuPhu: 'Bang Dinh' },
-    { id: 'material-b', code: 'BD02', name: 'Bang dinh B', unit: 'Cuon', nhomVatTuPhu: 'Bang Dinh' }
+    { id: 'material-a', code: 'BD02', name: 'Bang dinh A', productionName: 'Bang dinh SX A', unit: 'Cuon', nhomVatTuPhu: 'Bang Dinh' },
+    { id: 'material-b', code: 'BD02', name: 'Bang dinh B', productionName: 'Bang dinh SX B', unit: 'Cuon', nhomVatTuPhu: 'Bang Dinh' },
+    { id: 'material-c', code: 'BD02', name: 'Ten khac', productionName: 'Bang dinh SX A', unit: 'Cuon', nhomVatTuPhu: 'Bang Dinh' }
   ];
   const source = {
     machine: 'May 1',
@@ -229,7 +230,8 @@ test('mergeNormMaterialLines uu tien material_id thay vi ma vat tu', async () =>
         nvl_phu: [
           { material_id: 'material-a', ma_nvl: 'BD02', gia_tri: 1, tong_khoi_luong: 0.5, nhom_vthh: 'TP; PX Rong' },
           { material_id: 'material-a', ma_nvl: 'BD02', gia_tri: 2, tong_khoi_luong: 1, nhom_vthh: 'TP; PX Rong' },
-          { material_id: 'material-b', ma_nvl: 'BD02', gia_tri: 4, tong_khoi_luong: 2, nhom_vthh: 'TP; PX Rong' }
+          { material_id: 'material-b', ma_nvl: 'BD02', gia_tri: 4, tong_khoi_luong: 2, nhom_vthh: 'TP; PX Rong' },
+          { material_id: 'material-c', ma_nvl: 'BD02', gia_tri: 5, tong_khoi_luong: 2.5, nhom_vthh: 'TP; PX Rong' }
         ]
       }]
     }
@@ -237,8 +239,9 @@ test('mergeNormMaterialLines uu tien material_id thay vi ma vat tu', async () =>
 
   const lines = mergeNormMaterialLines([source as any], catalog as any);
   assert.equal(lines.length, 2);
-  assert.equal(lines.find(line => line.materialId === 'material-a')?.documentQuantity, 3);
-  assert.equal(lines.find(line => line.materialId === 'material-b')?.documentQuantity, 4);
+  assert.equal(lines.find(line => line.productionName === 'Bang dinh SX A')?.documentQuantity, 8);
+  assert.equal(lines.find(line => line.productionName === 'Bang dinh SX A')?.normWeightKg, 4);
+  assert.equal(lines.find(line => line.productionName === 'Bang dinh SX B')?.documentQuantity, 4);
 });
 
 test('mergeAuxiliaryWarehouseLines cong SL, trong luong va chi tach Bang Dinh/Tem theo VTHH', async () => {
