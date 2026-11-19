@@ -34,6 +34,8 @@ export const TAB_ACCESS_ALIASES: Record<string, string> = {
  * Có quyền hub → được xem các tab card thuộc hub đó.
  */
 export const HUB_IMPLIED_TABS: Record<string, readonly string[]> = {
+  /** Có quyền hub Quản trị → luôn thấy Data (và các card quản trị khác). */
+  'quan-tri': ['dashboard-auto', 'dashboard', 'bieu-do-th', 'settings', 'data'],
   /** Sổ trộn, sổ giao ca MMTB, sổ chế độ máy — menu riêng cho công nhân sản xuất. */
   'bao-cao-truong-ca-tron': [
     'so-tron',

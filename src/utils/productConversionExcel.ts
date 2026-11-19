@@ -61,6 +61,7 @@ function normalizeHeader(value: unknown) {
 /** Giữ đủ chữ số từ ô số (raw:true); không lấy format hiển thị Excel (raw:false hay làm tròn). */
 function cellToText(value: unknown) {
   if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
   if (typeof value === 'number' && Number.isFinite(value)) {
     if (Object.is(value, -0)) return '0';
     if (Number.isInteger(value)) return String(value);
@@ -69,6 +70,7 @@ function cellToText(value: unknown) {
     if (/e/i.test(precise)) return String(value);
     return precise.replace(/(\.\d*?[1-9])0+$/u, '$1').replace(/\.0+$/u, '');
   }
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
   return String(value).trim();
 }
 

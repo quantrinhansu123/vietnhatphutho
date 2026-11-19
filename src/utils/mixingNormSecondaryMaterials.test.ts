@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   normalizeNhomVatTuPhuKey,
   resolveWorkshopType,
+  workshopPxShortLabel,
+  collectWorkshopPxLabels,
   calcAuxiliaryWeight,
   getAllowedSecondaryGroups,
   formatMixingNormSlipName,
@@ -26,6 +28,20 @@ test('normalizeNhomVatTuPhuKey chuan hoa dung cac nhom vat tu phu', () => {
   assert.equal(normalizeNhomVatTuPhuKey('Kẹp Sắt'), 'Kẹp Sắt');
   assert.equal(normalizeNhomVatTuPhuKey('Dây Đai'), 'Dây Đai');
   assert.equal(normalizeNhomVatTuPhuKey('Dung Môi'), 'Dung Môi');
+});
+
+test('workshopPxShortLabel hien Thi Dac Rong Song', () => {
+  assert.equal(workshopPxShortLabel('TP; PX Đặc'), 'Đặc');
+  assert.equal(workshopPxShortLabel('TP; PX Rỗng'), 'Rỗng');
+  assert.equal(workshopPxShortLabel('TP; PX Sóng'), 'Sóng');
+  assert.equal(workshopPxShortLabel('Tấm nhựa đặc màu trắng'), 'Đặc');
+  assert.equal(workshopPxShortLabel('Tấm nhựa rỗng màu trắng'), 'Rỗng');
+  assert.equal(workshopPxShortLabel('NHỰA SÓNG'), 'Sóng');
+  assert.equal(workshopPxShortLabel(''), '');
+  assert.deepEqual(
+    collectWorkshopPxLabels(['TP; PX Rỗng', 'TP; PX Đặc', 'TP; PX Sóng', 'TP; PX Đặc']),
+    ['Sóng', 'Đặc', 'Rỗng']
+  );
 });
 
 test('resolveWorkshopType nhan dien dung phan xuong', () => {

@@ -32,9 +32,10 @@ import { downloadBulkProductNplComponentsTemplate, downloadProductNplComponentsT
 import type { ImportSpExcelRow } from '../../utils/productNplComponentsExcel';
 import { parseProductNplItems, productNplItemsToJson, formatProductNplSummary, findMaterialOptionByCode, formatProductNplAmount, roundNplNumber, formatNplDecimal, formatNplWeightKg, bulkExcelRowsToProductMap, buildProductIdentityKey } from './types';
 import {
+  buildProductCatalogImportPlan,
   downloadProductCatalogExcelTemplate,
   parseProductCatalogExcel,
-  productCatalogRowToPayload
+  type ProductCatalogImportPlan
 } from '../../utils/productCatalogExcel';
 import {
   downloadProductConversionExcelTemplate,
@@ -60,6 +61,7 @@ import {
   parseDoDaiMLength,
   resolveSongDoDaiTamTieuChuan,
   seedProductionSpecs,
+  sortProductsByKgThenMeters,
   splitProductionIdentity,
   stripParsedSegmentsFromTenGoc
 } from '../../utils/productProductionName';
@@ -3966,6 +3968,8 @@ export function ProductsPanel({
   const catalogFileInputRef = useRef<HTMLInputElement>(null);
   const [isImportingBulkProductComponents, setIsImportingBulkProductComponents] = useState(false);
   const [isImportingProductCatalog, setIsImportingProductCatalog] = useState(false);
+  const [catalogImportPlan, setCatalogImportPlan] = useState<ProductCatalogImportPlan | null>(null);
+  const [catalogImportFileName, setCatalogImportFileName] = useState('');
   const [isImportSpViewOpen, setIsImportSpViewOpen] = useState(false);
   const [isLoadingImportSp, setIsLoadingImportSp] = useState(false);
   const [isSyncingImportSp, setIsSyncingImportSp] = useState(false);
@@ -4374,6 +4378,7 @@ export function ProductsPanel({
     setIsImportingProductCatalog(true);
     setProductError('');
     setProductActionMessage('');
+    setCatalogImportPlan(null);
 
     try {
       const rows = await parseProductCatalogExcel(file);
@@ -4381,45 +4386,92 @@ export function ProductsPanel({
         throw new Error('File Excel không có dòng sản phẩm hợp lệ.');
       }
 
-      const byCode = new Map<string, ProductRow>(
-        products
-          .map(product => [normalizeProductCodeKey(product.code), product] as const)
-          .filter(([key]) => Boolean(key))
+      const plan = buildProductCatalogImportPlan(
+        rows,
+        products.map(product => ({
+          id: product.id,
+          code: product.code,
+          amisCode: product.amisCode,
+          name: product.name,
+          productionName: product.productionName
+        }))
       );
+      if (plan.createCount + plan.updateCount === 0) {
+        throw new Error(
+          plan.items.find(item => item.warnings.length)?.warnings[0] ||
+            'File Excel không có dòng sản phẩm hợp lệ.'
+        );
+      }
+      setCatalogImportFileName(file.name);
+      setCatalogImportPlan(plan);
+      setProductActionMessage(
+        `Đã đọc ${file.name}: thêm ${plan.createCount}, cập nhật ${plan.updateCount}` +
+          (plan.warningCount ? `, ${plan.warningCount} cảnh báo` : '') +
+          '. Xem trước rồi bấm Xác nhận nhập.'
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Không thể đọc hoặc nhập Excel danh mục sản phẩm.';
+      setProductError(message);
+      showAppToast(message, 'error');
+    } finally {
+      setIsImportingProductCatalog(false);
+      if (catalogFileInputRef.current) catalogFileInputRef.current.value = '';
+    }
+  };
+
+  const handleConfirmProductCatalogImport = async () => {
+    if ((!canCreate && !canEdit) || !catalogImportPlan) return;
+
+    setIsImportingProductCatalog(true);
+    setProductError('');
+    setProductActionMessage('');
+
+    try {
+      const creates = catalogImportPlan.items
+        .filter(item => item.action === 'create')
+        .map(item => item.payload);
+      const updates = catalogImportPlan.items
+        .filter(item => item.action === 'update')
+        .map(item => item.payload);
+
+      const IMPORT_BATCH_SIZE = 150;
+      const chunkArray = <T,>(items: T[], size: number): T[][] => {
+        const chunks: T[][] = [];
+        for (let index = 0; index < items.length; index += size) {
+          chunks.push(items.slice(index, index + size));
+        }
+        return chunks;
+      };
 
       let created = 0;
       let updated = 0;
       const failures: string[] = [];
 
-      for (const row of rows) {
-        const code = row.code.trim();
-        const name = row.name.trim();
-        if (!code && !name) {
-          failures.push(`dòng ${row.rowNumber}: thiếu mã SP và tên`);
-          continue;
-        }
-
-        const payload = productCatalogRowToPayload(row);
-        const existing = code ? byCode.get(normalizeProductCodeKey(code)) : undefined;
-
-        const res = existing
-          ? await fetch(`/api/san-pham/${existing.id}`, {
-              method: 'PATCH',
-              headers: productApiHeaders(),
-              body: JSON.stringify(payload)
-            })
-          : await fetch('/api/san-pham', {
-              method: 'POST',
-              headers: productApiHeaders(),
-              body: JSON.stringify(payload)
-            });
+      const postBatch = async (
+        createsChunk: Record<string, unknown>[],
+        updatesChunk: Record<string, unknown>[],
+        label: string
+      ) => {
+        if (createsChunk.length === 0 && updatesChunk.length === 0) return;
+        const res = await fetch('/api/san-pham/import-batch', {
+          method: 'POST',
+          headers: productApiHeaders(),
+          body: JSON.stringify({ creates: createsChunk, updates: updatesChunk })
+        });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          failures.push(`dòng ${row.rowNumber}: ${data.error || 'Không lưu được'}`);
-          continue;
+          failures.push(`${label}: ${data.error || 'Không lưu được'}`);
+          return;
         }
-        if (existing) updated += 1;
-        else created += 1;
+        created += Number(data.createdCount || createsChunk.length || 0);
+        updated += Number(data.updatedCount || updatesChunk.length || 0);
+      };
+
+      for (const [index, chunk] of chunkArray(creates, IMPORT_BATCH_SIZE).entries()) {
+        await postBatch(chunk, [], `Thêm batch ${index + 1}`);
+      }
+      for (const [index, chunk] of chunkArray(updates, IMPORT_BATCH_SIZE).entries()) {
+        await postBatch([], chunk, `Cập nhật batch ${index + 1}`);
       }
 
       if (created > 0 || updated > 0) {
@@ -4428,7 +4480,7 @@ export function ProductsPanel({
 
       const summary = [
         created || updated ? `Đã nhập Excel SP: thêm ${created}, cập nhật ${updated}.` : 'Không nhập được dòng nào.',
-        failures.length ? `${failures.length} dòng lỗi (${failures.slice(0, 3).join('; ')}).` : ''
+        failures.length ? `${failures.length} lỗi (${failures.slice(0, 3).join('; ')}).` : ''
       ]
         .filter(Boolean)
         .join(' ');
@@ -4438,13 +4490,14 @@ export function ProductsPanel({
         setProductError(summary);
         showAppToast(failures[0], 'error');
       }
+      setCatalogImportPlan(null);
+      setCatalogImportFileName('');
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Không thể đọc hoặc nhập Excel danh mục sản phẩm.';
+      const message = error instanceof Error ? error.message : 'Không thể nhập Excel danh mục sản phẩm.';
       setProductError(message);
       showAppToast(message, 'error');
     } finally {
       setIsImportingProductCatalog(false);
-      if (catalogFileInputRef.current) catalogFileInputRef.current.value = '';
     }
   };
 
@@ -4866,7 +4919,7 @@ export function ProductsPanel({
   );
   const normalizedSearch = searchText.trim().toLowerCase();
   const filteredProducts = useMemo(() => {
-    return displayProducts.filter(product => {
+    const filtered = displayProducts.filter(product => {
       const matchesWarehouse = matchesWarehouseFilter(product.warehouse, warehouseFilter, {
         includeUnassigned
       });
@@ -4880,6 +4933,8 @@ export function ProductsPanel({
           .includes(normalizedSearch);
       return matchesWarehouse && matchesGroup && matchesNature && matchesSearch;
     });
+    // Hiển thị tăng dần theo kg rồi số m (mét dài).
+    return sortProductsByKgThenMeters(filtered);
   }, [displayProducts, includeUnassigned, isCatalogMode, normalizedSearch, selectedGroup, selectedNatures, warehouseFilter]);
 
   const totalProductQuantity = useMemo(
@@ -6354,6 +6409,131 @@ export function ProductsPanel({
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+
+      {catalogImportPlan && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-[90] flex items-end justify-center bg-zinc-950/45 p-0 sm:items-center sm:p-4">
+              <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl">
+                <div className="flex items-start justify-between gap-3 border-b border-zinc-100 px-4 py-3">
+                  <div>
+                    <h3 className="text-sm font-black text-zinc-900">Xem trước nhập Excel SP</h3>
+                    <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+                      {catalogImportFileName || 'File Excel'} · thêm {catalogImportPlan.createCount} · cập nhật{' '}
+                      {catalogImportPlan.updateCount}
+                      {catalogImportPlan.duplicateCodeGroups.length
+                        ? ` · ${catalogImportPlan.duplicateCodeGroups.length} mã trùng trong file`
+                        : ''}
+                      {catalogImportPlan.warningCount ? ` · ${catalogImportPlan.warningCount} cảnh báo` : ''}
+                    </p>
+                    <p className="mt-1 text-[11px] font-semibold text-zinc-500">
+                      Ô trống khi cập nhật giữ nguyên giá trị đang có. Hàng phế chỉ lấy cột Excel hoặc marker trong tên SX (không suy từ NP).
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCatalogImportPlan(null);
+                      setCatalogImportFileName('');
+                    }}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 text-zinc-600 hover:border-zinc-950"
+                    aria-label="Đóng"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                {catalogImportPlan.duplicateCodeGroups.length > 0 ? (
+                  <div className="border-b border-amber-100 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-900">
+                    Mã trùng trong file:{' '}
+                    {catalogImportPlan.duplicateCodeGroups
+                      .slice(0, 5)
+                      .map(group => `${group.code} (dòng ${group.rowNumbers.join(', ')})`)
+                      .join(' · ')}
+                    {catalogImportPlan.duplicateCodeGroups.length > 5
+                      ? ` · +${catalogImportPlan.duplicateCodeGroups.length - 5} mã khác`
+                      : ''}
+                    . Dòng sau ghi đè dòng trước.
+                  </div>
+                ) : null}
+                <div className="min-h-0 flex-1 overflow-auto">
+                  <table className="min-w-full border-collapse text-left text-xs">
+                    <thead className="sticky top-0 bg-zinc-50 text-[10px] font-black uppercase tracking-wide text-zinc-500">
+                      <tr>
+                        <th className="border-b border-zinc-200 px-3 py-2">Dòng</th>
+                        <th className="border-b border-zinc-200 px-3 py-2">Thao tác</th>
+                        <th className="border-b border-zinc-200 px-3 py-2">Mã</th>
+                        <th className="border-b border-zinc-200 px-3 py-2">Tên</th>
+                        <th className="border-b border-zinc-200 px-3 py-2">Tên SX</th>
+                        <th className="border-b border-zinc-200 px-3 py-2">Cảnh báo / ô trống giữ nguyên</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {catalogImportPlan.items
+                        .filter(item => item.action !== 'skip')
+                        .map(item => (
+                          <tr key={`${item.rowNumber}-${item.code}`} className="border-b border-zinc-100 align-top">
+                            <td className="px-3 py-2 font-semibold text-zinc-500">{item.rowNumber}</td>
+                            <td className="px-3 py-2">
+                              <span
+                                className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black ${
+                                  item.action === 'create'
+                                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                    : 'border-sky-200 bg-sky-50 text-sky-800'
+                                }`}
+                              >
+                                {item.action === 'create' ? 'Thêm mới' : 'Cập nhật'}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 font-black text-zinc-900">{item.code || '—'}</td>
+                            <td className="px-3 py-2 font-semibold text-zinc-800">{item.name || '—'}</td>
+                            <td className="max-w-[220px] px-3 py-2 font-semibold text-zinc-700">
+                              {item.productionName || '—'}
+                            </td>
+                            <td className="px-3 py-2 text-zinc-600">
+                              {item.warnings.length ? (
+                                <p className="font-bold text-amber-800">{item.warnings.join(' ')}</p>
+                              ) : null}
+                              {item.action === 'update' && item.clearedFields.length > 0 ? (
+                                <p className="mt-0.5 text-[11px] font-semibold text-zinc-500">
+                                  Giữ nguyên: {item.clearedFields.slice(0, 8).join(', ')}
+                                  {item.clearedFields.length > 8 ? '…' : ''}
+                                </p>
+                              ) : null}
+                              {!item.warnings.length && !(item.action === 'update' && item.clearedFields.length) ? (
+                                <span className="text-zinc-400">—</span>
+                              ) : null}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-100 bg-zinc-50 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCatalogImportPlan(null);
+                      setCatalogImportFileName('');
+                    }}
+                    disabled={isImportingProductCatalog}
+                    className="flex h-10 items-center justify-center rounded-xl border border-zinc-200 bg-white px-4 text-xs font-extrabold text-zinc-700 hover:border-zinc-400 disabled:opacity-60"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleConfirmProductCatalogImport()}
+                    disabled={isImportingProductCatalog}
+                    className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#ef1b2d] px-4 text-xs font-extrabold text-white hover:bg-[#b30d1c] disabled:opacity-60"
+                  >
+                    {isImportingProductCatalog ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    {isImportingProductCatalog ? 'Đang nhập...' : 'Xác nhận nhập'}
+                  </button>
+                </div>
               </div>
             </div>,
             document.body

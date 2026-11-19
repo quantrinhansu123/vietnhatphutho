@@ -24,7 +24,8 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
     children: [
       { tab: 'dashboard-auto', label: 'Báo cáo mới' },
       { tab: 'bieu-do-th', label: 'Biểu đồ TH' },
-      { tab: 'settings', label: 'Cài đặt / phân quyền' }
+      { tab: 'settings', label: 'Cài đặt / phân quyền' },
+      { tab: 'data', label: 'Data (bảng / cột Supabase)' }
     ]
   },
   {

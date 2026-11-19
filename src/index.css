@@ -4595,6 +4595,20 @@ input[type="number"] {
   margin-right: 4px;
 }
 
+.mixing-norm-ratio-print-px {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 4px;
+  border: 1px solid #111;
+  font-weight: 700;
+  font-size: 9pt;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: #111;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
 .mixing-norm-ratio-print-inline-note {
   color: #1d4ed8;
   font-weight: 700;

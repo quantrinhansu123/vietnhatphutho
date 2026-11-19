@@ -22,6 +22,9 @@ type RepeatableLinesBlockProps = {
   actionsAtBottom?: boolean;
   gridTemplateClass?: string;
   columns: RepeatableLineColumn[];
+  /** Hàng tiêu đề thứ 2 (vd đơn bán/SX: ĐVT / SL / KG…). */
+  secondGridTemplateClass?: string;
+  secondColumns?: RepeatableLineColumn[];
   children: React.ReactNode;
   addButtonClassName?: string;
   className?: string;
@@ -42,6 +45,8 @@ export function RepeatableLinesBlock({
   actionsAtBottom = false,
   gridTemplateClass,
   columns,
+  secondGridTemplateClass,
+  secondColumns,
   children,
   addButtonClassName,
   className = '',
@@ -97,17 +102,32 @@ export function RepeatableLinesBlock({
 
         {columns.length > 0 && (
           <div
-            className={`items-end gap-2 border-b border-zinc-200/80 pb-1.5 ${stickyColumnHeaders ? 'sticky top-0 z-20 bg-zinc-50 pt-1 shadow-[0_1px_0_0_rgba(0,0,0,0.06)]' : ''} ${headerLayout} ${headerVisibility} ${headerClassName || ''}`}
+            className={`space-y-1 border-b border-zinc-200/80 pb-1.5 ${stickyColumnHeaders ? 'sticky top-0 z-20 bg-zinc-50 pt-1 shadow-[0_1px_0_0_rgba(0,0,0,0.06)]' : ''} ${headerClassName || ''}`}
           >
-            {columns.map(column => (
-              <span
-                key={column.key}
-                className={`min-w-0 text-[11px] leading-4 font-black uppercase tracking-wider text-zinc-500 ${gridTemplateClass ? 'block' : 'shrink-0'} ${column.className || ''}`}
-              >
-                {column.label}
-                {column.required ? ' *' : ''}
-              </span>
-            ))}
+            <div className={`items-end gap-2 ${headerLayout} ${headerVisibility}`}>
+              {columns.map(column => (
+                <span
+                  key={column.key}
+                  className={`min-w-0 text-[11px] leading-4 font-black uppercase tracking-wider text-zinc-500 ${gridTemplateClass ? 'block' : 'shrink-0'} ${column.className || ''}`}
+                >
+                  {column.label}
+                  {column.required ? ' *' : ''}
+                </span>
+              ))}
+            </div>
+            {secondColumns && secondColumns.length > 0 && secondGridTemplateClass ? (
+              <div className={`items-end gap-2 ${alwaysShowColumnHeaders || showColumnHeaders ? 'grid' : 'hidden sm:grid'} ${secondGridTemplateClass}`}>
+                {secondColumns.map(column => (
+                  <span
+                    key={column.key}
+                    className={`min-w-0 text-[10px] font-black uppercase tracking-wider text-zinc-500 ${column.className || ''}`}
+                  >
+                    {column.label}
+                    {column.required ? ' *' : ''}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </div>
         )}
 

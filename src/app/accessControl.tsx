@@ -33,8 +33,14 @@ export function AccessControlProvider({
     const viewTabs = expandImpliedHubTabs(buildAllowedTabSet(user.viewPermissions ?? []));
     const editTabs = expandImpliedHubTabs(buildAllowedTabSet(user.editPermissions ?? []));
     const deleteTabs = expandImpliedHubTabs(buildAllowedTabSet(user.deletePermissions ?? []));
-    const canView = (tab: AppTab | string) =>
-      isAdmin || viewTabs.has(tab) || viewTabs.has(resolveAccessTab(tab));
+    const canView = (tab: AppTab | string) => {
+      if (isAdmin || viewTabs.has(tab) || viewTabs.has(resolveAccessTab(tab))) return true;
+      // Data luôn xem được nếu đã có quyền hub Quản trị / Cài đặt
+      if (tab === 'data' || resolveAccessTab(tab) === 'data') {
+        return viewTabs.has('quan-tri') || viewTabs.has('settings');
+      }
+      return false;
+    };
     const canEdit = (tab: AppTab | string) =>
       isAdmin || editTabs.has(tab) || editTabs.has(resolveAccessTab(tab));
     const canDelete = (tab: AppTab | string) =>

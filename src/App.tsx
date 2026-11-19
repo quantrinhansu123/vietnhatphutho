@@ -87,6 +87,7 @@ import { DotSanXuatPanel } from './features/dot-san-xuat';
 import { DieuDongNhanSuPanel } from './features/dieu-dong-nhan-su';
 import SapXepLichLamViecPanel from './features/sap-xep-lich-lam-viec';
 import { SettingsPanel } from './features/cai-dat-thoi-gian';
+import { DataAdminPanel } from './features/data';
 import { DashboardWindow } from './features/dashboard';
 import { ControlBoardPanel } from './features/control-board';
 import { HumanResourcesPanel } from './features/nhan-su';
@@ -604,6 +605,15 @@ export default function App() {
   const knownPermissionTabs = buildKnownPermissionTabSet();
   const canSeeTab = (tab: AppTab) => {
     if (menuFullAccess || tab === 'menu') return true;
+    // Data luôn hiện khi đã vào được Quản trị / Cài đặt
+    if (
+      tab === 'data' &&
+      (allowedMenuTabs.has('quan-tri') ||
+        allowedMenuTabs.has('settings') ||
+        allowedMenuTabs.has('data'))
+    ) {
+      return true;
+    }
     const accessTab = resolveAccessTab(tab);
     if (
       allowedMenuTabs.has(accessTab) ||
@@ -871,7 +881,7 @@ export default function App() {
                 transition={{ duration: 0.15 }}
                 className="space-y-3"
               >
-                <MenuPageHeader title="Quản trị" desc="Dashboard quản trị, người dùng/phân quyền, cấu hình hệ thống và danh mục dùng chung." />
+                <MenuPageHeader title="Quản trị" desc="Dashboard, phân quyền, cấu hình hệ thống, Data (bảng/cột Supabase) và danh mục dùng chung." />
                 <FourStepMenuFlow items={filterMenuItems(ADMIN_MENU_ITEMS)} onNavigate={navigateToTab} showFlow={false} />
               </motion.div>
             ) : activeTab === 'production-reports' ? (
@@ -1919,6 +1929,16 @@ export default function App() {
                 transition={{ duration: 0.15 }}
               >
                 <SettingsPanel onBack={() => goBack('quan-tri')} />
+              </motion.div>
+            ) : activeTab === 'data' ? (
+              <motion.div
+                key="data"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <DataAdminPanel onBack={() => goBack('quan-tri')} />
               </motion.div>
             ) : (
               <motion.div

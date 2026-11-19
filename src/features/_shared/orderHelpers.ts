@@ -4,13 +4,30 @@ import { normalizeProducts } from '../san-pham';
 import { availableConvertedUnits, convertProductQuantity, type ProductConvertedUnit } from '../../utils/productUnitConversion';
 import { parsePercentInput } from '../../utils';
 import { truncateTo4Decimals } from '../../utils/weightTruncate';
-import { classifyProductPxGroup, extractDinhMucKg, extractDoLiDmNumber, normalizeDecimalToken, normalizeDoLiToken, parseAmisSpecs, parseDoDaiMLength } from '../../utils/productProductionName';
+import {
+  classifyProductPxGroup,
+  extractDinhMucKg,
+  extractDoLiDmNumber,
+  extractTcmb,
+  normalizeDecimalToken,
+  normalizeDoLiToken,
+  parseAmisSpecs,
+  parseDoDaiMLength,
+  sortProductsByKgThenMeters
+} from '../../utils/productProductionName';
 
 export const ORDER_TYPE_OPTIONS = ['Đơn bán', 'Đơn sản xuất', 'Đơn theo quy cách của khách đặt', 'Đơn cắt lẻ', 'Đơn miền nam'] as const;
 export const CUT_ORDER_TYPE = 'Đơn theo quy cách của khách đặt';
 /** Đơn cắt lẻ kho — khác với Đơn theo quy cách (QC đặt đi Lệnh SX, cắt lẻ đi Lệnh cắt lẻ). */
 export const CUT_ORDER_TYPE_NEW = 'Đơn cắt lẻ';
 export const SOUTH_ORDER_TYPE = 'Đơn miền nam';
+export const PRODUCTION_ORDER_TYPE = 'Đơn sản xuất';
+export const SALE_ORDER_TYPE = 'Đơn bán';
+
+/** Miền trên form đơn (map `khu_vuc`). */
+export const ORDER_REGION_OPTIONS = ['Miền Bắc', 'Miền Trung', 'Miền Nam'] as const;
+export type OrderRegion = (typeof ORDER_REGION_OPTIONS)[number];
+
 /** Đơn theo quy cách của khách đặt — đi Lệnh SX, KHÔNG đi Lệnh cắt lẻ. */
 export function isCustomSpecOrderType(orderType?: string | null) {
   return String(orderType || '').trim() === CUT_ORDER_TYPE;
@@ -28,6 +45,87 @@ export function isCutOrderType(orderType?: string | null) {
 export function isCutLikeOrderType(orderType?: string | null) {
   const value = String(orderType || '').trim();
   return isCutOrderType(value) || value === SOUTH_ORDER_TYPE;
+}
+
+export function normalizeOrderRegion(value?: string | null): OrderRegion | '' {
+  const text = String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .trim();
+  if (!text) return '';
+  if (text === 'nam' || text.includes('mien nam') || text === 'south') return 'Miền Nam';
+  if (text === 'trung' || text.includes('mien trung') || text === 'central') return 'Miền Trung';
+  if (text === 'bac' || text.includes('mien bac') || text === 'north') return 'Miền Bắc';
+  return '';
+}
+
+/** Suy miền từ `khu_vuc` hoặc `loai_don_hang` khi mở sửa đơn cũ. */
+export function resolveOrderRegion(orderType?: string | null, khuVuc?: string | null): OrderRegion {
+  const fromKhu = normalizeOrderRegion(khuVuc);
+  if (fromKhu) return fromKhu;
+  const type = String(orderType || '').trim();
+  if (type === SOUTH_ORDER_TYPE) return 'Miền Nam';
+  return 'Miền Bắc';
+}
+
+/**
+ * Options Loại đơn theo miền + quyền Quản Đốc.
+ * - Miền Nam: Đơn miền nam (+ Đơn sản xuất nếu Quản Đốc)
+ * - Miền Bắc / Miền Trung: Đơn bán, quy cách, cắt lẻ (+ Đơn sản xuất nếu Quản Đốc)
+ */
+export function orderTypeOptionsForRegion(region: OrderRegion | '', canSeeProduction: boolean): string[] {
+  const production = canSeeProduction ? [PRODUCTION_ORDER_TYPE] : [];
+  if (region === 'Miền Nam') return [SOUTH_ORDER_TYPE, ...production];
+  return [SALE_ORDER_TYPE, CUT_ORDER_TYPE, CUT_ORDER_TYPE_NEW, ...production];
+}
+
+/** Map Miền + Loại đơn UI → `loai_don_hang` lưu DB. */
+export function resolveOrderTypeFromRegion(region: OrderRegion | '', orderType: string, canSeeProduction: boolean): string {
+  const options = orderTypeOptionsForRegion(region, canSeeProduction);
+  const current = String(orderType || '').trim();
+  if (options.includes(current)) return current;
+  if (region === 'Miền Nam') return SOUTH_ORDER_TYPE;
+  return SALE_ORDER_TYPE;
+}
+
+/** SP thuộc miền Nam (TCMN) / Bắc (TCMB). Không có cờ → vẫn hiện (không loại hết SP cũ). */
+export function orderProductMatchesRegion(
+  product: Pick<OrderProductOption, 'tcmn' | 'tcmb' | 'productionName' | 'tenGhep' | 'name'>,
+  region: OrderRegion | ''
+): boolean {
+  if (!region) return true;
+  const text = `${product.productionName || ''} ${product.tenGhep || ''} ${product.name || ''}`;
+  const hasTcmn =
+    /tcmn/iu.test(String(product.tcmn || '')) ||
+    /(?:^|[\s\-–—])TCMN(?:$|[\s\-–—])/iu.test(text);
+  const hasTcmb = product.tcmb === true || extractTcmb(text) === 'TCMB';
+  if (region === 'Miền Nam') {
+    if (hasTcmn) return true;
+    if (hasTcmb && !hasTcmn) return false;
+    return true;
+  }
+  if (region === 'Miền Trung') {
+    // Chưa có cờ TCM riêng → giữ SP không gắn riêng Bắc/Nam.
+    if (hasTcmn && !hasTcmb) return false;
+    if (hasTcmb && !hasTcmn) return false;
+    return true;
+  }
+  if (hasTcmb) return true;
+  if (hasTcmn && !hasTcmb) return false;
+  return true;
+}
+
+export function filterOrderProductsByRegion(
+  products: OrderProductOption[],
+  region: OrderRegion | ''
+): OrderProductOption[] {
+  const filtered = !region
+    ? products
+    : products.filter(product => orderProductMatchesRegion(product, region));
+  return sortProductsByKgThenMeters(filtered);
 }
 /** 11 loại Tem phân tích từ .ai/sp_mien_nam.xlsx (MVCC + Dán Tem). */
 export const SOUTH_TEM_OPTIONS = [
@@ -505,6 +603,10 @@ export interface OrderProductOption {
   tem?: string;
   /** Màu tem mặc định của sản phẩm — đơn miền nam / cắt lẻ auto-fill. */
   mauTem?: string;
+  /** Tiêu chuẩn miền nam (`TCMN`) trên danh mục SP. */
+  tcmn?: string;
+  /** Tiêu chuẩn miền bắc (`TCMB`) trên danh mục SP. */
+  tcmb?: boolean;
 }
 
 export function normalizeLookupText(value: string) {
@@ -588,31 +690,35 @@ export function normalizeCustomerOptions(data: unknown): CustomerOption[] {
 }
 
 export function normalizeOrderProducts(data: unknown): OrderProductOption[] {
-  return normalizeProducts(data).map(product => {
-    const productionName = String(product.productionName || product.tenGhep || '').trim();
-    const tenGhep = String(product.tenGhep || product.productionName || '').trim();
-    return {
-      id: product.id,
-      savedVariant: product.code.startsWith('VAR-'),
-      baseAmisCode: product.amisOldCode || undefined,
-      code: product.amisCode && product.amisCode !== '-' ? product.amisCode : '',
-      name: product.name,
-      productionName,
-      group: product.group,
-      unit: product.unit === '-' ? '' : product.unit,
-      newCode: product.newCode,
-      tenGhep,
-      doDaiM: product.doDaiM || '',
-      doDayM: product.doDayM || '',
-      doLiDm: /\bkg\b/iu.test(product.doLiDm || '') ? '' : (product.doLiDm || ''),
-      doLi: product.doLi || '',
-      dinhMucKg: product.dinhMucKg || '',
-      mang: product.mang || '',
-      totalWeight: product.totalWeight || '',
-      tem: product.tem || undefined,
-      mauTem: product.mauTem || undefined
-    };
-  }).filter(product => product.code);
+  return sortProductsByKgThenMeters(
+    normalizeProducts(data).map(product => {
+      const productionName = String(product.productionName || product.tenGhep || '').trim();
+      const tenGhep = String(product.tenGhep || product.productionName || '').trim();
+      return {
+        id: product.id,
+        savedVariant: product.code.startsWith('VAR-'),
+        baseAmisCode: product.amisOldCode || undefined,
+        code: product.amisCode && product.amisCode !== '-' ? product.amisCode : '',
+        name: product.name,
+        productionName,
+        group: product.group,
+        unit: product.unit === '-' ? '' : product.unit,
+        newCode: product.newCode,
+        tenGhep,
+        doDaiM: product.doDaiM || '',
+        doDayM: product.doDayM || '',
+        doLiDm: /\bkg\b/iu.test(product.doLiDm || '') ? '' : (product.doLiDm || ''),
+        doLi: product.doLi || '',
+        dinhMucKg: product.dinhMucKg || '',
+        mang: product.mang || '',
+        totalWeight: product.totalWeight || '',
+        tem: product.tem || undefined,
+        mauTem: product.mauTem || undefined,
+        tcmn: product.tcmn || undefined,
+        tcmb: Boolean(product.tcmb)
+      };
+    }).filter(product => product.code)
+  );
 }
 
 export function findOrderProductById(products: OrderProductOption[], id: string) {
