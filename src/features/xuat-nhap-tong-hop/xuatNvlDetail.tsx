@@ -19,6 +19,7 @@ import { isWarehouseKgUnit } from '../../utils/warehouseWeight';
 import { formatMoney, formatMoneyVN, formatNumber, parseLocalizedNumber } from '../../utils';
 import { formatNvlPriceTyped, NvlPriceSelect } from './NvlPriceSelect';
 import { allocateLots, sortLotsFifo, type LotAlloc } from './lotAllocation';
+import { ChiPhiLineModal } from './ChiPhiLineModal';
 
 /** Tạm ẩn khối ảnh số cân NVL — bật `true` khi dùng lại chức năng chụp. */
 const SHOW_NVL_ACTUAL_WEIGHT_IMAGE = false;
@@ -277,6 +278,7 @@ export function XuatNvlDetail({
   const [uploadError, setUploadError] = useState('');
   const [lotsByCode, setLotsByCode] = useState<Record<string, NvlInboundLotOption[]>>({});
   const [lotsError, setLotsError] = useState('');
+  const [chiPhiLineKey, setChiPhiLineKey] = useState<string | null>(null);
 
   /** Giá theo phiếu/lô đã chọn (hoặc lô FIFO đầu). */
   function priceFromPreferredLot(code: string, preferredLotId?: string) {
@@ -807,7 +809,15 @@ export function XuatNvlDetail({
                   />
                 </div>
                 <div className="min-w-0 truncate text-right font-mono text-[11px] font-bold tabular-nums">{amountText}</div>
-                <div className="flex items-center justify-center">
+                <div className="flex flex-col items-center justify-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setChiPhiLineKey(line.key)}
+                    className="rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-[9px] font-extrabold leading-none text-amber-800"
+                    title="Chi phí kèm theo"
+                  >
+                    CP{line.chiPhiKemTheo.length ? `(${line.chiPhiKemTheo.length})` : ''}
+                  </button>
                   {!viewOnly ? (
                     <button type="button" onClick={() => onChange(lines.filter((_, i) => i !== index).length ? lines.filter((_, i) => i !== index) : [blankLine()])} className="text-rose-600">
                       <Trash2 className="h-3.5 w-3.5" />
@@ -864,6 +874,24 @@ export function XuatNvlDetail({
       {lotsError ? <p className="text-xs font-semibold text-rose-600">{lotsError}</p> : null}
       <ProductQrScanner open={scannerOpen} onClose={() => setScannerOpen(false)} onScan={onScan} closeAfterScan={false} requireConfirm={false} />
       <WeighingImagePreviewModal image={viewing} onClose={() => setViewing(null)} />
+      {(() => {
+        const active = lines.find(line => line.key === chiPhiLineKey) || null;
+        return (
+          <ChiPhiLineModal
+            open={Boolean(active)}
+            title={active ? `${active.maHang || 'Dòng'} · ${active.tenHang || 'Chưa chọn mã'}` : ''}
+            maHang={active?.maHang || ''}
+            items={active?.chiPhiKemTheo || []}
+            disabled={viewOnly}
+            showTheoPhieu
+            onClose={() => setChiPhiLineKey(null)}
+            onSave={next => {
+              if (!active) return;
+              onChange(lines.map(line => (line.key === active.key ? { ...line, chiPhiKemTheo: next } : line)));
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

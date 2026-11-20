@@ -11,6 +11,7 @@ import {
   DOT_SAN_XUAT_OPTIONS,
   LOAI_SAN_XUAT_LABEL,
   queueTongHopEdit,
+  queueTongHopMode,
   queueTongHopView,
   type TongHopHeader,
   type TongHopMode
@@ -175,6 +176,12 @@ export function TongHopListPanel({
     }
   }
 
+  // Mở danh sách hoặc đổi loại phiếu sẽ tự tải dữ liệu.
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter]);
+
   // Tải lại sau khi hủy phiếu (giữ nguyên điều kiện đang xem).
   useEffect(() => {
     if (info && loaded) void load();
@@ -222,6 +229,25 @@ export function TongHopListPanel({
     setInfo(`Đã hủy ${row.ma_phieu_chung}.`);
   }
 
+  async function deleteRecord(row: TongHopHeader) {
+    if (
+      !window.confirm(
+        `Xóa vĩnh viễn ${row.ma_phieu_chung}?\nSẽ xóa luôn các phiếu kho liên quan (nhập/xuất/đảo). Không hoàn tác được.`
+      )
+    ) {
+      return;
+    }
+    setError('');
+    const res = await fetch(`/api/xuat-nhap-tong-hop/${encodeURIComponent(row.id)}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(data.error || 'Không xóa được phiếu.');
+      return;
+    }
+    setRecords(current => current.filter(item => item.id !== row.id));
+    setInfo(`Đã xóa ${row.ma_phieu_chung}.`);
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
@@ -229,6 +255,38 @@ export function TongHopListPanel({
         <h1 className="text-sm font-black uppercase tracking-wide text-zinc-950">Danh sách xuất nhập kho NVL</h1>
         <button type="button" onClick={onCreate} className="text-xs font-extrabold text-[#ef1b2d]">Tạo phiếu</button>
       </div>
+
+      <section className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
+        <p className="mb-2 text-xs font-black uppercase tracking-wide text-zinc-700">Loại phiếu</p>
+        <div className="grid grid-cols-3 gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              queueTongHopMode('nhap');
+              onCreate();
+            }}
+            className="flex h-9 items-center justify-center rounded-lg border border-zinc-200 bg-white px-2 text-xs font-extrabold text-zinc-700 transition hover:border-zinc-400"
+          >
+            Phiếu nhập
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              queueTongHopMode('xuat');
+              onCreate();
+            }}
+            className="flex h-9 items-center justify-center rounded-lg border border-zinc-200 bg-white px-2 text-xs font-extrabold text-zinc-700 transition hover:border-zinc-400"
+          >
+            Phiếu xuất
+          </button>
+          <button
+            type="button"
+            className="flex h-9 items-center justify-center rounded-lg border border-[#ef1b2d] bg-red-50 px-2 text-xs font-extrabold text-[#ef1b2d]"
+          >
+            Danh sách phiếu
+          </button>
+        </div>
+      </section>
 
       <section className="space-y-3 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
         <div className="grid grid-cols-3 gap-2">
@@ -405,6 +463,14 @@ export function TongHopListPanel({
                         <button type="button" onClick={() => void cancelRecord(row)} className="text-sm font-semibold text-rose-600">Hủy</button>
                       </>
                     ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void deleteRecord(row)}
+                      className="text-xs font-extrabold text-rose-700"
+                      title="Xóa vĩnh viễn phiếu và các phiếu kho liên quan"
+                    >
+                      Xóa
+                    </button>
                   </div>
                 </td>
               </tr>

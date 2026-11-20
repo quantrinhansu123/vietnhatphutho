@@ -187,8 +187,11 @@ export function parseLocalizedNumber(value: unknown): number {
   } else if (lastComma >= 0) {
     // Chỉ có dấu phẩy: nhóm 3 số là hàng nghìn, còn lại là thập phân.
     normalized = /^-?\d{1,3}(,\d{3})+$/.test(text) ? text.replace(/,/g, '') : text.replace(/,/g, '.');
+  } else if (lastDot >= 0 && /^-?\d{1,3}(\.\d{3})+$/.test(text)) {
+    // Một hoặc nhiều nhóm nghìn kiểu VN: 120.000 / 1.250.000 — không để Number('120.000') = 120.
+    normalized = text.replace(/\./g, '');
   } else if ((text.match(/\./g) || []).length > 1) {
-    // Nhiều dấu chấm: kiểu cũ 1.250.000 — bỏ hết (cùng quy ước sổ trộn).
+    // Nhiều dấu chấm không khớp nhóm 3: bỏ hết.
     normalized = text.replace(/\./g, '');
   }
   return Number(normalized);

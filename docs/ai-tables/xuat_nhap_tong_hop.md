@@ -14,6 +14,7 @@
 | GET/POST | `/api/xuat-nhap-tong-hop` | Header + ghi vế `phieu_nhap_kho` / `phieu_xuat_kho`. Vế NVL có kho ghi `id_danh_muc` + `loai_danh_muc = kho_nvl`. Kiểm tồn phiếu nhiều dòng gom mã theo nguồn và đọc theo lô; các dòng cùng nguồn/đích insert một lượt. |
 | PUT | `/api/xuat-nhap-tong-hop/:id` | Sửa header, sinh lại vế, snapshot `phieu_xuat_nhap_kho_lich_su` |
 | POST | `/api/xuat-nhap-tong-hop/:id/huy` | Phiếu đảo, không xóa vế lẻ |
+| DELETE | `/api/xuat-nhap-tong-hop/:id` | Xóa vĩnh viễn header + các mã `ma_phieu_nhap` / `ma_phieu_xuat` / phiếu đảo liên quan |
 | GET | `/api/xuat-nhap-tong-hop/ton` | Tồn dòng theo kho hoặc máy |
 | GET | `/api/ton-may?ma_may=` | Tồn NVL máy, đối chiếu `so_tron` / `bao_cao_may_nvl_ton` |
 | POST | `/api/xuat-nhap-tong-hop/ma-moi` | Thêm mã NVL hoặc dòng `nhap_kho` (nhánh NVL bắt buộc `ten_kho` kho NVL đã có trong quản lý kho, lưu `ten_nvl_sx` + `phan_loai` + `loai_kho` theo unique `ma+ten+ten_sx+kho`; trùng unique trả dòng đang sống thay vì 500) |
@@ -56,4 +57,4 @@ API tests: `tests/api/nvlWarehouseFlow.test.ts` (opt-in integration test, 10 mã
 - `ten_kho` chỉ là tên kho. Máy ghi cột `may`. Row máy trên `nhap_kho`: `ma_may` có giá trị, `ten_kho=''`.
 - Báo cáo kho cũ bỏ dòng `nhap_kho.ma_may` không rỗng.
 - Không sửa `phieu_chuyen_kho`.
-- Chi phí kèm theo nằm trong `chi_tiet[].chi_phi_kem_theo` (`ten`, `don_gia`, `thanh_tien`, tối đa 50 khoản). `thanh_tien` dòng hàng vẫn là SL × đơn giá. Tổng KL / Tổng hàng / Tổng kèm / Tổng cộng chỉ tính khi hiển thị. Mirror cột `chi_phi_kem_theo` trên `phieu_nhap_kho` và `phieu_xuat_kho`; không đụng `phieu_xuat_nhap_kho`. Chạy `supabase-phieu-chi-phi-kem-theo.sql`.
+- Chi phí kèm theo **từng dòng**: nút «Chi phí» mở modal (`ChiPhiLineModal`) — chọn phiếu nhập + SL + giá theo phiếu, hoặc «Thêm chi phí khác». Lưu `chi_tiet[].chi_phi_kem_theo` (`ten`, `don_gia`, `thanh_tien`, tối đa 50 khoản). `thanh_tien` dòng hàng vẫn là SL × đơn giá. Mirror cột trên `phieu_nhap_kho` / `phieu_xuat_kho`.

@@ -1776,6 +1776,7 @@ export default function App() {
                 <TongHopPanel
                   onBack={() => goBack('factory-kho')}
                   onHome={() => navigateToTab('menu')}
+                  onOpenList={() => navigateToTab('phieu-nhap-xuat-tong-hop-list')}
                 />
               </motion.div>
             ) : activeTab === 'nvl-theo-dot-may' ? (
