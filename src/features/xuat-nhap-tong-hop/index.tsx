@@ -1435,6 +1435,8 @@ export function TongHopPanel({
   }, [isNhapLai, inboundMachineId, cas, ngay, machines, shiftSettings]);
 
   function bindXuatLines(next: XuatNvlLine[]) {
+    const headerNgay = String(ngay || '').slice(0, 10);
+    const headerCa = String(cas[0] || '').trim();
     setLines(next.map(line => {
       const srcLoai = line.srcLoai === 'may' ? 'may' : 'kho';
       return {
@@ -1444,10 +1446,23 @@ export function TongHopPanel({
         srcId: String(line.srcId || ''),
         sourceLoai: srcLoai,
         khoLoai: srcLoai,
-        khoId: ''
+        khoId: '',
+        ngayDong: headerNgay,
+        caDong: headerCa
       };
     }));
   }
+
+  // Ngày / ca dòng xuất luôn theo header phiếu.
+  useEffect(() => {
+    if (mode !== 'xuat') return;
+    const headerNgay = String(ngay || '').slice(0, 10);
+    const headerCa = String(cas[0] || '').trim();
+    setLines(current => {
+      if (!current.some(line => line.ngayDong !== headerNgay || line.caDong !== headerCa)) return current;
+      return current.map(line => ({ ...line, ngayDong: headerNgay, caDong: headerCa }));
+    });
+  }, [mode, ngay, cas]);
 
   function resolveKhoIdByHint(hint?: string) {
     if (!hint) return '';
@@ -1808,22 +1823,22 @@ export function TongHopPanel({
             </label>
             {showLoaiSanXuat ? (
               <label className="block min-w-0 space-y-0.5">
-                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500" title="Đặc / Sóng / Rỗng — phân biệt máy chạy nhiều loại">
+                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500" title="Đặc / Sóng / Rỗng — gõ tìm hoặc thêm mới">
                   {LOAI_SAN_XUAT_LABEL}
                 </span>
-                <select
+                <SearchableSelect
                   value={loaiSanXuat}
-                  onChange={viewOnly ? undefined : event => setLoaiSanXuat(event.target.value)}
+                  onChange={viewOnly ? undefined : setLoaiSanXuat}
+                  options={LOAI_SAN_XUAT_OPTIONS.map(item => ({ id: item, label: item }))}
+                  getValue={(item: unknown) => String((item as { id: string }).id)}
+                  getLabel={(item: unknown) => String((item as { label: string }).label)}
+                  placeholder={`Chọn ${LOAI_SAN_XUAT_LABEL}`}
+                  inputClassName={fieldClass}
+                  comboboxMode
+                  comboboxSearchable
+                  allowCustomValue
                   disabled={viewOnly}
-                  className={fieldClass}
-                >
-                  <option value="">Chọn {LOAI_SAN_XUAT_LABEL}</option>
-                  {LOAI_SAN_XUAT_OPTIONS.map(item => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
             ) : null}
             {needsSxHeader ? (
@@ -2131,8 +2146,8 @@ export function TongHopPanel({
               machines={machines}
               materials={materials}
               materialsForSource={materialsForSource}
-              shiftOptions={shiftOptions}
-              defaultTonNgay={tonDefault.ngay || ngay}
+              headerNgay={ngay}
+              headerCa={cas[0] || ''}
               onChange={bindXuatLines}
               onRefreshCatalog={() => { void refreshCatalog(); }}
               refreshing={refreshingCatalog}
@@ -2322,7 +2337,7 @@ export function TongHopPanel({
                     <button
                       type="button"
                       onClick={() => setChiPhiLineKey(line.key)}
-                      className="h-7 rounded-md border border-amber-200 bg-amber-50 px-1 text-[9px] font-extrabold text-amber-800"
+                      className="min-h-8 min-w-10 rounded-md border border-amber-300 bg-amber-50 px-2 text-[12px] font-black text-amber-900 shadow-sm"
                       title={kemLine > 0 ? `Kèm ${formatMoney(kemLine, 0)}` : 'Chi phí'}
                     >
                       {line.chiPhiKemTheo.length ? `CP(${line.chiPhiKemTheo.length})` : 'CP'}

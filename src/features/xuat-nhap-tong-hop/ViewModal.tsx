@@ -238,10 +238,6 @@ export function TongHopViewModal({
                     <th className="px-3 py-2 text-left">Tên SX</th>
                     <th className="px-3 py-2 text-center">ĐVT</th>
                     <th className="px-3 py-2 text-center">Nhóm VTHH</th>
-                    <th className="px-3 py-2 text-center">Ngày tồn</th>
-                    <th className="px-3 py-2 text-center">Ca</th>
-                    <th className="px-3 py-2 text-right">Tồn đầu</th>
-                    <th className="px-3 py-2 text-right">SL CT</th>
                     <th className="px-3 py-2 text-right">SL Thực</th>
                     <th className="px-3 py-2 text-right">Quy đổi KG</th>
                     <th className="px-3 py-2 text-right">Giá mua</th>
@@ -263,14 +259,6 @@ export function TongHopViewModal({
                       <td className="px-3 py-2 text-zinc-700">{String(line.ten_nvl_sx || '')}</td>
                       <td className="px-3 py-2 text-center text-zinc-600">{String(line.don_vi || '')}</td>
                       <td className="px-3 py-2 text-center text-zinc-600">{String(line.nhom_vthh || '')}</td>
-                      <td className="px-3 py-2 text-center text-zinc-600">{line.ngay_dong ? formatTongHopDate(String(line.ngay_dong).slice(0, 10)) : '—'}</td>
-                      <td className="px-3 py-2 text-center text-zinc-600">{String(line.ca_dong || '')}</td>
-                      <td className="px-3 py-2 text-right tabular-nums font-mono">
-                        {line.ton_dau_ca !== null && line.ton_dau_ca !== undefined
-                          ? formatNumber(typeof line.ton_dau_ca === 'number' ? line.ton_dau_ca : parseLocalizedNumber(String(line.ton_dau_ca)))
-                          : '—'}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums font-mono">{formatNumber(String(line.so_luong_ct || ''))}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-mono text-emerald-700">{formatNumber(String(line.so_luong || ''))}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-mono">{formatNumber(String(line.quy_doi_kg || ''))}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-mono">{formatMoney(String(line.don_gia || ''))}</td>
