@@ -1382,7 +1382,7 @@ export function SoTronPanel({
   const lenhOptionSearchText = (order: ProductionOrderRow) => {
     const products = Array.isArray(order.products)
       ? (order.products as OrderProductLine[])
-          .map(p => `${str(p.productCode)} ${str(p.tenGhep || p.productName)}`)
+          .map(p => `${str(p.productCode)} ${str(p.productionName || p.productName)}`)
           .join(' ')
       : '';
     return `${order.code} ${str(order.machine)} ${str(order.shift)} ${products}`;
@@ -2291,7 +2291,7 @@ export function SoTronPanel({
       const products: OrderProductLine[] = Array.isArray(order.products) ? order.products : [];
       for (const p of products) {
         const maSp = str(p.productCode);
-        const tenSp = str(p.tenGhep || p.productName) || maSp;
+        const tenSp = str(p.productionName || p.productName) || maSp;
         if (!maSp && !tenSp) continue;
         list.push({
           value: `${maSp} — ${tenSp}`,
@@ -5485,7 +5485,7 @@ export function SoTronPanel({
                       const products: OrderProductLine[] = Array.isArray(order.products) ? order.products : [];
                       for (const p of products) {
                         const maSp = str(p.productCode);
-                        const tenSp = str(p.tenGhep || p.productName) || maSp;
+                        const tenSp = str(p.productionName || p.productName) || maSp;
                         if (!maSp && !tenSp) continue;
                         const dat = round2(parseNum(p.quantity));
                         const daNhap = round2(

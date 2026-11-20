@@ -6740,7 +6740,7 @@ type NhapKhoOrderSpecs = {
   mo_ta_tem: string;
   san_pham_id: string;
   ten_sp: string;
-  ten_ghep: string;
+  ten_san_xuat: string;
 };
 
 function formatNhapKhoMeterLabel(value: unknown): string {
@@ -6754,7 +6754,7 @@ function formatNhapKhoMeterLabel(value: unknown): string {
 function specsFromOrderProductJson(row: Record<string, unknown>): NhapKhoOrderSpecs | null {
   const maSp = String(row.ma_sp ?? row.maSp ?? '').trim();
   if (!maSp) return null;
-  const tenGhepRaw = String(row.ten_ghep ?? row.tenGhep ?? '').trim();
+  const tenGhepRaw = String(row.ten_san_xuat ?? '').trim();
   const tenSanXuat = String(row.ten_san_xuat ?? row.tenSanXuat ?? '').trim();
   const base = stripSouthTemSuffixServer(tenGhepRaw) || tenSanXuat;
   const parts = base
@@ -6777,7 +6777,7 @@ function specsFromOrderProductJson(row: Record<string, unknown>): NhapKhoOrderSp
     mo_ta_tem: moTaTem,
     san_pham_id: String(row.san_pham_id ?? row.sanPhamId ?? '').trim(),
     ten_sp: String(row.ten_sp ?? row.tenSp ?? '').trim(),
-    ten_ghep: tenGhepRaw
+    ten_san_xuat: tenGhepRaw
   };
 }
 
@@ -6796,7 +6796,7 @@ function pickOrderSpecsForItem(candidates: NhapKhoOrderSpecs[], itemName: string
   if (!name) return candidates[0];
   const matched = candidates.find(specs => {
     const tenSp = specs.ten_sp.toLocaleLowerCase('vi');
-    const tenGhep = stripSouthTemSuffixServer(specs.ten_ghep).toLocaleLowerCase('vi');
+    const tenGhep = stripSouthTemSuffixServer(specs.ten_san_xuat).toLocaleLowerCase('vi');
     return tenSp === name || tenGhep === name || (tenGhep && name && tenGhep.includes(name));
   });
   return matched || candidates[0];
@@ -7348,9 +7348,9 @@ function resolveStoredOrderTenGhep(
   tenSp: string,
   cutLengthM: number | null
 ): string {
-  const fromGhep = String(tenGhepRaw ?? '').trim();
+  const fromGhep = String(tenGhepRaw || tenSanXuat || '').trim();
   const fromSx = String(tenSanXuat || '').trim();
-  // Snapshot ten_ghep legacy vẫn ưu tiên nếu có; không thì dùng ten_san_xuat (canonical).
+  // Chỉ dùng tên sản xuất; không đọc snapshot tên ghép cũ.
   if (fromGhep) {
     return cutLengthM !== null && cutLengthM > 0
       ? replaceCutLengthMeters(fromGhep, cutLengthM)
@@ -7448,7 +7448,6 @@ type OrderProductRecord = {
   ma_sp: string;
   ten_sp: string;
   ten_san_xuat?: string;
-  ten_ghep?: string;
   /** Đơn miền nam: tem + màu tem + 2 Đầu. ten_ghep đã gồm suffix " (Dán Tem X) Màu Y MV...". */
   tem?: string | null;
   mau_tem?: string | null;
@@ -7674,7 +7673,7 @@ function parseOrderProductsInput(
     const ma_sp = pickRowField(row, ['ma_sp', 'ma_hang', 'productCode', 'code']);
     const ten_sp = pickRowField(row, ['ten_sp', 'ten_hang', 'productName', 'name']);
     let ten_san_xuat = pickRowField(row, ['ten_san_xuat', 'productionName']);
-    const ten_ghep_raw = pickRowField(row, ['ten_ghep', 'tenGhep']);
+    const ten_ghep_raw = ten_san_xuat;
     const don_vi = pickRowField(row, ['don_vi', 'unit']);
     const so_luong_bac = parseOrderQuantity(row.so_luong_bac ?? row.sl_bac ?? row.slsx_bac ?? row.bac ?? row.slBac);
     const so_luong_trung = parseOrderQuantity(row.so_luong_trung ?? row.sl_trung ?? row.slsx_trung ?? row.trung ?? row.slTrung);
@@ -7766,7 +7765,7 @@ function parseOrderProductsInput(
       ...(kho !== null && kho > 0 ? { kho } : {}),
       ...(dai_m !== null && dai_m > 0 ? { dai_m } : {}),
       ...(ghi_chu ? { ghi_chu } : {}),
-      ...(ten_ghep ? { ten_ghep } : {}),
+      ...(ten_ghep ? { ten_san_xuat: ten_ghep } : {}),
       ...(tem ? { tem } : {}),
       ...(mau_tem ? { mau_tem } : {}),
       ...(dan_tem_2_dau ? { dan_tem_2_dau } : {}),
@@ -7925,16 +7924,13 @@ function parseOrderProductsFromRow(row: Record<string, unknown>): OrderProductRe
           ma_sp,
           ten_sp,
           ten_san_xuat: pickRowField(record, ['ten_san_xuat', 'productionName']),
-          ...(pickRowField(record, ['ten_ghep', 'tenGhep'])
-            ? { ten_ghep: pickRowField(record, ['ten_ghep', 'tenGhep']) }
-            : {}),
           ...(pickRowField(record, ['tem', 'tem_dan', 'dan_tem'])
             ? { tem: pickRowField(record, ['tem', 'tem_dan', 'dan_tem']) }
             : {}),
           ...(pickRowField(record, ['mau_tem', 'mauTem', 'mau'])
             ? { mau_tem: pickRowField(record, ['mau_tem', 'mauTem', 'mau']) }
             : {}),
-          ...((record.dan_tem_2_dau === 1 || record.danTem2Dau === true || String(record.dan_tem_2_dau ?? '').trim() === '1' || /Dán Tem 2 Đầu/u.test(String(record.ten_ghep ?? record.tenGhep ?? '')))
+          ...((record.dan_tem_2_dau === 1 || record.danTem2Dau === true || String(record.dan_tem_2_dau ?? '').trim() === '1' || /Dán Tem 2 Đầu/u.test(String(record.ten_san_xuat ?? '')))
             ? { dan_tem_2_dau: 1 }
             : {}),
           ...(pickRowField(record, ['mang'])
@@ -8132,7 +8128,7 @@ async function enrichOrderProductsWithConversionData(
         // Dòng legacy có thể chưa lưu `do_li` — đọc token độ li chính từ tên ghép/tên SX/mã.
         const lineParts = isDacLine
           ? parseProductionNameParts(
-              String(product.ten_ghep || product.ten_san_xuat || ''),
+              String(product.ten_san_xuat || ''),
               lineGroup,
               String(product.ma_amis || product.ma_sp || '')
             )
@@ -8527,7 +8523,7 @@ function buildProductionOrderRecordFromOrder(
   const quyCachForTenGhep =
     selectedProduct?.quy_cach_m_dai ??
     (selectedProduct?.dai_m && selectedProduct.dai_m > 0 ? selectedProduct.dai_m : null);
-  const productTenGhep = String(selectedProduct?.ten_ghep || '').trim()
+  const productTenGhep = String(selectedProduct?.ten_san_xuat || '').trim()
     || resolveStoredOrderTenGhep('', productProductionName || productName, '', quyCachForTenGhep ?? null);
   const customer = pickRowField(order, ['khach_hang', 'customer']);
   const unit = selectedProduct?.don_vi ?? '';
@@ -8547,8 +8543,7 @@ function buildProductionOrderRecordFromOrder(
         ma_don_hang: orderCode,
         ma_sp: productCode,
         ten_sp: productName,
-        ten_san_xuat: productProductionName,
-        ...(productTenGhep ? { ten_ghep: productTenGhep } : {}),
+        ten_san_xuat: productTenGhep || productProductionName,
         ...(selectedProduct?.tem ? { tem: selectedProduct.tem } : {}),
         ...(selectedProduct?.mau_tem ? { mau_tem: selectedProduct.mau_tem } : {}),
         ...(selectedProduct?.dan_tem_2_dau ? { dan_tem_2_dau: selectedProduct.dan_tem_2_dau } : {}),
@@ -8616,7 +8611,7 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
     const ma_sp = pickRowField(row, ['ma_sp', 'ma_hang', 'productCode', 'code']);
     const ten_sp = pickRowField(row, ['ten_sp', 'ten_hang', 'productName', 'name']);
     const ten_san_xuat = pickRowField(row, ['ten_san_xuat', 'productionName']);
-    const ten_ghep_raw = pickRowField(row, ['ten_ghep', 'tenGhep']);
+    const ten_ghep_raw = ten_san_xuat;
     const don_vi = pickRowField(row, ['don_vi', 'unit']);
     let so_luong = parseOrderQuantity(row.so_luong ?? row.quantity);
     const ma_don_hang = pickRowField(row, ['ma_don_hang', 'orderRef', 'order_code']);
@@ -8677,7 +8672,7 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
       ma_sp,
       ten_sp,
       ten_san_xuat,
-      ...(ten_ghep ? { ten_ghep } : {}),
+      ...(ten_ghep ? { ten_san_xuat: ten_ghep } : {}),
       ...(pickRowField(row, ['tem', 'tem_dan', 'dan_tem']) ? { tem: pickRowField(row, ['tem', 'tem_dan', 'dan_tem']) } : {}),
       ...(pickRowField(row, ['mau_tem', 'mauTem', 'mau']) ? { mau_tem: pickRowField(row, ['mau_tem', 'mauTem', 'mau']) } : {}),
       ...((row.dan_tem_2_dau === 1 || row.danTem2Dau === true || String(row.dan_tem_2_dau ?? '').trim() === '1') ? { dan_tem_2_dau: 1 } : {}),
@@ -10902,6 +10897,63 @@ export function createApp() {
       let orders = data || [];
       if (!includeDeleted && Array.isArray(orders)) {
         orders = (orders as Record<string, unknown>[]).filter(row => !isOrderDeletedRow(row));
+      }
+
+      // Legacy orders may contain only a product ID or the old `ten_ghep` key.
+      // Fill the canonical production name from the legacy snapshot first, then
+      // from the exact linked catalog row (never infer by a potentially shared code).
+      const orderRows = orders as Record<string, unknown>[];
+      const parsedLinesByOrder = new Map<number, { lines: unknown[]; wasString: boolean }>();
+      const missingProductIds = new Set<string>();
+      orderRows.forEach((order, orderIndex) => {
+        let raw = order.san_pham ?? order.products;
+        const wasString = typeof raw === 'string';
+        if (wasString) {
+          try { raw = JSON.parse(raw as string); } catch { return; }
+        }
+        if (!Array.isArray(raw)) return;
+        parsedLinesByOrder.set(orderIndex, { lines: raw, wasString });
+        for (const line of raw) {
+          if (!line || typeof line !== 'object') continue;
+          const product = line as Record<string, unknown>;
+          const productionName = String(product.ten_san_xuat ?? product.productionName ?? '').trim();
+          const legacyName = String(product.ten_ghep ?? product.tenGhep ?? '').trim();
+          const productId = String(product.san_pham_id ?? product.productId ?? product.product_id ?? '').trim();
+          if (!productionName && !legacyName && productId) missingProductIds.add(productId);
+        }
+      });
+      const productionNameByProductId = new Map<string, string>();
+      if (missingProductIds.size > 0) {
+        const { data: linkedProducts, error: linkedProductsError } = await supabase
+          .from(SUPABASE_PRODUCTS_TABLE)
+          .select('id, ten_san_xuat')
+          .in('id', [...missingProductIds]);
+        if (linkedProductsError) {
+          console.warn('[don_hang] Could not hydrate missing production names:', linkedProductsError.message);
+        } else {
+          for (const product of linkedProducts || []) {
+            const id = String(product.id ?? '').trim();
+            const name = String(product.ten_san_xuat ?? '').trim();
+            if (id && name) productionNameByProductId.set(id, name);
+          }
+        }
+      }
+      for (const [orderIndex, parsed] of parsedLinesByOrder) {
+        let changed = false;
+        const lines = parsed.lines.map(line => {
+          if (!line || typeof line !== 'object') return line;
+          const product = line as Record<string, unknown>;
+          if (String(product.ten_san_xuat ?? product.productionName ?? '').trim()) return line;
+          const legacyName = String(product.ten_ghep ?? product.tenGhep ?? '').trim();
+          const productId = String(product.san_pham_id ?? product.productId ?? product.product_id ?? '').trim();
+          const productionName = legacyName || productionNameByProductId.get(productId) || '';
+          if (!productionName) return line;
+          changed = true;
+          return { ...product, ten_san_xuat: productionName };
+        });
+        if (changed) {
+          orderRows[orderIndex].san_pham = parsed.wasString ? JSON.stringify(lines) : lines;
+        }
       }
 
       return res.json({
@@ -18901,7 +18953,6 @@ async function loadKiemKhoLiveTongHopForDot(
         ma_amis_cu: base || null,
         ten_sp: tenSp,
         ten_san_xuat: tenSp,
-        ten_ghep: tenSp,
         nhom_vthh: args.nhomVthh || null,
         don_vi: args.donVi || 'Tấm',
         ten_goc: args.specs.ten_goc || null,
@@ -24334,7 +24385,7 @@ async function loadKiemKhoLiveTongHopForDot(
     // Trùng mã nhưng khác tên sản xuất (tên ghép) phải hiển thị khác dòng —
     // luôn đưa tên ghép chuẩn hóa vào khóa gộp (cả khi đã có san_pham_id).
     const tenGhepKey = String(
-      item?.ten_ghep ?? item?.tenGhep ?? item?.ten_san_xuat ?? item?.productionName ?? item?.ten_sp ?? ''
+      item?.ten_san_xuat ?? item?.productionName ?? item?.ten_sp ?? ''
     )
       .trim()
       .toLowerCase();
@@ -24432,7 +24483,7 @@ async function loadKiemKhoLiveTongHopForDot(
       }
 
       const lineDisplayName = (line: Record<string, unknown>): string =>
-        String(line.ten_ghep ?? line.tenGhep ?? line.ten_san_xuat ?? '').trim().toLowerCase();
+        String(line.ten_san_xuat ?? '').trim().toLowerCase();
 
       // Chọn dòng đơn theo tên: khớp tuyệt đối trước, chỉ khi duy nhất một
       // ứng viên chứa lẫn nhau mới nhận (tránh đoán bừa gây trùng ghi chú).
@@ -24460,7 +24511,7 @@ async function loadKiemKhoLiveTongHopForDot(
         const spId = String(item?.san_pham_id ?? '').trim();
         const maSp = String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '').trim().toLowerCase();
         // Tên định danh dòng: ưu tiên tên ghép đã lưu (phân biệt cả khi trùng mã SP).
-        const itemName = String(item?.ten_ghep ?? item?.tenGhep ?? item?.ten_san_xuat ?? item?.productionName ?? '')
+        const itemName = String(item?.ten_san_xuat ?? item?.productionName ?? '')
           .trim()
           .toLowerCase();
 
@@ -24549,7 +24600,7 @@ async function loadKiemKhoLiveTongHopForDot(
       };
 
       // TL/cuộn & TL/tấm lấy từ JSON san_pham của lệnh SX — không tra bảng quy đổi.
-      // Tên ghép hiển thị lấy từ JSON (ten_ghep) — không tự ghép lại.
+      // Tên sản xuất hiển thị lấy từ JSON — không đọc tên ghép cũ.
       interface MergedGroup {
         groupKey: string;
         item_indices: number[];
@@ -24570,7 +24621,7 @@ async function loadKiemKhoLiveTongHopForDot(
         notes: Set<string>;
         tenGheps: Set<string>;
         /** Ghi chú phân biệt theo từng đơn + mã SP + tên ghép (không gộp chuỗi). */
-        noteDetails: Array<{ ma_don_hang: string; ma_sp: string; ten_ghep: string; ghi_chu: string }>;
+        noteDetails: Array<{ ma_don_hang: string; ma_sp: string; ten_san_xuat: string; ghi_chu: string }>;
         noteDetailKeys: Set<string>;
       }
 
@@ -24587,20 +24638,20 @@ async function loadKiemKhoLiveTongHopForDot(
         const noteFromLenh = String(item?.ghi_chu ?? '').trim();
         const noteFromDonHang = resolveOrderLineNote(item, maDonHang);
         const note = noteFromLenh || noteFromDonHang;
-        const tenGhepFromJson = String(item?.ten_ghep ?? item?.tenGhep ?? '').trim();
+        const tenGhepFromJson = String(item?.ten_san_xuat ?? item?.productionName ?? '').trim();
         // Chi tiết ghi chú phân biệt theo từng đơn + mã SP + tên ghép (để frontend in không trùng).
         const noteDetail = note
           ? {
               ma_don_hang: maDonHang || orderLevelMaDonHang.split(',')[0]?.trim() || '',
               ma_sp: String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '').trim(),
-              ten_ghep:
+              ten_san_xuat:
                 tenGhepFromJson ||
                 String(item?.ten_san_xuat ?? item?.productionName ?? item?.ten_sp ?? '').trim(),
               ghi_chu: note
             }
           : null;
         const noteDetailKey = noteDetail
-          ? `${noteDetail.ma_don_hang}__${noteDetail.ma_sp}__${noteDetail.ten_ghep}__${noteDetail.ghi_chu}`
+          ? `${noteDetail.ma_don_hang}__${noteDetail.ma_sp}__${noteDetail.ten_san_xuat}__${noteDetail.ghi_chu}`
           : '';
 
         const savedSlSx =
@@ -24687,7 +24738,7 @@ async function loadKiemKhoLiveTongHopForDot(
 
       const rows = groupList.map((grp, grpIdx) => {
         const item = grp.firstItem;
-        // Tên hiển thị: ten_ghep đã lưu trong JSON san_pham lệnh SX.
+        // Tên hiển thị lấy từ ten_san_xuat trong JSON sản phẩm lệnh SX.
         // Không tự ghép lại — thiếu thì để tên SX thô, frontend hiển thị nguyên văn.
         const rawTenSanXuat = String(item?.ten_san_xuat ?? item?.productionName ?? item?.ten_sp ?? '').trim();
         const tenGhepMerged = Array.from(grp.tenGheps).join(' / ');
@@ -24714,8 +24765,7 @@ async function loadKiemKhoLiveTongHopForDot(
           ma_don_hang: maDonHangMerged,
           ma_sp: String(item?.ma_sp ?? item?.ma_hang ?? item?.productCode ?? '').trim(),
           ten_sp: String(item?.ten_sp ?? item?.ten_hang ?? item?.productName ?? '').trim(),
-          ten_san_xuat: rawTenSanXuat,
-          ten_ghep: tenGhepMerged,
+          ten_san_xuat: tenGhepMerged || rawTenSanXuat,
           don_vi: grp.donVi,
           so_luong: grp.totalSoLuong,
           khu_vuc: '',
@@ -24827,7 +24877,10 @@ async function loadKiemKhoLiveTongHopForDot(
           }
 
           // Cập nhật phân bổ về các dòng trong sanPhamArray
-          const updatedSanPham = [...sanPhamArray];
+          const updatedSanPham = sanPhamArray.map(item => {
+            const { ten_ghep: _legacyName, tenGhep: _legacyAlias, ...product } = item;
+            return product;
+          });
           for (let grpIdx = 0; grpIdx < groupList.length; grpIdx++) {
             const grp = groupList[grpIdx];
             const rowInput = rowsInput.find((r: any) =>

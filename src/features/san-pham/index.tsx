@@ -2527,6 +2527,7 @@ export function normalizeProducts(data: unknown): ProductRow[] {
         zem: String(record.zem ?? '').trim(),
         soSong: String(record.so_song ?? '').trim(),
         tcmb: record.tcmb === true || record.tcmb === 'true' || record.tcmb === 'TCMB' || record.tcmb === 1,
+        mien: String(record.mien ?? record.region ?? '').trim() || undefined,
         // `do_day_m` is accepted only for legacy API payloads; the DB column is `kho_rong`.
         doDayM: String(record.kho_rong ?? record.do_day_m ?? '').trim(),
         doDaiM: String(record.do_dai_m ?? '').trim(),

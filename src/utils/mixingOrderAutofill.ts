@@ -329,7 +329,7 @@ function parseOrderProductLines(record: Record<string, unknown>) {
           if (!productCode && !productName) return null;
           const quyCachMDai =
             parsePercentInput(String(row.quy_cach_m_dai ?? row.quyCachMDai ?? row.dai_m ?? row.daiM ?? '')) || null;
-          const tenGhepStored = pickText(row, ['ten_ghep', 'tenGhep'], '');
+          const tenGhepStored = productionName;
           const tenGhep =
             tenGhepStored ||
             buildOrderTenGhep(productionName || productName, { cutLengthM: quyCachMDai }) ||
@@ -373,7 +373,7 @@ function parseOrderProductLines(record: Record<string, unknown>) {
   const productionName = pickText(record, ['ten_san_xuat', 'productionName'], '');
   if (!productCode && !productName) return [];
   const tenGhep =
-    pickText(record, ['ten_ghep', 'tenGhep'], '') ||
+    productionName ||
     buildOrderTenGhep(productionName || productName) ||
     '';
 

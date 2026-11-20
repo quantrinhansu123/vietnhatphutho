@@ -131,6 +131,8 @@ export interface ProductRow {
   soSong?: string;
   /** Tiêu chuẩn miền bắc — chữ `TCMB` nối sau màng. */
   tcmb?: boolean;
+  /** `Miền Nam` / `Miền Bắc` — cột `san_pham.mien`. */
+  mien?: string;
   doDayM?: string;
   doDaiM?: string;
   mang?: string;

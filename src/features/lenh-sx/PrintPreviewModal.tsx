@@ -26,7 +26,7 @@ interface ProductionOrderPrintMeta {
 interface PreviewOrderNote {
   ma_don_hang: string;
   ma_sp: string;
-  ten_ghep: string;
+  ten_san_xuat: string;
   ghi_chu: string;
 }
 
@@ -40,8 +40,6 @@ interface PreviewRow {
   ma_sp: string;
   ten_sp: string;
   ten_san_xuat: string;
-  /** Tên ghép đã lưu trong JSON san_pham lệnh SX — hiển thị nguyên văn, không ghép lại. */
-  ten_ghep: string;
   don_vi: string;
   so_luong: number;
   khu_vuc: string;
@@ -274,9 +272,8 @@ export function ProductionOrderPrintPreviewModal({
           .map((r: any, idx: number) => {
             const rawQuyCach = r.quy_cach_m_dai ?? r.quyCachMDai ?? r.dai_m ?? r.daiM;
             const quyCachNum = rawQuyCach !== undefined && rawQuyCach !== null && !isNaN(Number(rawQuyCach)) && Number(rawQuyCach) > 0 ? Number(rawQuyCach) : null;
-            // Hiển thị tên ghép trong JSON san_pham lệnh SX; thiếu thì tên SX thô.
+            // Hiển thị tên sản xuất trong JSON sản phẩm của lệnh SX.
             // Không tự ghép lại.
-            const storedTenGhep = String(r.ten_ghep || r.tenGhep || '').trim();
             const rawTenSanXuat = String(r.ten_san_xuat || r.ten_sp || '').trim();
             return {
               key: String(r.key || `${order.id}__${idx + 1}`),
@@ -288,7 +285,6 @@ export function ProductionOrderPrintPreviewModal({
               ma_sp: r.ma_sp || '',
               ten_sp: r.ten_sp || '',
               ten_san_xuat: rawTenSanXuat,
-              ten_ghep: storedTenGhep,
               don_vi: r.don_vi || '',
               so_luong: Number(r.so_luong) || 0,
               khu_vuc: r.khu_vuc || '',
@@ -304,7 +300,7 @@ export function ProductionOrderPrintPreviewModal({
                     .map((n: any) => ({
                       ma_don_hang: String(n.ma_don_hang || '').trim(),
                       ma_sp: String(n.ma_sp || '').trim(),
-                      ten_ghep: String(n.ten_ghep || '').trim(),
+                      ten_san_xuat: String(n.ten_san_xuat || '').trim(),
                       ghi_chu: String(n.ghi_chu || '').trim()
                     }))
                     .filter((n: PreviewOrderNote) => n.ghi_chu)
@@ -352,7 +348,7 @@ export function ProductionOrderPrintPreviewModal({
       const overLimit = totalSlsx > row.so_luong + 0.0001;
 
       const tongTl = calculateTotalWeightByUnit(row);
-      const productName = String(row.ten_ghep || row.ten_san_xuat || row.ten_sp || '').trim() || '-';
+      const productName = String(row.ten_san_xuat || row.ten_sp || '').trim() || '-';
 
       return {
         ...row,
@@ -674,7 +670,7 @@ export function ProductionOrderPrintPreviewModal({
                                 {row.ma_don_hang || '—'}
                               </td>
                               <td className={`${bodyCell} break-words font-semibold text-zinc-900`}>
-                                {row.productName || row.ten_ghep || row.ten_san_xuat || row.ten_sp || '—'}
+                                {row.productName || row.ten_san_xuat || row.ten_sp || '—'}
                               </td>
                               <td className={bodyCell}>
                                 <AutoGrowNoteTextarea
@@ -701,14 +697,14 @@ export function ProductionOrderPrintPreviewModal({
                                         extractBareNoteText(note.ghi_chu, {
                                           orderCode: note.ma_don_hang || row.ma_don_hang,
                                           productCode: note.ma_sp || row.ma_sp,
-                                          tenGhep: note.ten_ghep || row.ten_ghep || row.ten_san_xuat
+                                          tenGhep: note.ten_san_xuat || row.ten_san_xuat
                                         })
                                       )
                                     : [
                                         extractBareNoteText(row.ghi_chu, {
                                           orderCode: row.ma_don_hang,
                                           productCode: row.ma_sp,
-                                          tenGhep: row.ten_ghep || row.ten_san_xuat
+                                          tenGhep: row.ten_san_xuat
                                         })
                                       ];
                                   const uniqueBareNotes = [...new Set(bareNotes.map(line => line.trim()).filter(Boolean))];

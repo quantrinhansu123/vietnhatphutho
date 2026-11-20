@@ -39,7 +39,7 @@
 
 `ma_sp`, `ten_sp`, `ten_san_xuat`, `don_vi` (`m`, `m2`, `Tấm`), `nhom_vthh`, `ton_dau_ky`, `npl_phan_tram` (JSON NPL, mỗi dòng lưu thêm `ten_nvl_sx` tương ứng từ Kho NVL).
 
-**Thứ tự danh sách hiển thị:** tăng dần theo **kg** (`tong_trong_luong` / `dinh_muc_kg`) rồi **số m** (`do_dai_m`) — `sortProductsByKgThenMeters` (`src/utils/productProductionName.ts`). Cùng luật trên dropdown Mã AMIS form đơn hàng (`normalizeOrderProducts` / `filterOrderProductsByRegion`).
+**Thứ tự danh sách hiển thị:** tăng dần theo **kg** (`tong_trong_luong` / `dinh_muc_kg`) rồi **số m** (`do_dai_m`) — `sortProductsByKgThenMeters` (`src/utils/productProductionName.ts`). Dropdown Mã AMIS form đơn hàng: lọc theo `mien` rồi sort (`normalizeOrderProducts` / `filterOrderProductsByRegion`).
 
 **Mã AMIS mới (lệnh cắt lẻ kho):** `ma_amis` của dòng biến thể CHÍNH LÀ mã mới (hạ khổ/hạ li/hạ mét/dán tem, sinh bằng `buildMaAmisMoi` trong `src/utils/productProductionName.ts`, mỗi biến thể một dòng SP) + `ma_amis_cu` (mã chuẩn gốc để truy vết/tổng hợp). Migration `supabase-san-pham-ma-amis-cu.sql`. Lookup mã nhận `ma_sp/ma_amis/ma_sp_moi/ma_amis_cu`. Unique: `ma_amis + ten_sp + ten_san_xuat` **hoặc** `ma_amis + ten_sp + ten_ghep`.
 

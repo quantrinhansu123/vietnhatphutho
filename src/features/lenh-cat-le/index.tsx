@@ -420,7 +420,7 @@ function cutLineFromOrder(order: OrderRow, prodLine: OrderProductLine): CutLine 
     productId: String(prodLine.productId || '').trim(),
     productionName: String(prodLine.productionName || '').trim(),
     productName: String(prodLine.productName || '').trim(),
-    tenGhep: String(prodLine.tenGhep || '').trim(),
+    tenGhep: String(prodLine.productionName || '').trim(),
     unit: String(prodLine.unit || 'Tấm').trim(),
     // Mang trọng lượng đơn qua: ưu tiên TL/tấm (kg 1 SP), rồi mới tới TL cuộn.
     sheetKg: String(prodLine.kg1Sp || prodLine.tlTam || prodLine.tlCuon || '').trim(),
@@ -634,7 +634,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         if (raw && raw !== day) return false;
       }
       if (!q) return true;
-      const hay = [order.orderCode, order.customer, ...order.products.flatMap(line => [line.productCode, line.productName, line.productionName, line.tenGhep])]
+      const hay = [order.orderCode, order.customer, ...order.products.flatMap(line => [line.productCode, line.productName, line.productionName])]
         .map(value => String(value || '').toLocaleLowerCase('vi'))
         .join(' ');
       return hay.includes(q);
@@ -1884,7 +1884,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                               <span className="text-xs font-black tabular-nums text-zinc-500">{index + 1}</span>
                             </label>
                             <input readOnly value={item.line.maAmis || item.line.productCode || ''} className={autofillReadClass} />
-                            <input readOnly value={canonicalTenSanXuat({ rawName: item.line.tenGhep || item.line.productionName || '', code: item.line.maAmis || item.line.productCode || '', lengthText: item.line.daiM, widthText: item.line.kho, doLiDm: item.line.doLiDm })} className={autofillReadClass} />
+                            <input readOnly value={canonicalTenSanXuat({ rawName: item.line.productionName || '', code: item.line.maAmis || item.line.productCode || '', lengthText: item.line.daiM, widthText: item.line.kho, doLiDm: item.line.doLiDm })} className={autofillReadClass} />
                             <input readOnly value={item.line.unit || ''} className={`${autofillReadClass} text-center`} />
                             <input readOnly value={item.line.daiM || ''} className={`${autofillReadClass} text-right`} />
                             <input readOnly value={item.line.kho || ''} className={`${autofillReadClass} text-right`} />

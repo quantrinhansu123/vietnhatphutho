@@ -8,7 +8,6 @@ import {
   classifyProductPxGroup,
   extractDinhMucKg,
   extractDoLiDmNumber,
-  extractTcmb,
   normalizeDecimalToken,
   normalizeDoLiToken,
   parseAmisSpecs,
@@ -24,8 +23,8 @@ export const SOUTH_ORDER_TYPE = 'Đơn miền nam';
 export const PRODUCTION_ORDER_TYPE = 'Đơn sản xuất';
 export const SALE_ORDER_TYPE = 'Đơn bán';
 
-/** Miền trên form đơn (map `khu_vuc`). */
-export const ORDER_REGION_OPTIONS = ['Miền Bắc', 'Miền Trung', 'Miền Nam'] as const;
+/** Miền trên form đơn (map `khu_vuc`) — chỉ Bắc / Nam. */
+export const ORDER_REGION_OPTIONS = ['Miền Bắc', 'Miền Nam'] as const;
 export type OrderRegion = (typeof ORDER_REGION_OPTIONS)[number];
 
 /** Đơn theo quy cách của khách đặt — đi Lệnh SX, KHÔNG đi Lệnh cắt lẻ. */
@@ -57,8 +56,9 @@ export function normalizeOrderRegion(value?: string | null): OrderRegion | '' {
     .trim();
   if (!text) return '';
   if (text === 'nam' || text.includes('mien nam') || text === 'south') return 'Miền Nam';
-  if (text === 'trung' || text.includes('mien trung') || text === 'central') return 'Miền Trung';
   if (text === 'bac' || text.includes('mien bac') || text === 'north') return 'Miền Bắc';
+  // Đơn cũ lưu "Miền Trung" → coi như Bắc (không còn miền Trung trên form).
+  if (text === 'trung' || text.includes('mien trung') || text === 'central') return 'Miền Bắc';
   return '';
 }
 
@@ -74,7 +74,7 @@ export function resolveOrderRegion(orderType?: string | null, khuVuc?: string | 
 /**
  * Options Loại đơn theo miền + quyền Quản Đốc.
  * - Miền Nam: Đơn miền nam (+ Đơn sản xuất nếu Quản Đốc)
- * - Miền Bắc / Miền Trung: Đơn bán, quy cách, cắt lẻ (+ Đơn sản xuất nếu Quản Đốc)
+ * - Miền Bắc: Đơn bán, quy cách, cắt lẻ (+ Đơn sản xuất nếu Quản Đốc)
  */
 export function orderTypeOptionsForRegion(region: OrderRegion | '', canSeeProduction: boolean): string[] {
   const production = canSeeProduction ? [PRODUCTION_ORDER_TYPE] : [];
@@ -91,31 +91,22 @@ export function resolveOrderTypeFromRegion(region: OrderRegion | '', orderType: 
   return SALE_ORDER_TYPE;
 }
 
-/** SP thuộc miền Nam (TCMN) / Bắc (TCMB). Không có cờ → vẫn hiện (không loại hết SP cũ). */
+/** Chuẩn hóa `san_pham.mien` → `Miền Bắc` / `Miền Nam` / ''. */
+export function normalizeProductMien(value?: string | null): OrderRegion | '' {
+  return normalizeOrderRegion(value);
+}
+
+/**
+ * SP thuộc miền theo cột `san_pham.mien`.
+ * Chỉ hiện SP đúng miền đang chọn; thiếu `mien` thì không hiện.
+ */
 export function orderProductMatchesRegion(
-  product: Pick<OrderProductOption, 'tcmn' | 'tcmb' | 'productionName' | 'tenGhep' | 'name'>,
+  product: Pick<OrderProductOption, 'mien'>,
   region: OrderRegion | ''
 ): boolean {
   if (!region) return true;
-  const text = `${product.productionName || ''} ${product.tenGhep || ''} ${product.name || ''}`;
-  const hasTcmn =
-    /tcmn/iu.test(String(product.tcmn || '')) ||
-    /(?:^|[\s\-–—])TCMN(?:$|[\s\-–—])/iu.test(text);
-  const hasTcmb = product.tcmb === true || extractTcmb(text) === 'TCMB';
-  if (region === 'Miền Nam') {
-    if (hasTcmn) return true;
-    if (hasTcmb && !hasTcmn) return false;
-    return true;
-  }
-  if (region === 'Miền Trung') {
-    // Chưa có cờ TCM riêng → giữ SP không gắn riêng Bắc/Nam.
-    if (hasTcmn && !hasTcmb) return false;
-    if (hasTcmb && !hasTcmn) return false;
-    return true;
-  }
-  if (hasTcmb) return true;
-  if (hasTcmn && !hasTcmb) return false;
-  return true;
+  const productMien = normalizeProductMien(product.mien);
+  return productMien === region;
 }
 
 export function filterOrderProductsByRegion(
@@ -185,8 +176,8 @@ export function buildSouthTemSuffix(tem?: string | null, mauTem?: string | null,
  * tránh nhân đôi khi sửa đơn. Bóc TOÀN CỤC (kể cả suffix kẹt giữa do bug triple cũ),
  * lặp tới ổn định. Tên gốc danh mục không bao giờ chứa "Dán Tem" nên an toàn.
  */
-export function stripSouthTemSuffix(tenGhep?: string | null) {
-  let text = String(tenGhep || '').trim();
+export function stripSouthTemSuffix(productionName?: string | null) {
+  let text = String(productionName || '').trim();
   if (!text) return '';
   for (let i = 0; i < 10; i += 1) {
     const next = text
@@ -216,8 +207,8 @@ export function appendSouthTemToTenGhep(
   return `${base}${suffix}`;
 }
 /** Tách tem/màu/2 Đầu từ ten_ghep đã lưu (fallback khi JSON cũ chưa có cột tem riêng; hiểu cả format cũ). */
-export function parseSouthTemFromTenGhep(tenGhep?: string | null): { tem: string; mauTem: string; danTem2Dau: boolean } {
-  const text = String(tenGhep || '');
+export function parseSouthTemFromTenGhep(productionName?: string | null): { tem: string; mauTem: string; danTem2Dau: boolean } {
+  const text = String(productionName || '');
   const danTem2Dau = /Dán Tem 2 Đầu\s*$/u.test(text);
   const full = text.match(/\(Dán Tem\s*([^)]*?)\)(?:\s*Màu\s*(\S+))?(?:\s*(MV\w+))?/u);
   if (full) return { tem: String(full[1] || '').trim(), mauTem: String(full[2] || '').trim(), danTem2Dau };
@@ -246,7 +237,6 @@ export interface AllocatedLenhSxLine {
   productId: string;
   productCode: string;
   productionName: string;
-  tenGhep: string;
   /** STT dòng trong lệnh (0 = không có) — phân biệt các dòng đơn trùng hệt nhau. */
   stt: number;
   quantity: number;
@@ -302,14 +292,12 @@ export function normalizeAllocatedLenhSxLines(record: unknown): AllocatedLenhSxL
     const productCode = pickLenhSxText(row, ['ma_sp', 'ma_hang', 'productCode', 'code']);
     // Khớp fallback theo ten_san_xuat (đúng `productLineMatches` — ten_ghep nằm field riêng).
     const productionName = pickLenhSxText(row, ['ten_san_xuat', 'productionName']);
-    const tenGhep = pickLenhSxText(row, ['ten_ghep', 'tenGhep']);
-    if (!productCode && !productionName && !tenGhep) continue;
+    if (!productCode && !productionName) continue;
     lines.push({
       orderRef,
       productId: pickLenhSxText(row, ['san_pham_id', 'productId', 'product_id']),
       productCode,
       productionName,
-      tenGhep,
       stt: Number(row.stt ?? row.STT) || 0,
       quantity
     });
@@ -360,13 +348,13 @@ export function buildAllocatedQtyMap(lenhRows: unknown[]): Map<string, number> {
   for (const record of list) {
     for (const line of normalizeAllocatedLenhSxLines(record)) {
       if (line.productId) {
-        const baseKey = allocatedQtyKey(line.orderRef, line.productId, '', '', line.tenGhep);
+        const baseKey = allocatedQtyKey(line.orderRef, line.productId, '', '', line.productionName);
         addAllocated(map, baseKey, line.quantity);
         // Khóa riêng theo STT để các dòng đơn trùng hệt nhau không nhận chung tổng.
         if (line.stt > 0) addAllocated(map, `${baseKey}||stt:${line.stt}`, line.quantity);
         continue;
       }
-      addAllocated(map, allocatedQtyKey(line.orderRef, '', line.productCode, line.productionName, line.tenGhep), line.quantity);
+      addAllocated(map, allocatedQtyKey(line.orderRef, '', line.productCode, line.productionName, line.productionName), line.quantity);
       addAllocated(map, allocatedCodeAllKey(line.orderRef, line.productCode), line.quantity);
       if (!line.productionName.trim()) {
         addAllocated(map, allocatedCodeUnnamedKey(line.orderRef, line.productCode), line.quantity);
@@ -380,11 +368,11 @@ export function buildAllocatedQtyMap(lenhRows: unknown[]): Map<string, number> {
 export function getAllocatedQtyFromMap(
   map: Map<string, number>,
   orderCode: string,
-  line: { productId?: string | null; productCode?: string | null; productionName?: string | null; tenGhep?: string | null; stt?: number | null }
+  line: { productId?: string | null; productCode?: string | null; productionName?: string | null; stt?: number | null }
 ): number {
   const productId = String(line.productId || '').trim();
   if (productId) {
-    const baseKey = allocatedQtyKey(orderCode, productId, '', '', line.tenGhep || '');
+    const baseKey = allocatedQtyKey(orderCode, productId, '', '', line.productionName || '');
     // `stt` chỉ truyền cho dòng đơn trùng hệt dòng khác (xem duplicateLineStt).
     if (line.stt && line.stt > 0) {
       const bySlot = map.get(`${baseKey}||stt:${line.stt}`);
@@ -398,7 +386,7 @@ export function getAllocatedQtyFromMap(
   if (!productionName) {
     return map.get(allocatedCodeAllKey(orderCode, line.productCode || '')) || 0;
   }
-  const full = map.get(allocatedQtyKey(orderCode, '', line.productCode || '', productionName, line.tenGhep || '')) || 0;
+  const full = map.get(allocatedQtyKey(orderCode, '', line.productCode || '', productionName, line.productionName || '')) || 0;
   const unnamed = map.get(allocatedCodeUnnamedKey(orderCode, line.productCode || '')) || 0;
   return Math.round((full + unnamed) * 1000) / 1000;
 }
@@ -408,11 +396,11 @@ export function getAllocatedQtyFromMap(
  * không trùng thì undefined → tra SL lệnh SX theo tổng như cũ.
  */
 export function duplicateLineStt(
-  lines: Array<{ productId?: string | null; productCode?: string | null; tenGhep?: string | null }>,
+  lines: Array<{ productId?: string | null; productCode?: string | null; productionName?: string | null }>,
   index: number
 ): number | undefined {
-  const keyOf = (line: { productId?: string | null; productCode?: string | null; tenGhep?: string | null }) =>
-    `${String(line.productId || line.productCode || '').trim().toLocaleLowerCase('vi')}||${normalizeTenGhepKey(line.tenGhep)}`;
+  const keyOf = (line: { productId?: string | null; productCode?: string | null; productionName?: string | null }) =>
+    `${String(line.productId || line.productCode || '').trim().toLocaleLowerCase('vi')}||${normalizeTenGhepKey(line.productionName)}`;
   const current = lines[index];
   if (!current) return undefined;
   const key = keyOf(current);
@@ -422,7 +410,7 @@ export function duplicateLineStt(
 }
 
 function catalogProductionAliases(product: Pick<OrderProductOption, 'productionName' | 'tenGhep'>): string[] {
-  return [product.productionName, product.tenGhep]
+  return [product.productionName]
     .map(value => String(value || '').trim())
     .filter(Boolean);
 }
@@ -607,6 +595,8 @@ export interface OrderProductOption {
   tcmn?: string;
   /** Tiêu chuẩn miền bắc (`TCMB`) trên danh mục SP. */
   tcmb?: boolean;
+  /** `Miền Nam` / `Miền Bắc` — cột `san_pham.mien`. */
+  mien?: string;
 }
 
 export function normalizeLookupText(value: string) {
@@ -693,7 +683,7 @@ export function normalizeOrderProducts(data: unknown): OrderProductOption[] {
   return sortProductsByKgThenMeters(
     normalizeProducts(data).map(product => {
       const productionName = String(product.productionName || product.tenGhep || '').trim();
-      const tenGhep = String(product.tenGhep || product.productionName || '').trim();
+      const tenGhep = productionName;
       return {
         id: product.id,
         savedVariant: product.code.startsWith('VAR-'),
@@ -715,7 +705,8 @@ export function normalizeOrderProducts(data: unknown): OrderProductOption[] {
         tem: product.tem || undefined,
         mauTem: product.mauTem || undefined,
         tcmn: product.tcmn || undefined,
-        tcmb: Boolean(product.tcmb)
+        tcmb: Boolean(product.tcmb),
+        mien: product.mien || undefined
       };
     }).filter(product => product.code)
   );

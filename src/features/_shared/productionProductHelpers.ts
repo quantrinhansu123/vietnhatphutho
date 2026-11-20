@@ -28,7 +28,6 @@ export interface OrderProductLine {
   quyCach?: string;
   quyCachMDai?: number | string;
   /** Tên ghép (đơn cắt lẻ) — hiển thị thay ten_san_xuat khi in đơn / lệnh SX. */
-  tenGhep?: string;
   /** Chỉ dùng cho "Đơn miền nam": loại tem (vd 5li) + màu tem (Hồng/Vàng) + checkbox Dán Tem 2 Đầu. */
   tem?: string;
   mauTem?: string;
@@ -180,7 +179,7 @@ export function formatProductionNameWithLength(
   length?: number | string,
   options?: { tenGhep?: string; nhomVthh?: string; maAmis?: string }
 ): string {
-  const storedTenGhep = String(options?.tenGhep || '').trim();
+  const storedTenGhep = String(name || '').trim();
   if (storedTenGhep) return stripTrailingDuplicateCutAfterTem(storedTenGhep);
 
   const cleanName = (name || '').trim();

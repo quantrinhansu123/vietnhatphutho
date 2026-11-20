@@ -175,7 +175,7 @@ export function buildProductionProgressForOrder(
     const key = `${codeKey}__u:${normalizeProgressUnit(line.unit)}__m:${lengthM !== null ? lengthM.toFixed(3) : 'none'}__i:${lineIndex}`;
 
     const plannedQty = parseProductionOrderQuantity(line.quantity) || 0;
-    const lineTenGhep = String(line.tenGhep || '').trim() || undefined;
+    const lineTenGhep = String(line.productionName || '').trim() || undefined;
     const existing = merged.get(key);
     if (existing) {
       existing.plannedQty += plannedQty;
