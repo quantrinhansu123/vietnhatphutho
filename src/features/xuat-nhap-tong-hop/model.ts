@@ -25,7 +25,10 @@ export type TongHopHeader = {
   /** Đợt SX (phiếu liên quan sản xuất). */
   dot_san_xuat_id?: string | null;
   dot_so?: string | null;
-  /** Phân xưởng lọc máy: Đặc | Sóng | Rỗng. */
+  /**
+   * Loại sản xuất (Đặc | Sóng | Rỗng) — cột DB vẫn `phan_xuong`.
+   * Phiếu cũ «Xuất theo phân xưởng» cũng đọc từ đây.
+   */
   phan_xuong?: string | null;
   /** Phiếu xuất gốc khi nhập lại giữa/cuối đợt. */
   phieu_xuat_goc_id?: string | null;
@@ -34,6 +37,17 @@ export type TongHopHeader = {
 
 let pendingEdit: TongHopHeader | null = null;
 let pendingView: TongHopHeader | null = null;
+let pendingProcess: { processId?: string; stepId?: string } | null = null;
+
+export function queueTongHopProcess(opts: { processId?: string; stepId?: string }) {
+  pendingProcess = opts;
+}
+
+export function takePendingTongHopProcess() {
+  const row = pendingProcess;
+  pendingProcess = null;
+  return row;
+}
 
 export function queueTongHopEdit(row: TongHopHeader) {
   pendingEdit = row;
@@ -91,14 +105,20 @@ export const LOAI_XUAT_PHE_BAM = 'Xuất phế băm cho máy tạo hạt';
 export const LOAI_XUAT_PHE_CAI = 'Xuất phế cái cho máy băm';
 export const LOAI_XUAT_KHAC = 'Xuất khác';
 
+/** Loại xuất hiện trên form mới (ẩn «Xuất theo phân xưởng»). */
 export const LOAI_XUAT_OPTIONS = [
   LOAI_XUAT_MAY_PTDM,
   LOAI_XUAT_MAY,
-  LOAI_XUAT_PHAN_XUONG,
   LOAI_XUAT_TRA_NCC,
   LOAI_XUAT_PHE_BAM,
   LOAI_XUAT_PHE_CAI,
   LOAI_XUAT_KHAC
+] as const;
+
+/** Toàn bộ loại xuất (kể cả deprecated) — đọc phiếu cũ. */
+export const LOAI_XUAT_OPTIONS_ALL = [
+  ...LOAI_XUAT_OPTIONS,
+  LOAI_XUAT_PHAN_XUONG
 ] as const;
 
 function foldLoai(value: string) {
@@ -130,8 +150,12 @@ export function xuatDenKind(loaiXuat: string): 'may-ptdm' | 'ncc' | 'may' | 'pha
   return 'flex';
 }
 
+/** Giá trị Đặc/Sóng/Rỗng — UI gọi «Loại sản xuất», cột DB `phan_xuong`. */
 export const PHAN_XUONG_OPTIONS = ['Đặc', 'Sóng', 'Rỗng'] as const;
 export type PhanXuong = (typeof PHAN_XUONG_OPTIONS)[number];
+export const LOAI_SAN_XUAT_OPTIONS = PHAN_XUONG_OPTIONS;
+export type LoaiSanXuat = PhanXuong;
+export const LOAI_SAN_XUAT_LABEL = 'Loại sản xuất';
 
 /** Đợt sản xuất cố định trên phiếu SX: Đợt 1 … Đợt 10 (lưu `dot_so` = "1"…"10"). */
 export const DOT_SAN_XUAT_OPTIONS = Array.from({ length: 10 }, (_, i) => String(i + 1));
@@ -202,10 +226,9 @@ export function isXuatTheoPhanXuong(loaiXuat: string) {
   return foldLoai(value).includes('theo phan xuong');
 }
 
-/** Danh sách loại nhập chuẩn cho phiếu nhập tổng hợp (cho gõ tay thêm khi cần). */
+/** Loại nhập hiện trên form mới (ẩn «Nhập lại theo phân xưởng»). */
 export const LOAI_NHAP_OPTIONS = [
   'Nhập kho từ Nhà cung cấp',
-  'Nhập lại theo phân xưởng',
   'Nhập lại từ máy giữa đợt',
   'Nhập lại từ máy cuối đợt',
   'Nhập phế của các máy sóng, rỗng, đặc, tạo hạt',
@@ -215,3 +238,11 @@ export const LOAI_NHAP_OPTIONS = [
   'Nhập lại phế cái xuất cho máy băm (khi chưa băm xong)',
   'Nhập khác'
 ];
+
+export const LOAI_NHAP_THEO_PHAN_XUONG_DEPRECATED = 'Nhập lại theo phân xưởng';
+
+/** Phiếu cần chọn Loại sản xuất (Đặc/Sóng/Rỗng) khi có máy. */
+export function needsLoaiSanXuat(mode: TongHopMode, loaiNhap: string, loaiXuat: string) {
+  if (mode === 'xuat') return isSxRelatedLoaiXuat(loaiXuat);
+  return isSxRelatedLoaiNhap(loaiNhap) || isNhapLaiTheoPhanXuong(loaiNhap);
+}

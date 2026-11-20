@@ -744,6 +744,17 @@ export const TABLE_REGISTRY: Record<TableId, TableRegistryEntry> = {
     components: ['src/features/chuyen-kho/index.tsx'],
     utils: []
   },
+  so_nvl: {
+    table: 'phieu_nhap_kho_nvl',
+    label: 'Sổ NVL có duyệt (header phieu_nhap_kho_nvl + dòng nhap_kho_nvl + mã luồng ma_luong_nvl)',
+    sql: ['supabase-phieu-nvl-kiem-soat.sql'],
+    apiPrefix: '/api/phieu-nvl',
+    serverLines: 'serverPhieuNvl.ts registerPhieuNvlRoutes: GET/POST /api/phieu-nvl, PUT /:id (sửa nháp), POST /:id/duyet, /:id/huy, GET /ton, GET/POST /api/ma-luong-nvl',
+    appTab: 'so-nvl',
+    appLines: 'src/features/so-nvl/index.tsx',
+    components: ['src/features/so-nvl/index.tsx'],
+    utils: ['serverPhieuNvl.ts']
+  },
   tong_hop_ncc: {
     table: 'tong_hop_ncc',
     label: 'Tổng hợp NVL từ nhà cung cấp (nhập NCC + trả NCC)',

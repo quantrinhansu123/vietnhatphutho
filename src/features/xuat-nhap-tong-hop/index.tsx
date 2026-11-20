@@ -1,15 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, ChevronDown, Loader2, Plus, Printer, Search, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronLeft, Home, Loader2, Plus, Printer, RefreshCw, Search, Trash2, X } from 'lucide-react';
 import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from '../../components/WarehouseSlipPrintModal';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
+import SearchableMultiSelect from '../../components/SearchableMultiSelect';
 import { VnCalendarPicker } from '../so-che-do-may';
 import {
   formatWarehouseShiftSelection,
   lenhSxInstanceKey,
   normalizeWarehouseProductionOrders,
-  parseWarehouseShiftSelection,
-  toggleWarehouseShiftSelection
+  parseWarehouseShiftSelection
 } from '../phieu-xuat-nhap-kho';
 import { resolveDefaultTonDauRef, validateWarehouseShiftsSameLoaiCa } from '../phieu-xuat-nhap-kho/nvlSlipLogic';
 import { getProductionShiftOptions, normalizeShiftSettings, shiftNamesMatch } from '../../utils/shiftSettings';
@@ -22,7 +22,6 @@ import { normalizeWarehouseName } from '../kho-hang';
 import {
   formatTongHopDate,
   isNhapLaiTheoPhanXuong,
-  getMachinesForInboundWorkshop,
   isNhapCoreWarehouse,
   isNvlWarehouseName,
   isSxRelatedLoaiNhap,
@@ -30,21 +29,37 @@ import {
   formatDotSoLabel,
   isXuatTheoPhanXuong,
   LOAI_NHAP_OPTIONS,
+  LOAI_SAN_XUAT_LABEL,
+  LOAI_SAN_XUAT_OPTIONS,
   LOAI_XUAT_OPTIONS,
-  machineMatchesPhanXuong,
+  needsLoaiSanXuat,
   normalizeDotSo,
-  PHAN_XUONG_OPTIONS,
   pickNhapCoreWarehouses,
   takePendingTongHopEdit,
+  takePendingTongHopProcess,
   takePendingTongHopView,
   xuatDenKind,
   type TongHopHeader,
   type TongHopMode
 } from './model';
-import { emptyXuatNvlFields, ChiPhiKemTheoPanel, XuatNvlDetail, type XuatNvlLine } from './xuatNvlDetail';
+import {
+  getNvlProcessRecipe,
+  listNvlProcessOptions,
+  machineNeedsLoaiSanXuat,
+  suggestedKhoForPheMa,
+  type NvlProcessStep
+} from './nvlProcessRecipes';
+import { emptyXuatNvlFields, XuatNvlDetail, type XuatNvlLine } from './xuatNvlDetail';
 import { NvlPriceSelect } from './NvlPriceSelect';
-import { kemDraftError, kemDraftFromStored, kemStoredFromDraft, roundKem, sumKemDraft } from './chiPhiKemTheo';
-import { formatMoney, formatNumber, formatQty, parseLocalizedNumber } from '../../utils';
+import {
+  kemDraftError,
+  kemDraftFromStored,
+  kemStoredFromDraft,
+  roundKem,
+  sumKemDraft,
+  type ChiPhiKemTheoDraft
+} from './chiPhiKemTheo';
+import { formatMoney, formatMoneyVN, formatNumber, formatQty, parseLocalizedNumber } from '../../utils';
 
 type Mode = TongHopMode;
 type Option = { id: string; label: string; kind: 'kho' | 'may' | 'ncc'; vatTu?: boolean; maKho?: string };
@@ -176,7 +191,19 @@ function todayIso() {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => void; onOpenList: () => void; viewOnly?: boolean }) {
+export function TongHopPanel({
+  onBack,
+  onHome,
+  viewOnly,
+  initialProcessId,
+  initialStepId
+}: {
+  onBack: () => void;
+  onHome?: () => void;
+  viewOnly?: boolean;
+  initialProcessId?: string;
+  initialStepId?: string;
+}) {
   const [mode, setMode] = useState<Mode>('nhap');
   const [ngay, setNgay] = useState(todayIso());
   const [cas, setCas] = useState<string[]>([]);
@@ -205,25 +232,32 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
   const [productionOrders, setProductionOrders] = useState<ReturnType<typeof normalizeWarehouseProductionOrders>>([]);
   const [loadingNorms, setLoadingNorms] = useState(false);
   const [refreshingCatalog, setRefreshingCatalog] = useState(false);
+  const [loadingMaster, setLoadingMaster] = useState(false);
   const ptdmTriggerRef = useRef<HTMLButtonElement | null>(null);
   const ptdmPanelRef = useRef<HTMLDivElement | null>(null);
   const [ptdmMenu, setPtdmMenu] = useState<{ top: number; left: number; width: number } | null>(null);
   const [ghiChu, setGhiChu] = useState('');
   const [nguoiLap, setNguoiLap] = useState('');
   const [nguoiGiao, setNguoiGiao] = useState('');
-  const [diaDiem, setDiaDiem] = useState('');
+  const [diaDiem, setDiaDiem] = useState('Phú Thọ');
   const [lyDo, setLyDo] = useState('');
-  const [phanXuong, setPhanXuong] = useState('');
+  /** Loại sản xuất (Đặc/Sóng/Rỗng) — lưu cột `phan_xuong`. */
+  const [loaiSanXuat, setLoaiSanXuat] = useState('');
   const [dotSo, setDotSo] = useState('');
+  const [processId, setProcessId] = useState(initialProcessId || '');
+  const [processStepId, setProcessStepId] = useState(initialStepId || '');
   const [tonCuoiRef, setTonCuoiRef] = useState<number | null>(null);
   const [staff, setStaff] = useState<Array<{ id: string; label: string }>>([]);
   const [lines, setLines] = useState<Line[]>([emptyLine()]);
+  /** Nhập: chi phí kèm theo dùng chung cả phiếu. */
+  const [sharedChiPhi, setSharedChiPhi] = useState<ChiPhiKemTheoDraft[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingCode, setEditingCode] = useState('');
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [saving, setSaving] = useState(false);
   const [printSlips, setPrintSlips] = useState<WarehouseSlipPrintData[] | null>(null);
+  const [headerOpen, setHeaderOpen] = useState(true);
 
   /** Tên SX theo mã (ưu tiên snapshot dòng, fallback kho_nvl). */
   function resolveTenSx(maHang: string, snap: string, materialId = '') {
@@ -252,8 +286,9 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     return srcId;
   }
 
-  useEffect(() => {
-    const load = async () => {
+  async function loadMasterData(showNotice = false) {
+    setLoadingMaster(true);
+    try {
       const [khoRes, mayRes, nccRes, caRes, nvlRes, spRes, nsRes] = await Promise.all([
         fetch('/api/quan-ly-kho').then(r => r.json()).catch(() => ({})),
         fetch('/api/danh-sach-may').then(r => r.json()).catch(() => ({})),
@@ -324,8 +359,14 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         }
       }
       setStaff([...people.values()].sort((a, b) => a.label.localeCompare(b.label, 'vi')));
-    };
-    void load();
+      if (showNotice) setInfo('Đã tải lại danh mục kho / máy / NVL / nhân sự.');
+    } finally {
+      setLoadingMaster(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadMasterData(false);
   }, []);
 
   function patchLine(index: number, patch: Partial<Line>) {
@@ -438,6 +479,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
 
   function resetLines() {
     setLines([emptyLine()]);
+    setSharedChiPhi([]);
     setEditingId(null);
     setEditingCode('');
     setNguonLoai('');
@@ -452,10 +494,10 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     setOrderProductsOpen(false);
     setNguoiLap('');
     setNguoiGiao('');
-    setDiaDiem('');
+    setDiaDiem('Phú Thọ');
     setLyDo('');
     setGhiChu('');
-    setPhanXuong('');
+    setLoaiSanXuat('');
     setDotSo('');
     setTonCuoiRef(null);
     setError('');
@@ -464,9 +506,41 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
   function exportDestination() {
     const kind = xuatDenKind(loaiXuat);
     if (kind === 'ncc') return { loai: 'ncc' as const, id: xuatNccId };
-    if (kind === 'phan-xuong') return { loai: 'phan_xuong' as const, id: phanXuong.trim() };
+    // Deprecated: phiếu cũ «Xuất theo phân xưởng» — UI mới không tạo mới kiểu này.
+    if (kind === 'phan-xuong') return { loai: 'phan_xuong' as const, id: loaiSanXuat.trim() };
     if (kind === 'may' || kind === 'may-ptdm') return { loai: 'may' as const, id: xuatDenId };
     return { loai: xuatDenLoai, id: xuatDenId };
+  }
+
+  /**
+   * Dòng xuất vắt nhiều lô: hiển thị 1 dòng giá trung bình, nhưng lưu tách mỗi lô 1 dòng
+   * (đúng SL + đúng giá lô để trừ tồn theo lô). Tổng tiền bằng SL × giá trung bình.
+   * Nếu người dùng gõ tay giá khác giá trung bình thì giữ giá tay cho mọi dòng tách.
+   */
+  function splitLinesByLot(source: Line[]): Line[] {
+    return source.flatMap(line => {
+      const allocs = line.lotAllocs || [];
+      if (line.srcLoai === 'may' || allocs.length < 2) return [line];
+      const qty = parseLocalizedNumber(line.soLuong);
+      const total = allocs.reduce((sum, item) => sum + item.qty * item.donGia, 0);
+      const allocated = allocs.reduce((sum, item) => sum + item.qty, 0);
+      const avgText = formatMoneyVN(allocated > 0 ? total / allocated : 0, 0);
+      const manual = line.donGia.trim() !== '' && line.donGia.trim() !== avgText;
+      const slCt = parseLocalizedNumber(line.slCt);
+      return allocs.map((alloc, allocIndex) => ({
+        ...line,
+        key: `${line.key}-lot${allocIndex}`,
+        soLuong: String(alloc.qty),
+        slCt: Number.isFinite(slCt) && Number.isFinite(qty) && qty > 0
+          ? String(Math.round(slCt * (alloc.qty / qty) * 1000) / 1000)
+          : line.slCt,
+        donGia: manual ? line.donGia : String(alloc.donGia),
+        sourceInboundLineId: alloc.id,
+        sourceInboundSlipCode: alloc.maPhieu,
+        lotAllocs: [],
+        chiPhiKemTheo: allocIndex === 0 ? line.chiPhiKemTheo : []
+      }));
+    });
   }
 
   function buildPayload() {
@@ -492,10 +566,10 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
       ghi_chu: ghiChu,
       dot_san_xuat_id: null,
       dot_so: normalizeDotSo(dotSo) || null,
-      phan_xuong: phanXuong || null,
+      phan_xuong: loaiSanXuat || null,
       phieu_xuat_goc_id: null,
       phieu_xuat_goc_ma: null,
-      lines: payloadLines.map(line => ({
+      lines: (mode === 'xuat' ? splitLinesByLot(payloadLines) : payloadLines).map((line, lineIndex) => ({
         ma_hang: line.maHang,
         ten_hang: line.tenHang,
         ten_nvl_sx: resolveTenSx(line.maHang, line.tenSanXuat, line.materialId),
@@ -532,7 +606,11 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         kho_dong: mode === 'xuat' ? (dest.loai === 'kho' ? dest.id : '') : line.khoId,
         dich_dong_loai: mode === 'xuat' ? dest.loai : '',
         dich_dong_id: mode === 'xuat' ? dest.id : '',
-        chi_phi_kem_theo: kemStoredFromDraft(line.chiPhiKemTheo)
+        chi_phi_kem_theo: kemStoredFromDraft(
+          mode === 'nhap'
+            ? (lineIndex === 0 ? sharedChiPhi : [])
+            : line.chiPhiKemTheo
+        )
       }))
     };
   }
@@ -540,17 +618,23 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
   async function onSave() {
     setError('');
     setInfo('');
-    if (shiftError) {
+    if (cas.length && shiftError) {
       setError(shiftError);
       return;
     }
-    if (!cas.length) {
-      setError('Chọn ca cho phiếu nhập/xuất.');
+    if (mode === 'nhap' && nguonLoai === 'kho' && !nguonId) {
+      setError('Chọn đúng 1 kho nguồn (không để trống).');
       return;
     }
-    if (mode === 'nhap' && lines.some(line => !line.khoId)) {
-      setError('Mỗi dòng cần chọn kho nhập.');
-      return;
+    if (mode === 'nhap') {
+      const missingKho = lines.some(line => !(line.khoId || (nguonLoai === 'kho' ? nguonId : '')));
+      if (missingKho) {
+        setError(nguonLoai === 'kho' ? 'Chọn kho nguồn (kho nhập).' : 'Chọn kho nhập.');
+        return;
+      }
+      if (nguonLoai === 'kho' && nguonId) {
+        setLines(current => current.map(line => (line.khoId === nguonId ? line : { ...line, khoId: nguonId })));
+      }
     }
     if (mode === 'nhap' && isSxRelatedLoaiNhap(loaiNhap)) {
       if (!normalizeDotSo(dotSo)) {
@@ -558,13 +642,37 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         return;
       }
       const foldedNhap = loaiNhap.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
-      if (isNhapLaiTheoPhanXuong(loaiNhap) && !phanXuong) {
-        setError('Chọn phân xưởng cho phiếu nhập lại theo phân xưởng.');
+      if (!loaiSanXuat.trim()) {
+        setError(`Chọn ${LOAI_SAN_XUAT_LABEL} (Đặc / Sóng / Rỗng) cho phiếu nhập SX.`);
         return;
       }
-      if (!isNhapLaiTheoPhanXuong(loaiNhap) && (foldedNhap.includes('nhap lai') || foldedNhap.includes('phe')) && (nguonLoai !== 'may' || !nguonId)) {
+      if ((foldedNhap.includes('nhap lai') || foldedNhap.includes('phe')) && (nguonLoai !== 'may' || !nguonId)) {
         setError('Chọn Máy trong Nguồn nhập cho phiếu nhập lại / phế.');
         return;
+      }
+      if (foldedNhap.includes('phe')) {
+        for (const line of lines) {
+          const ma = line.maHang.trim();
+          if (!ma || !line.khoId) continue;
+          const suggested = suggestedKhoForPheMa(ma);
+          if (!suggested) continue;
+          const khoLabel =
+            warehouses.find(item => item.id === line.khoId)?.label ||
+            nhapCoreWarehouses.find(item => item.id === line.khoId)?.label ||
+            line.khoId;
+          const fold = (s: string) =>
+            s
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/đ/g, 'd')
+              .replace(/\s+/g, ' ')
+              .trim();
+          if (fold(khoLabel) !== fold(suggested)) {
+            setError(`Mã ${ma}: kho nhập phải là ${suggested} (quy tắc phế SX).`);
+            return;
+          }
+        }
       }
     }
     if (mode === 'xuat') {
@@ -576,8 +684,20 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         setError('Chọn đợt sản xuất (Đợt 1 – Đợt 10) cho phiếu xuất.');
         return;
       }
-      if (destKind === 'phan-xuong' && !phanXuong.trim()) {
-        setError('Chọn xuất đến phân xưởng (Đặc / Sóng / Rỗng).');
+      if (needsLoaiSanXuat('xuat', '', loaiXuat) && !loaiSanXuat.trim()) {
+        setError(`Chọn ${LOAI_SAN_XUAT_LABEL} (Đặc / Sóng / Rỗng).`);
+        return;
+      }
+      const mayLabel =
+        destKind === 'may' || destKind === 'may-ptdm'
+          ? machines.find(item => item.id === xuatDenId)?.label || ''
+          : '';
+      if (mayLabel && machineNeedsLoaiSanXuat(mayLabel) && !loaiSanXuat.trim()) {
+        setError(`Máy «${mayLabel}» cần chọn ${LOAI_SAN_XUAT_LABEL} (vd. Đặc hoặc Sóng).`);
+        return;
+      }
+      if (destKind === 'phan-xuong') {
+        setError('Loại «Xuất theo phân xưởng» đã ngừng dùng. Chọn «Xuất theo máy» và chọn Loại sản xuất.');
         return;
       }
       const dest = exportDestination();
@@ -645,12 +765,20 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         }
       }
     }
-    const costLines = mode === 'xuat' ? lines.filter(line => line.maHang.trim()) : lines;
-    for (const line of costLines) {
-      const kemError = kemDraftError(line.maHang || 'Dòng', line.chiPhiKemTheo);
+    if (mode === 'nhap') {
+      const kemError = kemDraftError('Chi phí', sharedChiPhi);
       if (kemError) {
         setError(kemError);
         return;
+      }
+    } else {
+      const costLines = lines.filter(line => line.maHang.trim());
+      for (const line of costLines) {
+        const kemError = kemDraftError(line.maHang || 'Dòng', line.chiPhiKemTheo);
+        if (kemError) {
+          setError(kemError);
+          return;
+        }
       }
     }
     setSaving(true);
@@ -687,11 +815,18 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     setNgay(String(row.ngay || '').slice(0, 10));
     setCas(parseWarehouseShiftSelection(row.ca || ''));
     setLoaiNhap(row.loai_nhap || '');
-    const workshopReturn = row.loai === 'nhap' && isNhapLaiTheoPhanXuong(row.loai_nhap || '');
-    setNguonLoai(workshopReturn ? '' : row.loai === 'nhap'
-      ? row.nguon_loai === 'ncc' ? 'ncc' : row.nguon_loai === 'may' ? 'may' : row.nguon_id ? 'kho' : ''
-      : '');
-    setNguonId(workshopReturn ? '' : row.loai === 'nhap' ? row.nguon_id || '' : '');
+    setNguonLoai(
+      row.loai === 'nhap'
+        ? row.nguon_loai === 'ncc'
+          ? 'ncc'
+          : row.nguon_loai === 'may'
+            ? 'may'
+            : row.nguon_id
+              ? 'kho'
+              : ''
+        : ''
+    );
+    setNguonId(row.loai === 'nhap' ? row.nguon_id || '' : '');
     setLoaiXuat(row.loai_xuat || '');
     const detail = Array.isArray(row.chi_tiet) ? row.chi_tiet : [];
     const first = (detail[0] || {}) as Record<string, unknown>;
@@ -713,10 +848,10 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     setOrderProductsOpen(false);
     setNguoiLap(row.nguoi_lap || '');
     setNguoiGiao(row.nguoi_giao || '');
-    setDiaDiem(row.dia_diem || '');
+    setDiaDiem(row.dia_diem || 'Phú Thọ');
     setLyDo(row.ly_do || '');
     setGhiChu(row.ghi_chu || '');
-    setPhanXuong(
+    setLoaiSanXuat(
       row.phan_xuong
       || (isPhanXuongDest ? firstDestId || String(row.dich_id || '') : '')
       || ''
@@ -772,6 +907,15 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         })
         : [emptyLine()]
     );
+    if (row.loai === 'nhap') {
+      const merged: ChiPhiKemTheoDraft[] = [];
+      for (const item of Array.isArray(row.chi_tiet) ? row.chi_tiet : []) {
+        merged.push(...kemDraftFromStored(item.chi_phi_kem_theo));
+      }
+      setSharedChiPhi(merged);
+    } else {
+      setSharedChiPhi([]);
+    }
   }
 
   /** Nạp Sửa/Xem: hiện số đã ngăn cách trong ô input (rỗng giữ rỗng). */
@@ -793,6 +937,18 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     openedEdit.current = true;
     const row = takePendingTongHopEdit();
     if (row) loadRecord(row);
+    const pending = takePendingTongHopProcess() || (initialProcessId ? { processId: initialProcessId, stepId: initialStepId } : null);
+    if (pending?.processId) {
+      setProcessId(pending.processId);
+      const recipe = getNvlProcessRecipe(pending.processId);
+      const step =
+        (pending.stepId && recipe?.steps.find(item => item.id === pending.stepId)) || recipe?.steps[0];
+      if (step) {
+        setProcessStepId(step.id);
+        // Delay one tick so warehouses/machines state may hydrate.
+        window.setTimeout(() => applyProcessStep(step), 0);
+      }
+    }
   }, []);
 
   const openedView = useRef(false);
@@ -840,9 +996,16 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
 
   /** Nhập: chi phí kèm phân bổ trên 1 kg = tổng chi phí kèm / tổng trọng lượng. */
   const filledCostLines = lines.filter(line => line.maHang.trim());
-  const tongKemAll = roundKem(filledCostLines.reduce((sum, line) => sum + sumKemDraft(line.chiPhiKemTheo), 0));
+  const tongKemAll = roundKem(
+    mode === 'nhap'
+      ? sumKemDraft(sharedChiPhi)
+      : filledCostLines.reduce((sum, line) => sum + sumKemDraft(line.chiPhiKemTheo), 0)
+  );
   const tongKgAll = roundKem(filledCostLines.reduce((sum, line) => sum + (lineWeight(line) || 0), 0));
   const kemPerKgAll = tongKgAll > 0 ? tongKemAll / tongKgAll : 0;
+  const tongThanhTienNhap = roundKem(
+    filledCostLines.reduce((sum, line) => sum + (lineAmount(line) || 0), 0)
+  );
 
   /** Nhập: giá nhập kho của dòng = giá mua + chi phí kèm/1kg. */
   function lineImportPrice(line: Line) {
@@ -860,7 +1023,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
   }
 
   function toPrintLines(group: Line[]): WarehouseSlipPrintData['lines'] {
-    return group.map(line => ({
+    return group.map((line, lineIndex) => ({
       code: line.maHang,
       name: line.tenHang,
       unit: line.donVi,
@@ -868,7 +1031,9 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
       unitPrice: parseLocalizedNumber(line.donGia) || 0,
       lineAmount: lineAmount(line) || 0,
       weightKg: lineWeight(line),
-      chiPhiKemTheo: kemStoredFromDraft(line.chiPhiKemTheo).map(item => ({
+      chiPhiKemTheo: kemStoredFromDraft(
+        mode === 'nhap' ? (lineIndex === 0 ? sharedChiPhi : []) : line.chiPhiKemTheo
+      ).map(item => ({
         ten: item.ten,
         donGia: item.don_gia,
         thanhTien: item.thanh_tien
@@ -878,7 +1043,11 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
 
   function printCostTotals(group: Line[]) {
     const totalAmount = group.reduce((sum, line) => sum + (lineAmount(line) || 0), 0);
-    const totalKem = roundKem(group.reduce((sum, line) => sum + sumKemDraft(line.chiPhiKemTheo), 0));
+    const totalKem = roundKem(
+      mode === 'nhap'
+        ? sumKemDraft(sharedChiPhi)
+        : group.reduce((sum, line) => sum + sumKemDraft(line.chiPhiKemTheo), 0)
+    );
     const totalKg = roundKem(group.reduce((sum, line) => sum + (lineWeight(line) || 0), 0));
     return {
       totalAmount,
@@ -909,8 +1078,8 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
       setError('Mỗi dòng cần chọn xuất từ.');
       return;
     }
-    if (mode === 'nhap' && usable.some(line => !line.khoId)) {
-      setError('Mỗi dòng cần chọn kho nhập.');
+    if (mode === 'nhap' && usable.some(line => !(line.khoId || (nguonLoai === 'kho' ? nguonId : '')))) {
+      setError(nguonLoai === 'kho' ? 'Chọn kho nguồn (kho nhập) trước khi xem trước.' : 'Mỗi dòng cần chọn kho nhập.');
       return;
     }
     const date = formatTongHopDate(ngay);
@@ -1219,25 +1388,34 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
   const needsSxHeader =
     mode === 'xuat' ||
     (mode === 'nhap' && isSxRelatedLoaiNhap(loaiNhap));
-  const nhapLaiTheoPhanXuong = mode === 'nhap' && isNhapLaiTheoPhanXuong(loaiNhap);
-  const inboundWorkshopMachineNames = getMachinesForInboundWorkshop(phanXuong);
-  const showPhanXuong = mode === 'xuat' && isXuatTheoPhanXuong(loaiXuat);
+  const showLoaiSanXuat = needsLoaiSanXuat(mode, loaiNhap, loaiXuat);
   const isNhapLai = mode === 'nhap' && /nhap lai/i.test(
     loaiNhap.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd')
   );
-  const inboundMachineId = nguonLoai === 'may' ? nguonId : '';
-  const filteredMachines = useMemo(
-    () => (showPhanXuong ? machines.filter(item => machineMatchesPhanXuong(item.label, phanXuong)) : machines),
-    [machines, phanXuong, showPhanXuong]
+  const isNhapPhe = mode === 'nhap' && /phe/i.test(
+    loaiNhap.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd')
   );
+  const inboundMachineId = nguonLoai === 'may' ? nguonId : '';
   const xuatDenChoices = destKind === 'ncc'
     ? suppliers.map(item => ({ value: `ncc|${item.id}`, label: item.label }))
     : destKind === 'may' || destKind === 'may-ptdm'
-      ? filteredMachines.map(item => ({ value: `may|${item.id}`, label: machineChoiceLabel(item) }))
+      ? machines.map(item => ({ value: `may|${item.id}`, label: machineChoiceLabel(item) }))
       : [
           ...warehouses.map(item => ({ value: `kho|${item.id}`, label: item.label })),
-          ...filteredMachines.map(item => ({ value: `may|${item.id}`, label: `Máy · ${machineChoiceLabel(item)}` }))
+          ...machines.map(item => ({ value: `may|${item.id}`, label: `Máy · ${machineChoiceLabel(item)}` }))
         ];
+  const processOptions = listNvlProcessOptions();
+  const activeRecipe = processId ? getNvlProcessRecipe(processId) : null;
+  const activeStep =
+    activeRecipe && processStepId
+      ? activeRecipe.steps.find(item => item.id === processStepId) || null
+      : null;
+  // Khóa loại phiếu theo bước: xuất → Phiếu xuất, nhập → Phiếu nhập
+  useEffect(() => {
+    if (viewOnly || !activeStep) return;
+    if (activeStep.mode !== 'nhap' && activeStep.mode !== 'xuat') return;
+    setMode(activeStep.mode);
+  }, [activeStep?.id, activeStep?.mode, viewOnly]);
   const xuatDenValue = destKind === 'ncc'
     ? (xuatNccId ? `ncc|${xuatNccId}` : '')
     : destKind === 'may' || destKind === 'may-ptdm'
@@ -1289,263 +1467,515 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
     }));
   }
 
+  function resolveKhoIdByHint(hint?: string) {
+    if (!hint) return '';
+    const fold = (s: string) =>
+      s
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const want = fold(hint);
+    const pool = [...nhapCoreWarehouses, ...warehouses];
+    return pool.find(item => fold(item.label) === want || fold(item.label).includes(want))?.id || '';
+  }
+
+  function applyProcessStep(step: NvlProcessStep) {
+    if (viewOnly) return;
+    setError('');
+    setInfo('');
+    if (step.mode === 'chuyen') {
+      setInfo(
+        step.chuyenKhoHint
+          ? `Bước chuyển kho: từ ${step.chuyenKhoHint.tu} → ${step.chuyenKhoHint.den}` +
+            (step.chuyenKhoHint.ma?.length ? ` (mã ${step.chuyenKhoHint.ma.join(', ')})` : '') +
+            '. Mở menu Chuyển kho để ghi phiếu chuyển.'
+          : 'Bước này dùng Chuyển kho — mở menu Chuyển kho.'
+      );
+      return;
+    }
+    // Bước xuất → Phiếu xuất; bước nhập → Phiếu nhập
+    const nextMode: Mode = step.mode === 'xuat' ? 'xuat' : 'nhap';
+    setMode(nextMode);
+    if (nextMode === 'nhap') {
+      setLoaiNhap(step.loaiPhieu || '');
+      setLoaiXuat('');
+      if (step.nguonLoai) setNguonLoai(step.nguonLoai);
+      else setNguonLoai('');
+      setNguonId('');
+      const hints = step.lines?.length ? step.lines : [{ kho: undefined as string | undefined }];
+      setLines(
+        hints.map(hint => {
+          const ma = hint.maDich || hint.ma || '';
+          const khoHint = hint.khoDich || hint.kho || suggestedKhoForPheMa(ma) || undefined;
+          return {
+            ...emptyLine(),
+            maHang: ma,
+            tenHang: hint.tenGoiY || '',
+            khoId: resolveKhoIdByHint(khoHint),
+            warehouseClass: 'nvl_chinh' as const
+          };
+        })
+      );
+    } else {
+      setLoaiXuat(step.loaiPhieu || 'Xuất theo máy');
+      setLoaiNhap('');
+      const hints = step.lines?.length ? step.lines : [{}];
+      setLines(
+        hints.map(hint => ({
+          ...emptyLine(),
+          ...emptyXuatNvlFields(),
+          maHang: hint.ma || '',
+          tenHang: hint.tenGoiY || '',
+          srcLoai: 'kho' as const,
+          srcId: resolveKhoIdByHint(hint.kho),
+          warehouseClass: 'nvl_chinh' as const
+        }))
+      );
+    }
+    if (step.note || step.chuyenKhoHint) {
+      setInfo(
+        [step.description, step.note, step.chuyenKhoHint ? `Sau đó chuyển: ${step.chuyenKhoHint.tu} → ${step.chuyenKhoHint.den}` : '']
+          .filter(Boolean)
+          .join(' ')
+      );
+    } else {
+      setInfo(`Đã điền gợi ý bước: ${step.title}. Kiểm tra mã/kho/số lượng rồi Lưu phiếu.`);
+    }
+  }
+
+  async function suggestKhoFromXuatGoc() {
+    if (!normalizeDotSo(dotSo) || !nguonId || mode !== 'nhap') return;
+    try {
+      const res = await fetch(
+        `/api/xuat-nhap-tong-hop?loai=xuat&dot_so=${encodeURIComponent(normalizeDotSo(dotSo))}&limit=80`
+      );
+      const data = await res.json().catch(() => ({}));
+      const rows: TongHopHeader[] = Array.isArray(data.records) ? data.records : Array.isArray(data) ? data : [];
+      const mayFold = (s: string) => s.trim().toLowerCase();
+      const matched = rows.find(row => {
+        if (normalizeDotSo(row.dot_so) !== normalizeDotSo(dotSo)) return false;
+        const detail = Array.isArray(row.chi_tiet) ? row.chi_tiet : [];
+        return detail.some(item => {
+          const destMay =
+            String(item.dich_dong_loai || '') === 'may' && String(item.dich_dong_id || '') === nguonId;
+          const headerMay = String(row.dich_loai || '') === 'may' && String(row.dich_id || '') === nguonId;
+          return destMay || headerMay;
+        });
+      });
+      if (!matched) {
+        setInfo('Không tìm thấy phiếu xuất cùng đợt–máy để gợi ý kho nhập.');
+        return;
+      }
+      const detail = Array.isArray(matched.chi_tiet) ? matched.chi_tiet : [];
+      const khoByMa = new Map<string, string>();
+      for (const item of detail) {
+        const ma = String(item.ma_hang || item.maHang || '').trim().toUpperCase();
+        const srcKho =
+          String(item.src_loai || item.srcLoai || '') === 'kho'
+            ? String(item.src_id || item.srcId || item.src_ten || '')
+            : String(item.kho_dong || item.kho_dong_ten || '');
+        if (ma && srcKho) khoByMa.set(ma, srcKho);
+      }
+      setLines(current =>
+        current.map(line => {
+          const ma = line.maHang.trim().toUpperCase();
+          const hint = khoByMa.get(ma);
+          if (!hint) return line;
+          const id = resolveKhoIdByHint(hint) || warehouses.find(w => mayFold(w.label) === mayFold(hint) || mayFold(w.id) === mayFold(hint))?.id;
+          return id ? { ...line, khoId: id } : line;
+        })
+      );
+      setInfo(`Đã gợi ý kho nhập theo phiếu xuất ${matched.ma_phieu_chung}.`);
+    } catch {
+      setInfo('Không tải được phiếu xuất để gợi ý kho.');
+    }
+  }
+
+  const slipInfoSummary = [
+    formatTongHopDate(ngay),
+    (mode === 'nhap' ? loaiNhap : loaiXuat) || (mode === 'nhap' ? 'Chưa chọn loại nhập' : 'Chưa chọn loại xuất'),
+    cas.length ? formatWarehouseShiftSelection(cas) : '',
+    (() => {
+      if (mode !== 'nhap' || !nguonId) return '';
+      const pool = nguonLoai === 'ncc' ? suppliers : nguonLoai === 'may' ? machines : nhapCoreWarehouses;
+      const found = pool.find(item => item.id === nguonId);
+      if (!found) return '';
+      return nguonLoai === 'may' ? machineChoiceLabel(found) : found.label;
+    })(),
+    staff.find(item => item.id === nguoiLap)?.label || '',
+    diaDiem.trim()
+  ].filter(Boolean).join(' · ');
+
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
+    <div className="flex h-full min-h-0 flex-col bg-slate-50">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-2 md:p-3">
+      <div className="flex items-center gap-3">
         <button type="button" onClick={onBack} className="text-xs font-extrabold text-[#ef1b2d]">← Kho</button>
         <h1 className="text-sm font-black uppercase tracking-wide text-zinc-950">Xuất nhập kho NVL</h1>
-        <button type="button" onClick={onOpenList} className="text-xs font-extrabold text-[#ef1b2d]">Danh sách</button>
       </div>
+
+      {!viewOnly ? (
+        <section className="rounded-xl border border-[#ef1b2d]/30 bg-red-50/40 p-3 shadow-sm">
+          <p className="mb-2 text-xs font-black uppercase tracking-wide text-[#ef1b2d]">Quy trình gợi ý</p>
+          <div className="grid gap-2 md:grid-cols-2">
+            <label className="block space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Chọn quy trình</span>
+              <select
+                value={processId}
+                onChange={event => {
+                  const id = event.target.value;
+                  setProcessId(id);
+                  const recipe = getNvlProcessRecipe(id);
+                  const first = recipe?.steps[0];
+                  setProcessStepId(first?.id || '');
+                  if (first) applyProcessStep(first);
+                }}
+                className={fieldClass}
+              >
+                <option value="">— Tự chọn (không dùng quy trình) —</option>
+                {processOptions.map(item => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Bước hiện tại</span>
+              <select
+                value={processStepId}
+                disabled={!activeRecipe}
+                onChange={event => {
+                  const sid = event.target.value;
+                  setProcessStepId(sid);
+                  const step = activeRecipe?.steps.find(item => item.id === sid);
+                  if (step) applyProcessStep(step);
+                }}
+                className={fieldClass}
+              >
+                <option value="">Chọn bước</option>
+                {(activeRecipe?.steps || []).map(step => (
+                  <option key={step.id} value={step.id}>
+                    {step.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {activeStep ? (
+            <p className="mt-2 truncate text-[11px] font-semibold text-zinc-700" title={activeStep.description}>
+              {activeStep.description}
+            </p>
+          ) : null}
+          {(isNhapLai || isNhapPhe) && nguonLoai === 'may' && nguonId && normalizeDotSo(dotSo) ? (
+            <button
+              type="button"
+              onClick={() => void suggestKhoFromXuatGoc()}
+              className="mt-2 text-[11px] font-extrabold text-[#ef1b2d] hover:underline"
+            >
+              Gợi ý kho nhập từ phiếu xuất cùng đợt–máy
+            </button>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
         <p className="mb-2 text-xs font-black uppercase tracking-wide text-zinc-700">Loại phiếu</p>
         <div className="grid grid-cols-2 gap-2">
-          {(['nhap', 'xuat'] as const).map(tab => (
+          {(['nhap', 'xuat'] as const).map(tab => {
+            const lockedByStep =
+              Boolean(activeStep) && (activeStep?.mode === 'nhap' || activeStep?.mode === 'xuat');
+            const stepMode = activeStep?.mode === 'xuat' ? 'xuat' : 'nhap';
+            const selected = lockedByStep ? stepMode === tab : mode === tab;
+            return (
             <button
               key={tab}
               type="button"
-              onClick={viewOnly ? undefined : () => {
+              onClick={viewOnly || lockedByStep ? undefined : () => {
                 setMode(tab);
                 resetLines();
               }}
-              disabled={viewOnly}
+              disabled={viewOnly || lockedByStep}
+              title={lockedByStep ? 'Loại phiếu theo bước quy trình đã chọn' : undefined}
               className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-extrabold transition ${
-                viewOnly
-                  ? 'border-zinc-200 bg-zinc-50 text-zinc-600 cursor-not-allowed'
-                  : mode === tab
+                viewOnly || (lockedByStep && !selected)
+                  ? 'border-zinc-200 bg-zinc-50 text-zinc-400 cursor-not-allowed'
+                  : selected
                     ? 'border-[#ef1b2d] bg-red-50 text-[#ef1b2d]'
                     : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400'
               }`}
             >
               {tab === 'nhap' ? 'Phiếu nhập' : 'Phiếu xuất'}
             </button>
-          ))}
+            );
+          })}
         </div>
       </section>
 
-      <section className="space-y-2 rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
-        <div className="flex flex-wrap items-center gap-2 border-b border-zinc-100 pb-2">
-          <p className="text-sm font-black text-zinc-950">Thông tin phiếu</p>
-          <p className="text-xs font-semibold text-zinc-400">{mode === 'nhap' ? 'Nhập kho' : 'Xuất kho'}</p>
-          <p className={`rounded-full px-2 py-0.5 text-[11px] font-extrabold ${
-            viewOnly ? 'bg-blue-50 text-blue-800' : editingId ? 'bg-amber-50 text-amber-800' : 'bg-zinc-100 text-zinc-600'
-          }`}>
-            {viewOnly ? `Xem phiếu ${editingCode || editingId}` : editingId ? `Đang sửa phiếu ${editingCode || editingId}` : 'Đang thêm phiếu mới'}
-          </p>
-          {!viewOnly && editingId ? (
-            <button type="button" onClick={resetLines} className="ml-auto text-[11px] font-extrabold text-[#ef1b2d]">Thêm phiếu mới</button>
-          ) : null}
+      <section className="space-y-2 rounded-xl border border-zinc-200 bg-white p-2.5 shadow-sm">
+        <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+            <p className="text-sm font-black text-zinc-950">Thông tin phiếu</p>
+            <p className="text-[11px] font-semibold text-zinc-400">{mode === 'nhap' ? 'Nhập kho' : 'Xuất kho'}</p>
+            <p className={`rounded-full px-2 py-0.5 text-[11px] font-extrabold ${
+              viewOnly ? 'bg-blue-50 text-blue-800' : editingId ? 'bg-amber-50 text-amber-800' : 'bg-zinc-100 text-zinc-600'
+            }`}>
+              {viewOnly ? `Xem phiếu ${editingCode || editingId}` : editingId ? `Đang sửa phiếu ${editingCode || editingId}` : 'Đang thêm phiếu mới'}
+            </p>
+            {!viewOnly && editingId ? (
+              <button type="button" onClick={resetLines} className="text-[11px] font-extrabold text-[#ef1b2d]">Thêm phiếu mới</button>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => setHeaderOpen(open => !open)}
+            aria-expanded={headerOpen}
+            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-[11px] font-extrabold text-zinc-700"
+          >
+            {headerOpen ? 'Ẩn' : 'Hiện'}
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${headerOpen ? 'rotate-180' : ''}`} />
+          </button>
         </div>
-        <div className="grid gap-x-2 gap-y-1.5 md:grid-cols-2">
-          <label className="block space-y-1">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ngày phiếu</span>
-            <VnCalendarPicker value={ngay} onChange={setNgay} disabled={viewOnly} />
-          </label>
-          <label className="block space-y-1">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">{mode === 'nhap' ? 'Loại nhập' : 'Loại xuất'}</span>
-            {mode === 'nhap' ? (
-              <SearchableSelect
-                value={loaiNhap}
-                onChange={value => {
-                  setLoaiNhap(value);
-                  if (isNhapLaiTheoPhanXuong(value)) {
-                    setNguonLoai('');
-                    setNguonId('');
-                    setPhanXuong('');
-                    setTonCuoiRef(null);
-                    setLines(current => current.map(line => ({ ...line, ton: null })));
-                  }
-                }}
-                options={LOAI_NHAP_OPTIONS.map(item => ({ id: item, label: item }))}
-                getValue={(item: unknown) => String((item as { id: string }).id)}
-                getLabel={(item: unknown) => String((item as { label: string }).label)}
-                placeholder="Chọn loại nhập"
-                inputClassName={fieldClass}
-                comboboxMode
-                comboboxSearchable
-                dropdownMaxHeight={420}
-                allowCustomValue
-                disabled={viewOnly}
-              />
-            ) : (
-              <SearchableSelect
-                value={loaiXuat}
-                onChange={value => {
-                  setLoaiXuat(value);
-                  setXuatDenId('');
-                  setXuatNccId('');
-                  setPtdmKeys([]);
-                  setOrderProductsOpen(false);
-                  if (!isXuatTheoPhanXuong(value)) setPhanXuong('');
-                  const kind = xuatDenKind(value);
-                  setXuatDenLoai(kind === 'may' || kind === 'may-ptdm' ? 'may' : 'kho');
-                  if (kind === 'phan-xuong') {
+        {!headerOpen ? (
+          <p className="truncate text-[11px] font-semibold text-zinc-500" title={slipInfoSummary}>{slipInfoSummary}</p>
+        ) : null}
+        {headerOpen ? (
+        <div className="grid grid-cols-2 gap-x-2 gap-y-1 border-t border-zinc-100 pt-2">
+          <div className={`col-span-2 grid gap-x-2 gap-y-1 ${showLoaiSanXuat ? 'grid-cols-[6.5rem_minmax(0,1.2fr)_minmax(0,0.9fr)]' : 'grid-cols-2'}`}>
+            <label className="block min-w-0 space-y-0.5">
+              <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Ngày phiếu</span>
+              <VnCalendarPicker value={ngay} onChange={setNgay} disabled={viewOnly} />
+            </label>
+            <label className="block min-w-0 space-y-0.5">
+              <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">{mode === 'nhap' ? 'Loại nhập' : 'Loại xuất'}</span>
+              {mode === 'nhap' ? (
+                <SearchableSelect
+                  value={loaiNhap}
+                  onChange={value => {
+                    setLoaiNhap(value);
+                    if (isNhapLaiTheoPhanXuong(value)) {
+                      setNguonLoai('may');
+                      setNguonId('');
+                      setTonCuoiRef(null);
+                      setLines(current => current.map(line => ({ ...line, ton: null })));
+                    }
+                  }}
+                  options={LOAI_NHAP_OPTIONS.map(item => ({ id: item, label: item }))}
+                  getValue={(item: unknown) => String((item as { id: string }).id)}
+                  getLabel={(item: unknown) => String((item as { label: string }).label)}
+                  placeholder="Chọn loại nhập"
+                  inputClassName={fieldClass}
+                  comboboxMode
+                  comboboxSearchable
+                  dropdownMaxHeight={420}
+                  allowCustomValue
+                  disabled={viewOnly}
+                />
+              ) : (
+                <SearchableSelect
+                  value={loaiXuat}
+                  onChange={value => {
+                    setLoaiXuat(value);
                     setXuatDenId('');
                     setXuatNccId('');
-                  }
-                }}
-                options={LOAI_XUAT_OPTIONS.map(item => ({ id: item, label: item }))}
-                getValue={(item: unknown) => String((item as { id: string }).id)}
-                getLabel={(item: unknown) => String((item as { label: string }).label)}
-                placeholder="Chọn loại xuất"
-                inputClassName={fieldClass}
-                comboboxMode
-                comboboxSearchable
-                dropdownMaxHeight={480}
-                allowCustomValue
-                disabled={viewOnly}
-              />
-            )}
-          </label>
-          {showPhanXuong ? (
-            <label className="block space-y-1">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Xuất đến phân xưởng</span>
-              <select
-                value={phanXuong}
-                onChange={viewOnly ? undefined : event => {
-                  setPhanXuong(event.target.value);
-                  setXuatDenId('');
-                  setXuatNccId('');
-                }}
-                disabled={viewOnly}
-                className={fieldClass}
-              >
-                <option value="">Chọn phân xưởng (Đặc / Sóng / Rỗng)</option>
-                {PHAN_XUONG_OPTIONS.map(item => (
-                  <option key={item} value={item}>{item}</option>
-                ))}
-              </select>
+                    setPtdmKeys([]);
+                    setOrderProductsOpen(false);
+                    const kind = xuatDenKind(value);
+                    setXuatDenLoai(kind === 'may' || kind === 'may-ptdm' ? 'may' : 'kho');
+                    if (kind === 'phan-xuong') {
+                      setXuatDenId('');
+                      setXuatNccId('');
+                      setError('Loại «Xuất theo phân xưởng» đã ngừng dùng — chọn «Xuất theo máy» + Loại sản xuất.');
+                    }
+                  }}
+                  options={LOAI_XUAT_OPTIONS.map(item => ({ id: item, label: item }))}
+                  getValue={(item: unknown) => String((item as { id: string }).id)}
+                  getLabel={(item: unknown) => String((item as { label: string }).label)}
+                  placeholder="Chọn loại xuất"
+                  inputClassName={fieldClass}
+                  comboboxMode
+                  comboboxSearchable
+                  dropdownMaxHeight={480}
+                  allowCustomValue
+                  disabled={viewOnly}
+                />
+              )}
             </label>
-          ) : null}
-          {needsSxHeader ? (
-            <label className="block space-y-1">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Đợt sản xuất</span>
-              <select
-                value={normalizeDotSo(dotSo)}
-                onChange={viewOnly ? undefined : event => setDotSo(normalizeDotSo(event.target.value))}
-                disabled={viewOnly}
-                className={fieldClass}
-              >
-                <option value="">Chọn đợt</option>
-                {DOT_SAN_XUAT_OPTIONS.map(so => (
-                  <option key={so} value={so}>{formatDotSoLabel(so)}</option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          <div className="block space-y-1 md:col-span-2">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
-              Ca <span className="font-semibold normal-case tracking-normal text-zinc-400">(bắt buộc — chọn một hoặc nhiều ca cùng loại ca)</span>
-            </span>
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-2.5">
+            {showLoaiSanXuat ? (
+              <label className="block min-w-0 space-y-0.5">
+                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500" title="Đặc / Sóng / Rỗng — phân biệt máy chạy nhiều loại">
+                  {LOAI_SAN_XUAT_LABEL}
+                </span>
+                <select
+                  value={loaiSanXuat}
+                  onChange={viewOnly ? undefined : event => setLoaiSanXuat(event.target.value)}
+                  disabled={viewOnly}
+                  className={fieldClass}
+                >
+                  <option value="">Chọn {LOAI_SAN_XUAT_LABEL}</option>
+                  {LOAI_SAN_XUAT_OPTIONS.map(item => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+          </div>
+          <div className={`col-span-2 grid gap-x-2 gap-y-1 ${needsSxHeader ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            {needsSxHeader ? (
+              <label className="block space-y-0.5">
+                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Đợt sản xuất</span>
+                <select
+                  value={normalizeDotSo(dotSo)}
+                  onChange={viewOnly ? undefined : event => setDotSo(normalizeDotSo(event.target.value))}
+                  disabled={viewOnly}
+                  className={fieldClass}
+                >
+                  <option value="">Chọn đợt</option>
+                  {DOT_SAN_XUAT_OPTIONS.map(so => (
+                    <option key={so} value={so}>{formatDotSoLabel(so)}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <label className="block space-y-0.5">
+              <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Ca</span>
               {shiftOptions.length === 0 ? (
                 <p className="text-xs font-semibold text-zinc-400">Chưa có ca trong cài đặt.</p>
               ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {shiftOptions.map(option => {
-                    const checked = cas.includes(option);
-                    return (
-                      <label
-                        key={option}
-                        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${
-                          checked
-                            ? 'border-[#ef1b2d] bg-red-50 text-[#ef1b2d]'
-                            : viewOnly
-                              ? 'border-zinc-200 bg-white text-zinc-400'
-                              : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={viewOnly ? undefined : () => setCas(current => toggleWarehouseShiftSelection(current, option))}
-                          disabled={viewOnly}
-                          className="h-3.5 w-3.5 rounded border-zinc-300 text-[#ef1b2d] focus:ring-[#ef1b2d]/20"
-                        />
-                        {option}
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-              <p className="mt-1.5 text-[11px] font-semibold text-zinc-500">
-                {cas.length ? `Đã chọn: ${formatWarehouseShiftSelection(cas)}` : 'Chưa chọn ca — bắt buộc để lưu phiếu.'}
-              </p>
-            </div>
-          </div>
-          {mode === 'nhap' && nhapLaiTheoPhanXuong ? (
-            <div className="grid gap-2 md:col-span-2 md:grid-cols-2">
-              <label className="block space-y-1">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Phân xưởng</span>
-                <select value={phanXuong} onChange={viewOnly ? undefined : event => setPhanXuong(event.target.value)} disabled={viewOnly} className={fieldClass}>
-                  <option value="">Chọn phân xưởng</option>
-                  {PHAN_XUONG_OPTIONS.map(item => <option key={item} value={item}>{item}</option>)}
-                </select>
-              </label>
-              <label className="block space-y-1">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Máy theo phân xưởng</span>
-                <input
-                  readOnly
-                  value={inboundWorkshopMachineNames.join(', ')}
-                  placeholder="Chọn phân xưởng để xem máy"
-                  className={`${fieldClass} cursor-not-allowed bg-zinc-50`}
-                  aria-label="Danh sách máy theo phân xưởng (chỉ xem)"
+                <SearchableMultiSelect
+                  values={cas}
+                  onChange={viewOnly ? () => undefined : setCas}
+                  options={shiftOptions}
+                  placeholder={cas.length ? formatWarehouseShiftSelection(cas) : 'Chọn ca (không bắt buộc)…'}
+                  disabled={viewOnly}
+                  inputClassName={fieldClass}
+                  allowCustomValues={false}
+                  hideSelectedFromList
+                  keepOptionsOrder
                 />
-              </label>
-            </div>
-          ) : mode === 'nhap' ? (
-            <div className="space-y-1 md:col-span-2">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Nguồn nhập</span>
-              <div className="grid gap-2 md:grid-cols-[10rem_minmax(0,1fr)]">
+              )}
+            </label>
+          </div>
+          {mode === 'nhap' ? (
+            <div className="col-span-2 space-y-0.5">
+              <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Nguồn nhập</span>
+              <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] gap-2">
                 <select
                   value={nguonLoai}
                   onChange={viewOnly ? undefined : event => {
                     const value = event.target.value;
-                    setNguonLoai(value === 'kho' || value === 'may' || value === 'ncc' ? value : '');
+                    const nextLoai = value === 'kho' || value === 'may' || value === 'ncc' ? value : '';
+                    setNguonLoai(nextLoai);
                     setNguonId('');
                     setTonCuoiRef(null);
-                    setLines(current => current.map(line => ({ ...line, maHang: '', tenHang: '', tenSanXuat: '', donVi: '', ton: null })));
+                    setLines(current => current.map(line => ({
+                      ...line,
+                      khoId: '',
+                      materialId: '',
+                      maHang: '',
+                      tenHang: '',
+                      tenSanXuat: '',
+                      donVi: '',
+                      ton: null
+                    })));
                   }}
                   disabled={viewOnly}
                   className={fieldClass}
                 >
-                  <option value="">Chọn nguồn nhập</option>
+                  <option value="">Chọn nguồn</option>
                   <option value="kho">Kho</option>
                   <option value="may">Máy</option>
-                  <option value="ncc">Nhà cung cấp</option>
+                  <option value="ncc">NCC</option>
                 </select>
                 <SearchableSelect
                   value={nguonId}
                   onChange={viewOnly ? undefined : value => {
                     setNguonId(value);
-                    setLines(current => current.map(line => ({ ...line, maHang: '', tenHang: '', tenSanXuat: '', donVi: '', ton: null })));
+                    setLines(current => current.map(line => {
+                      const next = {
+                        ...line,
+                        maHang: '',
+                        tenHang: '',
+                        tenSanXuat: '',
+                        donVi: '',
+                        ton: null as number | null,
+                        materialId: ''
+                      };
+                      // Nguồn kho = kho nhập (không cần ô Kho nhập riêng).
+                      if (nguonLoai === 'kho' && value) {
+                        return { ...next, khoId: value };
+                      }
+                      return next;
+                    }));
                   }}
-                  options={(nguonLoai === 'ncc' ? suppliers : nguonLoai === 'may' ? filteredMachines : nhapCoreWarehouses) as Option[]}
+                  options={(nguonLoai === 'ncc' ? suppliers : nguonLoai === 'may' ? machines : nhapCoreWarehouses) as Option[]}
                   getValue={(item: Option) => item.id}
                   getLabel={(item: Option) => nguonLoai === 'may' ? machineChoiceLabel(item) : item.label}
                   placeholder={nguonLoai === 'ncc'
-                    ? 'Chọn nhà cung cấp (không bắt buộc)'
+                    ? 'Chọn nhà cung cấp'
                     : nguonLoai === 'may'
                       ? 'Chọn máy nguồn'
                       : nguonLoai === 'kho'
-                        ? 'Không chọn thì lấy toàn bộ kho NVL'
-                        : 'Chọn nguồn nhập trước'}
+                        ? 'Chọn kho nhập'
+                        : 'Chọn nguồn trước'}
                   inputClassName={fieldClass}
                   comboboxMode
                   comboboxSearchable
+                  allowEmpty={nguonLoai === 'ncc'}
                   disabled={viewOnly || !nguonLoai}
                 />
               </div>
+              {nguonLoai === 'may' || nguonLoai === 'ncc' ? (
+                <label className="block space-y-0.5 pt-1">
+                  <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Kho nhập</span>
+                  <SearchableSelect
+                    value={lines[0]?.khoId || ''}
+                    onChange={viewOnly ? undefined : value => {
+                      setLines(current => current.map(line => {
+                        if (line.khoId === value) return { ...line, khoId: value };
+                        return {
+                          ...line,
+                          khoId: value,
+                          materialId: '',
+                          maHang: '',
+                          tenHang: '',
+                          tenSanXuat: '',
+                          donVi: '',
+                          ton: null
+                        };
+                      }));
+                    }}
+                    options={nhapCoreWarehouses}
+                    getValue={(item: Option) => item.id}
+                    getLabel={(item: Option) => item.label}
+                    placeholder="Chọn kho nhập (Chính / Phụ / PC)"
+                    inputClassName={fieldClass}
+                    comboboxMode
+                    comboboxSearchable
+                    disabled={viewOnly}
+                    dropdownMaxHeight={320}
+                  />
+                </label>
+              ) : null}
               {isNhapLai && tonCuoiRef !== null ? (
                 <p className="text-[11px] font-semibold text-zinc-500">
                   Tồn cuối sổ trộn của máy nguồn (tham chiếu): {formatQty(tonCuoiRef)} — điền SL nhập lại theo thực tế.
                 </p>
               ) : null}
             </div>
-          ) : showPhanXuong ? null : (
-            <div className="space-y-2 md:col-span-2">
+          ) : isXuatTheoPhanXuong(loaiXuat) ? (
+            <p className="col-span-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-900">
+              Loại «Xuất theo phân xưởng» đã ngừng dùng. Đổi sang «Xuất theo máy» và chọn {LOAI_SAN_XUAT_LABEL}.
+            </p>
+          ) : (
+            <div className="col-span-2 space-y-1.5">
               <label className="block space-y-1">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Xuất đến</span>
+                <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Xuất đến</span>
                 <SearchableSelect
                   value={xuatDenValue}
                   onChange={viewOnly ? undefined : value => {
@@ -1590,7 +2020,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
               </label>
               {destKind === 'may-ptdm' ? (
                 <div className="space-y-1">
-                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                  <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">
                     Phiếu trộn định mức <span className="font-semibold normal-case tracking-normal text-zinc-400">(chọn máy để lọc danh sách; tick để tự điền NVL)</span>
                   </span>
                   <button
@@ -1656,7 +2086,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
             </div>
           )}
           <label className="block space-y-1">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Người lập</span>
+            <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Người lập</span>
             <SearchableSelect
               value={nguoiLap}
               onChange={viewOnly ? undefined : setNguoiLap}
@@ -1671,29 +2101,26 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
             />
           </label>
           <label className="block space-y-1">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">{mode === 'xuat' ? 'Người nhận hàng' : 'Người giao hàng'}</span>
-            <input value={nguoiGiao} onChange={viewOnly ? undefined : event => setNguoiGiao(event.target.value)} disabled={viewOnly} className={fieldClass} placeholder={mode === 'xuat' ? 'Họ tên người nhận hàng' : 'Họ tên người giao hàng'} />
-          </label>
-          <label className="block space-y-1">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Địa điểm</span>
+            <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Địa điểm</span>
             <input value={diaDiem} onChange={viewOnly ? undefined : event => setDiaDiem(event.target.value)} disabled={viewOnly} className={fieldClass} placeholder="VD: Phú Thọ" />
           </label>
           <label className="block space-y-1">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Lý do</span>
+            <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Lý do</span>
             <input value={lyDo} onChange={viewOnly ? undefined : event => setLyDo(event.target.value)} disabled={viewOnly} className={fieldClass} placeholder={mode === 'nhap' ? 'VD: Nhập mua ngoài...' : 'VD: Xuất sản xuất...'} />
           </label>
-          <label className="block space-y-1 md:col-span-2">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Ghi chú</span>
+          <label className="block space-y-0.5">
+            <span className="text-[10px] font-black uppercase tracking-wide text-zinc-500">Ghi chú</span>
             <input value={ghiChu} onChange={viewOnly ? undefined : event => setGhiChu(event.target.value)} disabled={viewOnly} className={fieldClass} placeholder="Số chứng từ gốc kèm theo..." />
           </label>
         </div>
+        ) : null}
 
         {mode === 'xuat' ? (
           <>
             <XuatNvlDetail
               lines={lines}
               sourceWarehouses={(nvlWarehouses.length ? nvlWarehouses : warehouses) as Option[]}
-              machines={showPhanXuong ? filteredMachines : machines}
+              machines={machines}
               materials={materials}
               materialsForSource={materialsForSource}
               shiftOptions={shiftOptions}
@@ -1705,29 +2132,14 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
             />
           </>
         ) : null}
-        {mode === 'nhap' ? <><div className="overflow-x-auto rounded-lg border border-zinc-200">
-          <table className="w-max min-w-full text-xs">
-            <thead>
-              <tr className="bg-[#ef1b2d] text-left text-white">
-                <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">Kho nhập</th>
-                <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">Mã</th>
-                <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">Tên</th>
-                <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">Tên sản xuất</th>
-                <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">Tồn</th>
-                <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">SL</th>
-                <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">Quy đổi kg</th>
-                <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">Giá mua</th>
-                <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">Thành tiền</th>
-                <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">Giá nhập kho</th>
-                <th className="whitespace-nowrap px-2 py-2 text-[10px] font-black uppercase tracking-wide">Tổng giá nhập kho</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
+        {mode === 'nhap' ? <><div className="space-y-2">
               {lines.map((line, index) => {
-                const khoMa = warehouses.find(item => item.id === line.khoId)?.maKho || '';
-                const khoMaterials = line.khoId
-                  ? materials.filter(item => materialInWarehouse(item, line.khoId, khoMa))
+                const sharedKhoId =
+                  (nguonLoai === 'kho' && nguonId ? nguonId : '') || lines[0]?.khoId || line.khoId;
+                const khoId = line.khoId || sharedKhoId;
+                const khoMa = warehouses.find(item => item.id === khoId)?.maKho || '';
+                const khoMaterials = khoId
+                  ? materials.filter(item => materialInWarehouse(item, khoId, khoMa))
                   : [];
                 const sxOptions = khoMaterials.filter(item =>
                   item.code.trim().toLocaleLowerCase('vi') === line.maHang.trim().toLocaleLowerCase('vi')
@@ -1737,6 +2149,7 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                 function applyNhapMaterial(item: MaterialOption) {
                   const next = {
                     ...line,
+                    khoId,
                     materialId: String(item.id || '').trim(),
                     maHang: item.code,
                     tenHang: item.name,
@@ -1750,75 +2163,92 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                   void refreshTon(index, next);
                 }
                 return (
-                  <React.Fragment key={line.key}>
-                  <tr className="border-b border-zinc-100">
-                    <td className="px-2 py-2 align-middle">
-                      <div className="w-56">
+                  <div
+                    key={line.key}
+                    className="space-y-1.5 rounded-xl border border-zinc-200 border-l-4 border-l-[#ef1b2d] bg-white p-2.5 shadow-sm md:border-l md:border-l-zinc-200"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-black uppercase tracking-wide text-[#ef1b2d] md:text-zinc-500">
+                        Dòng {index + 1}
+                      </p>
+                      {!viewOnly ? (
+                        <button type="button" onClick={() => setLines(current => current.filter((_, i) => i !== index))} className="text-rose-600" aria-label="Xóa dòng">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <label className="min-w-0 space-y-0.5">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Mã</span>
                         <SearchableSelect
-                          value={line.khoId}
+                          value={line.materialId || line.maHang}
                           onChange={value => {
-                            if (value === line.khoId) return;
-                            patchLine(index, {
-                            ...line,
-                            khoId: value,
-                            materialId: '',
-                            maHang: '',
-                            tenHang: '',
-                            tenSanXuat: '',
-                            donVi: '',
-                            ton: null
-                          });
+                            const found = khoMaterials.find(item => String(item.id || '').trim() === value);
+                            if (found) applyNhapMaterial(found);
                           }}
-                          options={nhapCoreWarehouses}
-                          getValue={(item: Option) => item.id}
-                          getLabel={(item: Option) => item.label}
-                          placeholder="Chọn kho nhập"
+                          options={khoMaterials}
+                          getValue={item => String((item as MaterialOption).id || '').trim()}
+                          getLabel={item => (item as MaterialOption).code}
+                          getOptionLabel={item => {
+                            const row = item as MaterialOption;
+                            const sxName = String(row.productionName || '').trim();
+                            return sxName && sxName.toLocaleLowerCase('vi') !== row.name.toLocaleLowerCase('vi')
+                              ? `${row.code} · ${row.name} · ${sxName}`
+                              : `${row.code} · ${row.name}`;
+                          }}
+                          getSearchText={item => {
+                            const row = item as MaterialOption;
+                            return `${row.code} ${row.name} ${row.productionName || ''}`;
+                          }}
+                          placeholder={khoId ? 'Mã NVL' : nguonLoai === 'kho' ? 'Chọn nguồn trước' : 'Chọn kho nhập trước'}
+                          disabled={viewOnly || !khoId}
                           inputClassName={fieldClass}
                           comboboxMode
                           comboboxSearchable
-                          openUpward
+                          dropdownMaxHeight={360}
                         />
-                      </div>
-                    </td>
-                    <td className="px-2 py-2 align-middle">
-                      <div className="flex items-center gap-2">
-                        <div className="w-56 shrink-0">
-                          <SearchableSelect
-                            value={line.materialId || line.maHang}
-                            onChange={value => {
-                              const found = khoMaterials.find(item => String(item.id || '').trim() === value);
-                              if (found) applyNhapMaterial(found);
-                            }}
-                            options={khoMaterials}
-                            getValue={item => String((item as MaterialOption).id || '').trim()}
-                            getLabel={item => (item as MaterialOption).code}
-                            getOptionLabel={item => {
-                              const row = item as MaterialOption;
-                              const sxName = String(row.productionName || '').trim();
-                              return sxName && sxName.toLocaleLowerCase('vi') !== row.name.toLocaleLowerCase('vi')
-                                ? `${row.code} · ${row.name} · ${sxName}`
-                                : `${row.code} · ${row.name}`;
-                            }}
-                            getSearchText={item => {
-                              const row = item as MaterialOption;
-                              return `${row.code} ${row.name} ${row.productionName || ''}`;
-                            }}
-                            placeholder={line.khoId ? 'Mã NVL' : 'Chọn kho nhập trước'}
-                            disabled={!line.khoId}
-                            inputClassName={fieldClass}
-                            comboboxMode
-                            comboboxSearchable
-                            openUpward
-                          />
-                        </div>
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-2 align-middle">{line.tenHang || '—'}</td>
-                    <td className="px-2 py-2 align-middle">
-                      <div
-                        className="w-56"
-                        title={!line.materialId.trim() && line.tenSanXuat.trim() ? 'Tên SX mới — lưu phiếu sẽ tạo dòng NVL mới (mã + tên + tên SX + kho)' : undefined}
-                      >
+                      </label>
+                      <label className="space-y-0.5">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
+                          SL{line.ton === null ? '' : ` · tồn ${formatQty(line.ton)}`}
+                        </span>
+                        <input
+                          value={line.soLuong}
+                          onChange={viewOnly ? undefined : event => patchLine(index, { soLuong: event.target.value, khoId })}
+                          onBlur={viewOnly ? undefined : event => {
+                            if (!event.target.value.trim()) return;
+                            const parsed = parseLocalizedNumber(event.target.value);
+                            if (Number.isFinite(parsed)) patchLine(index, { soLuong: formatNumber(parsed, 3) });
+                          }}
+                          disabled={viewOnly}
+                          inputMode="decimal"
+                          className={fieldClass}
+                          placeholder="0"
+                        />
+                      </label>
+                      <label className="space-y-0.5">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Giá</span>
+                        <NvlPriceSelect
+                          maHang={line.maHang}
+                          value={line.donGia}
+                          onChange={next => patchLine(index, { donGia: next, khoId })}
+                          disabled={viewOnly}
+                          inputClassName={fieldClass}
+                        />
+                      </label>
+                    </div>
+
+                    {(line.tenHang || line.tenSanXuat) ? (
+                      <p className="truncate text-[11px] font-semibold text-zinc-600" title={[line.tenHang, line.tenSanXuat].filter(Boolean).join(' · ')}>
+                        {line.tenHang || '—'}
+                        {line.tenSanXuat ? <span className="text-zinc-400"> · {line.tenSanXuat}</span> : null}
+                      </p>
+                    ) : null}
+
+                    {line.maHang.trim() ? (
+                      <label className="block space-y-0.5">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tên SX</span>
                         <SearchableSelect
                           value={sxText ? (line.materialId || sxText) : ''}
                           onChange={value => {
@@ -1830,15 +2260,12 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                               return;
                             }
                             if (!v) {
-                              // Xóa trắng khi đang gắn id có sẵn thì giữ nguyên (tránh rớt thành SX rỗng ngoài ý muốn).
                               if (line.materialId.trim()) return;
                               patchLine(index, { tenSanXuat: '' });
                               return;
                             }
-                            // Trùng dòng khác trong cùng phiên (cùng mã + tên + kho, khác hoa thường/khoảng trắng)
-                            // thì dùng đúng chữ dòng kia để không sinh 2 dòng kho_nvl khi lưu.
                             const sibling = lines.find((other, otherIndex) => otherIndex !== index
-                              && other.khoId === line.khoId
+                              && other.khoId === khoId
                               && normNvlIdentityText(other.maHang) === normNvlIdentityText(line.maHang)
                               && normNvlIdentityText(other.tenHang) === normNvlIdentityText(line.tenHang)
                               && normNvlIdentityText(other.tenSanXuat) === normNvlIdentityText(v)
@@ -1854,75 +2281,47 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
                                 tenHang: sibling.tenHang,
                                 donVi: sibling.donVi || line.donVi,
                                 warehouseClass: sibling.warehouseClass,
-                                tenSanXuat: String(sibling.tenSanXuat || '').trim()
+                                tenSanXuat: String(sibling.tenSanXuat || '').trim(),
+                                khoId
                               });
                               return;
                             }
-                            // Tên SX mới cho mã hiện tại — giữ mã/tên/ĐVT/phân loại, lưu phiếu tự tạo dòng kho_nvl.
-                            patchLine(index, { materialId: '', tenSanXuat: v });
+                            patchLine(index, { materialId: '', tenSanXuat: v, khoId });
                           }}
                           options={sxOptions}
                           getValue={item => String((item as MaterialOption).id || '').trim()}
                           getLabel={item => String((item as MaterialOption).productionName || '').trim()}
-                          placeholder={line.maHang ? (line.materialId ? 'Không có dữ liệu' : 'Gõ tên SX mới hoặc chọn') : 'Chọn mã trước'}
-                          disabled={!line.maHang.trim()}
+                          placeholder={line.materialId ? 'Chọn tên SX' : 'Gõ tên SX mới hoặc chọn'}
+                          disabled={viewOnly}
                           inputClassName={`${fieldClass} ${!line.materialId.trim() && line.tenSanXuat.trim() ? 'border-amber-400 bg-amber-50' : ''}`}
                           allowEmpty
                           allowCustomValue
                           showAllWhenQueryMatchesSelection
                           revertOnBlurMismatch
-                          openUpward
+                          dropdownMaxHeight={280}
                         />
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-2 align-middle tabular-nums">{line.ton === null ? '—' : formatQty(line.ton)}</td>
-                    <td className="px-2 py-2 align-middle"><input value={line.soLuong} onChange={event => patchLine(index, { soLuong: event.target.value })} onBlur={event => {
-                      if (!event.target.value.trim()) return;
-                      const parsed = parseLocalizedNumber(event.target.value);
-                      if (Number.isFinite(parsed)) patchLine(index, { soLuong: formatNumber(parsed, 3) });
-                    }} className={`${fieldClass} w-24`} /></td>
-                    <td className="whitespace-nowrap px-2 py-2 align-middle font-mono font-bold text-emerald-800">{formatWarehouseWeightKg(lineWeight(line))}</td>
-                    <td className="px-2 py-2 align-middle">
-                      <div className="w-32">
-                        <NvlPriceSelect
-                          maHang={line.maHang}
-                          value={line.donGia}
-                          onChange={next => patchLine(index, { donGia: next })}
-                          disabled={viewOnly}
-                          inputClassName={fieldClass}
-                        />
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-2 align-middle text-right font-mono font-bold tabular-nums">{lineAmount(line) === null ? '—' : formatMoney(lineAmount(line) as number, 0)}</td>
-                    <td className="whitespace-nowrap px-2 py-2 align-middle text-right font-mono font-bold tabular-nums text-sky-800" title={`Giá mua + Chi phí đi kèm/1kg (${formatMoney(kemPerKgAll, 0)})`}>{lineImportPrice(line) === null ? '—' : formatMoney(lineImportPrice(line) as number, 0)}</td>
-                    <td className="whitespace-nowrap px-2 py-2 align-middle text-right font-mono font-bold tabular-nums text-sky-800">{lineImportAmount(line) === null ? '—' : formatMoney(lineImportAmount(line) as number, 0)}</td>
-                    <td className="px-2 py-2 align-middle">
-                      <button type="button" onClick={() => setLines(current => current.filter((_, i) => i !== index))} className="text-rose-600"><Trash2 className="h-4 w-4" /></button>
-                    </td>
-                  </tr>
-                  <tr className="border-b border-zinc-100">
-                    <td colSpan={10} className="px-2 pb-2">
-                      <ChiPhiKemTheoPanel
-                        items={line.chiPhiKemTheo || []}
-                        lineAmount={lineAmount(line) || 0}
-                        onChange={viewOnly ? undefined : next => patchLine(index, { ...line, chiPhiKemTheo: next })}
-                        disabled={viewOnly}
-                      />
-                    </td>
-                  </tr>
-                  </React.Fragment>
+                      </label>
+                    ) : null}
+
+                    <p className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] font-semibold text-zinc-500">
+                      <span>Kg <strong className="font-mono text-emerald-800">{formatWarehouseWeightKg(lineWeight(line))}</strong></span>
+                      <span>TT <strong className="font-mono text-zinc-800">{lineAmount(line) === null ? '—' : formatMoney(lineAmount(line) as number, 0)}</strong></span>
+                      <span>Nhập <strong className="font-mono text-sky-800">{lineImportAmount(line) === null ? '—' : formatMoney(lineImportAmount(line) as number, 0)}</strong></span>
+                    </p>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
         </div>
-        <button type="button" onClick={() => setLines(current => [...current, emptyLine()])} className="inline-flex items-center gap-1 text-xs font-extrabold text-[#ef1b2d]">
+        <button
+          type="button"
+          onClick={() => setLines(current => [...current, {
+            ...emptyLine(),
+            khoId: (nguonLoai === 'kho' && nguonId ? nguonId : '') || current[0]?.khoId || ''
+          }])}
+          className="inline-flex items-center gap-1 text-xs font-extrabold text-[#ef1b2d]"
+        >
           <Plus className="h-4 w-4" /> Thêm dòng
         </button>
-        <p className="text-[11px] font-semibold text-zinc-500">
-          Mỗi dòng nhập (mã + giá) tạo một lô tồn theo giá. Khi xuất phải chọn đúng lô để trừ tồn.
-        </p>
-        <p className="text-[11px] font-semibold text-zinc-500">Nguồn nhập không bắt buộc. Có thể chọn Kho, Máy hoặc Nhà cung cấp; chọn Máy sẽ trừ tồn máy và nhập lượng đó vào kho được chọn. Nếu chọn Kho nguồn thì chỉ Kho NVL Chính, Kho NVL Phụ, Kho PC. Mã lấy theo danh mục đúng kho; Kho nhập cũng chỉ ba kho đó.</p>
         </> : (
           <p className="text-[11px] font-semibold text-zinc-500">
             {destKind === 'ncc'
@@ -1943,23 +2342,22 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
         ) : null}
         {(() => {
           const filled = lines.filter(line => line.maHang.trim());
-          const tongKl = tongKgAll;
           const tongHang = roundKem(filled.reduce((sum, line) => sum + (lineAmount(line) || 0), 0));
-          const tongKem = tongKemAll;
-          const tongCong = roundKem(tongHang + tongKem);
           const tongNhapKho = roundKem(filled.reduce((sum, line) => sum + (lineImportAmount(line) || 0), 0));
           return (
             <div className="grid grid-cols-2 gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-bold text-zinc-800 sm:grid-cols-3">
-              <span>Tổng trọng lượng <strong className="font-mono">{formatQty(tongKl)}</strong></span>
-              <span>Tổng chi phí đi kèm <strong className="font-mono">{formatMoney(tongKem, 0)}</strong></span>
-              <span>Chi phí đi kèm/1 kg <strong className="font-mono">{formatMoney(kemPerKgAll, 0)}</strong></span>
-              <span>Tổng thành tiền <strong className="font-mono">{formatMoney(tongCong, 0)}</strong></span>
+              <span>Tổng trọng lượng <strong className="font-mono">{formatQty(tongKgAll)}</strong></span>
+              <span>Tổng thành tiền <strong className="font-mono">{formatMoney(tongHang, 0)}</strong></span>
               <span>Tổng giá nhập kho <strong className="font-mono">{formatMoney(tongNhapKho, 0)}</strong></span>
             </div>
           );
         })()}
         {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}
         {info ? <p className="text-sm font-semibold text-emerald-700">{info}</p> : null}
+      </section>
+      </div>
+
+      <div className="z-30 shrink-0 space-y-2 border-t border-zinc-200 bg-white/95 px-2 py-2 shadow-[0_-4px_12px_rgba(15,23,42,0.06)] backdrop-blur">
         <div className="flex flex-wrap gap-2">
           {!viewOnly && (
             <button type="button" onClick={previewDraft} className="inline-flex h-9 items-center gap-1 rounded-lg border border-[#ef1b2d] px-4 text-xs font-extrabold text-[#ef1b2d]">
@@ -1970,14 +2368,39 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
             type="button"
             disabled={viewOnly ? false : saving}
             onClick={viewOnly ? onBack : () => void onSave()}
-            className={`h-9 rounded-lg px-4 text-xs font-extrabold text-white ${
+            className={`h-9 flex-1 rounded-lg px-4 text-xs font-extrabold text-white sm:flex-none ${
               viewOnly ? 'bg-zinc-400' : 'bg-[#ef1b2d] disabled:opacity-60'
             }`}
           >
             {viewOnly ? 'Đóng' : saving ? 'Đang lưu…' : editingId ? 'Cập nhật' : 'Lưu phiếu'}
           </button>
         </div>
-      </section>
+        <div className="grid grid-cols-3 gap-2">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex h-10 items-center justify-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-extrabold text-zinc-700"
+          >
+            <ChevronLeft className="h-4 w-4" /> Quay lại
+          </button>
+          <button
+            type="button"
+            onClick={onHome || onBack}
+            className="inline-flex h-10 items-center justify-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-extrabold text-zinc-700"
+          >
+            <Home className="h-4 w-4" /> Trang chủ
+          </button>
+          <button
+            type="button"
+            disabled={loadingMaster || refreshingCatalog}
+            onClick={() => void loadMasterData(true)}
+            className="inline-flex h-10 items-center justify-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 text-xs font-extrabold text-zinc-700 disabled:opacity-60"
+          >
+            {loadingMaster ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Tải lại
+          </button>
+        </div>
+      </div>
 
       {orderProductsOpen && selectedPtdmOptions.length > 0 ? (
         <div
@@ -2061,3 +2484,5 @@ export function TongHopPanel({ onBack, onOpenList, viewOnly }: { onBack: () => v
 
 export { TongHopListPanel } from './list';
 export { TongHopViewModal } from './ViewModal';
+export { NvlDotMayPanel } from './NvlDotMayPanel';
+export { MoPhongNvlPanel } from './MoPhongNvlPanel';

@@ -110,7 +110,11 @@ export const STAFF_MENU_VIEW_TREE: StaffViewGroup[] = [
       { tab: 'bao-cao-don-cat-le', label: 'Báo cáo đơn cắt lẻ' },
       { tab: 'theo-doi-cat-le', label: 'Theo dõi cắt lẻ' },
       { tab: 'chuyen-kho', label: 'Chuyển kho' },
+      { tab: 'so-nvl', label: 'Sổ NVL (có duyệt)' },
       { tab: 'phieu-nhap-xuat-tong-hop', label: 'Xuất nhập kho NVL' },
+      { tab: 'huong-dan-nhap-nvl', label: 'Hướng dẫn nhập NVL' },
+      { tab: 'nvl-theo-dot-may', label: 'NVL theo đợt – máy' },
+      { tab: 'nvl-mo-phong', label: 'Mô phỏng nguồn NVL' },
       { tab: 'phieu-nhap-xuat-tong-hop-list', label: 'Danh sách xuất nhập kho NVL' },
       { tab: 'ton-kho', label: 'Tồn kho' }
     ]

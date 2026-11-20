@@ -1043,6 +1043,7 @@ export function buildWarehouseSlipPrintData(
     reason: string;
     note: string;
     createdBy: string;
+    slipCategory?: string;
     productionOrderRef?: string;
     machine?: string;
     shift?: string;
@@ -1094,6 +1095,7 @@ export function buildWarehouseSlipPrintData(
     reason: options.reason,
     note: options.note,
     createdBy: options.createdBy,
+    slipCategory: options.slipCategory,
     productionOrderRef: options.productionOrderRef,
     machine: options.machine,
     shift: options.shift,
@@ -4589,6 +4591,7 @@ export function WarehouseSlipPanel({
             reason: savedReason,
             note: note.trim(),
             createdBy: createdBy.trim(),
+            slipCategory: slipType === 'nhap' ? loaiNhapKho.trim() || undefined : undefined,
             productionOrderRef: productionOrderLabelForSave,
             machine: machine.trim(),
             shift: shiftLabelForSave,
@@ -6793,6 +6796,10 @@ export function WarehouseHistoryPanel({
       note: header.note,
       createdBy: header.createdBy,
       warehouseName: header.warehouseName,
+      recipient: header.recipient,
+      deliverer: header.deliverer || header.recipient,
+      warehouseLocation: header.warehouseLocation,
+      slipCategory: header.inboundKind,
       totalAmount: lines.reduce((sum, line) => sum + line.lineAmount, 0),
       lines
     };

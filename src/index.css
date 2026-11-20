@@ -4196,6 +4196,12 @@ input[type="number"] {
   line-height: 1.25;
 }
 
+.warehouse-nhap-kho-print-dept {
+  margin: 0.5mm 0 0;
+  font-size: 10pt;
+  font-weight: 600;
+}
+
 .warehouse-nhap-kho-print-accounts {
   flex-shrink: 0;
   text-align: left;
@@ -4233,6 +4239,10 @@ input[type="number"] {
   margin: 0 0 1.5mm;
 }
 
+.warehouse-nhap-kho-print-meta-gap {
+  margin-left: 8mm;
+}
+
 .warehouse-nhap-kho-print-table {
   width: 100%;
   border-collapse: collapse;
@@ -4255,16 +4265,22 @@ input[type="number"] {
   line-height: 1.2;
 }
 
+.warehouse-nhap-kho-print-col-letters th {
+  font-weight: 600;
+  font-size: 9pt;
+  padding: 0.8mm 1mm;
+}
+
 .warehouse-nhap-kho-col-stt {
-  width: 7%;
+  width: 6%;
 }
 
 .warehouse-nhap-kho-col-name {
-  width: 34%;
+  width: 30%;
 }
 
 .warehouse-nhap-kho-col-code {
-  width: 11%;
+  width: 10%;
 }
 
 .warehouse-nhap-kho-col-unit {
@@ -4277,7 +4293,7 @@ input[type="number"] {
 
 .warehouse-nhap-kho-col-price,
 .warehouse-nhap-kho-col-amount {
-  width: 11%;
+  width: 10%;
 }
 
 .warehouse-nhap-kho-total-label {
@@ -4304,6 +4320,12 @@ input[type="number"] {
   gap: 3mm;
   text-align: center;
   font-size: 10pt;
+}
+
+.warehouse-nhap-kho-print-signatures--5 {
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2mm;
+  font-size: 9.5pt;
 }
 
 .warehouse-nhap-kho-print-signatures p {

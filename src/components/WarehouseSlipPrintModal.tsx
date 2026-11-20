@@ -416,14 +416,20 @@ function nhapKhoAccountingCodes(kind: WarehouseSlipPrintData['warehouseKind']) {
 function NhapKhoPrintBody({ data }: { data: WarehouseSlipPrintData }) {
   const dateParts = formatNhapKhoDateParts(data.slipDate);
   const accounts = nhapKhoAccountingCodes(data.warehouseKind);
-  const totalQuantity = sumPrintQty(data.lines);
+  const totalActualQty = sumPrintQty(data.lines);
+  const totalDocQty = data.lines.reduce((sum, line) => {
+    const qty = Number(line.documentQuantity);
+    return sum + (Number.isFinite(qty) && qty > 0 ? qty : 0);
+  }, 0);
   const deliverer = data.deliverer || data.recipient || '';
   const location = data.warehouseLocation || '';
-  const referenceText = data.productionOrderRef || data.reason || '';
+  const reasonText = data.reason || data.slipCategory || '';
+  const referenceText = data.productionOrderRef || '';
   const printRows = data.lines.filter(
     line =>
       Boolean(line.code || line.name) ||
       line.quantity > 0 ||
+      (Number(line.documentQuantity) || 0) > 0 ||
       line.unitPrice > 0 ||
       line.lineAmount > 0
   );
@@ -435,6 +441,7 @@ function NhapKhoPrintBody({ data }: { data: WarehouseSlipPrintData }) {
           <img src={vietNhatLogoUrl} alt={PRINT_COMPANY_NAME} className="warehouse-nhap-kho-print-logo" />
           <div className="warehouse-nhap-kho-print-company">
             <p className="warehouse-nhap-kho-print-company-name">{PRINT_COMPANY_NAME}</p>
+            <p className="warehouse-nhap-kho-print-dept">Bộ phận: Kho</p>
           </div>
         </div>
         <div className="warehouse-nhap-kho-print-accounts">
@@ -465,59 +472,78 @@ function NhapKhoPrintBody({ data }: { data: WarehouseSlipPrintData }) {
       </div>
 
       <div className="warehouse-nhap-kho-print-meta">
-        {data.slipCategory ? (
+        <p>
+          <span>- Họ và tên người giao hàng:</span>{' '}
+          {deliverer || '.................................................................'}
+        </p>
+        <p>
+          <span>- Lý do nhập kho:</span> {reasonText || '.................................................................'}
+        </p>
+        {referenceText ? (
           <p>
-            <span>- Loại phiếu:</span> {data.slipCategory}
+            <span>- Theo chứng từ số</span> {referenceText} <span>ngày</span>{' '}
+            {dateParts.day || '.....'} <span>tháng</span> {dateParts.month || '.....'} <span>năm</span>{' '}
+            {dateParts.year || '.....'}
           </p>
         ) : null}
         <p>
-          <span>- Họ và tên người giao:</span> {deliverer || '.................................................................'}
-        </p>
-        <p>
-          <span>- Theo</span> ............ <span>số</span> {referenceText || '..............'}{' '}
-          <span>ngày</span> {dateParts.day || '.....'} <span>tháng</span> {dateParts.month || '.....'}{' '}
-          <span>năm</span> {dateParts.year || '.....'} <span>của</span>{' '}
-          .........................................................
-        </p>
-        <p>
-          <span>- Nhập tại kho:</span> {warehouseImportLabel(data)}
-        </p>
-        <p>
-          <span>Địa điểm:</span> {location || '.................................................................'}
+          <span>- Nhập tại kho (ngăn lô):</span> {warehouseImportLabel(data)}
+          <span className="warehouse-nhap-kho-print-meta-gap">Địa điểm:</span>{' '}
+          {location || '................'}
         </p>
       </div>
 
       <table className="warehouse-nhap-kho-print-table">
         <thead>
           <tr>
-            <th className="warehouse-nhap-kho-col-stt">
+            <th rowSpan={2} className="warehouse-nhap-kho-col-stt">
               STT
             </th>
-            <th className="warehouse-nhap-kho-col-name">
+            <th rowSpan={2} className="warehouse-nhap-kho-col-name">
               Tên, nhãn hiệu, quy cách, phẩm chất vật tư, dụng cụ sản phẩm, hàng hóa
             </th>
-            <th className="warehouse-nhap-kho-col-code">
+            <th rowSpan={2} className="warehouse-nhap-kho-col-code">
               Mã số
             </th>
-            <th className="warehouse-nhap-kho-col-unit">
+            <th rowSpan={2} className="warehouse-nhap-kho-col-unit">
               Đơn vị tính
             </th>
-            <th className="warehouse-nhap-kho-col-qty">Số lượng</th>
-            <th className="warehouse-nhap-kho-col-price">
+            <th colSpan={2}>Số lượng</th>
+            <th rowSpan={2} className="warehouse-nhap-kho-col-price">
               Đơn giá
             </th>
-            <th className="warehouse-nhap-kho-col-amount">
+            <th rowSpan={2} className="warehouse-nhap-kho-col-amount">
               Thành tiền
             </th>
           </tr>
+          <tr>
+            <th className="warehouse-nhap-kho-col-qty">Yêu cầu</th>
+            <th className="warehouse-nhap-kho-col-qty">Thực nhập</th>
+          </tr>
+          <tr className="warehouse-nhap-kho-print-col-letters">
+            <th>A</th>
+            <th>B</th>
+            <th>C</th>
+            <th>D</th>
+            <th>1</th>
+            <th>2</th>
+            <th />
+            <th />
+          </tr>
         </thead>
         <tbody>
-          {printRows.map((line, index) => (
+          {printRows.map((line, index) => {
+            const docQty = Number(line.documentQuantity);
+            const hasDocQty = Number.isFinite(docQty) && docQty > 0;
+            return (
               <tr key={`${line.code}-${index}`}>
                 <td className="warehouse-slip-print-center">{index + 1}</td>
                 <td>{line.name || ''}</td>
                 <td className="warehouse-slip-print-center">{line.code || ''}</td>
                 <td className="warehouse-slip-print-center">{line.unit || ''}</td>
+                <td className="warehouse-slip-print-right">
+                  {hasDocQty ? formatPrintQty(docQty, 2) : ''}
+                </td>
                 <td className="warehouse-slip-print-right">{formatPrintQty(line.quantity, 2)}</td>
                 <td className="warehouse-slip-print-right">
                   {line.unitPrice > 0 ? formatMoney(line.unitPrice, 0) : ''}
@@ -526,7 +552,8 @@ function NhapKhoPrintBody({ data }: { data: WarehouseSlipPrintData }) {
                   {line.lineAmount > 0 ? formatMoney(line.lineAmount, 0) : ''}
                 </td>
               </tr>
-          ))}
+            );
+          })}
         </tbody>
         <tfoot>
           <tr>
@@ -534,7 +561,10 @@ function NhapKhoPrintBody({ data }: { data: WarehouseSlipPrintData }) {
               Cộng
             </td>
             <td className="warehouse-slip-print-right warehouse-nhap-kho-total-value">
-              {totalQuantity > 0 ? formatQty(totalQuantity) : ''}
+              {totalDocQty > 0 ? formatQty(totalDocQty) : ''}
+            </td>
+            <td className="warehouse-slip-print-right warehouse-nhap-kho-total-value">
+              {totalActualQty > 0 ? formatQty(totalActualQty) : ''}
             </td>
             <td />
             <td className="warehouse-slip-print-right warehouse-nhap-kho-total-value">
@@ -556,11 +586,14 @@ function NhapKhoPrintBody({ data }: { data: WarehouseSlipPrintData }) {
 
       <TongHopCostPrintBlock data={data} />
 
-      <div className="warehouse-nhap-kho-print-signatures">
+      <div className="warehouse-nhap-kho-print-signatures warehouse-nhap-kho-print-signatures--5">
         <div>
-          <p>Người lập biểu</p>
+          <p>Thủ trưởng đơn vị</p>
           <span>(Ký, họ tên)</span>
-          <strong>{data.createdBy || ''}</strong>
+        </div>
+        <div>
+          <p>Kế toán trưởng</p>
+          <span>(Ký, họ tên)</span>
         </div>
         <div>
           <p>Người giao hàng</p>
@@ -570,6 +603,11 @@ function NhapKhoPrintBody({ data }: { data: WarehouseSlipPrintData }) {
         <div>
           <p>Thủ kho</p>
           <span>(Ký, họ tên)</span>
+        </div>
+        <div>
+          <p>Người lập phiếu</p>
+          <span>(Ký, họ tên)</span>
+          <strong>{data.createdBy || ''}</strong>
         </div>
       </div>
     </>

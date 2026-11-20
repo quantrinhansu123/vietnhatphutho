@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
-import { formatMoney, parseLocalizedNumber } from '../../utils';
+import { formatMoneyVN, parseLocalizedNumber } from '../../utils';
 
 export type NvlPriceOption = { id: string; label: string; donGia: number };
 
@@ -8,9 +8,18 @@ function priceKey(value: number) {
   return String(Math.round(value * 1000) / 1000);
 }
 
+/** Gõ 12000000 → 12.000.000 (dấu chấm ngăn nghìn). */
+export function formatNvlPriceTyped(raw: string): string {
+  const cleaned = String(raw || '').replace(/[^\d]/g, '');
+  if (!cleaned) return '';
+  const parsed = Number(cleaned);
+  if (!Number.isFinite(parsed)) return '';
+  return formatMoneyVN(parsed, 0);
+}
+
 export function toNvlPriceOption(donGia: number, soLan?: number): NvlPriceOption | null {
   if (!Number.isFinite(donGia) || donGia < 0) return null;
-  const label = formatMoney(donGia, 0);
+  const label = formatMoneyVN(donGia, 0);
   return {
     id: priceKey(donGia),
     label: soLan && soLan > 1 ? `${label} · ${soLan} lần` : label,
@@ -84,7 +93,7 @@ export function NvlPriceSelect({
     const current = parseLocalizedNumber(value);
     if (Number.isFinite(current) && current >= 0) {
       const opt = toNvlPriceOption(current);
-      if (opt && !map.has(opt.id)) map.set(opt.id, { ...opt, label: formatMoney(current, 0) });
+      if (opt && !map.has(opt.id)) map.set(opt.id, { ...opt, label: formatMoneyVN(current, 0) });
     }
     return [...map.values()].sort((a, b) => b.donGia - a.donGia);
   }, [remote, extraPrices, value]);
@@ -101,7 +110,7 @@ export function NvlPriceSelect({
       onChange={next => {
         const hit = options.find(item => item.id === next);
         if (hit) {
-          onChange(formatMoney(hit.donGia, 0));
+          onChange(formatMoneyVN(hit.donGia, 0));
           return;
         }
         const custom = String(next || '').trim();
@@ -110,7 +119,7 @@ export function NvlPriceSelect({
           return;
         }
         const parsed = parseLocalizedNumber(custom);
-        onChange(Number.isFinite(parsed) ? formatMoney(parsed, 0) : custom);
+        onChange(Number.isFinite(parsed) ? formatMoneyVN(parsed, 0) : custom);
       }}
       options={options}
       getValue={(item: NvlPriceOption) => item.id}
@@ -130,6 +139,8 @@ export function NvlPriceSelect({
       allowCustomValue
       allowEmpty
       openUpward
+      formatTypedQuery={formatNvlPriceTyped}
+      formatCustomAddLabel={formatNvlPriceTyped}
     />
   );
 }

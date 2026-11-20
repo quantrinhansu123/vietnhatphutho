@@ -101,7 +101,11 @@ export function SearchableSelect({
   showAllWhenQueryMatchesSelection = false,
   revertOnBlurMismatch = false,
   /** Dấu phẩy: `and` = mọi từ khóa (mặc định), `or` = khớp ≥1 (vd nhiều mã AMIS). */
-  commaSearchMode = 'and' as CommaSearchMode
+  commaSearchMode = 'and' as CommaSearchMode,
+  /** Chuẩn hóa chữ đang gõ (vd tiền → 12.000.000). */
+  formatTypedQuery,
+  /** Nhãn nút Thêm «…»; mặc định đúng chữ đang gõ. */
+  formatCustomAddLabel
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -157,6 +161,8 @@ export function SearchableSelect({
    */
   revertOnBlurMismatch?: boolean;
   commaSearchMode?: CommaSearchMode;
+  formatTypedQuery?: (raw: string) => string;
+  formatCustomAddLabel?: (raw: string) => string;
 }) {
   const fieldClass = inputClassName || orderFieldClass;
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -514,17 +520,23 @@ export function SearchableSelect({
 
   const renderCustomAddOption = () => {
     if (!allowCustomValue || !queryTrimmed || hasExactQueryMatch) return null;
+    const addLabel = formatCustomAddLabel ? formatCustomAddLabel(queryTrimmed) : queryTrimmed;
+    const commitText = formatTypedQuery ? formatTypedQuery(queryTrimmed) : queryTrimmed;
     return (
       <button
         type="button"
         onMouseDown={event => event.preventDefault()}
-        onClick={() => commitValue(queryTrimmed, null)}
+        onClick={() => commitValue(commitText.trim() || queryTrimmed, null)}
         className="block w-full px-3 py-2.5 text-left text-sm font-extrabold text-[#ef1b2d] transition hover:bg-red-50"
       >
-        Thêm «{queryTrimmed}»
+        Thêm «{addLabel}»
       </button>
     );
   };
+
+  function applyTypedQuery(raw: string) {
+    return formatTypedQuery ? formatTypedQuery(raw) : raw;
+  }
 
   const renderDropdown = () => {
     if (!open || isDisabled || !menuStyle) return null;
@@ -543,12 +555,13 @@ export function SearchableSelect({
                 <input
                   ref={searchInputRef}
                   value={query}
-                  onChange={event => setQuery(event.target.value)}
+                  onChange={event => setQuery(applyTypedQuery(event.target.value))}
                   onKeyDown={event => {
                     if (event.key !== 'Enter') return;
                     event.preventDefault();
                     commitTypedOrMatchedValue();
                   }}
+                  inputMode={formatTypedQuery ? 'decimal' : undefined}
                   placeholder={searchPlaceholder || placeholder}
                   className="h-10 w-full rounded-lg bg-zinc-50 pl-9 pr-3 text-sm font-medium text-zinc-800 outline-none ring-1 ring-transparent placeholder:text-zinc-400 focus:bg-white focus:ring-red-200"
                 />

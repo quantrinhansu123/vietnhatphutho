@@ -9,6 +9,7 @@ import {
   formatDotSoLabel,
   normalizeDotSo,
   DOT_SAN_XUAT_OPTIONS,
+  LOAI_SAN_XUAT_LABEL,
   queueTongHopEdit,
   queueTongHopView,
   type TongHopHeader,
@@ -345,6 +346,7 @@ export function TongHopListPanel({
               <th className="px-3 py-2">Đích</th>
               <th className="px-3 py-2">Ca</th>
               <th className="px-3 py-2">Đợt</th>
+              <th className="px-3 py-2">{LOAI_SAN_XUAT_LABEL}</th>
               <th className="px-3 py-2">Trạng thái</th>
               <th className="px-3 py-2" />
             </tr>
@@ -371,6 +373,7 @@ export function TongHopListPanel({
                 <td className="px-3 py-2">{row.kho_dich || row.dich_id || '—'}</td>
                 <td className="px-3 py-2">{row.ca || '—'}</td>
                 <td className="px-3 py-2">{formatDotSoLabel(String(row.dot_so || '')) || '—'}</td>
+                <td className="px-3 py-2">{row.phan_xuong || '—'}</td>
                 <td className="px-3 py-2">{statusLabel(row.trang_thai)}</td>
                 <td className="px-3 py-2">
                   <div className="flex justify-end gap-2">

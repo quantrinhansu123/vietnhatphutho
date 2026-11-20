@@ -70,8 +70,10 @@ Khi tách feature mới: cập nhật manifest (`appLines` → `src/features/...
 | `lenh_cat_le` | `/lenh-cat-le` (card **Lệnh cắt lẻ** trong `/nha-may/kho`) | [lenh_cat_le.md](./lenh_cat_le.md) |
 | `bao_cao_don_cat_le` | `/bao-cao-don-cat-le` (card trong Kho và Sản xuất) | [bao_cao_don_cat_le.md](./bao_cao_don_cat_le.md) |
 | `theo_doi_cat_le` | `/theo-doi-cat-le` (card trong Kho và Sản xuất) | [theo_doi_cat_le.md](./theo_doi_cat_le.md) |
+| `phieu_nhap_kho_nvl` + `nhap_kho_nvl` + `ma_luong_nvl` | `/so-nvl` (card **Sổ NVL (có duyệt)** trong `/nha-may/kho`) | [so_nvl.md](./so_nvl.md) |
 | `phieu_chuyen_kho` | `/chuyen-kho` (card **Chuyển kho** trong `/nha-may/kho`) | [phieu_chuyen_kho.md](./phieu_chuyen_kho.md) |
-| `phieu_nhap_xuat_tong_hop` | `/phieu-nhap-xuat-tong-hop` và `/danh-sach-phieu-nhap-xuat-tong-hop` | [xuat_nhap_tong_hop.md](./xuat_nhap_tong_hop.md) |
+| `phieu_nhap_xuat_tong_hop` | `/phieu-nhap-xuat-tong-hop`, `/danh-sach-phieu-nhap-xuat-tong-hop`, `/nvl-theo-dot-may` | [xuat_nhap_tong_hop.md](./xuat_nhap_tong_hop.md) |
+| *(UI hướng dẫn)* | `/huong-dan-nhap-nvl` | [huong_dan_nhap_nvl.md](./huong_dan_nhap_nvl.md) |
 | *(tổng hợp từ `phieu_nhap_xuat_tong_hop` + `nha_cung_cap`)* | `/tong-hop-ncc` | [tong_hop_ncc.md](./tong_hop_ncc.md) |
 | *(tổng hợp từ `phieu_nhap_xuat_tong_hop`, lọc đa máy/kho)* | `/thong-ke-nvl` | [thong_ke_nvl.md](./thong_ke_nvl.md) |
 | *(tổng hợp)* | `/bang-dieu-khien` | [control_board.md](./control_board.md) |

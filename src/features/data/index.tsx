@@ -8,7 +8,10 @@ import {
   Trash2,
   Pencil,
   Columns3,
-  Table2
+  Table2,
+  Filter,
+  Search,
+  X
 } from 'lucide-react';
 import { useTabAccess } from '../../app/useTabAccess';
 
@@ -86,6 +89,16 @@ export function DataAdminPanel({ onBack }: Props) {
   const [rowDraft, setRowDraft] = useState<Record<string, string>>({});
   const [rowMatch, setRowMatch] = useState<Record<string, unknown> | null>(null);
 
+  const [filterColumn, setFilterColumn] = useState('');
+  const [filterColumnQuery, setFilterColumnQuery] = useState('');
+  const [filterColumnOpen, setFilterColumnOpen] = useState(false);
+  const [filterValueQuery, setFilterValueQuery] = useState('');
+  const [filterValueOpen, setFilterValueOpen] = useState(false);
+  const [filterOptions, setFilterOptions] = useState<Array<{ value: unknown; label: string }>>([]);
+  const [filterSelected, setFilterSelected] = useState<unknown[]>([]);
+  const [appliedFilter, setAppliedFilter] = useState<{ column: string; values: unknown[] } | null>(null);
+  const [loadingFilterValues, setLoadingFilterValues] = useState(false);
+
   const filteredTables = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return tables;
@@ -93,6 +106,18 @@ export function DataAdminPanel({ onBack }: Props) {
   }, [tables, query]);
 
   const pkColumns = useMemo(() => columns.filter(col => col.isPrimaryKey).map(col => col.name), [columns]);
+
+  const filteredColumnChoices = useMemo(() => {
+    const q = filterColumnQuery.trim().toLowerCase();
+    if (!q) return columns;
+    return columns.filter(col => col.name.toLowerCase().includes(q));
+  }, [columns, filterColumnQuery]);
+
+  const filteredValueChoices = useMemo(() => {
+    const q = filterValueQuery.trim().toLowerCase();
+    if (!q) return filterOptions;
+    return filterOptions.filter(item => item.label.toLowerCase().includes(q));
+  }, [filterOptions, filterValueQuery]);
 
   const loadTables = useCallback(async () => {
     setLoadingTables(true);
@@ -122,16 +147,121 @@ export function DataAdminPanel({ onBack }: Props) {
     setColumns(Array.isArray(data.columns) ? data.columns : []);
   }, []);
 
-  const loadRows = useCallback(async (table: string, nextOffset = 0) => {
-    const res = await fetch(
-      `/api/data/tables/${encodeURIComponent(table)}/rows?limit=${limit}&offset=${nextOffset}`
-    );
-    const data = await readJson(res);
-    if (!res.ok) throw new Error(data.error || 'Không tải được dữ liệu.');
-    setRows(Array.isArray(data.rows) ? data.rows : []);
-    setRowCount(Number(data.count || 0));
-    setOffset(nextOffset);
+  const loadRows = useCallback(
+    async (
+      table: string,
+      nextOffset = 0,
+      filter: { column: string; values: unknown[] } | null | undefined = undefined
+    ) => {
+      const active = filter === undefined ? appliedFilter : filter;
+      const params = new URLSearchParams({
+        limit: String(limit),
+        offset: String(nextOffset)
+      });
+      if (active?.column && active.values.length > 0) {
+        params.set('column', active.column);
+        params.set('valuesJson', JSON.stringify(active.values));
+      }
+      const res = await fetch(`/api/data/tables/${encodeURIComponent(table)}/rows?${params.toString()}`);
+      const data = await readJson(res);
+      if (!res.ok) throw new Error(data.error || 'Không tải được dữ liệu.');
+      setRows(Array.isArray(data.rows) ? data.rows : []);
+      setRowCount(Number(data.count || 0));
+      setOffset(nextOffset);
+    },
+    [appliedFilter]
+  );
+
+  const loadFilterValues = useCallback(async (table: string, column: string) => {
+    if (!table || !column) {
+      setFilterOptions([]);
+      return;
+    }
+    setLoadingFilterValues(true);
+    try {
+      const params = new URLSearchParams({ column, limit: '500' });
+      const res = await fetch(`/api/data/tables/${encodeURIComponent(table)}/distinct?${params.toString()}`);
+      const data = await readJson(res);
+      if (!res.ok) throw new Error(data.error || 'Không tải được giá trị cột.');
+      setFilterOptions(Array.isArray(data.values) ? data.values : []);
+    } catch (err: unknown) {
+      setFilterOptions([]);
+      setError(err instanceof Error ? err.message : 'Không tải được giá trị cột.');
+    } finally {
+      setLoadingFilterValues(false);
+    }
   }, []);
+
+  const resetRowFilter = useCallback(() => {
+    setFilterColumn('');
+    setFilterColumnQuery('');
+    setFilterColumnOpen(false);
+    setFilterValueQuery('');
+    setFilterValueOpen(false);
+    setFilterOptions([]);
+    setFilterSelected([]);
+    setAppliedFilter(null);
+  }, []);
+
+  const applyRowFilter = useCallback(async () => {
+    if (!selectedTable) return;
+    if (!filterColumn || filterSelected.length === 0) {
+      setError('Chọn cột và ít nhất một giá trị để lọc.');
+      return;
+    }
+    const next = { column: filterColumn, values: filterSelected };
+    setAppliedFilter(next);
+    setFilterColumnOpen(false);
+    setFilterValueOpen(false);
+    setLoadingDetail(true);
+    setError('');
+    try {
+      await loadRows(selectedTable, 0, next);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Không lọc được dữ liệu.');
+    } finally {
+      setLoadingDetail(false);
+    }
+  }, [selectedTable, filterColumn, filterSelected, loadRows]);
+
+  const clearRowFilter = useCallback(async () => {
+    if (!selectedTable) return;
+    resetRowFilter();
+    setLoadingDetail(true);
+    setError('');
+    try {
+      await loadRows(selectedTable, 0, null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Không tải được dữ liệu.');
+    } finally {
+      setLoadingDetail(false);
+    }
+  }, [selectedTable, resetRowFilter, loadRows]);
+
+  const toggleFilterValue = (value: unknown) => {
+    setFilterSelected(prev => {
+      const key = value == null ? '__null__' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+      const exists = prev.some(item => {
+        const itemKey = item == null ? '__null__' : typeof item === 'object' ? JSON.stringify(item) : String(item);
+        return itemKey === key;
+      });
+      if (exists) {
+        return prev.filter(item => {
+          const itemKey = item == null ? '__null__' : typeof item === 'object' ? JSON.stringify(item) : String(item);
+          return itemKey !== key;
+        });
+      }
+      return [...prev, value];
+    });
+  };
+
+  const isFilterValueSelected = (value: unknown) => {
+    const key = value == null ? '__null__' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+    return filterSelected.some(item => {
+      const itemKey = item == null ? '__null__' : typeof item === 'object' ? JSON.stringify(item) : String(item);
+      return itemKey === key;
+    });
+  };
 
   const loadDetail = useCallback(
     async (table: string) => {
@@ -155,8 +285,49 @@ export function DataAdminPanel({ onBack }: Props) {
   }, [canView, loadTables]);
 
   useEffect(() => {
-    if (selectedTable) void loadDetail(selectedTable);
-  }, [selectedTable, detailTab, loadDetail]);
+    if (!selectedTable) return;
+    resetRowFilter();
+    setLoadingDetail(true);
+    setError('');
+    void (async () => {
+      try {
+        await loadColumns(selectedTable);
+        if (detailTab === 'rows') await loadRows(selectedTable, 0, null);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Không tải được chi tiết bảng.');
+      } finally {
+        setLoadingDetail(false);
+      }
+    })();
+    // Chỉ khi đổi bảng: luôn bỏ lọc và tải lại.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTable]);
+
+  useEffect(() => {
+    if (!selectedTable) return;
+    setLoadingDetail(true);
+    setError('');
+    void (async () => {
+      try {
+        await loadColumns(selectedTable);
+        if (detailTab === 'rows') await loadRows(selectedTable, 0);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Không tải được chi tiết bảng.');
+      } finally {
+        setLoadingDetail(false);
+      }
+    })();
+    // Chỉ khi đổi tab — giữ bộ lọc đã áp dụng.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailTab]);
+
+  useEffect(() => {
+    if (!selectedTable || !filterColumn) {
+      setFilterOptions([]);
+      return;
+    }
+    void loadFilterValues(selectedTable, filterColumn);
+  }, [selectedTable, filterColumn, loadFilterValues]);
 
   if (!canView) {
     return (
@@ -187,15 +358,25 @@ export function DataAdminPanel({ onBack }: Props) {
 
   const handleCreateTable = () =>
     runAction(async () => {
+      const columns = newTableCols
+        .map(col => ({
+          ...col,
+          name: col.name.trim()
+        }))
+        .filter(col => col.name.length > 0);
+      if (columns.length === 0) {
+        throw new Error('Cần ít nhất 1 cột có tên.');
+      }
       const res = await fetch('/api/data/tables', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newTableName.trim(), columns: newTableCols })
+        body: JSON.stringify({ name: newTableName.trim(), columns })
       });
       const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || 'Không tạo được bảng.');
       setCreateTableOpen(false);
       setNewTableName('');
+      setNewTableCols([{ name: 'ten', type: 'text', nullable: true, primaryKey: false }]);
       setSelectedTable(newTableName.trim());
     }, `Đã tạo bảng ${newTableName.trim()}.`);
 
@@ -587,6 +768,217 @@ export function DataAdminPanel({ onBack }: Props) {
                 </div>
               ) : (
                 <div className="space-y-2">
+                  <div className="rounded-xl border border-zinc-200 bg-zinc-50/80 p-2.5">
+                    <div className="mb-2 flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-zinc-600">
+                      <Filter className="h-3.5 w-3.5" />
+                      Bộ lọc
+                      {appliedFilter ? (
+                        <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold normal-case tracking-normal text-sky-800">
+                          {appliedFilter.column}: {appliedFilter.values.length} giá trị
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="relative">
+                        <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-zinc-500">
+                          Tên cột
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFilterColumnOpen(open => !open);
+                            setFilterValueOpen(false);
+                          }}
+                          className="flex h-9 w-full items-center justify-between rounded-lg border border-zinc-200 bg-white px-2.5 text-left text-xs font-semibold text-zinc-800"
+                        >
+                          <span className={filterColumn ? 'font-mono' : 'text-zinc-400'}>
+                            {filterColumn || 'Chọn cột…'}
+                          </span>
+                          <Search className="h-3.5 w-3.5 text-zinc-400" />
+                        </button>
+                        {filterColumnOpen ? (
+                          <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg">
+                            <div className="border-b border-zinc-100 p-1.5">
+                              <input
+                                autoFocus
+                                value={filterColumnQuery}
+                                onChange={event => setFilterColumnQuery(event.target.value)}
+                                placeholder="Gõ để tìm cột…"
+                                className="h-8 w-full rounded-md border border-zinc-200 px-2 text-xs"
+                              />
+                            </div>
+                            <div className="max-h-48 overflow-y-auto py-1">
+                              {filteredColumnChoices.length === 0 ? (
+                                <p className="px-2.5 py-2 text-[11px] text-zinc-400">Không có cột khớp.</p>
+                              ) : (
+                                filteredColumnChoices.map(col => (
+                                  <button
+                                    key={col.name}
+                                    type="button"
+                                    onClick={() => {
+                                      setFilterColumn(col.name);
+                                      setFilterColumnQuery('');
+                                      setFilterColumnOpen(false);
+                                      setFilterSelected([]);
+                                      setFilterValueQuery('');
+                                      setFilterValueOpen(true);
+                                    }}
+                                    className={`flex w-full items-center justify-between px-2.5 py-1.5 text-left text-xs hover:bg-sky-50 ${
+                                      filterColumn === col.name ? 'bg-sky-50 font-bold text-sky-800' : 'text-zinc-700'
+                                    }`}
+                                  >
+                                    <span className="font-mono">{col.name}</span>
+                                    <span className="text-[10px] text-zinc-400">{col.dataType}</span>
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="relative">
+                        <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-zinc-500">
+                          Giá trị
+                        </label>
+                        <button
+                          type="button"
+                          disabled={!filterColumn}
+                          onClick={() => {
+                            if (!filterColumn) return;
+                            setFilterValueOpen(open => !open);
+                            setFilterColumnOpen(false);
+                          }}
+                          className="flex h-9 w-full items-center justify-between rounded-lg border border-zinc-200 bg-white px-2.5 text-left text-xs font-semibold text-zinc-800 disabled:opacity-40"
+                        >
+                          <span className={filterSelected.length ? '' : 'text-zinc-400'}>
+                            {filterSelected.length
+                              ? `Đã chọn ${filterSelected.length} giá trị`
+                              : filterColumn
+                                ? 'Chọn giá trị…'
+                                : 'Chọn cột trước'}
+                          </span>
+                          <Search className="h-3.5 w-3.5 text-zinc-400" />
+                        </button>
+                        {filterValueOpen && filterColumn ? (
+                          <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg">
+                            <div className="border-b border-zinc-100 p-1.5">
+                              <input
+                                autoFocus
+                                value={filterValueQuery}
+                                onChange={event => setFilterValueQuery(event.target.value)}
+                                placeholder="Gõ để tìm giá trị…"
+                                className="h-8 w-full rounded-md border border-zinc-200 px-2 text-xs"
+                              />
+                            </div>
+                            <div className="flex items-center justify-between border-b border-zinc-100 px-2.5 py-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const visible = filteredValueChoices.map(item => item.value);
+                                  setFilterSelected(prev => {
+                                    const keys = new Set(
+                                      prev.map(item =>
+                                        item == null
+                                          ? '__null__'
+                                          : typeof item === 'object'
+                                            ? JSON.stringify(item)
+                                            : String(item)
+                                      )
+                                    );
+                                    const next = [...prev];
+                                    for (const value of visible) {
+                                      const key =
+                                        value == null
+                                          ? '__null__'
+                                          : typeof value === 'object'
+                                            ? JSON.stringify(value)
+                                            : String(value);
+                                      if (!keys.has(key)) {
+                                        keys.add(key);
+                                        next.push(value);
+                                      }
+                                    }
+                                    return next;
+                                  });
+                                }}
+                                className="text-[10px] font-bold text-sky-700 hover:underline"
+                              >
+                                Chọn tất cả đang hiện
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setFilterSelected([])}
+                                className="text-[10px] font-bold text-zinc-500 hover:underline"
+                              >
+                                Bỏ chọn
+                              </button>
+                            </div>
+                            <div className="max-h-52 overflow-y-auto py-1">
+                              {loadingFilterValues ? (
+                                <p className="flex items-center gap-1.5 px-2.5 py-2 text-[11px] text-zinc-400">
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  Đang tải giá trị…
+                                </p>
+                              ) : filteredValueChoices.length === 0 ? (
+                                <p className="px-2.5 py-2 text-[11px] text-zinc-400">Không có giá trị khớp.</p>
+                              ) : (
+                                filteredValueChoices.map(item => {
+                                  const key =
+                                    item.value == null
+                                      ? '__null__'
+                                      : typeof item.value === 'object'
+                                        ? JSON.stringify(item.value)
+                                        : String(item.value);
+                                  const checked = isFilterValueSelected(item.value);
+                                  return (
+                                    <label
+                                      key={key}
+                                      className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-xs hover:bg-sky-50"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() => toggleFilterValue(item.value)}
+                                        className="h-3.5 w-3.5 rounded border-zinc-300"
+                                      />
+                                      <span
+                                        className={`truncate font-mono ${item.value == null || item.value === '__null__' ? 'italic text-zinc-400' : 'text-zinc-700'}`}
+                                        title={item.label}
+                                      >
+                                        {item.label}
+                                      </span>
+                                    </label>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={busy || !filterColumn || filterSelected.length === 0}
+                        onClick={() => void applyRowFilter()}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-sky-200 bg-sky-600 px-2.5 text-[11px] font-extrabold text-white disabled:opacity-40"
+                      >
+                        <Filter className="h-3.5 w-3.5" />
+                        Áp dụng lọc
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy || (!appliedFilter && !filterColumn && filterSelected.length === 0)}
+                        onClick={() => void clearRowFilter()}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] font-bold text-zinc-700 disabled:opacity-40"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Xóa lọc
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     {canCreate ? (
                       <button

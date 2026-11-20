@@ -155,7 +155,10 @@ function assertTableName(name: string): string {
 function assertColumnName(name: string): string {
   const column = String(name || '').trim();
   if (!IDENT_RE.test(column)) {
-    throw new Error('Tên cột không hợp lệ.');
+    const shown = column || '(trống)';
+    throw new Error(
+      `Tên cột không hợp lệ: "${shown}". Chỉ dùng a-z, A-Z, 0-9, dấu _ và phải bắt đầu bằng chữ hoặc _.`
+    );
   }
   return column;
 }
@@ -301,22 +304,40 @@ export function registerDataAdminRoutes(app: Express, deps: DataAdminDeps) {
     try {
       const name = assertTableName(String(req.body?.name || ''));
       const columnsInput = Array.isArray(req.body?.columns) ? req.body.columns : [];
-      if (columnsInput.length === 0) {
+      const normalizedCols = columnsInput
+        .map(raw => ({
+          name: String((raw as { name?: string })?.name || '').trim(),
+          type: String((raw as { type?: string })?.type || 'text'),
+          nullable: Boolean((raw as { nullable?: boolean })?.nullable),
+          primaryKey: Boolean((raw as { primaryKey?: boolean })?.primaryKey)
+        }))
+        .filter(col => col.name.length > 0);
+      if (normalizedCols.length === 0) {
         throw new Error('Cần ít nhất 1 cột.');
       }
       const parts: string[] = [];
       let hasPk = false;
-      for (const raw of columnsInput) {
-        const col = assertColumnName(String((raw as { name?: string })?.name || ''));
-        const type = assertType(String((raw as { type?: string })?.type || 'text'));
-        const nullable = Boolean((raw as { nullable?: boolean })?.nullable);
-        const isPk = Boolean((raw as { primaryKey?: boolean })?.primaryKey);
+      const seen = new Set<string>();
+      for (const raw of normalizedCols) {
+        const col = assertColumnName(raw.name);
+        if (seen.has(col.toLowerCase())) {
+          throw new Error(`Trùng tên cột: "${col}".`);
+        }
+        seen.add(col.toLowerCase());
+        const type = assertType(raw.type);
+        const nullable = raw.nullable;
+        const isPk = raw.primaryKey;
         if (isPk) hasPk = true;
         parts.push(
           `${quoteIdent(col)} ${type}${isPk ? ' PRIMARY KEY' : ''}${nullable || isPk ? '' : ' NOT NULL'}`
         );
       }
       if (!hasPk) {
+        if (seen.has('id')) {
+          throw new Error(
+            'Chưa chọn PK. Hệ thống muốn tự thêm cột id, nhưng bạn đã có cột "id" — hãy tick PK cho cột id, hoặc đổi tên cột id.'
+          );
+        }
         parts.unshift(`${quoteIdent('id')} uuid PRIMARY KEY DEFAULT gen_random_uuid()`);
       }
       const sql = `CREATE TABLE ${quoteIdent(name)} (${parts.join(', ')})`;
@@ -453,26 +474,113 @@ export function registerDataAdminRoutes(app: Express, deps: DataAdminDeps) {
       const table = assertTableName(req.params.table);
       const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
       const offset = Math.max(0, Number(req.query.offset) || 0);
+      const filterColumnRaw = String(req.query.column || '').trim();
+      const filterColumn = filterColumnRaw ? assertColumnName(filterColumnRaw) : '';
+      const valuesRaw = Array.isArray(req.query.values)
+        ? req.query.values.map(item => String(item))
+        : String(req.query.values || '')
+            .split('\u001f')
+            .flatMap(part => part.split(','))
+            .map(item => item.trim())
+            .filter(Boolean);
+      // Client gửi values dạng JSON array khi có ký tự đặc biệt.
+      let filterValues: unknown[] = valuesRaw;
+      const valuesJson = String(req.query.valuesJson || '').trim();
+      if (valuesJson) {
+        try {
+          const parsed = JSON.parse(valuesJson);
+          if (Array.isArray(parsed)) filterValues = parsed;
+        } catch {
+          // giữ valuesRaw
+        }
+      }
 
-      await withPg(openPg, async client => {
-        await ensureTableExists(client, table);
-      });
+      try {
+        await withPg(openPg, async client => {
+          await ensureTableExists(client, table);
+        });
+      } catch (error) {
+        if (!isMissingPgConfig(error)) throw error;
+      }
 
       if (!supabase) {
         throw new Error('Supabase chưa được cấu hình.');
       }
 
-      const result = await supabase.from(table).select('*', { count: 'exact' }).range(offset, offset + limit - 1);
+      let query = supabase.from(table).select('*', { count: 'exact' });
+      if (filterColumn && filterValues.length > 0) {
+        const hasNull = filterValues.some(value => value === null || value === '__null__');
+        const concrete = filterValues.filter(value => value !== null && value !== '__null__');
+        const formatInItem = (value: unknown) => {
+          if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+          const text = String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+          return `"${text}"`;
+        };
+        if (hasNull && concrete.length > 0) {
+          query = query.or(
+            `${filterColumn}.is.null,${filterColumn}.in.(${concrete.map(formatInItem).join(',')})`
+          );
+        } else if (hasNull) {
+          query = query.is(filterColumn, null);
+        } else {
+          query = query.in(filterColumn, concrete as Array<string | number | boolean>);
+        }
+      }
+
+      const result = await query.range(offset, offset + limit - 1);
       if (result.error) throw new Error(result.error.message);
       res.json({
         table,
         rows: result.data || [],
         count: result.count ?? (result.data || []).length,
         limit,
-        offset
+        offset,
+        filter: filterColumn
+          ? { column: filterColumn, values: filterValues }
+          : null
       });
     } catch (error) {
       sendError(res, error, 'Không tải được dữ liệu.');
+    }
+  });
+
+  /** Giá trị phân biệt của 1 cột — dùng cho bộ lọc checkbox (gõ để tìm). */
+  app.get('/api/data/tables/:table/distinct', async (req, res) => {
+    try {
+      const table = assertTableName(req.params.table);
+      const column = assertColumnName(String(req.query.column || '').trim());
+      const q = String(req.query.q || '').trim().toLowerCase();
+      const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 200));
+
+      try {
+        await withPg(openPg, async client => {
+          await ensureTableExists(client, table);
+        });
+      } catch (error) {
+        if (!isMissingPgConfig(error)) throw error;
+      }
+
+      if (!supabase) throw new Error('Supabase chưa được cấu hình.');
+
+      const result = await supabase.from(table).select(column).limit(Math.min(2000, limit * 10));
+      if (result.error) throw new Error(result.error.message);
+
+      const seen = new Set<string>();
+      const values: Array<{ value: unknown; label: string }> = [];
+      for (const row of result.data || []) {
+        const raw = (row as Record<string, unknown>)[column];
+        const key = raw == null ? '__null__' : typeof raw === 'object' ? JSON.stringify(raw) : String(raw);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const label = raw == null ? '(null)' : typeof raw === 'object' ? JSON.stringify(raw) : String(raw);
+        if (q && !label.toLowerCase().includes(q)) continue;
+        values.push({ value: raw == null ? '__null__' : raw, label });
+        if (values.length >= limit) break;
+      }
+      values.sort((a, b) => a.label.localeCompare(b.label, 'vi'));
+      res.json({ table, column, values, count: values.length });
+    } catch (error) {
+      sendError(res, error, 'Không tải được giá trị cột.');
     }
   });
 

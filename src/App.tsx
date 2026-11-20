@@ -74,7 +74,10 @@ import { LenCatLePanel } from './features/lenh-cat-le';
 import { BaoCaoDonCatLePanel } from './features/bao-cao-don-cat-le';
 import { TheoDoiCatLePanel } from './features/theo-doi-cat-le';
 import { ChuyenKhoPanel } from './features/chuyen-kho';
-import { TongHopListPanel, TongHopPanel } from './features/xuat-nhap-tong-hop';
+import { SoNvlPanel } from './features/so-nvl';
+import { TongHopListPanel, TongHopPanel, NvlDotMayPanel, MoPhongNvlPanel } from './features/xuat-nhap-tong-hop';
+import { queueTongHopProcess } from './features/xuat-nhap-tong-hop/model';
+import { HuongDanNhapNvlPanel } from './features/huong-dan-nhap-nvl';
 import { TongHopNccPanel } from './features/tong-hop-ncc';
 import { ThongKeNvlPanel } from './features/thong-ke-nvl';
 import { CustomersPanel } from './features/khach-hang';
@@ -814,7 +817,9 @@ export default function App() {
             ? 'p-2 md:p-4'
             : activeTab === 'machine-nvl-report' || activeTab === 'orders'
               ? 'overflow-hidden p-0'
-              : activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' || activeTab === 'phieu-nhap-xuat-tong-hop' || activeTab === 'phieu-nhap-xuat-tong-hop-list' || activeTab === 'tong-hop-ncc' || activeTab === 'thong-ke-nvl'
+              : activeTab === 'phieu-nhap-xuat-tong-hop'
+                ? 'overflow-hidden p-0'
+              : activeTab === 'warehouse-slip' || activeTab === 'warehouse-history' || activeTab === 'phieu-nhap-xuat-tong-hop-list' || activeTab === 'huong-dan-nhap-nvl' || activeTab === 'nvl-theo-dot-may' || activeTab === 'nvl-mo-phong' || activeTab === 'tong-hop-ncc' || activeTab === 'thong-ke-nvl' || activeTab === 'so-nvl'
                 ? 'p-2 md:p-3 pb-4'
                 : activeTab === 'acceptance-report' || activeTab === 'acceptance-report-list'
                   ? 'p-2 md:p-4 pb-4'
@@ -1766,8 +1771,54 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.15 }}
+                className="flex h-full min-h-0 flex-col"
               >
-                <TongHopPanel onBack={() => goBack('factory-kho')} onOpenList={() => navigateToTab('phieu-nhap-xuat-tong-hop-list')} />
+                <TongHopPanel
+                  onBack={() => goBack('factory-kho')}
+                  onHome={() => navigateToTab('menu')}
+                />
+              </motion.div>
+            ) : activeTab === 'nvl-theo-dot-may' ? (
+              <motion.div
+                key="nvl-theo-dot-may"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <NvlDotMayPanel
+                  onBack={() => goBack('factory-kho')}
+                  onOpenForm={opts => {
+                    if (opts?.processId) queueTongHopProcess(opts);
+                    navigateToTab('phieu-nhap-xuat-tong-hop');
+                  }}
+                />
+              </motion.div>
+            ) : activeTab === 'huong-dan-nhap-nvl' ? (
+              <motion.div
+                key="huong-dan-nhap-nvl"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <HuongDanNhapNvlPanel
+                  onBack={() => goBack('factory-kho')}
+                  onOpenForm={() => navigateToTab('phieu-nhap-xuat-tong-hop')}
+                />
+              </motion.div>
+            ) : activeTab === 'nvl-mo-phong' ? (
+              <motion.div
+                key="nvl-mo-phong"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <MoPhongNvlPanel
+                  onBack={() => goBack('phieu-nhap-xuat-tong-hop')}
+                  onOpenForm={() => navigateToTab('phieu-nhap-xuat-tong-hop')}
+                />
               </motion.div>
             ) : activeTab === 'phieu-nhap-xuat-tong-hop-list' ? (
               <motion.div
@@ -1808,6 +1859,16 @@ export default function App() {
                   onBack={() => goBack('factory-kho')}
                   onEdit={() => navigateToTab('phieu-nhap-xuat-tong-hop')}
                 />
+              </motion.div>
+            ) : activeTab === 'so-nvl' ? (
+              <motion.div
+                key="so-nvl"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                <SoNvlPanel onBack={() => goBack('factory-kho')} />
               </motion.div>
             ) : activeTab === 'orders' ? (
               <motion.div

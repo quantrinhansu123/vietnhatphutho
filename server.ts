@@ -18,6 +18,7 @@ import {
 import { signSoTronToken, verifySoTronToken } from './src/features/so-tron/soTronToken';
 import { aggregateSlipOwnsCode, registerXuatNhapTongHopRoutes } from './src/features/xuat-nhap-tong-hop/registerRoutes';
 import { registerDataAdminRoutes } from './serverDataAdmin';
+import { registerPhieuNvlRoutes } from './serverPhieuNvl';
 import { normalizeAssignablePositions } from './src/features/cai-dat-thoi-gian/staffAssignments';
 import { isExternalStaffCode, resolveScheduleStaffName } from './src/utils/externalStaff';
 import { calculateProductConversionFormulas, roundImportedConversionWeight } from './src/utils/productConversionCalculation';
@@ -5839,7 +5840,86 @@ async function buildNvlInboundAvgPriceForMonth(
   };
 }
 
+/**
+ * Lô tồn NVL — đường nhanh: đọc cột `so_luong_da_xuat` / `so_luong_con` do trigger duy trì
+ * (supabase-nvl-lo-ton-counter.sql), không quét lịch sử xuất. Chưa chạy migration thì rơi về cách tính cũ.
+ */
 async function buildNvlInboundLots(
+  maNpl: string,
+  excludeSlipCode?: string
+): Promise<{ error?: string; lots: NvlInboundLot[] }> {
+  if (!supabase) return { lots: [] };
+  const code = String(maNpl || '').trim();
+  if (!code) return { lots: [] };
+  const exclude = String(excludeSlipCode || '').trim();
+  const { nvl: nvlLoaiKhosFast } = await loaiKhoLists();
+  const nvlOrFast = nvlLoaiKhoOrClause(nvlLoaiKhosFast);
+
+  const { data: fastRows, error: fastError } = await queryWarehouseSplitRows('nhap', table => {
+    let query = supabase
+      .from(table)
+      .select('id, ma_phieu, ngay_phieu, ma_npl, ten_npl, don_vi, don_gia, so_luong, so_luong_da_xuat, so_luong_con, loai_phieu, loai_kho')
+      .eq('ma_npl', code)
+      .eq('loai_phieu', 'nhap')
+      .or(nvlOrFast);
+    // Sửa phiếu: lô đã hết có thể hiện lại sau khi trừ phần phiếu này giữ → không lọc theo còn tồn.
+    if (!exclude) query = query.gt('so_luong_con', 0);
+    return query.order('ngay_phieu', { ascending: true }).order('created_at', { ascending: true });
+  });
+  if (fastError) {
+    if (isMissingColumnError(fastError)) return buildNvlInboundLotsByScan(maNpl, excludeSlipCode);
+    console.error('Supabase lo-ton fast query error:', fastError);
+    return { error: `Không thể tải lô nhập. ${fastError.message}`, lots: [] };
+  }
+
+  const releasedByLot = new Map<string, number>();
+  if (exclude) {
+    const { data: ownRows, error: ownError } = await queryWarehouseSplitRows('xuat', table =>
+      supabase
+        .from(table)
+        .select('id, so_luong, id_dong_nhap_nguon')
+        .eq('ma_phieu', exclude)
+        .eq('loai_phieu', 'xuat')
+        .not('id_dong_nhap_nguon', 'is', null)
+    );
+    if (ownError) return buildNvlInboundLotsByScan(maNpl, excludeSlipCode);
+    for (const row of ownRows || []) {
+      const lotId = String(row.id_dong_nhap_nguon || '').trim();
+      const qty = Number(row.so_luong);
+      if (!lotId || !Number.isFinite(qty) || qty <= 0) continue;
+      releasedByLot.set(lotId, roundWarehouseQty((releasedByLot.get(lotId) || 0) + qty));
+    }
+  }
+
+  const fastLots: NvlInboundLot[] = [];
+  for (const row of fastRows || []) {
+    const id = String(row.id || '').trim();
+    if (!id) continue;
+    const so_luong_nhap = roundWarehouseQty(Number(row.so_luong) || 0);
+    if (so_luong_nhap <= 0) continue;
+    const so_luong_da_xuat = roundWarehouseQty(
+      Math.max(0, (Number(row.so_luong_da_xuat) || 0) - (releasedByLot.get(id) || 0))
+    );
+    const so_luong_con = roundWarehouseQty(so_luong_nhap - so_luong_da_xuat);
+    if (so_luong_con <= 0) continue;
+    fastLots.push({
+      id,
+      ma_phieu: String(row.ma_phieu || '').trim(),
+      ngay_phieu: String(row.ngay_phieu || '').trim(),
+      ma_npl: String(row.ma_npl || '').trim() || code,
+      ten_npl: String(row.ten_npl || '').trim(),
+      don_vi: String(row.don_vi || '').trim(),
+      don_gia: roundWarehouseMoney(Number(row.don_gia) || 0),
+      so_luong_nhap,
+      so_luong_da_xuat,
+      so_luong_con
+    });
+  }
+  return { lots: fastLots };
+}
+
+/** Cách tính cũ (quét toàn bộ dòng xuất của mã) — chỉ dùng khi chưa chạy migration counter. */
+async function buildNvlInboundLotsByScan(
   maNpl: string,
   excludeSlipCode?: string
 ): Promise<{ error?: string; lots: NvlInboundLot[] }> {
@@ -7262,17 +7342,29 @@ function getSupabasePostgresCandidates(): string[] {
   const password = process.env.SUPABASE_DB_PASSWORD?.trim();
   const customUrl = process.env.SUPABASE_DB_URL?.trim();
   const ref = SUPABASE_URL?.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1];
+  // Region pooler theo project (ưu tiên JP vì project hiện tại); fallback SE Asia + vài region phổ biến.
+  const poolerRegions = [
+    process.env.SUPABASE_DB_POOLER_REGION?.trim(),
+    'ap-northeast-1',
+    'ap-southeast-1',
+    'ap-southeast-2',
+    'ap-south-1',
+    'us-east-1',
+    'eu-central-1'
+  ].filter((value, index, arr): value is string => Boolean(value) && arr.indexOf(value) === index);
+  const poolerUrls =
+    password && ref
+      ? poolerRegions.flatMap(region => [
+          `postgresql://postgres.${ref}:${encodeURIComponent(password)}@aws-0-${region}.pooler.supabase.com:6543/postgres`,
+          `postgresql://postgres.${ref}:${encodeURIComponent(password)}@aws-0-${region}.pooler.supabase.com:5432/postgres`
+        ])
+      : [];
   return [
     customUrl,
     password && ref
       ? `postgresql://postgres:${encodeURIComponent(password)}@db.${ref}.supabase.co:5432/postgres`
       : '',
-    password && ref
-      ? `postgresql://postgres.${ref}:${encodeURIComponent(password)}@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres`
-      : '',
-    password && ref
-      ? `postgresql://postgres.${ref}:${encodeURIComponent(password)}@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres`
-      : ''
+    ...poolerUrls
   ].filter((value): value is string => Boolean(value));
 }
 
@@ -9435,6 +9527,8 @@ export function createApp() {
     supabaseUrl: SUPABASE_URL,
     serviceKey: process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || null
   });
+
+  registerPhieuNvlRoutes(app, { openPg: openSupabasePostgresClient });
 
   app.get('/api/health', (_req, res) => {
     res.json({

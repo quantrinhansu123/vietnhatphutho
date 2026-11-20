@@ -56,7 +56,7 @@ import {
   FilePlus2, Layers, History, UsersRound, Building2, BriefcaseBusiness, Package, Cpu, Boxes,
   ClipboardList, Database, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, ArrowLeftRight, Scale, Settings,
   CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity, Truck,
-  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, AlertTriangle, Coins, Scissors
+  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, AlertTriangle, Coins, Scissors, BookOpen, Beaker
 } from 'lucide-react';
 import type { AppTab } from '../routes';
 import { hubHasAllowedChild, isScopedPermissionTab, resolveAccessTab } from './tabAccess';
@@ -825,6 +825,27 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'phieu-nhap-xuat-tong-hop'
   },
   {
+    title: 'Hướng dẫn nhập NVL',
+    desc: 'Từng bước nhập kho NVL: khoanh đỏ trên giao diện mẫu, bấm Tiếp để xem tiếp.',
+    icon: BookOpen,
+    icon3d: notebook3d,
+    tab: 'huong-dan-nhap-nvl'
+  },
+  {
+    title: 'NVL theo đợt – máy',
+    desc: 'Theo dõi xuất / nhập lại / phế theo ngày, đợt, máy và loại sản xuất.',
+    icon: CalendarDays,
+    icon3d: spiralCalendar3d,
+    tab: 'nvl-theo-dot-may'
+  },
+  {
+    title: 'Mô phỏng nguồn NVL',
+    desc: 'Xem dữ liệu mẫu: kho, máy, mã NVL, ca, NCC, loại phiếu, quy trình và tồn lô.',
+    icon: Beaker,
+    icon3d: testTube3d,
+    tab: 'nvl-mo-phong'
+  },
+  {
     title: 'Danh sách xuất nhập kho NVL',
     desc: 'Phiếu xuất nhập kho NVL đã ghi sổ. In, sửa hoặc hủy từ đây.',
     icon: History,
@@ -844,6 +865,13 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     icon: BarChart3,
     icon3d: chartIncreasing3d,
     tab: 'thong-ke-nvl'
+  },
+  {
+    title: 'Sổ NVL (có duyệt)',
+    desc: 'Phiếu nhập/xuất NVL theo mã luồng, đợt, máy; nháp → duyệt → hủy, kiểm tồn khi xuất.',
+    icon: BarChart3,
+    icon3d: chartIncreasing3d,
+    tab: 'so-nvl'
   },
   {
     title: 'Lịch sử xuất nhập',
@@ -1147,9 +1175,13 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Cắt lẻ', tab: 'cat-le' },
       { label: 'Chuyển kho', tab: 'chuyen-kho' },
       { label: 'Xuất nhập kho NVL', tab: 'phieu-nhap-xuat-tong-hop' },
+      { label: 'Hướng dẫn nhập NVL', tab: 'huong-dan-nhap-nvl' },
+      { label: 'NVL theo đợt – máy', tab: 'nvl-theo-dot-may' },
+      { label: 'Mô phỏng nguồn NVL', tab: 'nvl-mo-phong' },
       { label: 'Danh sách xuất nhập kho NVL', tab: 'phieu-nhap-xuat-tong-hop-list' },
       { label: 'Tổng hợp NVL từ nhà cung cấp', tab: 'tong-hop-ncc' },
       { label: 'Thống kê NVL', tab: 'thong-ke-nvl' },
+      { label: 'Sổ NVL (có duyệt)', tab: 'so-nvl' },
       { label: 'Chuẩn bị xuất hàng', tab: 'factory-kho', disabled: true }
     ]
   },
@@ -1227,8 +1259,12 @@ export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'chuyen-kho': { group: 'Kho', sub: 'Chuyển kho' },
   'phieu-nhap-xuat-tong-hop': { group: 'Kho', sub: 'Xuất nhập kho NVL' },
   'phieu-nhap-xuat-tong-hop-list': { group: 'Kho', sub: 'Danh sách xuất nhập kho NVL' },
+  'huong-dan-nhap-nvl': { group: 'Kho', sub: 'Hướng dẫn nhập NVL' },
+  'nvl-theo-dot-may': { group: 'Kho', sub: 'NVL theo đợt – máy' },
+  'nvl-mo-phong': { group: 'Kho', sub: 'Mô phỏng nguồn NVL' },
   'tong-hop-ncc': { group: 'Kho', sub: 'Tổng hợp NVL từ nhà cung cấp' },
   'thong-ke-nvl': { group: 'Kho', sub: 'Thống kê NVL' },
+  'so-nvl': { group: 'Kho', sub: 'Sổ NVL (có duyệt)' },
   'warehouse-history-detail': { group: 'Kho', sub: 'Chi tiết phiếu' },
   'damaged-goods-warehouse': { group: 'Kho', sub: 'Kho hàng hỏng' },
   'ton-kho': { group: 'Kho', sub: 'Tồn kho' },

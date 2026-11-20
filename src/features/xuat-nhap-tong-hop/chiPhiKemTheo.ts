@@ -1,5 +1,5 @@
 /** Chi phí kèm theo từng dòng. Thành tiền nhập tay, không nhân với số lượng. */
-import { formatMoney, parseLocalizedNumber } from '../../utils';
+import { formatMoneyVN, parseLocalizedNumber } from '../../utils';
 
 export type ChiPhiKemTheoStored = {
   ten: string;
@@ -46,7 +46,7 @@ export function emptyChiPhiKemTheo(): ChiPhiKemTheoDraft {
 export function sumKemDraft(items: ChiPhiKemTheoDraft[] | undefined) {
   return roundKem(
     (items || []).reduce((sum, item) => {
-      const amount = moneyOf(item.thanhTien);
+      const amount = moneyOf(item.thanhTien.trim() || item.donGia);
       return sum + (amount > 0 ? amount : 0);
     }, 0)
   );
@@ -61,8 +61,8 @@ export function kemDraftFromStored(raw: unknown): ChiPhiKemTheoDraft[] {
     return {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       ten: String(row.ten ?? row.name ?? '').trim().slice(0, 120),
-      donGia: donGia ? formatMoney(donGia, 0) : '',
-      thanhTien: thanhTien ? formatMoney(thanhTien, 0) : ''
+      donGia: donGia ? formatMoneyVN(donGia, 0) : '',
+      thanhTien: thanhTien ? formatMoneyVN(thanhTien, 0) : ''
     };
   });
 }
@@ -70,11 +70,15 @@ export function kemDraftFromStored(raw: unknown): ChiPhiKemTheoDraft[] {
 export function kemStoredFromDraft(items: ChiPhiKemTheoDraft[] | undefined): ChiPhiKemTheoStored[] {
   return (items || [])
     .filter(item => item.ten.trim() || item.donGia.trim() || item.thanhTien.trim())
-    .map(item => ({
-      ten: item.ten.trim().slice(0, 120),
-      don_gia: roundKem(Math.max(0, moneyOf(item.donGia))),
-      thanh_tien: roundKem(Math.max(0, moneyOf(item.thanhTien)))
-    }));
+    .map(item => {
+      const amount = roundKem(Math.max(0, moneyOf(item.thanhTien.trim() || item.donGia)));
+      const donGia = roundKem(Math.max(0, moneyOf(item.donGia.trim() || item.thanhTien)));
+      return {
+        ten: item.ten.trim().slice(0, 120),
+        don_gia: donGia || amount,
+        thanh_tien: amount || donGia
+      };
+    });
 }
 
 export function sumKemStored(raw: unknown) {
@@ -96,10 +100,10 @@ export function kemDraftError(lineLabel: string, items: ChiPhiKemTheoDraft[] | u
     const label = `${lineLabel}, khoản ${index + 1}`;
     if (!item.ten.trim()) return `${label}: thiếu tên chi phí.`;
     if (item.ten.trim().length > 120) return `${label}: tên chi phí tối đa 120 ký tự.`;
-    const donGia = moneyOf(item.donGia);
-    const thanhTien = moneyOf(item.thanhTien);
-    if (item.donGia.trim() && (!Number.isFinite(donGia) || donGia < 0)) return `${label}: đơn giá phải lớn hơn hoặc bằng 0.`;
-    if (item.thanhTien.trim() && (!Number.isFinite(thanhTien) || thanhTien < 0)) return `${label}: thành tiền phải lớn hơn hoặc bằng 0.`;
+    const thanhTienRaw = item.thanhTien.trim() || item.donGia.trim();
+    const thanhTien = moneyOf(thanhTienRaw);
+    if (!thanhTienRaw) return `${label}: thiếu giá tiền.`;
+    if (!Number.isFinite(thanhTien) || thanhTien <= 0) return `${label}: giá tiền phải lớn hơn 0.`;
   }
   return '';
 }
