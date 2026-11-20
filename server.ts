@@ -23,6 +23,16 @@ import { normalizeAssignablePositions } from './src/features/cai-dat-thoi-gian/s
 import { isExternalStaffCode, resolveScheduleStaffName } from './src/utils/externalStaff';
 import { calculateProductConversionFormulas, roundImportedConversionWeight } from './src/utils/productConversionCalculation';
 import { truncateTo4Decimals } from './src/utils/weightTruncate';
+import {
+  isCutOrderType as isCutOrderTypeServer,
+  isRetailCutOrderType as isRetailCutOrderTypeServer,
+  isCutLikeOrderType as isCutLikeOrderTypeServer,
+  isSouthOrderType,
+  normalizeOrderType,
+  orderProductTablesForRegion,
+  orderScopeValidationError,
+  resolveOrderRegion
+} from './src/utils/orderScope';
 import { readProductActor, type ProductActor } from './src/utils/productActor';
 import {
   aggregateNhapKhoProducts,
@@ -7454,22 +7464,7 @@ function resolveStoredOrderTenGhep(
   return buildOrderTenGhep(tenSp, { cutLengthM }) || '';
 }
 
-const SOUTH_ORDER_TYPE_SERVER = 'Đơn miền nam';
-const CUT_ORDER_TYPE_SERVER = 'Đơn theo quy cách của khách đặt';
-const CUT_ORDER_TYPE_NEW_SERVER = 'Đơn cắt lẻ';
 const PRODUCTION_ORDER_TYPE_SERVER = 'Đơn sản xuất';
-function isCutOrderTypeServer(orderType?: string | null) {
-  const value = String(orderType || '').trim();
-  return value === CUT_ORDER_TYPE_SERVER || value === CUT_ORDER_TYPE_NEW_SERVER;
-}
-/** Chỉ Đơn cắt lẻ kho bị chặn khỏi Lệnh SX. Đơn theo quy cách (QC đặt) vẫn vào Lệnh SX. */
-function isRetailCutOrderTypeServer(orderType?: string | null) {
-  return String(orderType || '').trim() === CUT_ORDER_TYPE_NEW_SERVER;
-}
-function isCutLikeOrderTypeServer(orderType?: string | null) {
-  const value = String(orderType || '').trim();
-  return isCutOrderTypeServer(value) || value === SOUTH_ORDER_TYPE_SERVER;
-}
 function isRegionQuantityOrderTypeServer(orderType?: string | null) {
   const value = String(orderType || '').trim();
   return value === PRODUCTION_ORDER_TYPE_SERVER || isCutLikeOrderTypeServer(value);
@@ -8307,7 +8302,7 @@ async function enrichOrderProductsWithConversionData(
  */
 function validateCutOrderProductsKg(products: OrderProductRecord[], orderType: string): string | null {
   const type = String(orderType || '').trim();
-  if (!isCutLikeOrderTypeServer(type) || type === SOUTH_ORDER_TYPE_SERVER) return null;
+  if (!isCutLikeOrderTypeServer(type) || isSouthOrderType(type)) return null;
   for (const product of products) {
     if (!(Number(product.so_luong) > 0)) continue;
     const num = (value: unknown) => Number(value) || 0;
@@ -8331,6 +8326,11 @@ function parseOrderBody(
 
   if (!orderCode) return { error: 'Vui lòng nhập mã đơn hàng.' };
 
+  const rawOrderType = typeof source.orderType === 'string' ? source.orderType.trim() : '';
+  const scopeError = orderScopeValidationError(rawOrderType || 'Đơn bán', String(source.khu_vuc || ''));
+  if (scopeError) return { error: scopeError };
+  const orderType = normalizeOrderType(rawOrderType || 'Đơn bán');
+
   const parsedProducts = parseOrderProductsInput(source);
   if ('error' in parsedProducts) {
     return { error: parsedProducts.error };
@@ -8347,13 +8347,13 @@ function parseOrderBody(
 
   const record: Record<string, string | number | null | OrderProductRecord[]> = {
     ma_don_hang: orderCode,
-    loai_don_hang: typeof source.orderType === 'string' ? source.orderType.trim() : '',
+    loai_don_hang: orderType,
     trang_thai: status,
     nhan_vien: typeof source.staffName === 'string' ? source.staffName.trim() : '',
     khach_hang: typeof source.customer === 'string' ? source.customer.trim() : '',
     san_pham: products,
     ghi_chu: typeof source.note === 'string' ? source.note.trim() : '',
-    khu_vuc: typeof source.khu_vuc === 'string' ? source.khu_vuc.trim() : '',
+    khu_vuc: resolveOrderRegion(orderType),
     updated_at: new Date().toISOString()
   };
   if (typeof source.deliveryDate === 'string') {
@@ -9883,27 +9883,41 @@ export function createApp() {
     try {
       const format = typeof req.query.format === 'string' ? req.query.format : 'list';
       if (format === 'table') {
+        let productTables: string[];
+        try {
+          productTables = typeof req.query.mien === 'string'
+            ? orderProductTablesForRegion(req.query.mien)
+            : [SUPABASE_PRODUCTS_TABLE];
+        } catch (error: any) {
+          return res.status(400).json({ error: error.message });
+        }
         // PostgREST giới hạn mặc định 1000 dòng/query -> phân trang để lấy hết dữ liệu.
         const PAGE_SIZE = 1000;
-        const allData: Record<string, unknown>[] = [];
-        for (let from = 0; ; from += PAGE_SIZE) {
-          const { data: page, error } = await supabase
-            .from(SUPABASE_PRODUCTS_TABLE)
-            .select('*')
-            .order('ten_sp', { ascending: true })
-            .range(from, from + PAGE_SIZE - 1);
-
-          if (error) {
-            return respondSupabaseReadError(res, error, SUPABASE_PRODUCTS_TABLE, { products: [], total: 0 });
+        const productsById = new Map<string, Record<string, unknown>>();
+        for (const table of productTables) {
+          for (let from = 0; ; from += PAGE_SIZE) {
+            const { data: page, error } = await supabase
+              .from(table)
+              .select('*')
+              .order('ten_sp', { ascending: true })
+              .order('id', { ascending: true })
+              .range(from, from + PAGE_SIZE - 1);
+            if (error) {
+              return respondSupabaseReadError(res, error, table, { products: [], total: 0 });
+            }
+            for (const row of page || []) {
+              const id = String(row.id ?? '');
+              const mien = table === 'san_pham_mb' ? 'Miền Bắc' : table === 'san_pham_mn' ? 'Miền Nam' : row.mien;
+              if (!productsById.has(id)) productsById.set(id, { ...row, mien });
+            }
+            if (!page || page.length < PAGE_SIZE) break;
           }
-
-          allData.push(...(page || []));
-          if (!page || page.length < PAGE_SIZE) break;
         }
-
+        const allData = [...productsById.values()];
         return res.json({
           products: allData || [],
           total: allData?.length || 0,
+          sourceTables: productTables,
           source: 'supabase'
         });
       }
@@ -11019,20 +11033,6 @@ export function createApp() {
         source.orderCode = await generateNextOrderCodeFromDb();
       }
 
-      const staffName = String(source.staffName ?? '').trim();
-      if (staffName) {
-        const { data: staffData } = await supabase
-          .from('nhan_su')
-          .select('khu_vuc')
-          .eq('nhan_su', staffName)
-          .maybeSingle();
-
-        // Giữ miền người dùng đã chọn trên form; miền nhân viên chỉ là giá trị dự phòng.
-        if (!String(source.khu_vuc ?? '').trim()) {
-          source.khu_vuc = staffData?.khu_vuc || '';
-        }
-      }
-
       const productsInput = parseOrderProductsInput(source);
       if ('error' in productsInput) {
         return res.status(400).json({ error: productsInput.error });
@@ -11083,20 +11083,6 @@ export function createApp() {
       }
 
       const source = req.body && typeof req.body === 'object' ? { ...(req.body as Record<string, unknown>) } : {};
-      const staffName = String(source.staffName ?? '').trim();
-      if (staffName) {
-        const { data: staffData } = await supabase
-          .from('nhan_su')
-          .select('khu_vuc')
-          .eq('nhan_su', staffName)
-          .maybeSingle();
-
-        // Giữ miền người dùng đã chọn trên form; miền nhân viên chỉ là giá trị dự phòng.
-        if (!String(source.khu_vuc ?? '').trim()) {
-          source.khu_vuc = staffData?.khu_vuc || '';
-        }
-      }
-
       const productsInput = parseOrderProductsInput(source);
       if ('error' in productsInput) {
         return res.status(400).json({ error: productsInput.error });
@@ -11111,6 +11097,7 @@ export function createApp() {
           .maybeSingle();
         orderType = String(existingOrder?.loai_don_hang ?? '').trim();
       }
+      source.orderType = orderType;
 
       const enrichedProducts = await enrichOrderProductsWithConversionData(productsInput.products, orderType);
       source.products = enrichedProducts;

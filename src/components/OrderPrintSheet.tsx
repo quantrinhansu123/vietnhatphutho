@@ -1,7 +1,7 @@
 import React from 'react';
 import { formatNumber, parsePercentInput } from '../utils';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
-import { SOUTH_ORDER_TYPE, duplicateLineStt, getAllocatedQtyFromMap, isRetailCutOrderType } from '../features/_shared/orderHelpers';
+import { isSouthOrderType, duplicateLineStt, getAllocatedQtyFromMap, isRetailCutOrderType } from '../features/_shared/orderHelpers';
 import { getOrderProductLines, type OrderRow } from '../features/_shared/orderRecordHelpers';
 import { cutOrderPrintSize, cutOrderPrintTenHang, formatPhuThoDate } from './cutOrderPrint';
 
@@ -39,7 +39,7 @@ export default function OrderPrintSheet({ order, allocatedQtyMap }: { order: Ord
   const totalAllocated = productLines.reduce((sum, line, index) => sum + allocatedOf(line, index), 0);
   const orderNote = displayCell(order.note);
   const isRetailCutOrder = isRetailCutOrderType(order.orderType);
-  const isSouthOrder = order.orderType === SOUTH_ORDER_TYPE;
+  const isSouthOrder = isSouthOrderType(order.orderType);
 
   if (isRetailCutOrder) {
     const placeDate = formatPhuThoDate(order.orderDate || order.createdAt);
