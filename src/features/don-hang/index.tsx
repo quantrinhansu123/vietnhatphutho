@@ -14,6 +14,10 @@ import { SouthOrderTemCells } from './SouthOrderTemCells';
 import { Select2 } from '../../components/shared/Select2';
 import {
   ORDER_TYPE_OPTIONS,
+  normalizeOrderType,
+  isSouthOrderType,
+  orderScopeValidationError,
+  orderProductLookupUrl,
   ORDER_STATUS_OPTIONS,
   ORDER_STATUS_DEFAULT,
   ORDER_REGION_OPTIONS,
@@ -21,7 +25,6 @@ import {
   SALE_ORDER_TYPE,
   isCutOrderType,
   isRetailCutOrderType,
-  SOUTH_ORDER_TYPE,
   appendSouthTemToTenGhep,
   buildSouthTemSuffix,
   parseSouthTemFromTenGhep,
@@ -252,11 +255,13 @@ export function normalizeOrders(data: unknown): OrderRow[] {
       const products = parseOrderProductsFromRecord(record, { includeSourceProduct: true });
       const summary = summarizeOrderProducts(products);
       if (!orderCode && products.length === 0) return null;
+      const rawOrderType = pickText(record, ['loai_don_hang', 'order_type', 'type'], '-');
+      const orderType = normalizeOrderType(rawOrderType) || rawOrderType;
 
       return {
         id: String(record.id ?? '').trim() || orderCode || summary.productCode || summary.productName,
         orderCode,
-        orderType: pickText(record, ['loai_don_hang', 'order_type', 'type'], '-'),
+        orderType,
         status: pickText(record, ['trang_thai', 'status', 'trang_thai_don'], ORDER_STATUS_DEFAULT),
         staffName: pickText(record, ['nhan_vien', 'staff', 'nv'], '-'),
         customer: pickText(record, ['khach_hang', 'customer'], '-'),
@@ -268,7 +273,7 @@ export function normalizeOrders(data: unknown): OrderRow[] {
         note: pickText(record, ['ghi_chu', 'note'], ''),
         deliveryDate: pickText(record, ['ngay_giao_hang', 'deliveryDate', 'delivery_date'], ''),
         productionOrder: pickText(record, ['lenh_sx', 'production_order', 'productionOrder'], '-'),
-        khu_vuc: pickText(record, ['khu_vuc', 'khu_vuc_xuat'], ''),
+        khu_vuc: resolveOrderRegion(orderType, pickText(record, ['khu_vuc', 'khu_vuc_xuat'], '')),
         orderDate: (() => {
           const raw =
             pickText(record, ['ngay_don_hang', 'ngay_dat_hang', 'order_date', 'ngay'], '') ||
@@ -817,7 +822,7 @@ export function orderProductLinesToPayload(
   productConversions: OrderProductConversion[] = [],
   ngayCat?: string
 ) {
-  const isCutLikeOrder = isCutOrderType(orderType) || orderType === SOUTH_ORDER_TYPE;
+  const isCutLikeOrder = isCutOrderType(orderType) || isSouthOrderType(orderType);
   const isProductionOrder = orderType === PRODUCTION_ORDER_TYPE;
   return lines
     .filter(line => line.productCode.trim() || line.productName.trim())
@@ -842,7 +847,7 @@ export function orderProductLinesToPayload(
       const bacVal = readOptionalRegionQty(line.slBac);
       const trungVal = readOptionalRegionQty(line.slTrung);
       const namVal = readOptionalRegionQty(line.slNam);
-      const isSouthOrder = orderType === SOUTH_ORDER_TYPE;
+      const isSouthOrder = isSouthOrderType(orderType);
       const isRegionOrder = isProductionOrder || isCutLikeOrder;
       const regionTotal = isSouthOrder
         ? (namVal !== null && namVal > 0 ? namVal : null)
@@ -1292,9 +1297,7 @@ export function orderHasProductionOrder(order: OrderRow) {
 }
 
 export function orderToForm(order: OrderRow): OrderFormState {
-  const orderType = (ORDER_TYPE_OPTIONS as readonly string[]).includes(order.orderType)
-    ? order.orderType
-    : ORDER_TYPE_OPTIONS[0];
+  const orderType = normalizeOrderType(order.orderType) || ORDER_TYPE_OPTIONS[0];
 
   const productLines = getOrderProductLines(order).map((line, lineIndex) => {
     const fallbackTem = line.tem || line.mauTem || line.danTem2Dau ? null : parseSouthTemFromTenGhep(line.tenGhep);
@@ -1305,7 +1308,7 @@ export function orderToForm(order: OrderRow): OrderFormState {
     savedStt: lineIndex + 1,
     // Đơn miền nam: Tổng KG đã lưu lệch công thức (ĐM tiêu chuẩn × SL / KG/1m × Dài × SL) thì tính lại khi mở để không hiện số cũ.
     shouldRecalculateConversion: (() => {
-      if (orderType !== SOUTH_ORDER_TYPE) return false;
+      if (!isSouthOrderType(orderType)) return false;
       const qty = parsePercentInput(String(line.soLuongNam || line.quantity || ''));
       const stored = parsePercentInput(String(line.tongKg || ''));
       if (!(qty > 0) || parseSouthDinhMucKg(line.dinhMucTieuChuanKg) === null) return false;
@@ -1343,7 +1346,7 @@ export function orderToForm(order: OrderRow): OrderFormState {
     // Đơn miền nam có Định mức tiêu chuẩn: Tổng KG = ĐM × SL tự tính, không đóng băng số cũ.
     manualTongKg:
       line.conversionSource === CUSTOMER_ENTERED_KG_SOURCE &&
-      !(orderType === SOUTH_ORDER_TYPE && parseSouthDinhMucKg(line.dinhMucTieuChuanKg) !== null),
+      !(isSouthOrderType(orderType) && parseSouthDinhMucKg(line.dinhMucTieuChuanKg) !== null),
     manualFromSaved: line.conversionSource === CUSTOMER_ENTERED_KG_SOURCE,
     conversionSource: line.conversionSource || '',
     note: line.note || '',
@@ -1414,6 +1417,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const [isSyncingProducts, setIsSyncingProducts] = useState(false);
   const [productSyncMessage, setProductSyncMessage] = useState('');
   const [orderForm, setOrderForm] = useState<OrderFormState>(emptyOrderForm);
+  const lookupRegion = resolveOrderRegion(orderForm.orderType, orderForm.khu_vuc);
+  const lookupRegionRef = useRef(lookupRegion);
+  lookupRegionRef.current = lookupRegion;
   const [pendingOrderScopeChange, setPendingOrderScopeChange] = useState<{
     orderType: string;
     region: OrderRegion;
@@ -1496,7 +1502,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         const [staffRes, customerRes, productRes, conversionRes] = await Promise.all([
           fetch('/api/nhan-su?format=groups&scope=all'),
           fetch('/api/khach-hang'),
-          fetch('/api/san-pham?format=table'),
+          fetch(orderProductLookupUrl(lookupRegion)),
           fetch(`/api/bang-quy-doi-san-pham?page=1&pageSize=${ORDER_CONVERSION_PAGE_SIZE}`)
         ]);
 
@@ -1553,7 +1559,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, [formMode]);
+  }, [formMode, lookupRegion]);
 
   /** Đồng bộ lại danh mục SP + bảng quy đổi ngay trong form thêm/sửa.
    * Chỉ setProductOptions/setProductConversions — KHÔNG đụng orderForm nên
@@ -1561,11 +1567,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
    * vẫn hiện số đã lưu). Chọn lại SP ở dòng đó sẽ tính theo quy đổi mới. */
   const reloadProductLookups = async () => {
     if (isSyncingProducts) return;
+    const requestedRegion = lookupRegion;
     setIsSyncingProducts(true);
     setProductSyncMessage('');
     try {
       const [productRes, conversionRes] = await Promise.all([
-        fetch('/api/san-pham?format=table'),
+        fetch(orderProductLookupUrl(lookupRegion)),
         fetch(`/api/bang-quy-doi-san-pham?page=1&pageSize=${ORDER_CONVERSION_PAGE_SIZE}`)
       ]);
       const productData = await productRes.json().catch(() => ({}));
@@ -1587,6 +1594,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         conversions.push(...(Array.isArray((data as any).items) ? (data as any).items as OrderProductConversion[] : []));
       }
       const nextOptions = normalizeOrderProducts(productData);
+      if (lookupRegionRef.current !== requestedRegion) return;
       setProductOptions(nextOptions);
       setProductConversions(conversions);
       setProductSyncMessage(`Đã đồng bộ ${nextOptions.length} sản phẩm.`);
@@ -1626,7 +1634,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
    * thì bỏ màng này khỏi ô Màng và tên sản xuất (không đổi nếu sản phẩm thật sự có màng).
    */
   const stripLegacyDefaultMang = (form: OrderFormState): OrderFormState => {
-    if (form.orderType !== SOUTH_ORDER_TYPE) return form;
+    if (!isSouthOrderType(form.orderType)) return form;
     return {
       ...form,
       productLines: form.productLines.map(line => {
@@ -1695,7 +1703,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
   const pickProductionName = (key: string, productionName: string) => {
     setOrderForm(prev => {
-      const isSouthOrder = prev.orderType === SOUTH_ORDER_TYPE;
+      const isSouthOrder = isSouthOrderType(prev.orderType);
       return {
         ...prev,
         productLines: prev.productLines.map(line => {
@@ -1927,7 +1935,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
           weightKeys.some(weightKey => weightKey in patch);
         // Đơn miền nam đã có Định mức tiêu chuẩn: đổi Dài / Khổ / Độ li ĐM → tính lại Định mức tiêu chuẩn.
         const recomputeStandard =
-          prev.orderType === SOUTH_ORDER_TYPE &&
+          isSouthOrderType(prev.orderType) &&
           ('daiM' in patch || 'kho' in patch || 'doLiDm' in patch) &&
           !('dinhMucTieuChuanKg' in patch) &&
           parseSouthDinhMucKg(line.dinhMucTieuChuanKg) !== null
@@ -1971,30 +1979,21 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   };
 
   const changeOrderRegion = (regionValue: string) => {
-    const region = (ORDER_REGION_OPTIONS as readonly string[]).includes(regionValue)
-      ? (regionValue as OrderRegion)
-      : resolveOrderRegion('', regionValue);
-    const nextType = isAdmin
-      ? region === 'Miền Nam'
-        ? (orderForm.orderType === PRODUCTION_ORDER_TYPE ? PRODUCTION_ORDER_TYPE : SOUTH_ORDER_TYPE)
-        : (orderForm.orderType === SOUTH_ORDER_TYPE ? SALE_ORDER_TYPE : orderForm.orderType)
-      : resolveOrderTypeFromRegion(region, orderForm.orderType, canSeeProductionOrder);
+    const region = resolveOrderRegion('', regionValue);
+    const nextType = resolveOrderTypeFromRegion(region, orderForm.orderType, canSeeProductionOrder);
+    if (!nextType) {
+      setFormError('Bạn chưa có quyền tạo Đơn sản xuất cho Miền: Tất cả.');
+      return;
+    }
+    setFormError('');
     requestOrderScopeChange(nextType, region, 'Miền');
   };
 
   const changeOrderType = (orderType: string) => {
     const region = resolveOrderRegion(orderForm.orderType, orderForm.khu_vuc);
-    const nextType = isAdmin && (ORDER_TYPE_OPTIONS as readonly string[]).includes(orderType)
-      ? orderType
-      : resolveOrderTypeFromRegion(region, orderType, canSeeProductionOrder);
-    const nextRegion = isAdmin
-      ? nextType === SOUTH_ORDER_TYPE
-        ? 'Miền Nam'
-        : region === 'Miền Nam' && nextType !== PRODUCTION_ORDER_TYPE
-          ? 'Miền Bắc'
-          : region
-      : region;
-    requestOrderScopeChange(nextType, nextRegion, 'loại đơn');
+    const nextType = resolveOrderTypeFromRegion(region, orderType, canSeeProductionOrder);
+    if (!nextType) return;
+    requestOrderScopeChange(nextType, region, 'loại đơn');
   };
 
   const moveProductLine = (from: number, to: number) => {
@@ -2088,7 +2087,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
   const pickCutOrderProduct = (key: string, productId: string) => {
     const match = findOrderProductById(productOptions, productId);
-    const isSouthOrder = orderForm.orderType === SOUTH_ORDER_TYPE;
+    const isSouthOrder = isSouthOrderType(orderForm.orderType);
     const conversion = productId ? productConversions.find(item => item.sanPhamId === productId) : undefined;
     // Ưu tiên field tem/mauTem riêng trên danh mục SP; fallback parse từ tenGhep (dữ liệu cũ)
     const catalogTem = match?.tem || '';
@@ -2167,7 +2166,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       }]);
       const projected = orderProductLinesToPayload([line], [...options, ...productOptions.filter(item => item.id !== match.id)], orderForm.orderType, source.conversions, orderForm.createdAt)[0] as Record<string, unknown> | undefined;
       const fromVariantSource = source.product.code.startsWith('VAR-');
-      const southProductAmis = orderForm.orderType === SOUTH_ORDER_TYPE
+      const southProductAmis = isSouthOrderType(orderForm.orderType)
         ? buildSouthOrderProductAmis({
             baseMaAmis: fromVariantSource ? source.product.amisOldCode || source.product.amisCode : source.product.amisCode,
             nhomVthh: source.product.group,
@@ -2197,7 +2196,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     const base = productCreation.source.product;
     const length = Number(String(form.doDaiM).replace(/m$/iu, '').replace(',', '.'));
     const width = Number(String(form.doDayM).replace(/m$/iu, '').replace(',', '.'));
-    const isSouthOrder = orderForm.orderType === SOUTH_ORDER_TYPE;
+    const isSouthOrder = isSouthOrderType(orderForm.orderType);
     const isSongForm = classifyProductPxGroup(form.group) === 'song';
     const fromVariant = base.code.startsWith('VAR-');
     const baseAmis = fromVariant ? base.amisOldCode || base.amisCode : base.amisCode;
@@ -2263,6 +2262,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   };
 
   const handleSaveOrder = async () => {
+    const scopeError = orderScopeValidationError(orderForm.orderType, orderForm.khu_vuc);
+    if (scopeError) { setFormError(scopeError); return; }
     if (!orderForm.orderCode.trim()) {
       setFormError('Vui lòng nhập mã đơn hàng.');
       return;
@@ -2276,7 +2277,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       return;
     }
 
-    const isSouthOrder = orderForm.orderType === SOUTH_ORDER_TYPE;
+    const isSouthOrder = isSouthOrderType(orderForm.orderType);
     const isCutLikeOrder = isCutOrderType(orderForm.orderType) || isSouthOrder;
     const isRegionOrder = isCutLikeOrder || orderForm.orderType === PRODUCTION_ORDER_TYPE;
     const activeProductLines = orderForm.productLines.filter(line => line.productCode.trim() || line.productName.trim());
@@ -2630,13 +2631,13 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     return Number.isFinite(value) ? sum + value : sum;
   }, 0);
 
-  const isFormSouthOrder = orderForm.orderType === SOUTH_ORDER_TYPE;
+  const isFormSouthOrder = isSouthOrderType(orderForm.orderType);
   const isFormCutLikeOrder = isCutOrderType(orderForm.orderType) || isFormSouthOrder;
   const isFormProductionOrder = orderForm.orderType === PRODUCTION_ORDER_TYPE;
   const formRegion = resolveOrderRegion(orderForm.orderType, orderForm.khu_vuc);
   const formOrderTypeOptions = useMemo(
-    () => isAdmin ? [...ORDER_TYPE_OPTIONS] : orderTypeOptionsForRegion(formRegion, canSeeProductionOrder),
-    [formRegion, canSeeProductionOrder, isAdmin]
+    () => orderTypeOptionsForRegion(formRegion, canSeeProductionOrder),
+    [formRegion, canSeeProductionOrder]
   );
   const regionProductOptions = useMemo(
     () => filterOrderProductsByRegion(productOptions, formRegion),
@@ -3528,7 +3529,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               <button
                 type="button"
                 onClick={handleSaveOrder}
-                disabled={isSavingOrder}
+                disabled={isSavingOrder || isLoadingLookups || isSyncingProducts}
                 className="flex h-10 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-4 text-xs font-extrabold text-white transition hover:bg-[#b30d1c] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSavingOrder ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}

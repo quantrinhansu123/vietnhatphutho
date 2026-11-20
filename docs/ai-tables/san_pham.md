@@ -11,6 +11,7 @@
 | Method | Path | Dòng |
 |--------|------|------|
 | GET | `/api/san-pham` | ~7394 |
+| GET | `/api/san-pham?format=table&mien=...` | Đơn hàng: Miền Bắc → `san_pham_mb`, Miền Nam → `san_pham_mn`, Tất cả → gộp hai nguồn, phân trang + khử trùng ID. Không truyền mien giữ API danh mục san_pham cũ. Quy tắc trong `src/utils/orderScope.ts`. |
 | POST | `/api/san-pham` | ~7460 |
 | GET | `/api/san-pham/:id/with-conversions` | Đọc bản ghi SP và đầy đủ quy đổi theo ID để tạo/chọn biến thể từ đơn hàng |
 | POST | `/api/san-pham/import-batch` | batch insert `creates` + upsert `updates` (chunk phía client ~150) |

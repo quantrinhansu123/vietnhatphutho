@@ -16,87 +16,18 @@ import {
   sortProductsByKgThenMeters
 } from '../../utils/productProductionName';
 
-export const ORDER_TYPE_OPTIONS = ['Đơn bán', 'Đơn sản xuất', 'Đơn theo quy cách của khách đặt', 'Đơn cắt lẻ', 'Đơn miền nam'] as const;
-export const CUT_ORDER_TYPE = 'Đơn theo quy cách của khách đặt';
-/** Đơn cắt lẻ kho — khác với Đơn theo quy cách (QC đặt đi Lệnh SX, cắt lẻ đi Lệnh cắt lẻ). */
-export const CUT_ORDER_TYPE_NEW = 'Đơn cắt lẻ';
-export const SOUTH_ORDER_TYPE = 'Đơn miền nam';
-export const PRODUCTION_ORDER_TYPE = 'Đơn sản xuất';
-export const SALE_ORDER_TYPE = 'Đơn bán';
-
-/** Miền trên form đơn (map `khu_vuc`). */
-export const ORDER_REGION_OPTIONS = ['Miền Bắc', 'Miền Trung', 'Miền Nam'] as const;
-export type OrderRegion = (typeof ORDER_REGION_OPTIONS)[number];
-
-/** Đơn theo quy cách của khách đặt — đi Lệnh SX, KHÔNG đi Lệnh cắt lẻ. */
-export function isCustomSpecOrderType(orderType?: string | null) {
-  return String(orderType || '').trim() === CUT_ORDER_TYPE;
-}
-/** Đơn cắt lẻ kho — đi Lệnh cắt lẻ phía kho, không vào Lệnh SX. */
-export function isRetailCutOrderType(orderType?: string | null) {
-  return String(orderType || '').trim() === CUT_ORDER_TYPE_NEW;
-}
-/** Gộp cũ (form quy cách): QC đặt + cắt lẻ dùng chung lưới Dài m / Hạ khổ / Tem / Bắc-Trung-Nam. Không dùng để chặn Lệnh SX. */
-export function isCutOrderType(orderType?: string | null) {
-  const value = String(orderType || '').trim();
-  return value === CUT_ORDER_TYPE || value === CUT_ORDER_TYPE_NEW;
-}
-/** Đơn cắt lẻ + Đơn miền nam dùng chung form quy cách (Mã AMIS / Dài m / Bắc-Trung-Nam / KG). */
-export function isCutLikeOrderType(orderType?: string | null) {
-  const value = String(orderType || '').trim();
-  return isCutOrderType(value) || value === SOUTH_ORDER_TYPE;
-}
-
-export function normalizeOrderRegion(value?: string | null): OrderRegion | '' {
-  const text = String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D')
-    .toLowerCase()
-    .trim();
-  if (!text) return '';
-  if (text === 'nam' || text.includes('mien nam') || text === 'south') return 'Miền Nam';
-  if (text === 'trung' || text.includes('mien trung') || text === 'central') return 'Miền Trung';
-  if (text === 'bac' || text.includes('mien bac') || text === 'north') return 'Miền Bắc';
-  return '';
-}
-
-/** Suy miền từ `khu_vuc` hoặc `loai_don_hang` khi mở sửa đơn cũ. */
-export function resolveOrderRegion(orderType?: string | null, khuVuc?: string | null): OrderRegion {
-  const fromKhu = normalizeOrderRegion(khuVuc);
-  if (fromKhu) return fromKhu;
-  const type = String(orderType || '').trim();
-  if (type === SOUTH_ORDER_TYPE) return 'Miền Nam';
-  return 'Miền Bắc';
-}
-
-/**
- * Options Loại đơn theo miền + quyền Quản Đốc.
- * - Miền Nam: Đơn miền nam (+ Đơn sản xuất nếu Quản Đốc)
- * - Miền Bắc / Miền Trung: Đơn bán, quy cách, cắt lẻ (+ Đơn sản xuất nếu Quản Đốc)
- */
-export function orderTypeOptionsForRegion(region: OrderRegion | '', canSeeProduction: boolean): string[] {
-  const production = canSeeProduction ? [PRODUCTION_ORDER_TYPE] : [];
-  if (region === 'Miền Nam') return [SOUTH_ORDER_TYPE, ...production];
-  return [SALE_ORDER_TYPE, CUT_ORDER_TYPE, CUT_ORDER_TYPE_NEW, ...production];
-}
-
-/** Map Miền + Loại đơn UI → `loai_don_hang` lưu DB. */
-export function resolveOrderTypeFromRegion(region: OrderRegion | '', orderType: string, canSeeProduction: boolean): string {
-  const options = orderTypeOptionsForRegion(region, canSeeProduction);
-  const current = String(orderType || '').trim();
-  if (options.includes(current)) return current;
-  if (region === 'Miền Nam') return SOUTH_ORDER_TYPE;
-  return SALE_ORDER_TYPE;
-}
+export * from '../../utils/orderScope';
+import type { OrderRegion } from '../../utils/orderScope';
+import { normalizeOrderRegion } from '../../utils/orderScope';
 
 /** SP thuộc miền Nam (TCMN) / Bắc (TCMB). Không có cờ → vẫn hiện (không loại hết SP cũ). */
 export function orderProductMatchesRegion(
-  product: Pick<OrderProductOption, 'tcmn' | 'tcmb' | 'productionName' | 'tenGhep' | 'name'>,
+  product: Partial<Pick<OrderProductOption, 'mien' | 'tcmn' | 'tcmb' | 'productionName' | 'tenGhep' | 'name'>>,
   region: OrderRegion | ''
 ): boolean {
-  if (!region) return true;
+  if (!region || region === 'Tất cả') return true;
+  const sourceRegion = normalizeOrderRegion(product.mien);
+  if (sourceRegion === 'Miền Bắc' || sourceRegion === 'Miền Nam') return sourceRegion === region;
   const text = `${product.productionName || ''} ${product.tenGhep || ''} ${product.name || ''}`;
   const hasTcmn =
     /tcmn/iu.test(String(product.tcmn || '')) ||
@@ -104,12 +35,6 @@ export function orderProductMatchesRegion(
   const hasTcmb = product.tcmb === true || extractTcmb(text) === 'TCMB';
   if (region === 'Miền Nam') {
     if (hasTcmn) return true;
-    if (hasTcmb && !hasTcmn) return false;
-    return true;
-  }
-  if (region === 'Miền Trung') {
-    // Chưa có cờ TCM riêng → giữ SP không gắn riêng Bắc/Nam.
-    if (hasTcmn && !hasTcmb) return false;
     if (hasTcmb && !hasTcmn) return false;
     return true;
   }
@@ -574,6 +499,8 @@ export interface CustomerOption {
 }
 
 export interface OrderProductOption {
+  /** Miền của bảng danh mục nguồn (san_pham_mb / san_pham_mn). */
+  mien?: string;
   savedVariant?: boolean;
   baseAmisCode?: string;
   id: string;
@@ -690,12 +617,16 @@ export function normalizeCustomerOptions(data: unknown): CustomerOption[] {
 }
 
 export function normalizeOrderProducts(data: unknown): OrderProductOption[] {
+  const rows = Array.isArray(data) ? data : (data as { products?: unknown[] } | null)?.products || [];
+  const regions = new Map(rows.filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'))
+    .map(row => [String(row.id ?? ''), String(row.mien ?? '')]));
   return sortProductsByKgThenMeters(
     normalizeProducts(data).map(product => {
       const productionName = String(product.productionName || product.tenGhep || '').trim();
       const tenGhep = String(product.tenGhep || product.productionName || '').trim();
       return {
         id: product.id,
+        mien: normalizeOrderRegion(regions.get(product.id)),
         savedVariant: product.code.startsWith('VAR-'),
         baseAmisCode: product.amisOldCode || undefined,
         code: product.amisCode && product.amisCode !== '-' ? product.amisCode : '',
