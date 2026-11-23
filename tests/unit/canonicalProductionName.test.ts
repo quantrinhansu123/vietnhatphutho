@@ -6,7 +6,7 @@ import { catalogMatchesProductionName } from '../../src/features/_shared/orderHe
 
 describe('Tên sản xuất là nguồn duy nhất của đơn hàng và lệnh SX', () => {
   it('tên ghép cũ 6m không ghi đè tên sản xuất 2m khi đọc/in', () => {
-    const name = 'NHỰA SÓNG XDT - NP - 11 SÓNG 5.78ZEM - ( ĐM 5KG/6M ) - 2m';
+    const name = 'NHỰA SÓNG XDT - NP - 11 SÓNG - 5.78ZEM - (đm 5 kg/6m) - 2m';
     const oldName = name.replace(/2m$/, '6m');
     const [line] = parseOrderProductsFromRecord({ san_pham: [{
       ma_sp: 'STS02', ten_sp: 'Nhựa sóng', ten_san_xuat: name,

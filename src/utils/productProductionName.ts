@@ -387,16 +387,17 @@ function applyProductionIdentity(parts: ProductionNameParts): ProductionNamePart
 }
 
 /**
- * `(đm 4.8 kg)` + mét dài ĐM → `( ĐM 4.8KG/6M )` trên tên sản xuất Sóng.
- * Thiếu mét dài ĐM thì mặc định `6M` (`SONG_STANDARD_LENGTH_M`).
+ * `(đm 4.8 kg)` + mét dài ĐM → `(đm 4.8 kg/6m)` trên tên sản xuất Sóng (khớp file master V01).
+ * Thiếu mét dài ĐM thì mặc định `6m` (`SONG_STANDARD_LENGTH_M`).
+ * Vẫn parse được nhãn cũ `( ĐM 4.8KG/6M )` khi đọc vào.
  */
 export function formatSongDinhMucKgLabel(value: string, standardLengthM?: string | number): string {
   const match = String(value || '').match(/(\d+(?:[.,]\d+)?)/);
   if (!match) return '';
   const kg = match[1].replace(',', '.');
   const length = parseDoDaiMLength(String(standardLengthM ?? '')) ?? SONG_STANDARD_LENGTH_M;
-  const lengthToken = `${String(length).replace(/\.0$/, '')}M`;
-  return `( ĐM ${kg}KG/${lengthToken} )`;
+  const lengthToken = `${String(length).replace(/\.0$/, '')}m`;
+  return `(đm ${kg} kg/${lengthToken})`;
 }
 
 export function parseAmisSpecs(maAmis: string): AmisSpecs {
@@ -1411,7 +1412,8 @@ export function composeProductionDisplayName(
   const songCount = String(parts.soSong || '').trim().match(/^(\d+)(?:[.,]0+)?(?:\s*SÓNG)?$/iu);
   const soSong = songCount ? String(Number(songCount[1])) : extractSoSong(sourceTenGoc);
   const songPhang = parts.songPhang || /sóng\s+phẳng/iu.test(sourceTenGoc);
-  const songSegment = [songPhang ? 'SÓNG PHẲNG' : soSong ? `${soSong} SÓNG` : '', zem].filter(Boolean).join(' ');
+  // File master V01: `11 SÓNG - 6ZEM` (có dấu `-`), không dính `11 SÓNG 6ZEM`.
+  const songSegment = [songPhang ? 'SÓNG PHẲNG' : soSong ? `${soSong} SÓNG` : '', zem].filter(Boolean).join(' - ');
   const doLi = zem ? '' : rawDoLi;
   const mang = String(parts.mang || '').trim();
   const doLiDm = zem ? '' : String(parts.doLiDm || '').trim();

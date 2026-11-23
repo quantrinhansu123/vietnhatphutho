@@ -71,7 +71,7 @@ Danh sách chỉ hiển thị `Thành phẩm`; mỗi sản phẩm là nhóm dòn
 
 ### Excel danh mục SP
 
-- ĐM kg Sóng nhận cả tên master không có nhãn ĐM: `5KG/6M`, `5,2KG/6M`, `5KG/6`; lưu riêng `dinh_muc_kg` và `do_dai_tam_tieu_chuan`, rồi ghép `( ĐM nKG/6M )`. Nhãn `(đm n kg)` tường minh vẫn được ưu tiên. Không tính lại các ô quy đổi từ tên này.
+- ĐM kg Sóng nhận cả tên master không có nhãn ĐM: `5KG/6M`, `5,2KG/6M`, `5KG/6`; lưu riêng `dinh_muc_kg` và `do_dai_tam_tieu_chuan`, rồi ghép `(đm n kg/6m)` (khớp V01; vẫn đọc được nhãn cũ `( ĐM nKG/6M )`). Nhãn `(đm n kg)` tường minh vẫn được ưu tiên. Không tính lại các ô quy đổi từ tên này. Sóng + ZEM ghép `N SÓNG - nZEM`.
 
 - Nút **Tải mẫu Excel** / **Tải Excel lên** (và **Tải mẫu Excel SP**) — `src/utils/productCatalogExcel.ts`
 - Mẫu gọn theo miền nam v2: `Mã AMIS`, `Tên sản phẩm`, `Tên sản xuất mới`, `Loại`, `ĐVT`, `Tên gốc` (chỉ loại: `NHỰA SÓNG` / `Tấm nhựa đặc` / `Tấm nhựa rỗng`), thông số SX (`ZEM`, `Số sóng`, `ĐM`, `Mét dài ĐM`, `Màu`…) — **không** cột tồn kho / lõi túi

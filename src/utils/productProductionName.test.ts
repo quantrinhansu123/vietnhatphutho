@@ -132,7 +132,7 @@ test('Sóng: mét dài đúng theo tên SX (không max)', () => {
   assert.equal(short.soSong, '11');
   assert.equal(short.doLi, '', 'ZEM không phải độ li');
   assert.equal(short.doDaiM, '2m');
-  assert.equal(short.productionName, 'NHỰA SÓNG XANH - 11 SÓNG 6ZEM - 2m');
+  assert.equal(short.productionName, 'NHỰA SÓNG XANH - 11 SÓNG - 6ZEM - 2m');
 
   const kgName = parseProductionNameParts(
     'NHỰA SÓNG XDT - NP - 11 SÓNG 4,8KG - 3,5M ( GIÁ RẺ )',
@@ -243,12 +243,12 @@ test('compose: thông số trước, Màng – Phế – Giá rẻ ở cuối', 
   assert.ok(name.endsWith('STD'));
 
   const waveNp = seedProductionSpecs({
-    tenSanXuat: 'NHỰA SÓNG XDT - NP - 11 SÓNG 5.55ZEM - ( ĐM 4.8KG/6M ) - 2m',
+    tenSanXuat: 'NHỰA SÓNG XDT - NP - 11 SÓNG - 5.55ZEM - (đm 4.8 kg/6m) - 2m',
     nhomVthh: 'TP; PX Sóng'
   });
   assert.equal(
     waveNp.productionName,
-    'NHỰA SÓNG XDT - 11 SÓNG 5.55ZEM - ( ĐM 4.8KG/6M ) - 2m - NP'
+    'NHỰA SÓNG XDT - 11 SÓNG - 5.55ZEM - (đm 4.8 kg/6m) - 2m - NP'
   );
 
   const withAllSuffixes = composeProductionDisplayName({
@@ -261,14 +261,14 @@ test('compose: thông số trước, Màng – Phế – Giá rẻ ở cuối', 
     hangPhe: 'hàng nguyên phế',
     giaRe: 'Giá rẻ'
   }, 'TP; PX Sóng');
-  assert.equal(withAllSuffixes, 'NHỰA SÓNG TRẮNG - 11 SÓNG 6ZEM - ( ĐM 4.8KG/6M ) - 6m - SUN PC - Giá rẻ');
+  assert.equal(withAllSuffixes, 'NHỰA SÓNG TRẮNG - 11 SÓNG - 6ZEM - (đm 4.8 kg/6m) - 6m - SUN PC - Giá rẻ');
 
   // Có ZEM trong tên gốc → không ghép thêm segment độ li (kể cả lỡ truyền doLi = ZEM).
   const song = composeProductionDisplayName(
     { tenGoc: 'NHỰA 11 SÓNG XANH 6ZEM', doLi: '6ZEM', doDaiM: '6m' },
     'TP; PX Sóng'
   );
-  assert.equal(song, 'NHỰA SÓNG XANH - 11 SÓNG 6ZEM - 6m');
+  assert.equal(song, 'NHỰA SÓNG XANH - 11 SÓNG - 6ZEM - 6m');
 });
 
 test('reorderProductionNameQualifiers: chỉ chuyển nhãn, giữ nguyên phần quy cách', () => {
@@ -361,7 +361,7 @@ test('ZEM trong tên: không lấy/ghép độ li và đm-li (kể cả AMIS có
   );
   assert.equal(
     seedProductionSpecs({ tenSanXuat: 'NHỰA 11 SÓNG XANH 6ZEM -2M', maAmis: 'STS02-11s-6zem', nhomVthh: 'TP; PX Sóng' }).productionName,
-    'NHỰA SÓNG XANH - 11 SÓNG 6ZEM - 2m'
+    'NHỰA SÓNG XANH - 11 SÓNG - 6ZEM - 2m'
   );
 });
 
@@ -662,7 +662,7 @@ test('sóng đm-kg cuối tên được lưu dinhMucKg + tên ghép', () => {
   assert.equal(seeded.doLiDm, '', 'đm kg không còn nằm ở do_li_dm');
   assert.equal(seeded.dinhMucKg, '(đm 7.8 kg)');
   assert.equal(seeded.doDaiM, '6m');
-  assert.equal(seeded.productionName, 'NHỰA SÓNG TRẮNG - 11 SÓNG - 1li - ( ĐM 7.8KG/6M ) - 6m - NP');
+  assert.equal(seeded.productionName, 'NHỰA SÓNG TRẮNG - 11 SÓNG - 1li - (đm 7.8 kg/6m) - 6m - NP');
 });
 
 test('TCMB: tách khỏi tên gốc, giữ trong phần thông số trước nhãn cuối', () => {
@@ -695,7 +695,7 @@ test('ZEM Đặc: tách khỏi tên gốc, ghép sau màu', () => {
 
 test('ZEM Sóng: giữ sau số sóng, đổi số sóng thay tại chỗ', () => {
   const seeded = seedProductionSpecs({
-    tenSanXuat: 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG 6ZEM - ( ĐM 4,8KG/6M ) - 2m',
+    tenSanXuat: 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG - 6ZEM - ( ĐM 4,8KG/6M ) - 2m',
     maAmis: '',
     nhomVthh: 'TP; PX Sóng'
   });
@@ -707,11 +707,11 @@ test('ZEM Sóng: giữ sau số sóng, đổi số sóng thay tại chỗ', () =
   assert.equal(seeded.dinhMucKg, '(đm 4.8 kg)');
   assert.equal(
     seeded.productionName,
-    'NHỰA SÓNG TRẮNG - 11 SÓNG 6ZEM - ( ĐM 4.8KG/6M ) - 2m - NP'
+    'NHỰA SÓNG TRẮNG - 11 SÓNG - 6ZEM - (đm 4.8 kg/6m) - 2m - NP'
   );
 
   const changed = composeProductionDisplayName({ ...seeded, soSong: '13' }, 'TP; PX Sóng');
-  assert.equal(changed, 'NHỰA SÓNG TRẮNG - 13 SÓNG 6ZEM - ( ĐM 4.8KG/6M ) - 2m - NP');
+  assert.equal(changed, 'NHỰA SÓNG TRẮNG - 13 SÓNG - 6ZEM - (đm 4.8 kg/6m) - 2m - NP');
 });
 
 test('Sóng: tên SX không hiện khổ rộng; mét dài luôn có chữ m', () => {
@@ -727,7 +727,7 @@ test('Sóng: tên SX không hiện khổ rộng; mét dài luôn có chữ m', (
       },
       'TP; PX Sóng'
     ),
-    'NHỰA SÓNG TRẮNG - 11 SÓNG 6ZEM - ( ĐM 4.8KG/6M ) - 2m - NP'
+    'NHỰA SÓNG TRẮNG - 11 SÓNG - 6ZEM - (đm 4.8 kg/6m) - 2m - NP'
   );
   assert.equal(
     composeProductionDisplayName(
@@ -740,7 +740,7 @@ test('Sóng: tên SX không hiện khổ rộng; mét dài luôn có chữ m', (
       },
       'TP; PX Sóng'
     ),
-    'NHỰA SÓNG TRẮNG - 11 SÓNG 6ZEM - ( ĐM 4.8KG/6M ) - 2.4m - NP'
+    'NHỰA SÓNG TRẮNG - 11 SÓNG - 6ZEM - (đm 4.8 kg/6m) - 2.4m - NP'
   );
 });
 

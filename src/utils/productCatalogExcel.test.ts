@@ -259,7 +259,7 @@ test('import: cột ZEM / Số sóng / ĐM kg / TCMB ghép đúng vị trí', ()
   assert.equal(song.soSong, '13');
   assert.equal(song.dinhMucKg, '(đm 4.8 kg)');
   assert.equal(song.doDaiTamTieuChuan, '6m');
-  assert.equal(song.tenGhep, 'NHỰA SÓNG TRẮNG - NP - 13 SÓNG - ( ĐM 4.8KG/6M ) - 2m');
+  assert.equal(song.tenGhep, 'NHỰA SÓNG TRẮNG - NP - 13 SÓNG - (đm 4.8 kg/6m) - 2m');
 
   const duplicatedKg = productCatalogRowToPayload(
     makeRow({
@@ -274,7 +274,7 @@ test('import: cột ZEM / Số sóng / ĐM kg / TCMB ghép đúng vị trí', ()
   assert.equal(duplicatedKg.dinhMucKg, '(đm 12 kg)');
   assert.equal(
     duplicatedKg.tenGhep,
-    'NHỰA SÓNG XDT - NP - 11 SÓNG - 1.5li - ( ĐM 12KG/6M ) - 2.5m'
+    'NHỰA SÓNG XDT - NP - 11 SÓNG - 1.5li - (đm 12 kg/6m) - 2.5m'
   );
 
   const gluedKg = productCatalogRowToPayload(
@@ -282,7 +282,7 @@ test('import: cột ZEM / Số sóng / ĐM kg / TCMB ghép đúng vị trí', ()
       code: 'STS02-1.5li-NP',
       amisCode: 'STS02-1.5li-NP',
       name: 'Tấm nhựa sóng',
-      productionName: 'NHỰA SÓNG XDT - NP - 11 SÓNG - 1.5li ( ĐM 12KG ) - 1.5li - (đm 12 kg) - (đm 12 kg) - 6m',
+      productionName: 'NHỰA SÓNG XDT - NP - 11 SÓNG - 1.5li (đm 12 kg) - 1.5li - (đm 12 kg) - (đm 12 kg) - 6m',
       group: 'TP; PX Sóng'
     })
   );
@@ -290,7 +290,7 @@ test('import: cột ZEM / Số sóng / ĐM kg / TCMB ghép đúng vị trí', ()
   assert.equal(gluedKg.dinhMucKg, '(đm 12 kg)');
   assert.equal(
     gluedKg.tenGhep,
-    'NHỰA SÓNG XDT - NP - 11 SÓNG - 1.5li - ( ĐM 12KG/6M ) - 6m'
+    'NHỰA SÓNG XDT - NP - 11 SÓNG - 1.5li - (đm 12 kg/6m) - 6m'
   );
 
   const midKg = productCatalogRowToPayload(
@@ -298,12 +298,12 @@ test('import: cột ZEM / Số sóng / ĐM kg / TCMB ghép đúng vị trí', ()
       code: 'STS02-1li-NP',
       amisCode: 'STS02-1li-NP',
       name: 'Tấm nhựa sóng',
-      productionName: 'NHỰA SÓNG XDT - NP - 9 SÓNG - 1li - ( ĐM 7.8KG ) 2m - 1li - (đm 7.8 kg) - 2m',
+      productionName: 'NHỰA SÓNG XDT - NP - 9 SÓNG - 1li - (đm 7.8 kg) 2m - 1li - (đm 7.8 kg) - 2m',
       group: 'TP; PX Sóng'
     })
   );
   assert.equal(midKg.dinhMucKg, '(đm 7.8 kg)');
-  assert.equal(midKg.tenGhep, 'NHỰA SÓNG XDT - NP - 9 SÓNG - 1li - ( ĐM 7.8KG/6M ) - 2m');
+  assert.equal(midKg.tenGhep, 'NHỰA SÓNG XDT - NP - 9 SÓNG - 1li - (đm 7.8 kg/6m) - 2m');
 
   const duplicateLi = productCatalogRowToPayload(
     makeRow({
@@ -314,7 +314,7 @@ test('import: cột ZEM / Số sóng / ĐM kg / TCMB ghép đúng vị trí', ()
       group: 'TP; PX Sóng'
     })
   );
-  assert.equal(duplicateLi.tenGhep, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG - 1.5li - ( ĐM 12KG/6M ) - 2.4m');
+  assert.equal(duplicateLi.tenGhep, 'NHỰA SÓNG TRẮNG - NP - 11 SÓNG - 1.5li - (đm 12 kg/6m) - 2.4m');
 
   const mixedLi = productCatalogRowToPayload(
     makeRow({
@@ -326,7 +326,7 @@ test('import: cột ZEM / Số sóng / ĐM kg / TCMB ghép đúng vị trí', ()
     })
   );
   assert.equal(mixedLi.doLi, '1li');
-  assert.equal(mixedLi.tenGhep, 'NHỰA SÓNG XDT - NP - 9 SÓNG - 1li - ( ĐM 12KG/6M ) - 6m');
+  assert.equal(mixedLi.tenGhep, 'NHỰA SÓNG XDT - NP - 9 SÓNG - 1li - (đm 12 kg/6m) - 6m');
 });
 
 test('import: đọc đúng header miền nam v2 + Mét dài ĐM / ZEM / Số sóng / TCMB', async () => {
@@ -379,7 +379,7 @@ test('import: ưu tiên sheet Sản phẩm trong file 2 sheet; Mã AMIS đủ đ
   const catalogRow = catalogHeaders.map(() => '');
   catalogRow[catalogHeaders.indexOf('Mã AMIS')] = 'STS02-11s';
   catalogRow[catalogHeaders.indexOf('Tên sản phẩm')] = 'Nhựa sóng xanh';
-  catalogRow[catalogHeaders.indexOf('Tên sản xuất mới')] = 'NHỰA SÓNG XANH - 11 SÓNG 6ZEM - ( ĐM 5.2KG/6M ) - 2m';
+  catalogRow[catalogHeaders.indexOf('Tên sản xuất mới')] = 'NHỰA SÓNG XANH - 11 SÓNG - 6ZEM - (đm 5.2 kg/6m) - 2m';
   catalogRow[catalogHeaders.indexOf('Loại')] = 'TP; PX Sóng';
   catalogRow[catalogHeaders.indexOf('Tên gốc')] = 'NHỰA SÓNG';
   catalogRow[catalogHeaders.indexOf('ĐM (đm kg)')] = '(đm 5.2 kg)';
