@@ -25,6 +25,8 @@ import {
   isNhapCoreWarehouse,
   isNvlWarehouseName,
   isSxRelatedLoaiNhap,
+  isSxRelatedLoaiXuat,
+  formatNvlPriceValue,
   DOT_SAN_XUAT_OPTIONS,
   formatDotSoLabel,
   isXuatTheoPhanXuong,
@@ -34,6 +36,7 @@ import {
   LOAI_XUAT_OPTIONS,
   needsLoaiSanXuat,
   normalizeDotSo,
+  parseNvlPrice,
   pickNhapCoreWarehouses,
   takePendingTongHopEdit,
   takePendingTongHopProcess,
@@ -59,7 +62,7 @@ import {
   sumKemDraft,
   type ChiPhiKemTheoDraft
 } from './chiPhiKemTheo';
-import { formatMoney, formatMoneyVN, formatNumber, formatQty, parseLocalizedNumber } from '../../utils';
+import { formatMoney, formatNumber, formatQty, parseLocalizedNumber } from '../../utils';
 
 type Mode = TongHopMode;
 type Option = { id: string; label: string; kind: 'kho' | 'may' | 'ncc'; vatTu?: boolean; maKho?: string };
@@ -524,7 +527,7 @@ export function TongHopPanel({
       const qty = parseLocalizedNumber(line.soLuong);
       const total = allocs.reduce((sum, item) => sum + item.qty * item.donGia, 0);
       const allocated = allocs.reduce((sum, item) => sum + item.qty, 0);
-      const avgText = formatMoneyVN(allocated > 0 ? total / allocated : 0, 0);
+      const avgText = formatNvlPriceValue(allocated > 0 ? total / allocated : 0);
       const manual = line.donGia.trim() !== '' && line.donGia.trim() !== avgText;
       const slCt = parseLocalizedNumber(line.slCt);
       return allocs.map((alloc, allocIndex) => ({
@@ -680,7 +683,7 @@ export function TongHopPanel({
         setError('Chọn loại xuất.');
         return;
       }
-      if (!normalizeDotSo(dotSo)) {
+      if (isSxRelatedLoaiXuat(loaiXuat) && !normalizeDotSo(dotSo)) {
         setError('Chọn đợt sản xuất (Đợt 1 – Đợt 10) cho phiếu xuất.');
         return;
       }
@@ -927,8 +930,7 @@ export function TongHopPanel({
 
   function fmtMoneyLoad(value: unknown): string {
     if (value === null || value === undefined || String(value).trim() === '') return '';
-    const parsed = parseLocalizedNumber(value);
-    return Number.isFinite(parsed) ? formatMoney(parsed, 0) : String(value);
+    return formatNvlPriceValue(value);
   }
 
   const openedEdit = useRef(false);
@@ -989,7 +991,7 @@ export function TongHopPanel({
 
   function lineAmount(line: Line) {
     const qty = parseLocalizedNumber(line.soLuong);
-    const price = parseLocalizedNumber(line.donGia);
+    const price = parseNvlPrice(line.donGia);
     if (!Number.isFinite(qty) || !Number.isFinite(price)) return null;
     return Math.round(qty * price * 1000) / 1000;
   }
@@ -1009,7 +1011,7 @@ export function TongHopPanel({
 
   /** Nhập: giá nhập kho của dòng = giá mua + chi phí kèm/1kg. */
   function lineImportPrice(line: Line) {
-    const price = parseLocalizedNumber(line.donGia);
+    const price = parseNvlPrice(line.donGia);
     if (!Number.isFinite(price)) return null;
     return price + kemPerKgAll;
   }
@@ -1028,7 +1030,7 @@ export function TongHopPanel({
       name: line.tenHang,
       unit: line.donVi,
       quantity: parseLocalizedNumber(line.soLuong) || 0,
-      unitPrice: parseLocalizedNumber(line.donGia) || 0,
+      unitPrice: parseNvlPrice(line.donGia) || 0,
       lineAmount: lineAmount(line) || 0,
       weightKg: lineWeight(line),
       chiPhiKemTheo: kemStoredFromDraft(
@@ -1386,7 +1388,7 @@ export function TongHopPanel({
   }
 
   const needsSxHeader =
-    mode === 'xuat' ||
+    (mode === 'xuat' && isSxRelatedLoaiXuat(loaiXuat)) ||
     (mode === 'nhap' && isSxRelatedLoaiNhap(loaiNhap));
   const showLoaiSanXuat = needsLoaiSanXuat(mode, loaiNhap, loaiXuat);
   const isNhapLai = mode === 'nhap' && /nhap lai/i.test(
@@ -2178,7 +2180,7 @@ export function TongHopPanel({
                       ) : null}
                     </div>
 
-                    <div className="grid grid-cols-3 gap-1.5">
+                    <div className="grid grid-cols-[minmax(0,1.25fr)_minmax(3.5rem,.7fr)_minmax(2.75rem,.55fr)_minmax(0,1fr)] gap-1.5">
                       <label className="min-w-0 space-y-0.5">
                         <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Mã</span>
                         <SearchableSelect
@@ -2201,6 +2203,8 @@ export function TongHopPanel({
                             const row = item as MaterialOption;
                             return `${row.code} ${row.name} ${row.productionName || ''}`;
                           }}
+                          commaSearchMode="and"
+                          searchPlaceholder="Tìm mã, tên NVL, tên sản xuất..."
                           placeholder={khoId ? 'Mã NVL' : nguonLoai === 'kho' ? 'Chọn nguồn trước' : 'Chọn kho nhập trước'}
                           disabled={viewOnly || !khoId}
                           inputClassName={fieldClass}
@@ -2226,6 +2230,10 @@ export function TongHopPanel({
                           className={fieldClass}
                           placeholder="0"
                         />
+                      </label>
+                      <label className="min-w-0 space-y-0.5">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">ĐVT</span>
+                        <div className={`${fieldClass} flex items-center bg-zinc-50 text-zinc-600`} title="Đơn vị tính">{line.donVi || '—'}</div>
                       </label>
                       <label className="space-y-0.5">
                         <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Giá</span>

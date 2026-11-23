@@ -126,6 +126,14 @@ export function formatMoney(val: number, fractionDigits: number = 0): string {
   return `${sign}${withCommas}`;
 }
 
+/** Tiền hiển thị theo chuẩn dấu phẩy/dấu chấm mà không làm tròn phần lẻ đang lưu. */
+export function formatMoneyExact(val: number): string {
+  if (!Number.isFinite(val)) return '0';
+  const text = String(val);
+  const decimal = text.includes('e') ? text.toLowerCase().split('e')[0].split('.')[1] : text.split('.')[1];
+  return formatMoney(val, Math.min(20, decimal?.length || 0));
+}
+
 /** Tiền theo quy ước Việt Nam: 1.234,50. */
 export function formatMoneyVN(val: number, fractionDigits: number = 0): string {
   if (!Number.isFinite(val)) return '0';

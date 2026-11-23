@@ -32,7 +32,7 @@ export default function OrderPrintSheet({ order, allocatedQtyMap }: { order: Ord
           productId: line.productId,
           productCode: line.productCode,
           productionName: line.productionName,
-          tenGhep: line.tenGhep,
+
           stt: duplicateLineStt(productLines, index)
         })
       : 0;
@@ -204,7 +204,7 @@ export default function OrderPrintSheet({ order, allocatedQtyMap }: { order: Ord
                   <td className="order-print-center">{line.stt || idx + 1}</td>
                   <td className="order-print-mono">{displayCell(line.productCode)}</td>
                   <td className="order-print-product-name">
-                    {displayCell(line.tenGhep)}
+                    {displayCell(line.productionName)}
                   </td>
                   <td>{formatLineSpec(line)}</td>
                   <td className="order-print-center">{displayCell(line.unit)}</td>

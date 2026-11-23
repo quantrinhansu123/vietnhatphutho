@@ -10,7 +10,7 @@ import {
   type ProductFormState,
   type ProductRow
 } from '../san-pham';
-import { appendSouthTemToTenGhep } from '../_shared/orderHelpers';
+import { appendSouthTemToProductionName } from '../_shared/orderHelpers';
 import type { OrderProductConversion } from '../_shared/orderHelpers';
 import {
   classifyProductPxGroup,
@@ -70,7 +70,7 @@ export function OrderProductCreateModal({ source, projection, specs, projectCode
   const editedConversion = useRef(false);
   const noZem = !hasZemInName(source.product.productionName, source.product.name);
   const sourceHasKg = productionNameHasKg(
-    [source.product.productionName, source.product.tenGhep, source.product.name].filter(Boolean).join(' ')
+    [source.product.productionName, source.product.productionName, source.product.name].filter(Boolean).join(' ')
   );
   const dmKgEdited = useRef(false);
   const projectCodeRef = useRef(projectCode);
@@ -99,7 +99,6 @@ export function OrderProductCreateModal({ source, projection, specs, projectCode
       name,
       productionName: projection.productionName,
       // Để trống → ô canonical ở chế độ tự động theo thông số.
-      tenGhepManual: '',
       doDayM,
       doDaiM,
       doLi,
@@ -120,7 +119,7 @@ export function OrderProductCreateModal({ source, projection, specs, projectCode
     const standardized = resolveSongCreateDinhMuc(next, first?.trongLuongKgTam || '', sourceHasKg, false);
     Object.assign(next, standardized);
     next.totalWeight = first?.trongLuongKgTam || '';
-    const productionName = appendSouthTemToTenGhep(composeProductFormProductionName(next), '', '', false);
+    const productionName = appendSouthTemToProductionName(composeProductFormProductionName(next), '', '', false);
     next.productionName = productionName;
     const grade = productionNameAmisGrade(next.productionName);
     if (grade && !new RegExp(`(^|[\\s-])${grade === 'NP' ? 'NP2?' : grade}(?=[\\s-]|$)`, 'iu').test(next.amisCode)) {
@@ -161,7 +160,7 @@ export function OrderProductCreateModal({ source, projection, specs, projectCode
       dmKgEdited.current
     );
     // Thêm SP từ đơn: tên SX/tên ghép không gắn Dán Tem / Màu tem / 2 Đầu.
-    const productionName = appendSouthTemToTenGhep(composeProductFormProductionName(standardized), '', '', false);
+    const productionName = appendSouthTemToProductionName(composeProductFormProductionName(standardized), '', '', false);
     const name = rewriteOrderVariantProductName({
       name: withDm.name || source.product.name,
       group: withDm.group,
@@ -179,7 +178,6 @@ export function OrderProductCreateModal({ source, projection, specs, projectCode
       name,
       conversions,
       productionName,
-      tenGhepManual: '',
       amisCode: projectCode(withDm),
       totalWeight
     };
@@ -251,15 +249,12 @@ export function OrderProductCreateModal({ source, projection, specs, projectCode
       <div role="dialog" aria-modal="true" aria-label="Không thể tạo mới sản phẩm" className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
         <h3 className="text-lg font-bold text-zinc-900">Không thể tạo mới</h3>
         <p className="mt-3 text-sm text-zinc-700">
-          Đã có sản phẩm trùng bộ <span className="font-semibold">Mã AMIS + Tên sản phẩm + (Tên sản xuất hoặc Tên ghép)</span>. Không tạo thêm bản ghi mới.
+          Đã có sản phẩm trùng bộ <span className="font-semibold">Mã AMIS + Tên sản phẩm + Tên sản xuất</span>. Không tạo thêm bản ghi mới.
         </p>
         <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-800">
           <div><span className="font-semibold">Mã AMIS:</span> {duplicate.product.amisCode || '—'}</div>
           <div className="mt-1"><span className="font-semibold">Tên sản phẩm:</span> {duplicate.product.name || '—'}</div>
           <div className="mt-1"><span className="font-semibold">Tên sản xuất:</span> {duplicate.product.productionName || '—'}</div>
-          {duplicate.product.tenGhep && duplicate.product.tenGhep !== duplicate.product.productionName ? (
-            <div className="mt-1"><span className="font-semibold">Tên ghép:</span> {duplicate.product.tenGhep}</div>
-          ) : null}
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-700" onClick={() => setDuplicate(null)}>Đóng</button>

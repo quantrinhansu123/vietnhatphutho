@@ -1655,9 +1655,9 @@ export function ProductViewModal({
           <div>
             <p className="text-xs font-black uppercase tracking-wider text-red-500">Xem sản phẩm</p>
             <h3 className="mt-1 text-lg font-black text-zinc-950">{product.name || product.code}</h3>
-            {product.productionName || product.tenGhep ? (
+            {product.productionName ? (
               <p className="mt-0.5 text-sm font-semibold text-zinc-800">
-                {product.productionName || product.tenGhep}
+                {product.productionName}
               </p>
             ) : null}
             <p className="mt-0.5 text-xs font-semibold text-zinc-500">{product.code}{product.newCode ? ` · ${product.newCode}` : ''}</p>
@@ -2532,7 +2532,7 @@ export function normalizeProducts(data: unknown): ProductRow[] {
         doDaiM: String(record.do_dai_m ?? '').trim(),
         mang: String(record.mang ?? '').trim(),
         hangPhe: String(record.hang_phe ?? '').trim(),
-        tenGhep: String(record.ten_ghep ?? '').trim(),
+
         tem: String(record.tem ?? '').trim() || undefined,
         mauTem: String(record.mau_tem ?? '').trim() || undefined,
         nature: String(record.tinh_chat ?? '').trim() || 'Chưa phân loại',
@@ -2599,7 +2599,6 @@ export type ProductFormState = {
   mang: string;
   hangPhe: string;
   /** Tên ghép sửa tay (trống = tự động ghép từ thông số). Sửa ô này đổi luôn Tên sản xuất. */
-  tenGhepManual: string;
   nature: string;
   group: string;
   unit: string;
@@ -2791,7 +2790,6 @@ export function productToForm(product: ProductRow, conversions: ProductConversio
     doDaiM: productCellToInput(product.doDaiM),
     mang: productCellToInput(product.mang),
     hangPhe,
-    tenGhepManual: '',
     nature: productCellToInput(product.nature),
     group: productCellToInput(product.group),
     unit: normalizeUnitForForm(product.unit),
@@ -2839,7 +2837,6 @@ export function emptyProductForm(): ProductFormState {
     doDaiM: '',
     mang: '',
     hangPhe: '',
-    tenGhepManual: '',
     nature: '',
     group: '',
     unit: '',
@@ -3233,7 +3230,7 @@ export function ProductEditModal({
   /** Đổi thông số → ten_san_xuat (= productionName) theo chuỗi canonical đã ghép. */
   const patchProductionSpecs = (patch: Partial<ProductFormState>) => {
     setForm(prev => {
-      const next = { ...prev, ...patch, tenGhepManual: '' };
+      const next = { ...prev, ...patch };
       if ('hangPhe' in patch) {
         const grade = deriveNpOffFromHangPhe(next.hangPhe);
         next.np = grade.np;
@@ -3292,7 +3289,7 @@ export function ProductEditModal({
           }
         : { ...prev, group };
       const seeded = seedSpecsFromName({ group }, withGroup);
-      const merged = { ...withGroup, ...seeded, tenGhepManual: '' };
+      const merged = { ...withGroup, ...seeded };
       const composed = composeProductFormProductionName(merged);
       if (transformProductionForm) return transformProductionForm({ ...merged, productionName: composed || merged.productionName }, prev);
       return {
@@ -3462,7 +3459,6 @@ export function ProductEditModal({
                               doDaiM: seeded.doDaiM,
                               mang: seeded.mang,
                               hangPhe,
-                              tenGhepManual: ''
                             };
                             const composed = composeProductFormProductionName(seededForm);
                             return {
@@ -3924,7 +3920,7 @@ export function ProductsPanel({
   topControls?: ReactNode;
 }) {
   const { canCreate, canEdit, canDelete } = useTabAccess('products');
-  /** Trang `/san-pham` (không lọc kho) — UI/CRUD giống main: ten_ghep + san_pham_id. */
+  /** Trang `/san-pham` (không lọc kho) — UI/CRUD giống main: ten_san_xuat + san_pham_id. */
   const isSanPhamCatalog = !warehouseFilter;
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [productConversions, setProductConversions] = useState<ProductConversionFactors[]>([]);
@@ -4928,7 +4924,7 @@ export function ProductsPanel({
       const row = product as ProductRow;
       const matchesSearch =
         !normalizedSearch ||
-        `${row.code} ${row.newCode} ${row.amisCode} ${row.amisOldCode || ''} ${row.name} ${row.productionName || ''} ${row.tenGhep || ''} ${row.nature} ${row.group} ${row.origin} ${formatProductNplSummary(row.nplItems)}`
+        `${row.code} ${row.newCode} ${row.amisCode} ${row.amisOldCode || ''} ${row.name} ${row.productionName || ''} ${row.productionName || ''} ${row.nature} ${row.group} ${row.origin} ${formatProductNplSummary(row.nplItems)}`
           .toLowerCase()
           .includes(normalizedSearch);
       return matchesWarehouse && matchesGroup && matchesNature && matchesSearch;
@@ -5570,10 +5566,9 @@ export function ProductsPanel({
                             ? availableConvertedUnits(row.unit, conversion)
                             : [];
                   const rowSpan = 1 + convertedUnits.length;
-                  /** Cột Tên sản xuất: ten_san_xuat canonical, fallback ten_ghep legacy / compose. */
+                  /** Cột Tên sản xuất: ten_san_xuat canonical, fallback ten_san_xuat legacy / compose. */
                   const displayProductionName =
                     row.productionName ||
-                    row.tenGhep ||
                     composeProductionDisplayName(
                       {
                         tenGoc: row.tenGoc || row.productionName,

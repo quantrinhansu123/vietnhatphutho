@@ -135,7 +135,7 @@ export interface ProductRow {
   doDaiM?: string;
   mang?: string;
   hangPhe?: string;
-  tenGhep?: string;
+
   /** Tem mặc định của sản phẩm (đơn miền nam / cắt lẻ auto-fill). */
   tem?: string;
   /** Màu tem mặc định của sản phẩm (đơn miền nam / cắt lẻ auto-fill). */

@@ -16,7 +16,7 @@ export function dacDoLiRealForProduct(product: OrderProductOption | null | undef
   return orderDacDoLiRealNumber({
     doLi: product.doLi,
     tenSanXuat: product.productionName,
-    tenGhep: product.tenGhep,
+    productionName: product.productionName,
     maAmis: product.code || product.newCode,
     savedDoLiDm: product.doLiDm
   });
@@ -48,7 +48,7 @@ export interface OrderDoLiDmFieldInput {
   /** `do_li` đã lưu của dòng (`sourceProduct.do_li`) hoặc `line.doLi`. */
   savedDoLi?: string | null;
   productionName?: string | null;
-  tenGhep?: string | null;
+
   maAmis?: string | null;
   /** `do_li_dm` đã lưu của dòng (`sourceProduct.do_li_dm`). */
   savedDoLiDm?: string | null;

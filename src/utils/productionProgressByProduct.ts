@@ -23,7 +23,7 @@ export type ProductionProgressLine = {
   productName: string;
   productionName?: string;
   /** Tên ghép đã lưu trong JSON san_pham lệnh SX — hiển thị nguyên văn. */
-  tenGhep?: string;
+
   quyCachMDai?: number | string;
   unit: string;
   plannedQty: number;
@@ -175,13 +175,13 @@ export function buildProductionProgressForOrder(
     const key = `${codeKey}__u:${normalizeProgressUnit(line.unit)}__m:${lengthM !== null ? lengthM.toFixed(3) : 'none'}__i:${lineIndex}`;
 
     const plannedQty = parseProductionOrderQuantity(line.quantity) || 0;
-    const lineTenGhep = String(line.tenGhep || '').trim() || undefined;
+    const lineProductionName = String(line.productionName || '').trim() || undefined;
     const existing = merged.get(key);
     if (existing) {
       existing.plannedQty += plannedQty;
       if (!existing.productName && productName) existing.productName = productName;
       if (!existing.productionName && productionName) existing.productionName = productionName;
-      if (!existing.tenGhep && lineTenGhep) existing.tenGhep = lineTenGhep;
+      if (!existing.productionName && lineProductionName) existing.productionName = lineProductionName;
       if (existing.quyCachMDai == null && line.quyCachMDai != null) existing.quyCachMDai = line.quyCachMDai;
       if (!existing.unit && line.unit) existing.unit = line.unit;
       return;
@@ -192,7 +192,7 @@ export function buildProductionProgressForOrder(
       productCode: productCode || productName || productionName,
       productName,
       productionName: productionName || undefined,
-      tenGhep: lineTenGhep,
+
       quyCachMDai: line.quyCachMDai,
       unit: line.unit && line.unit !== '-' ? line.unit : '',
       plannedQty,

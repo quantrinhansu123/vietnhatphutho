@@ -145,7 +145,7 @@ function resolveProductPrintName(
   product: MixingNormProduct,
   resolveName?: (code: string) => string
 ) {
-  const stored = String(product.ten_ghep || '').trim();
+  const stored = String(product.ten_san_xuat || '').trim();
   if (stored) return stored;
   const names = product.ma_sp
     .split(',')
@@ -210,7 +210,7 @@ export function toPrintDoc(
         print_name: resolveProductPrintName(product, resolveProductName),
         loai_px:
           String(resolvePxLabel?.(product) || '').trim() ||
-          collectWorkshopPxLabels([product.ten_ghep, product.ten_sp]).join(' · ')
+          collectWorkshopPxLabels([product.ten_san_xuat, product.ten_sp]).join(' · ')
       }))
   };
 }
@@ -218,7 +218,7 @@ export function toPrintDoc(
 function resolvePrintPxLabel(product: MixingNormProduct & { print_name?: string; loai_px?: string }): string {
   return (
     String(product.loai_px || '').trim() ||
-    collectWorkshopPxLabels([product.ten_ghep, product.print_name, product.ten_sp]).join(' · ')
+    collectWorkshopPxLabels([product.ten_san_xuat, product.print_name, product.ten_sp]).join(' · ')
   );
 }
 
@@ -241,15 +241,15 @@ function NormPrintProductSection({
   const showBatchMeta = mode === 'primary';
   const noteText = stripMixingNormStdPrefix(product.ghi_chu);
   // Tên hiển thị cho công nhân trộn: ưu tiên ten_sp (ô "Tên sản phẩm / tên hiển thị
-  // cho công nhân trộn" trên form), fallback về ten_ghep/print_name rồi mã SP.
+  // cho công nhân trộn" trên form), fallback về ten_san_xuat/print_name rồi mã SP.
   const workerName = String(product.ten_sp || '').trim();
-  const techName = String(product.print_name || product.ten_ghep || '').trim();
+  const techName = String(product.print_name || product.ten_san_xuat || '').trim();
   const maSp = String(product.ma_sp || '').trim();
   const displayName = workerName || techName || maSp || 'SẢN PHẨM';
   const pxLabel = resolvePrintPxLabel(product);
   const subParts: string[] = [];
   // Phiếu định mức: ẩn hẳn dòng phụ dưới tên hiển thị cho CN
-  // (không Mã SP, không ten_ghep). Phiếu thực tế giữ nguyên.
+  // (không Mã SP, không ten_san_xuat). Phiếu thực tế giữ nguyên.
   if (isActual) {
     if (maSp && maSp !== displayName) subParts.push(`Mã SP: ${maSp}`);
     if (techName && techName !== displayName) subParts.push(techName);
@@ -463,7 +463,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
               const roundWeights = buildMixingRoundWeights(product, doc.isActual);
               const noteText = stripMixingNormStdPrefix(product.ghi_chu);
               const workerName = String(product.ten_sp || '').trim();
-              const techName = String(product.print_name || product.ten_ghep || '').trim();
+              const techName = String(product.print_name || product.ten_san_xuat || '').trim();
               const maSp = String(product.ma_sp || '').trim();
               const displayName = workerName || techName || maSp || 'SẢN PHẨM';
               const pxLabel = resolvePrintPxLabel(product);

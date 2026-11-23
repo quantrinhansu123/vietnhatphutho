@@ -22,13 +22,13 @@ import { normalizeOrderRegion } from '../../utils/orderScope';
 
 /** SP thuộc miền Nam (TCMN) / Bắc (TCMB). Không có cờ → vẫn hiện (không loại hết SP cũ). */
 export function orderProductMatchesRegion(
-  product: Partial<Pick<OrderProductOption, 'mien' | 'tcmn' | 'tcmb' | 'productionName' | 'tenGhep' | 'name'>>,
+  product: Partial<Pick<OrderProductOption, 'mien' | 'tcmn' | 'tcmb' | 'productionName' | "productionName" | 'name'>>,
   region: OrderRegion | ''
 ): boolean {
   if (!region || region === 'Tất cả') return true;
   const sourceRegion = normalizeOrderRegion(product.mien);
   if (sourceRegion === 'Miền Bắc' || sourceRegion === 'Miền Nam') return sourceRegion === region;
-  const text = `${product.productionName || ''} ${product.tenGhep || ''} ${product.name || ''}`;
+  const text = `${product.productionName || ''} ${product.productionName || ''} ${product.name || ''}`;
   const hasTcmn =
     /tcmn/iu.test(String(product.tcmn || '')) ||
     /(?:^|[\s\-–—])TCMN(?:$|[\s\-–—])/iu.test(text);
@@ -110,8 +110,8 @@ export function buildSouthTemSuffix(tem?: string | null, mauTem?: string | null,
  * tránh nhân đôi khi sửa đơn. Bóc TOÀN CỤC (kể cả suffix kẹt giữa do bug triple cũ),
  * lặp tới ổn định. Tên gốc danh mục không bao giờ chứa "Dán Tem" nên an toàn.
  */
-export function stripSouthTemSuffix(tenGhep?: string | null) {
-  let text = String(tenGhep || '').trim();
+export function stripSouthTemSuffix(productionDisplayName?: string | null) {
+  let text = String(productionDisplayName || '').trim();
   if (!text) return '';
   for (let i = 0; i < 10; i += 1) {
     const next = text
@@ -127,22 +127,22 @@ export function stripSouthTemSuffix(tenGhep?: string | null) {
   }
   return text.replace(/\s*-\s*$/u, '').trim();
 }
-/** ten_ghep cho Đơn miền nam = ten_ghep gốc (đã có màng) + hậu tố tem/màu/MV (+2 Đầu). */
-export function appendSouthTemToTenGhep(
-  baseTenGhep?: string | null,
+/** ten_san_xuat cho Đơn miền nam = ten_san_xuat gốc (đã có màng) + hậu tố tem/màu/MV (+2 Đầu). */
+export function appendSouthTemToProductionName(
+  baseProductionName?: string | null,
   tem?: string | null,
   mauTem?: string | null,
   danTem2Dau?: boolean | null
 ) {
-  const base = stripSouthTemSuffix(baseTenGhep);
+  const base = stripSouthTemSuffix(baseProductionName);
   const suffix = buildSouthTemSuffix(tem, mauTem, danTem2Dau);
   if (!suffix) return base;
   if (!base) return suffix.trim();
   return `${base}${suffix}`;
 }
-/** Tách tem/màu/2 Đầu từ ten_ghep đã lưu (fallback khi JSON cũ chưa có cột tem riêng; hiểu cả format cũ). */
-export function parseSouthTemFromTenGhep(tenGhep?: string | null): { tem: string; mauTem: string; danTem2Dau: boolean } {
-  const text = String(tenGhep || '');
+/** Tách tem/màu/2 Đầu từ ten_san_xuat đã lưu (fallback khi JSON cũ chưa có cột tem riêng; hiểu cả format cũ). */
+export function parseSouthTemFromProductionName(productionDisplayName?: string | null): { tem: string; mauTem: string; danTem2Dau: boolean } {
+  const text = String(productionDisplayName || '');
   const danTem2Dau = /Dán Tem 2 Đầu\s*$/u.test(text);
   const full = text.match(/\(Dán Tem\s*([^)]*?)\)(?:\s*Màu\s*(\S+))?(?:\s*(MV\w+))?/u);
   if (full) return { tem: String(full[1] || '').trim(), mauTem: String(full[2] || '').trim(), danTem2Dau };
@@ -171,7 +171,7 @@ export interface AllocatedLenhSxLine {
   productId: string;
   productCode: string;
   productionName: string;
-  tenGhep: string;
+
   /** STT dòng trong lệnh (0 = không có) — phân biệt các dòng đơn trùng hệt nhau. */
   stt: number;
   quantity: number;
@@ -225,16 +225,16 @@ export function normalizeAllocatedLenhSxLines(record: unknown): AllocatedLenhSxL
     const quantity = parseLenhSxQuantity(row.so_luong ?? row.quantity);
     if (!(quantity > 0)) continue;
     const productCode = pickLenhSxText(row, ['ma_sp', 'ma_hang', 'productCode', 'code']);
-    // Khớp fallback theo ten_san_xuat (đúng `productLineMatches` — ten_ghep nằm field riêng).
+    // Khớp fallback theo ten_san_xuat (đúng `productLineMatches` — ten_san_xuat nằm field riêng).
     const productionName = pickLenhSxText(row, ['ten_san_xuat', 'productionName']);
-    const tenGhep = pickLenhSxText(row, ['ten_ghep', 'tenGhep']);
-    if (!productCode && !productionName && !tenGhep) continue;
+    const productionDisplayName = pickLenhSxText(row, ["ten_san_xuat", "productionName"]);
+    if (!productCode && !productionName && !productionDisplayName) continue;
     lines.push({
       orderRef,
       productId: pickLenhSxText(row, ['san_pham_id', 'productId', 'product_id']),
       productCode,
       productionName,
-      tenGhep,
+
       stt: Number(row.stt ?? row.STT) || 0,
       quantity
     });
@@ -242,7 +242,7 @@ export function normalizeAllocatedLenhSxLines(record: unknown): AllocatedLenhSxL
   return lines;
 }
 
-function normalizeTenGhepKey(value: unknown): string {
+function normalizeProductionNameKey(value: unknown): string {
   return String(value ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi');
 }
 
@@ -251,10 +251,10 @@ function allocatedQtyKey(
   productId: string,
   productCode: string,
   productionName: string,
-  tenGhep = ''
+  productionDisplayName = ''
 ): string {
   const order = String(orderRef || '').trim().toLocaleLowerCase('vi');
-  const ghep = normalizeTenGhepKey(tenGhep);
+  const ghep = normalizeProductionNameKey(productionDisplayName);
   const id = String(productId || '').trim();
   // Cùng id nhưng khác tên ghép (cắt 6m / 3m) là hai dòng, không cộng chung.
   if (id) return `${order}||id:${id}||ghep:${ghep}`;
@@ -277,7 +277,7 @@ function addAllocated(map: Map<string, number>, key: string, quantity: number): 
 
 /**
  * Map tổng SL đã lập lệnh SX theo (mã đơn, id + tên ghép) — tra O(1)/dòng đơn.
- * Cùng san_pham_id nhưng khác ten_ghep không cộng chung. Thiếu tên ghép mới gộp theo id.
+ * Cùng san_pham_id nhưng khác ten_san_xuat không cộng chung. Thiếu tên ghép mới gộp theo id.
  */
 export function buildAllocatedQtyMap(lenhRows: unknown[]): Map<string, number> {
   const map = new Map<string, number>();
@@ -285,13 +285,13 @@ export function buildAllocatedQtyMap(lenhRows: unknown[]): Map<string, number> {
   for (const record of list) {
     for (const line of normalizeAllocatedLenhSxLines(record)) {
       if (line.productId) {
-        const baseKey = allocatedQtyKey(line.orderRef, line.productId, '', '', line.tenGhep);
+        const baseKey = allocatedQtyKey(line.orderRef, line.productId, '', '', line.productionName);
         addAllocated(map, baseKey, line.quantity);
         // Khóa riêng theo STT để các dòng đơn trùng hệt nhau không nhận chung tổng.
         if (line.stt > 0) addAllocated(map, `${baseKey}||stt:${line.stt}`, line.quantity);
         continue;
       }
-      addAllocated(map, allocatedQtyKey(line.orderRef, '', line.productCode, line.productionName, line.tenGhep), line.quantity);
+      addAllocated(map, allocatedQtyKey(line.orderRef, '', line.productCode, line.productionName, line.productionName), line.quantity);
       addAllocated(map, allocatedCodeAllKey(line.orderRef, line.productCode), line.quantity);
       if (!line.productionName.trim()) {
         addAllocated(map, allocatedCodeUnnamedKey(line.orderRef, line.productCode), line.quantity);
@@ -301,15 +301,15 @@ export function buildAllocatedQtyMap(lenhRows: unknown[]): Map<string, number> {
   return map;
 }
 
-/** Tra SL đã lập lệnh cho 1 dòng đơn: san_pham_id + ten_ghep. Thiếu id thì fallback mã + tên SX. */
+/** Tra SL đã lập lệnh cho 1 dòng đơn: san_pham_id + ten_san_xuat. Thiếu id thì fallback mã + tên SX. */
 export function getAllocatedQtyFromMap(
   map: Map<string, number>,
   orderCode: string,
-  line: { productId?: string | null; productCode?: string | null; productionName?: string | null; tenGhep?: string | null; stt?: number | null }
+  line: { productId?: string | null; productCode?: string | null; productionName?: string | null;  stt?: number | null }
 ): number {
   const productId = String(line.productId || '').trim();
   if (productId) {
-    const baseKey = allocatedQtyKey(orderCode, productId, '', '', line.tenGhep || '');
+    const baseKey = allocatedQtyKey(orderCode, productId, '', '', line.productionName || '');
     // `stt` chỉ truyền cho dòng đơn trùng hệt dòng khác (xem duplicateLineStt).
     if (line.stt && line.stt > 0) {
       const bySlot = map.get(`${baseKey}||stt:${line.stt}`);
@@ -323,7 +323,7 @@ export function getAllocatedQtyFromMap(
   if (!productionName) {
     return map.get(allocatedCodeAllKey(orderCode, line.productCode || '')) || 0;
   }
-  const full = map.get(allocatedQtyKey(orderCode, '', line.productCode || '', productionName, line.tenGhep || '')) || 0;
+  const full = map.get(allocatedQtyKey(orderCode, '', line.productCode || '', productionName, line.productionName || '')) || 0;
   const unnamed = map.get(allocatedCodeUnnamedKey(orderCode, line.productCode || '')) || 0;
   return Math.round((full + unnamed) * 1000) / 1000;
 }
@@ -333,11 +333,11 @@ export function getAllocatedQtyFromMap(
  * không trùng thì undefined → tra SL lệnh SX theo tổng như cũ.
  */
 export function duplicateLineStt(
-  lines: Array<{ productId?: string | null; productCode?: string | null; tenGhep?: string | null }>,
+  lines: Array<{ productId?: string | null; productCode?: string | null; productionName?: string | null }>,
   index: number
 ): number | undefined {
-  const keyOf = (line: { productId?: string | null; productCode?: string | null; tenGhep?: string | null }) =>
-    `${String(line.productId || line.productCode || '').trim().toLocaleLowerCase('vi')}||${normalizeTenGhepKey(line.tenGhep)}`;
+  const keyOf = (line: { productId?: string | null; productCode?: string | null; productionName?: string | null }) =>
+    `${String(line.productId || line.productCode || '').trim().toLocaleLowerCase('vi')}||${normalizeProductionNameKey(line.productionName)}`;
   const current = lines[index];
   if (!current) return undefined;
   const key = keyOf(current);
@@ -346,21 +346,21 @@ export function duplicateLineStt(
   return hasTwin ? index + 1 : undefined;
 }
 
-function catalogProductionAliases(product: Pick<OrderProductOption, 'productionName' | 'tenGhep'>): string[] {
-  return [product.productionName, product.tenGhep]
+function catalogProductionAliases(product: Pick<OrderProductOption, 'productionName' | "productionName">): string[] {
+  return [product.productionName, product.productionName]
     .map(value => String(value || '').trim())
     .filter(Boolean);
 }
 
-/** Khớp tên SX dòng đơn với productionName hoặc ten_ghep legacy trên danh mục. */
+/** Khớp tên SX dòng đơn với productionName hoặc ten_san_xuat legacy trên danh mục. */
 export function catalogMatchesProductionName(
-  product: Pick<OrderProductOption, 'productionName' | 'tenGhep'>,
+  product: Pick<OrderProductOption, 'productionName' | "productionName">,
   productionName: string
 ): boolean {
   const picked = String(productionName || '').trim();
   if (!picked) return false;
   const key = picked.replace(/\s+/g, ' ').toLocaleLowerCase('vi');
-  return catalogProductionAliases(product).some(
+  return [product.productionName].filter(Boolean).some(
     alias => alias.replace(/\s+/g, ' ').toLocaleLowerCase('vi') === key
   );
 }
@@ -380,9 +380,9 @@ export function listProductionNamesByCode(
       ? direct
       : siblingProductsByProductionName(products, productionName);
   const names = sortOrderProductOptions([...source].sort((a, b) =>
-    (a.productionName || a.tenGhep).localeCompare(b.productionName || b.tenGhep, 'vi')
+    (a.productionName).localeCompare(b.productionName, 'vi')
   ))
-    .map(product => product.productionName.trim() || product.tenGhep.trim())
+    .map(product => product.productionName.trim() || product.productionName.trim())
     .filter(name => Boolean(name));
   return [...new Set(names)];
 }
@@ -391,7 +391,7 @@ export function listProductionNamesByCode(
 export function sortOrderProductOptions(products: OrderProductOption[]): OrderProductOption[] {
   const song = products.filter(product => classifyProductPxGroup(product.group) === 'song');
   const sortValues = new Map(song.map(product => {
-    const name = product.productionName || product.tenGhep;
+    const name = product.productionName;
     const kgText = product.dinhMucKg || extractDinhMucKg(name);
     const kg = Number(extractDoLiDmNumber(kgText) || normalizeDecimalToken(kgText));
     // Bỏ tỷ lệ /6m trước khi suy mét dài, không nhầm mét tiêu chuẩn với chiều dài SP.
@@ -511,7 +511,7 @@ export interface OrderProductOption {
   unit: string;
   newCode: string;
   /** Tên ghép đã lưu trên danh mục SP — đơn hàng/lệnh SX ưu tiên lấy, khỏi ghép lại. */
-  tenGhep: string;
+
   /** Mét dài chuẩn trên danh mục SP — đơn cắt lẻ dùng làm "m dài chính" để thay đúng token. */
   doDaiM: string;
   /** Khổ rộng (m) trên danh mục SP — đơn cắt lẻ / miền nam dùng để hạ khổ. */
@@ -622,8 +622,8 @@ export function normalizeOrderProducts(data: unknown): OrderProductOption[] {
     .map(row => [String(row.id ?? ''), String(row.mien ?? '')]));
   return sortProductsByKgThenMeters(
     normalizeProducts(data).map(product => {
-      const productionName = String(product.productionName || product.tenGhep || '').trim();
-      const tenGhep = String(product.tenGhep || product.productionName || '').trim();
+      const productionName = String(product.productionName || '').trim();
+      const productionDisplayName = String(product.productionName || '').trim();
       return {
         id: product.id,
         mien: normalizeOrderRegion(regions.get(product.id)),
@@ -635,7 +635,7 @@ export function normalizeOrderProducts(data: unknown): OrderProductOption[] {
         group: product.group,
         unit: product.unit === '-' ? '' : product.unit,
         newCode: product.newCode,
-        tenGhep,
+
         doDaiM: product.doDaiM || '',
         doDayM: product.doDayM || '',
         doLiDm: /\bkg\b/iu.test(product.doLiDm || '') ? '' : (product.doLiDm || ''),
@@ -683,13 +683,13 @@ export function doLiTokenNumber(value: string | null | undefined): string {
 export function orderDacDoLiRealNumber(input: {
   doLi?: string | null;
   tenSanXuat?: string | null;
-  tenGhep?: string | null;
+  productionName?: string | null;
   maAmis?: string | null;
   savedDoLiDm?: string | null;
 }): string {
   const fromDoLi = doLiTokenNumber(input.doLi);
   if (fromDoLi) return fromDoLi;
-  const ten = String(input.tenSanXuat || input.tenGhep || '');
+  const ten = String(input.tenSanXuat || input.productionName || '');
   // Bỏ `(đm …)` và `(Dán Tem …)` — chỉ lấy token độ li chính của tên ghép.
   const withoutSpecSegments = ten
     .replace(/\(\s*đm[^()]*\)/giu, ' ')

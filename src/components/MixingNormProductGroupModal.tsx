@@ -18,7 +18,7 @@ export type MixingNormGroupProduct = {
   amisCode?: string;
   name: string;
   tenSanXuat?: string;
-  tenGhep?: string;
+  productionName?: string;
   nhomVthh?: string;
   mang?: string;
   hangPhe?: string;
@@ -71,7 +71,7 @@ const DRAG_MIME = 'application/x-mixing-norm-product-keys';
 
 function productLabel(product: MixingNormGroupProduct) {
   return `${product.linePrefix ? `${product.linePrefix} · ` : ''}${product.amisCode || product.code} — ${
-    product.tenGhep || product.tenSanXuat || product.name
+    product.productionName || product.tenSanXuat || product.name
   }`;
 }
 
@@ -96,8 +96,8 @@ export default function MixingNormProductGroupModal({
       const signals = buildMixingNormProductSignals({
         nhomVthh: product.nhomVthh,
         maAmis: product.amisCode || product.code,
-        tenSanXuat: product.tenSanXuat || product.tenGhep,
-        tenGhep: product.tenGhep,
+        tenSanXuat: product.tenSanXuat || product.productionName,
+        productionName: product.productionName,
         tenSp: product.name,
         mang: product.mang,
         hangPhe: product.hangPhe,

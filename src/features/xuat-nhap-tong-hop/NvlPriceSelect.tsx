@@ -1,25 +1,44 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
-import { formatMoneyVN, parseLocalizedNumber } from '../../utils';
+import { formatNvlPriceValue, parseNvlPrice } from './model';
 
 export type NvlPriceOption = { id: string; label: string; donGia: number };
 
 function priceKey(value: number) {
-  return String(Math.round(value * 1000) / 1000);
+  return String(value);
 }
 
-/** Gõ 12000000 → 12.000.000 (dấu chấm ngăn nghìn). */
+function priceDecimalDigits(raw: string) {
+  const text = raw.trim().replace(/\s/g, '');
+  const dot = text.lastIndexOf('.');
+  const comma = text.lastIndexOf(',');
+  if (dot >= 0 && comma >= 0) return dot > comma ? text.length - dot - 1 : text.length - comma - 1;
+  if (comma >= 0) return 0;
+  if (dot >= 0) return (text.match(/\./g) || []).length > 1 ? 0 : text.length - dot - 1;
+  return 0;
+}
+
+function formatPriceExact(value: number, fractionDigits: number) {
+  const digits = Math.max(0, Math.min(20, fractionDigits));
+  const fixed = Math.abs(value).toFixed(digits);
+  const [integer, fraction = ''] = fixed.split('.');
+  const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${value < 0 ? '-' : ''}${grouped}${digits ? `.${fraction}` : ''}`;
+}
+
+/** Gõ 12000000 → 12,000,000; phần lẻ sau dấu chấm được giữ nguyên. */
 export function formatNvlPriceTyped(raw: string): string {
-  const cleaned = String(raw || '').replace(/[^\d]/g, '');
-  if (!cleaned) return '';
-  const parsed = Number(cleaned);
-  if (!Number.isFinite(parsed)) return '';
-  return formatMoneyVN(parsed, 0);
+  const text = String(raw || '').trim().replace(/\s/g, '').replace(/[^\d.,-]/g, '');
+  if (!text) return '';
+  const parsed = parseNvlPrice(text);
+  if (!Number.isFinite(parsed)) return text;
+  if (text.endsWith('.')) return `${formatPriceExact(parsed, 0)}.`;
+  return formatPriceExact(parsed, priceDecimalDigits(text));
 }
 
 export function toNvlPriceOption(donGia: number, soLan?: number): NvlPriceOption | null {
   if (!Number.isFinite(donGia) || donGia < 0) return null;
-  const label = formatMoneyVN(donGia, 0);
+  const label = formatNvlPriceValue(donGia);
   return {
     id: priceKey(donGia),
     label: soLan && soLan > 1 ? `${label} · ${soLan} lần` : label,
@@ -90,16 +109,16 @@ export function NvlPriceSelect({
       const opt = toNvlPriceOption(raw);
       if (opt && !map.has(opt.id)) map.set(opt.id, opt);
     }
-    const current = parseLocalizedNumber(value);
+    const current = parseNvlPrice(value);
     if (Number.isFinite(current) && current >= 0) {
       const opt = toNvlPriceOption(current);
-      if (opt && !map.has(opt.id)) map.set(opt.id, { ...opt, label: formatMoneyVN(current, 0) });
+      if (opt && !map.has(opt.id)) map.set(opt.id, { ...opt, label: formatNvlPriceValue(current) });
     }
     return [...map.values()].sort((a, b) => b.donGia - a.donGia);
   }, [remote, extraPrices, value]);
 
   const selectedId = (() => {
-    const parsed = parseLocalizedNumber(value);
+    const parsed = parseNvlPrice(value);
     if (!Number.isFinite(parsed) || parsed < 0 || !String(value || '').trim()) return '';
     return priceKey(parsed);
   })();
@@ -110,7 +129,7 @@ export function NvlPriceSelect({
       onChange={next => {
         const hit = options.find(item => item.id === next);
         if (hit) {
-          onChange(formatMoneyVN(hit.donGia, 0));
+          onChange(formatNvlPriceValue(hit.donGia));
           return;
         }
         const custom = String(next || '').trim();
@@ -118,8 +137,8 @@ export function NvlPriceSelect({
           onChange('');
           return;
         }
-        const parsed = parseLocalizedNumber(custom);
-        onChange(Number.isFinite(parsed) ? formatMoneyVN(parsed, 0) : custom);
+        const parsed = parseNvlPrice(custom);
+        onChange(Number.isFinite(parsed) ? formatNvlPriceValue(custom) : custom);
       }}
       options={options}
       getValue={(item: NvlPriceOption) => item.id}

@@ -70,9 +70,11 @@ export function resolveOrderRegion(orderType?: string | null, region?: string | 
 }
 
 export function orderTypeOptionsForRegion(region: OrderRegion | '', canSeeProduction: boolean): string[] {
+  const productionOrderOption = canSeeProduction ? [PRODUCTION_ORDER_TYPE] : [];
+  if (!region) return ORDER_TYPE_OPTIONS.filter(type => type !== PRODUCTION_ORDER_TYPE || canSeeProduction);
   if (region === 'Tất cả') return canSeeProduction ? [PRODUCTION_ORDER_TYPE] : [];
-  if (region === 'Miền Nam') return [SOUTH_ORDER_TYPE, SOUTH_RETAIL_CUT_ORDER_TYPE];
-  return [SALE_ORDER_TYPE, CUT_ORDER_TYPE, CUT_ORDER_TYPE_NEW];
+  if (region === 'Miền Nam') return [...productionOrderOption, SOUTH_ORDER_TYPE, SOUTH_RETAIL_CUT_ORDER_TYPE];
+  return [...productionOrderOption, SALE_ORDER_TYPE, CUT_ORDER_TYPE, CUT_ORDER_TYPE_NEW];
 }
 
 export function resolveOrderTypeFromRegion(region: OrderRegion | '', value: string, canSeeProduction: boolean): string {

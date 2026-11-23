@@ -5,6 +5,7 @@
  */
 import type { Express } from 'express';
 import { findExceededMachinePriceGroup, machinePriceGroupKey } from './machineReturnPriceGroups';
+import { parseNvlPrice, xuatPheMayKhongCanDot } from './model';
 
 type ChiPhiKemTheo = { ten: string; don_gia: number; thanh_tien: number };
 
@@ -268,15 +269,15 @@ function parseChiPhiKemTheo(
       String(tienRaw ?? '').trim() === '';
     if (blank) continue;
     if (!ten) return { error: `Dòng ${lineNo} (${ma}), khoản ${index + 1}: thiếu tên chi phí.` };
-    const donGia = parseLocalizedNumber(donRaw ?? 0);
-    const thanhTien = parseLocalizedNumber(tienRaw ?? 0);
+    const donGia = parseNvlPrice(donRaw ?? 0);
+    const thanhTien = parseNvlPrice(tienRaw ?? 0);
     if (!Number.isFinite(donGia) || donGia < 0) {
       return { error: `Dòng ${lineNo} (${ma}), khoản ${index + 1}: đơn giá phải lớn hơn hoặc bằng 0.` };
     }
     if (!Number.isFinite(thanhTien) || thanhTien < 0) {
       return { error: `Dòng ${lineNo} (${ma}), khoản ${index + 1}: thành tiền phải lớn hơn hoặc bằng 0.` };
     }
-    items.push({ ten, don_gia: round3(donGia), thanh_tien: round3(thanhTien) });
+    items.push({ ten, don_gia: donGia, thanh_tien: thanhTien });
   }
   return { items };
 }
@@ -384,7 +385,7 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       if (!ma) return { error: `Dòng ${index + 1}: thiếu mã.` };
       const qty = parseLocalizedNumber(item.so_luong ?? item.soLuong ?? item.quantity ?? '');
       if (!Number.isFinite(qty) || qty <= 0) return { error: `Dòng ${index + 1} (${ma}): số lượng phải lớn hơn 0.` };
-      const price = parseLocalizedNumber(item.don_gia ?? item.donGia ?? item.unitPrice ?? 0);
+      const price = parseNvlPrice(item.don_gia ?? item.donGia ?? item.unitPrice ?? 0);
       const donGia = Number.isFinite(price) && price >= 0 ? price : 0;
       const quyDoiRaw = parseLocalizedNumber(item.quy_doi_kg ?? item.quyDoiKg ?? item.weightKg ?? '');
       const quyDoi = Number.isFinite(quyDoiRaw) && quyDoiRaw > 0 ? round3(quyDoiRaw) : null;
@@ -623,11 +624,14 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
         }
         if (catalogSet.size > 1) return { error: 'Một phiếu xuất chỉ dùng một loại hàng (NVL hoặc thành phẩm).' };
         if (catalogSet.has('nvl')) {
-          const dotRaw = text(source.dot_so ?? source.dotSo);
-          const dotMatch = dotRaw.match(/(\d{1,2})/);
-          const dotNumber = dotMatch ? Number(dotMatch[1]) : 0;
-          if (!Number.isInteger(dotNumber) || dotNumber < 1 || dotNumber > 10) {
-            return { error: 'Phiếu xuất NVL phải có đợt sản xuất từ Đợt 1 đến Đợt 10.' };
+          const loaiXuat = text(source.loai_xuat ?? source.loaiXuat);
+          if (!xuatPheMayKhongCanDot(loaiXuat)) {
+            const dotRaw = text(source.dot_so ?? source.dotSo);
+            const dotMatch = dotRaw.match(/(\d{1,2})/);
+            const dotNumber = dotMatch ? Number(dotMatch[1]) : 0;
+            if (!Number.isInteger(dotNumber) || dotNumber < 1 || dotNumber > 10) {
+              return { error: 'Phiếu xuất NVL phải có đợt sản xuất từ Đợt 1 đến Đợt 10.' };
+            }
           }
           const foldedLoaiXuat = text(source.loai_xuat ?? source.loaiXuat)
             .toLowerCase()
@@ -1386,6 +1390,22 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       return res.status(500).json({ error: error.message || 'Không tải được phiếu tổng hợp.' });
     }
     return res.json({ records: data || [], total: (data || []).length, source: 'supabase' });
+  });
+
+  app.post('/api/xuat-nhap-tong-hop/ton-danh-sach', async (req, res) => {
+    try {
+      const codes = [...new Set((Array.isArray(req.body?.codes) ? req.body.codes : [])
+        .map((value: unknown) => text(value)).filter(Boolean))].slice(0, 5000);
+      const tenKho = text(req.body?.ten_kho);
+      if (!codes.length || !tenKho) return res.status(400).json({ error: 'Thiếu danh sách mã NVL hoặc kho.' });
+      if (!deps.supabase) return res.json({ tons: {} });
+      const tables = await deps.readTables(null);
+      const matchCatalogId = await deps.slipsHaveCatalogStamp();
+      const stock = await stockOfMany(codes, { loai: 'kho', id: tenKho }, 'nvl', tables, matchCatalogId);
+      return res.json({ tons: Object.fromEntries(stock) });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Không tính được tồn NVL theo kho.' });
+    }
   });
 
   app.get('/api/xuat-nhap-tong-hop/ton', async (req, res) => {

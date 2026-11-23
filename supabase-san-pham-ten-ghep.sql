@@ -5,4 +5,10 @@
 alter table public.san_pham
   drop column if exists ten_ghep;
 
+alter table if exists public.san_pham_mb
+  drop column if exists ten_ghep;
+
+alter table if exists public.san_pham_mn
+  drop column if exists ten_ghep;
+
 select 'OK - Đã bỏ cột san_pham.ten_ghep (chỉ dùng ten_san_xuat).' as result;

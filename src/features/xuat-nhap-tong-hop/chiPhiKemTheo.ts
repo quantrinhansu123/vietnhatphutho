@@ -1,5 +1,5 @@
 /** Chi phí kèm theo từng dòng. Thành tiền nhập tay, không nhân với số lượng. */
-import { formatMoneyVN, parseLocalizedNumber } from '../../utils';
+import { formatNvlPriceValue, parseNvlPrice } from './model';
 
 export type ChiPhiKemTheoStored = {
   ten: string;
@@ -30,7 +30,7 @@ export function roundKem(value: number) {
 }
 
 function moneyOf(value: unknown) {
-  const parsed = parseLocalizedNumber(value);
+  const parsed = parseNvlPrice(value);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
@@ -61,8 +61,8 @@ export function kemDraftFromStored(raw: unknown): ChiPhiKemTheoDraft[] {
     return {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       ten: String(row.ten ?? row.name ?? '').trim().slice(0, 120),
-      donGia: donGia ? formatMoneyVN(donGia, 0) : '',
-      thanhTien: thanhTien ? formatMoneyVN(thanhTien, 0) : ''
+      donGia: donGia ? formatNvlPriceValue(donGia) : '',
+      thanhTien: thanhTien ? formatNvlPriceValue(thanhTien) : ''
     };
   });
 }
@@ -71,8 +71,8 @@ export function kemStoredFromDraft(items: ChiPhiKemTheoDraft[] | undefined): Chi
   return (items || [])
     .filter(item => item.ten.trim() || item.donGia.trim() || item.thanhTien.trim())
     .map(item => {
-      const amount = roundKem(Math.max(0, moneyOf(item.thanhTien.trim() || item.donGia)));
-      const donGia = roundKem(Math.max(0, moneyOf(item.donGia.trim() || item.thanhTien)));
+      const amount = Math.max(0, moneyOf(item.thanhTien.trim() || item.donGia));
+      const donGia = Math.max(0, moneyOf(item.donGia.trim() || item.thanhTien));
       return {
         ten: item.ten.trim().slice(0, 120),
         don_gia: donGia || amount,

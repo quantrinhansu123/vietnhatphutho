@@ -6,7 +6,7 @@ import {
   type OrderProductOption
 } from '../../src/features/_shared/orderHelpers';
 import {
-  buildOrderTenGhep,
+  buildOrderProductionName,
   doLiDmWeightScale
 } from '../../src/utils/productProductionName';
 import {
@@ -23,7 +23,7 @@ const dacProduct: OrderProductOption = {
   group: 'TP; PX Đặc',
   unit: 'Tấm',
   newCode: '',
-  tenGhep: 'Tấm nhựa đặc màu TRẮNG - 2li ( đm 1.9 li ) - 1.82m - STD',
+  productionName: 'Tấm nhựa đặc màu TRẮNG - 2li ( đm 1.9 li ) - 1.82m - STD',
   doDaiM: '1.82m',
   doDayM: '1.82m',
   doLiDm: '(đm 1.9 li)',
@@ -38,7 +38,7 @@ function dacField(fieldText: string, extra: Partial<Parameters<typeof resolveOrd
     fieldText,
     savedDoLi: dacProduct.doLi,
     productionName: dacProduct.productionName,
-    tenGhep: dacProduct.tenGhep,
+    productionName: dacProduct.tenGhep,
     maAmis: dacProduct.code,
     savedDoLiDm: '(đm 1.9 li)',
     ...extra
@@ -71,11 +71,11 @@ describe('ô Độ li ĐM hiển thị độ li định mức', () => {
       '2'
     );
     assert.equal(
-      orderDacDoLiRealNumber({ tenGhep: 'NHỰA ĐẶC - 11.2li - 3m (Dán Tem 5li)' }),
+      orderDacDoLiRealNumber({ productionName: 'NHỰA ĐẶC - 11.2li - 3m (Dán Tem 5li)' }),
       '11.2'
     );
     assert.equal(
-      orderDacDoLiRealNumber({ tenGhep: 'NHỰA ĐẶC - 3m (Dán Tem 5li) - 8li - (đm 7.7 li)' }),
+      orderDacDoLiRealNumber({ productionName: 'NHỰA ĐẶC - 3m (Dán Tem 5li) - 8li - (đm 7.7 li)' }),
       '8'
     );
     assert.equal(orderDacDoLiRealNumber({ maAmis: 'STD06-1.2li*1.22m' }), '1.2');
@@ -123,7 +123,7 @@ describe('ô Độ li ĐM hiển thị độ li định mức', () => {
     assert.equal(fields.doLiStored, '');
     assert.equal(fields.fieldToken, '');
 
-    const tenGhep = buildOrderTenGhep(dacProduct.productionName, {
+    const tenGhep = buildOrderProductionName(dacProduct.productionName, {
       nhomVthh: dacProduct.group,
       cutLengthM: 30,
       doLiDm: fields.doLiDmValue

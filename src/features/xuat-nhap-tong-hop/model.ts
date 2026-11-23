@@ -105,6 +105,12 @@ export const LOAI_XUAT_PHE_BAM = 'Xuất phế băm cho máy tạo hạt';
 export const LOAI_XUAT_PHE_CAI = 'Xuất phế cái cho máy băm';
 export const LOAI_XUAT_KHAC = 'Xuất khác';
 
+/** Luồng chuyển phế cho máy băm/tạo hạt không thuộc đợt SX và không cần phân xưởng. */
+export function xuatPheMayKhongCanDot(loaiXuat: string) {
+  const folded = foldLoai(loaiXuat);
+  return folded === foldLoai(LOAI_XUAT_PHE_BAM) || folded === foldLoai(LOAI_XUAT_PHE_CAI);
+}
+
 /** Loại xuất hiện trên form mới (ẩn «Xuất theo phân xưởng»). */
 export const LOAI_XUAT_OPTIONS = [
   LOAI_XUAT_MAY_PTDM,
@@ -129,6 +135,45 @@ function foldLoai(value: string) {
     .replace(/đ/g, 'd')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/** Giá NVL: dấu phẩy ngăn nghìn, dấu chấm thập phân; vẫn đọc dạng cũ 1.234,5. */
+export function parseNvlPrice(raw: unknown) {
+  let text = String(raw ?? '').trim().replace(/\s/g, '');
+  if (!text) return NaN;
+  const dot = text.lastIndexOf('.');
+  const comma = text.lastIndexOf(',');
+  if (dot >= 0 && comma >= 0) {
+    text = comma > dot
+      ? `${text.slice(0, comma).replace(/[.,]/g, '')}.${text.slice(comma + 1).replace(/[.,]/g, '')}`
+      : `${text.slice(0, dot).replace(/,/g, '')}.${text.slice(dot + 1).replace(/[.,]/g, '')}`;
+  } else if (comma >= 0) {
+    text = text.replace(/,/g, '');
+  } else if ((text.match(/\./g) || []).length > 1) {
+    text = text.replace(/\./g, '');
+  }
+  return Number(text);
+}
+
+function nvlPriceDecimalDigits(raw: string) {
+  const text = raw.trim().replace(/\s/g, '');
+  const dot = text.lastIndexOf('.');
+  const comma = text.lastIndexOf(',');
+  if (dot >= 0 && comma >= 0) return dot > comma ? text.length - dot - 1 : text.length - comma - 1;
+  if (comma >= 0) return 0;
+  if (dot >= 0) return (text.match(/\./g) || []).length > 1 ? 0 : text.length - dot - 1;
+  return 0;
+}
+
+/** Hiển thị giá theo 1,234.56 và giữ nguyên số chữ số thập phân đã lưu. */
+export function formatNvlPriceValue(raw: unknown) {
+  const value = parseNvlPrice(raw);
+  if (!Number.isFinite(value)) return String(raw ?? '');
+  const digits = Math.max(0, Math.min(20, nvlPriceDecimalDigits(String(raw ?? value))));
+  const fixed = Math.abs(value).toFixed(digits);
+  const [integer, fraction = ''] = fixed.split('.');
+  const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${value < 0 ? '-' : ''}${grouped}${digits ? `.${fraction}` : ''}`;
 }
 
 /** Nơi hàng xuất đến, suy từ loại xuất. `flex` = kho hoặc máy (Xuất khác / loại tự gõ). `phan-xuong` = Đặc/Sóng/Rỗng (không chọn máy). */
@@ -215,6 +260,7 @@ export function getMachinesForInboundWorkshop(phanXuong: string) {
 }
 
 export function isSxRelatedLoaiXuat(loaiXuat: string) {
+  if (xuatPheMayKhongCanDot(loaiXuat)) return false;
   const kind = xuatDenKind(loaiXuat);
   return kind === 'may' || kind === 'may-ptdm' || kind === 'phan-xuong';
 }

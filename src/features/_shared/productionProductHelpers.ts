@@ -1,4 +1,4 @@
-import { buildOrderTenGhep, seedProductionSpecs, stripTrailingDuplicateCutAfterTem } from '../../utils/productProductionName';
+import { buildOrderProductionName, seedProductionSpecs, stripTrailingDuplicateCutAfterTem } from '../../utils/productProductionName';
 
 export interface OrderProductLine {
   /** Bản ghi gốc trong JSON `don_hang.san_pham`, dùng để form sửa không làm mất dữ liệu đã lưu. */
@@ -28,7 +28,7 @@ export interface OrderProductLine {
   quyCach?: string;
   quyCachMDai?: number | string;
   /** Tên ghép (đơn cắt lẻ) — hiển thị thay ten_san_xuat khi in đơn / lệnh SX. */
-  tenGhep?: string;
+
   /** Chỉ dùng cho "Đơn miền nam": loại tem (vd 5li) + màu tem (Hồng/Vàng) + checkbox Dán Tem 2 Đầu. */
   tem?: string;
   mauTem?: string;
@@ -178,17 +178,20 @@ export function expandProductionOrderProductLines(lines: OrderProductLine[]): Or
 export function formatProductionNameWithLength(
   name: string,
   length?: number | string,
-  options?: { tenGhep?: string; nhomVthh?: string; maAmis?: string }
+  options?: { productionName?: string; nhomVthh?: string; maAmis?: string }
 ): string {
-  const storedTenGhep = String(options?.tenGhep || '').trim();
-  if (storedTenGhep) return stripTrailingDuplicateCutAfterTem(storedTenGhep);
+  // Tên trên snapshot đơn đã là tên cuối sau hạ khổ/li/mét; không ghép thêm tên thứ hai khi in.
+  const canonicalName = String(name || '').trim();
+  if (canonicalName && canonicalName !== '-') return stripTrailingDuplicateCutAfterTem(canonicalName);
+  const storedProductionName = String(options?.productionName || '').trim();
+  if (storedProductionName) return stripTrailingDuplicateCutAfterTem(storedProductionName);
 
   const cleanName = (name || '').trim();
   const numericLength = Number(String(length ?? '').replace(',', '.'));
   const hasValidLength = Number.isFinite(numericLength) && numericLength > 0;
   if (!cleanName || cleanName === '-') {
     if (!hasValidLength) return '-';
-    return buildOrderTenGhep('', { cutLengthM: numericLength }) || '-';
+    return buildOrderProductionName('', { cutLengthM: numericLength }) || '-';
   }
   if (!hasValidLength) {
     // Mọi loại đơn đều hiển thị tên ghép (kể cả khi không có mét dài).
@@ -202,10 +205,10 @@ export function formatProductionNameWithLength(
     const hasSpecs = [seeded.doLi, seeded.doDayM, seeded.doDaiM, seeded.mang, seeded.hangPhe, seeded.doLiDm]
       .some(part => String(part || '').trim() !== '');
     if (!hasSpecs) return cleanName;
-    return seeded.tenGhep || cleanName;
+    return seeded.productionName || cleanName;
   }
 
-  return buildOrderTenGhep(cleanName, {
+  return buildOrderProductionName(cleanName, {
     nhomVthh: options?.nhomVthh,
     maAmis: options?.maAmis,
     cutLengthM: numericLength
@@ -214,7 +217,7 @@ export function formatProductionNameWithLength(
 
 /** Re-export engine ghép tên SP (Đặc/Sóng/Rỗng) — dùng dần thay raw ten_san_xuat khi đã có thông số. */
 export {
-  buildOrderTenGhep,
+  buildOrderProductionName,
   composeProductionDisplayName,
   extractDoLiDm,
   replaceCutLengthMeters,
@@ -233,7 +236,7 @@ function escapeNoteRegExp(value: string): string {
  */
 export function extractBareNoteText(
   note: string,
-  identifiers?: { orderCode?: string; productCode?: string; tenGhep?: string }
+  identifiers?: { orderCode?: string; productCode?: string; productionName?: string }
 ): string {
   let text = String(note || '').trim();
   if (!text) return '';
@@ -260,12 +263,12 @@ export function extractBareNoteText(
 
   // Bóc đoạn tên ghép + dấu phân cách sau nó. Chỉ bóc khi phần trước tên ghép
   // không phải câu chữ (trống, hoặc mã/ký hiệu ngắn có số) để khỏi cắt câu thật.
-  const tenGhep = String(identifiers?.tenGhep || '').trim();
-  if (tenGhep) {
-    const idx = text.toLowerCase().indexOf(tenGhep.toLowerCase());
+  const productionDisplayName = String(identifiers?.productionName || '').trim();
+  if (productionDisplayName) {
+    const idx = text.toLowerCase().indexOf(productionDisplayName.toLowerCase());
     if (idx >= 0) {
       const head = text.slice(0, idx).replace(/[\s:–—-]+$/, '');
-      const rest = text.slice(idx + tenGhep.length).replace(/^[\s:–—-]+/, '').trim();
+      const rest = text.slice(idx + productionDisplayName.length).replace(/^[\s:–—-]+/, '').trim();
       const headIsCodes =
         head === '' ||
         (head.length <= 30 &&

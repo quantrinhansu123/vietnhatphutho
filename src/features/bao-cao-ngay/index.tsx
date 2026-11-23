@@ -14,9 +14,9 @@ import { isExternalStaffCode, resolveScheduleStaffName } from '../../utils/exter
 // =========================================================================
 
 export interface BaoCaoNgayThanhPhamLine {
-  /** Id sản phẩm trong danh mục `san_pham` (search theo mã AMIS + ten_ghep) */
+  /** Id sản phẩm trong danh mục `san_pham` (search theo mã AMIS + ten_san_xuat) */
   san_pham_id: string;
-  /** Tên hiển thị (ten_ghep) */
+  /** Tên hiển thị (ten_san_xuat) */
   ma_hang: string;
   so_luong: number;
   trong_luong: number;
@@ -148,17 +148,17 @@ function isCaDauNgay(ca: string) {
 
 // --- Tìm kiếm SP / NVL trong bảng nhập (lưu đúng id danh mục) ---
 
-/** Nhãn SP: ưu tiên ten_ghep, kèm mã AMIS để phân biệt */
+/** Nhãn SP: ưu tiên ten_san_xuat, kèm mã AMIS để phân biệt */
 function productDisplayLabel(p: ProductRow) {
-  const tenGhep = str(p.tenGhep) || str(p.productionName) || str(p.name);
+  const productionDisplayName = str(p.productionName) || str(p.productionName) || str(p.name);
   const amis = str(p.amisCode) || str(p.code);
-  if (tenGhep && amis && !tenGhep.toLowerCase().includes(amis.toLowerCase())) return `${amis} — ${tenGhep}`;
-  return tenGhep || amis || str(p.code);
+  if (productionDisplayName && amis && !productionDisplayName.toLowerCase().includes(amis.toLowerCase())) return `${amis} — ${productionDisplayName}`;
+  return productionDisplayName || amis || str(p.code);
 }
 
-/** Search SP theo mã AMIS + ten_ghep (+ các mã khác) */
+/** Search SP theo mã AMIS + ten_san_xuat (+ các mã khác) */
 function productSearchText(p: ProductRow) {
-  return `${p.amisCode || ''} ${p.tenGhep || ''} ${p.code || ''} ${p.newCode || ''} ${p.name || ''} ${p.productionName || ''}`;
+  return `${p.amisCode || ''} ${p.productionName || ''} ${p.code || ''} ${p.newCode || ''} ${p.name || ''} ${p.productionName || ''}`;
 }
 
 function resolveProductByText(list: ProductRow[], raw: string): ProductRow | null {
@@ -167,7 +167,7 @@ function resolveProductByText(list: ProductRow[], raw: string): ProductRow | nul
   const norm = str(raw).toLowerCase();
   if (!norm) return null;
   return list.find(p =>
-    str(p.tenGhep).toLowerCase() === norm ||
+    str(p.productionName).toLowerCase() === norm ||
     str(p.amisCode).toLowerCase() === norm ||
     str(p.code).toLowerCase() === norm ||
     str(p.newCode).toLowerCase() === norm
@@ -360,7 +360,7 @@ export interface SoTronDayRecord {
   tong_nhap_nvl?: number;
   tong_loi_hong?: unknown;
   bang_nvl?: { lan?: unknown[]; tong?: unknown }[];
-  bang_san_pham?: { ma_sp?: unknown; ten_sp?: unknown; ten_ghep?: unknown; tenGhep?: unknown; so_luong?: unknown; trong_luong?: unknown }[];
+  bang_san_pham?: { ma_sp?: unknown; ten_sp?: unknown; ten_san_xuat?: unknown; productionName?: unknown; so_luong?: unknown; trong_luong?: unknown }[];
   bang_hang_loi?: { ten_loi?: unknown; so_luong?: unknown }[];
   bang_ban_giao?: {
     material_id?: unknown;
@@ -379,7 +379,7 @@ export interface SoTronDayRecord {
  *
  * - Danh sách sản phẩm: gom `bang_san_pham` mọi phiếu trong ngày theo mã SP
  *   (`ma_sp` fallback `ten_sp`), Σ `so_luong` + Σ `trong_luong`. Cột Mã hàng
- *   hiển thị **`ten_ghep`** danh mục SP (tra theo mã SP), thiếu mới fallback
+ *   hiển thị **`ten_san_xuat`** danh mục SP (tra theo mã SP), thiếu mới fallback
  *   `ten_sp` trong phiếu rồi tới mã SP.
  * - Danh sách phế hỏng trong ca: gom `bang_hang_loi` theo `ten_loi`, Σ `so_luong`
  *   (cột Đợt không có trong sổ trộn → để trống, nhập tay sau).
@@ -392,8 +392,8 @@ export interface SoTronDayRecord {
  *   + Hao hụt = Tồn đầu + Nhập − Tồn trong (= Sử dụng khi để tự động).
  */
 export interface BaoCaoNgaySoTronCatalogs {
-  /** mã SP (lowercase, gồm code/amis/newCode) → ten_ghep hiển thị */
-  tenGhepByCode?: Map<string, string>;
+  /** mã SP (lowercase, gồm code/amis/newCode) → ten_san_xuat hiển thị */
+  productionDisplayNameByCode?: Map<string, string>;
   /** mã SP (lowercase) → id `san_pham` */
   productIdByCode?: Map<string, string>;
   /** mã NVL (lowercase) → id `kho_nvl` */
@@ -401,7 +401,7 @@ export interface BaoCaoNgaySoTronCatalogs {
 }
 
 export function buildBaoCaoNgayFromSoTron(records: SoTronDayRecord[], catalogs?: BaoCaoNgaySoTronCatalogs) {
-  const tenGhepMap = catalogs?.tenGhepByCode;
+  const productionDisplayNameMap = catalogs?.productionDisplayNameByCode;
   const productIdByCode = catalogs?.productIdByCode;
   const materialIdByCode = catalogs?.materialIdByCode;
   const tpMap = new Map<string, { san_pham_id: string; ma_hang: string; so_luong: number; trong_luong: number }>();
@@ -418,21 +418,21 @@ export function buildBaoCaoNgayFromSoTron(records: SoTronDayRecord[], catalogs?:
   const hasCaDau = records.some(r => isCaDauNgay(r.ca || ''));
 
   for (const r of records) {
-    // --- Thành phẩm: bang_san_pham (hiển thị ten_ghep, gộp theo mã SP) ---
+    // --- Thành phẩm: bang_san_pham (hiển thị ten_san_xuat, gộp theo mã SP) ---
     if (Array.isArray(r.bang_san_pham)) {
       for (const line of r.bang_san_pham) {
         const maSp = str(line.ma_sp);
         const tenSp = str(line.ten_sp);
         const key = (maSp || tenSp).toLowerCase();
         if (!key) continue;
-        const tenGhep = str(line.ten_ghep ?? line.tenGhep)
-          || (maSp ? (tenGhepMap?.get(maSp.toLowerCase()) ?? '') : '')
+        const productionDisplayName = str(line.ten_san_xuat ?? line.productionName)
+          || (maSp ? (productionDisplayNameMap?.get(maSp.toLowerCase()) ?? '') : '')
           || tenSp
           || maSp;
         const sanPhamId = maSp ? (productIdByCode?.get(maSp.toLowerCase()) ?? '') : '';
-        const cur = tpMap.get(key) ?? { san_pham_id: sanPhamId, ma_hang: tenGhep, so_luong: 0, trong_luong: 0 };
+        const cur = tpMap.get(key) ?? { san_pham_id: sanPhamId, ma_hang: productionDisplayName, so_luong: 0, trong_luong: 0 };
         if (!cur.san_pham_id && sanPhamId) cur.san_pham_id = sanPhamId;
-        if ((!cur.ma_hang || cur.ma_hang === maSp) && tenGhep) cur.ma_hang = tenGhep;
+        if ((!cur.ma_hang || cur.ma_hang === maSp) && productionDisplayName) cur.ma_hang = productionDisplayName;
         cur.so_luong = round2(cur.so_luong + parseNum(line.so_luong));
         cur.trong_luong = round2(cur.trong_luong + parseNum(line.trong_luong));
         tpMap.set(key, cur);
@@ -988,7 +988,7 @@ function ThanhPhamTable({
   editable: boolean;
   onChange?: (key: string, patch: Partial<EditThanhPhamRow>) => void;
   onRemove?: (key: string) => void;
-  /** Danh mục SP để search theo mã AMIS + ten_ghep (lưu đúng id) */
+  /** Danh mục SP để search theo mã AMIS + ten_san_xuat (lưu đúng id) */
   products?: ProductRow[];
 }) {
   const tongSl = rows.reduce((s, r) => s + parseNum(r.so_luong), 0);
@@ -1047,7 +1047,7 @@ function ThanhPhamTable({
                         if (found) return found;
                         // Id đã lưu nhưng không còn trong danh mục → vẫn hiển thị tên đã lưu
                         if (str(raw) && r.san_pham_id && str(raw) === r.san_pham_id && r.ma_hang) {
-                          return { id: str(raw), tenGhep: r.ma_hang } as ProductRow;
+                          return { id: str(raw), productionName: r.ma_hang } as ProductRow;
                         }
                         return null;
                       }}
@@ -1698,19 +1698,19 @@ export function BaoCaoNgayPanel({
     haoHutGroupsRef.current = haoHutGroups;
   }, [haoHutGroups]);
   const [catalogVersion, setCatalogVersion] = useState(0);
-  /** Danh mục SP (search theo mã AMIS + ten_ghep, lưu đúng id) */
+  /** Danh mục SP (search theo mã AMIS + ten_san_xuat, lưu đúng id) */
   const [products, setProducts] = useState<ProductRow[]>([]);
   /** Danh mục kho NVL (search theo mã + tên SX/tên SP, lưu đúng id) */
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
 
-  const tenGhepByCode = useMemo(() => {
+  const productionDisplayNameByCode = useMemo(() => {
     const map = new Map<string, string>();
     for (const p of products) {
-      const tenGhep = str(p.tenGhep) || str(p.productionName) || str(p.name);
-      if (!tenGhep) continue;
+      const productionDisplayName = str(p.productionName) || str(p.productionName) || str(p.name);
+      if (!productionDisplayName) continue;
       for (const code of [p.code, p.amisCode, p.newCode]) {
         const key = str(code).toLowerCase();
-        if (key && !map.has(key)) map.set(key, tenGhep);
+        if (key && !map.has(key)) map.set(key, productionDisplayName);
       }
     }
     return map;
@@ -1794,7 +1794,7 @@ export function BaoCaoNgayPanel({
   }, [editReport?.id]);
 
   const applySoTronRecords = useCallback((records: SoTronDayRecord[], ngayValue: string, staffOpts?: Map<string, string[]>) => {
-    const built = buildBaoCaoNgayFromSoTron(records, { tenGhepByCode, productIdByCode, materialIdByCode });
+    const built = buildBaoCaoNgayFromSoTron(records, { productionDisplayNameByCode, productIdByCode, materialIdByCode });
     setTpRows(
       built.thanh_pham.map(l => ({
         key: uid(),
@@ -1875,7 +1875,7 @@ export function BaoCaoNgayPanel({
           ? ` Trưởng ca đã tra lại từ lịch phân công (${staffOpts.size} lượt máy-ca).`
           : '')
     );
-  }, [tenGhepByCode, productIdByCode, materialIdByCode]);
+  }, [productionDisplayNameByCode, productIdByCode, materialIdByCode]);
 
   // Chế độ sửa (giữ dữ liệu phiếu): chỉ tra lại Trưởng ca từ lịch phân công
   // để bổ sung dropdown, không đè số liệu đã lưu.
@@ -1932,7 +1932,7 @@ export function BaoCaoNgayPanel({
   }, [applySoTronRecords]);
 
   // Khi chọn ngày → tự động lấy dữ liệu từ sổ trộn (thêm mới, hoặc đổi sang ngày khác khi sửa).
-  // Khi danh mục SP (ten_ghep) tải xong sau mà ngày đã fill → fill lại để Mã hàng hiện ten_ghep.
+  // Khi danh mục SP (ten_san_xuat) tải xong sau mà ngày đã fill → fill lại để Mã hàng hiện ten_san_xuat.
   useEffect(() => {
     const target = str(ngay).slice(0, 10);
     if (!target) {

@@ -6,9 +6,9 @@ import {
   type OrderProductOption
 } from '../../src/features/_shared/orderHelpers';
 import {
-  buildOrderTenGhep,
-  replaceDoLiDmInTenGhep,
-  replaceDoLiTokenInTenGhep
+  buildOrderProductionName,
+  replaceDoLiDmInProductionName,
+  replaceDoLiTokenInProductionName
 } from '../../src/utils/productProductionName';
 
 function option(partial: Partial<OrderProductOption> & { id: string }): OrderProductOption {
@@ -107,7 +107,7 @@ describe('ô Độ li ĐM thay segment (đm n li), giữ độ li chính', () =>
   it('đặc: 1.2li - (đm 1.1 li) đổi ô thành 0.9 → (đm 0.9 li), 1.2li giữ nguyên', () => {
     const ten =
       'Tấm nhựa đặc màu TRẮNG - OFF - STD - 1.2li - (đm 1.1 li) - 1.22m - 30m';
-    const tenGhep = buildOrderTenGhep(ten, {
+    const tenGhep = buildOrderProductionName(ten, {
       nhomVthh: 'TP; PX Đặc',
       doLiDm: '0.9',
       cutLengthM: 30
@@ -119,7 +119,7 @@ describe('ô Độ li ĐM thay segment (đm n li), giữ độ li chính', () =>
 
   it('Tem 1.5li đổi độ li chính, giữ (đm 1.1 li)', () => {
     assert.equal(
-      replaceDoLiTokenInTenGhep(
+      replaceDoLiTokenInProductionName(
         'Tấm nhựa đặc màu TRẮNG - OFF - STD - 1.2li - (đm 1.1 li) - 1.22m - 30m',
         '1.5li'
       ),
@@ -127,9 +127,9 @@ describe('ô Độ li ĐM thay segment (đm n li), giữ độ li chính', () =>
     );
   });
 
-  it('replaceDoLiDmInTenGhep không đụng token độ li chính', () => {
+  it('replaceDoLiDmInProductionName không đụng token độ li chính', () => {
     assert.equal(
-      replaceDoLiDmInTenGhep(
+      replaceDoLiDmInProductionName(
         'Tấm nhựa đặc màu TRẮNG - OFF - STD - 1.2li - (đm 1.1 li) - 1.22m - 30m',
         '1.2',
         'li'

@@ -24,6 +24,10 @@ Gợi ý sang form phối trộn: `MixingReportForm.tsx` + `utils/mixingNormSugg
 
 ## Mô hình
 
+### Tên sản phẩm
+
+JSON `chi_tiet` không lưu khóa `ten_ghep`; dùng `ten_sp` làm nhãn phiếu và `ten_san_xuat` khi cần tên sản xuất. Dữ liệu cũ được dọn bằng `scripts/remove-ten-ghep-json-keys.mjs` sau khi có thể kết nối Supabase.
+
 **1 form nhập = 1 dòng DB = 1 phiếu**
 
 - `ten_phieu`: Tự động ghép theo quy tắc `PTĐM + ngày + ca + lệnh sản xuất` (ví dụ: `PTĐM - 2026-09-08 - Ca 1 - LSX-001`).
