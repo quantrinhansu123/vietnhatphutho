@@ -200,13 +200,6 @@ export const REPORT_FORM_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'acceptance-report'
   },
   {
-    title: 'Báo cáo kiểm kho',
-    desc: 'Quét mã SP bằng máy BT-A700 / camera và lưu vào bảng kiểm kho.',
-    icon: ClipboardList,
-    icon3d: reportList3d,
-    tab: 'kiem-kho'
-  },
-  {
     title: 'Báo cáo tuần',
     desc: 'Mẫu BC01-V3: chọn tuần (từ ngày → đến ngày) và máy, nhập các mục I→VI.',
     icon: ClipboardList,
@@ -784,24 +777,11 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'warehouse-slip'
   },
   {
-    title: 'Kiểm kho',
-    desc: 'Tạo đợt kiểm kho, quét mã SP và xử lý chênh lệch tồn kho.',
-    icon: ClipboardList,
-    icon3d: reportList3d,
-    tab: 'kiem-kho'
-  },
-  {
     title: 'Cân kiểm kho',
     desc: 'Mở trạm cân kiểm kho để chụp, đọc khối lượng và lưu phiếu kiểm kho.',
     icon: Scale,
     icon3d: scale3d,
     tab: 'can-kiem-kho'
-  },
-  {
-    title: 'Xử lý chênh lệch',
-    desc: 'Đối chiếu số lượng kiểm kê với tồn cuối và tạo phiếu điều chỉnh.',
-    icon: ArrowLeftRight,
-    tab: 'kiem-kho-chenh-lech'
   },
   {
     title: 'Cắt lẻ',
@@ -1168,9 +1148,7 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Kho hàng', tab: 'inventory-catalog' },
       { label: 'Nhà cung cấp', tab: 'suppliers' },
       { label: 'Nhập Xuất Thành Phẩm', tab: 'warehouse-slip' },
-      { label: 'Kiểm kho', tab: 'kiem-kho' },
       { label: 'Cân kiểm kho', tab: 'can-kiem-kho' },
-      { label: 'Xử lý chênh lệch', tab: 'kiem-kho-chenh-lech' },
       { label: 'Lịch sử xuất nhập', tab: 'warehouse-history' },
       { label: 'Cắt lẻ', tab: 'cat-le' },
       { label: 'Chuyển kho', tab: 'chuyen-kho' },

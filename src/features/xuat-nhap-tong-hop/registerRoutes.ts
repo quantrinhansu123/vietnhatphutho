@@ -241,6 +241,9 @@ function parseLocalizedNumber(value: unknown): number {
     }
   } else if (lastComma >= 0) {
     normalized = /^-?\d{1,3}(,\d{3})+$/.test(text) ? text.replace(/,/g, '') : text.replace(/,/g, '.');
+  } else if (lastDot >= 0 && /^-?\d{1,3}(\.\d{3})+$/.test(text)) {
+    // 120.000 / 1.250.000 — tránh Number('120.000') = 120.
+    normalized = text.replace(/\./g, '');
   } else if ((text.match(/\./g) || []).length > 1) {
     normalized = text.replace(/\./g, '');
   }
@@ -1913,6 +1916,65 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       return res.json({ success: true, record: (data || [])[0] || null, ...codes });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi hủy phiếu tổng hợp.' });
+    }
+  });
+
+  /** Xóa vĩnh viễn 1 phiếu theo id + các vế kho / phiếu đảo liên quan. */
+  app.delete('/api/xuat-nhap-tong-hop/:id', async (req, res) => {
+    try {
+      if (!deps.supabase) return res.status(503).json({ error: 'Supabase chưa được cấu hình.' });
+      const id = text(req.params.id);
+      if (!id) return res.status(400).json({ error: 'Thiếu id phiếu.' });
+      let { data: existing, error: loadError } = await deps.supabase.from(deps.tables.header).select(SELECT).eq('id', id).limit(1);
+      if (loadError && isMissingColumnError(loadError)) {
+        ({ data: existing, error: loadError } = await deps.supabase.from(deps.tables.header).select(SELECT_LEGACY).eq('id', id).limit(1));
+      }
+      if (loadError) return res.status(500).json({ error: loadError.message });
+      const current = (existing || [])[0] as Record<string, unknown> | undefined;
+      if (!current) return res.status(404).json({ error: 'Không tìm thấy phiếu.' });
+
+      const splitCodes = (raw: unknown) =>
+        text(raw)
+          .split(',')
+          .map(item => item.trim())
+          .filter(Boolean);
+
+      // Xóa xuất trước (trả tồn lô), rồi nhập, rồi phiếu đảo.
+      const xuatCodes = [
+        ...splitCodes(current.ma_phieu_xuat),
+        ...splitCodes(current.ma_phieu_xuat_huy)
+      ];
+      const nhapCodes = [
+        ...splitCodes(current.ma_phieu_nhap),
+        ...splitCodes(current.ma_phieu_nhap_huy)
+      ];
+      const deletedSlips: string[] = [];
+      for (const code of [...new Set([...xuatCodes, ...nhapCodes])]) {
+        const result = await deps.deleteSlip(code);
+        if (result.error) {
+          return res.status(500).json({
+            error: `Không xóa được phiếu kho ${code}: ${result.error.message || 'lỗi không rõ'}.`,
+            deleted_slips: deletedSlips
+          });
+        }
+        deletedSlips.push(code);
+      }
+
+      const { error: deleteHeaderError } = await deps.supabase.from(deps.tables.header).delete().eq('id', id);
+      if (deleteHeaderError) {
+        return res.status(500).json({
+          error: `Đã xóa phiếu kho nhưng không xóa được header: ${deleteHeaderError.message}`,
+          deleted_slips: deletedSlips
+        });
+      }
+      return res.json({
+        success: true,
+        id,
+        ma_phieu_chung: text(current.ma_phieu_chung),
+        deleted_slips: deletedSlips
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || 'Lỗi khi xóa phiếu tổng hợp.' });
     }
   });
 

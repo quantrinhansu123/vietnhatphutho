@@ -4323,9 +4323,19 @@ input[type="number"] {
 }
 
 .warehouse-nhap-kho-print-signatures--5 {
-  grid-template-columns: repeat(5, 1fr);
-  gap: 2mm;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0;
+  width: 100%;
   font-size: 9.5pt;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.warehouse-nhap-kho-print-signatures--5 > div {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
 }
 
 .warehouse-nhap-kho-print-signatures p {

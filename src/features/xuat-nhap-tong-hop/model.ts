@@ -49,6 +49,19 @@ export function takePendingTongHopProcess() {
   return row;
 }
 
+let pendingMode: TongHopMode | null = null;
+
+/** Prefill tab Phiếu nhập / Phiếu xuất khi mở form từ danh sách. */
+export function queueTongHopMode(mode: TongHopMode) {
+  pendingMode = mode;
+}
+
+export function takePendingTongHopMode() {
+  const mode = pendingMode;
+  pendingMode = null;
+  return mode;
+}
+
 export function queueTongHopEdit(row: TongHopHeader) {
   pendingEdit = row;
 }

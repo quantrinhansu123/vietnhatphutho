@@ -296,6 +296,13 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
     };
   }, []);
 
+  // Tự tải thống kê từ phiếu xuất nhập NVL khi mở trang / đổi khoảng ngày.
+  useEffect(() => {
+    if (viewMode !== 'movements') return;
+    void loadReport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, from, to]);
+
   const aliasKind = useMemo(
     () => buildPartyAliasKind(machineOptions, warehouseOptions),
     [machineOptions, warehouseOptions]
@@ -347,7 +354,7 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
         const params = new URLSearchParams({ from: from.slice(0, 10), to: to.slice(0, 10), loai, limit: '2000' });
         const res = await fetch(`/api/xuat-nhap-tong-hop?${params.toString()}`);
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'Không tải được phiếu tổng hợp.');
+        if (!res.ok) throw new Error(data.error || 'Không tải được phiếu xuất nhập NVL.');
         return (Array.isArray(data.records) ? data.records : []) as SlipRecord[];
       };
       const [nhapRecords, xuatRecords] = await Promise.all([fetchKind('nhap'), fetchKind('xuat')]);
@@ -359,7 +366,7 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
       setRecords([...merged.values()]);
       setLoaded(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không tải được phiếu tổng hợp.');
+      setError(err instanceof Error ? err.message : 'Không tải được phiếu xuất nhập NVL.');
       setRecords([]);
       setLoaded(true);
     } finally {
@@ -632,7 +639,7 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
           </button>
           <h2 className="mt-1 text-base font-black text-zinc-950">Thống kê NVL</h2>
           <p className="mt-0.5 max-w-2xl text-xs font-medium text-zinc-500">
-            Nhập – xuất NVL theo kỳ, lọc nhiều máy và nhiều kho. Để trống máy/kho là lấy tất cả.
+            Nguồn dữ liệu: phiếu Xuất nhập kho NVL. Lọc theo kỳ, nhiều máy/kho — để trống là lấy tất cả.
           </p>
         </div>
       </div>
@@ -749,7 +756,7 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
                 {renderRows.length === 0 ? (
                   <tr>
                     <td colSpan={13} className="border border-zinc-200 px-3 py-8 text-center font-semibold text-zinc-400">
-                      Chưa có dữ liệu nhập hoặc xuất NVL trong kỳ này.
+                      Chưa có phiếu Xuất nhập kho NVL trong kỳ này. Lập phiếu tại «Xuất nhập kho NVL» rồi nhấn Xem lại.
                     </td>
                   </tr>
                 ) : (
