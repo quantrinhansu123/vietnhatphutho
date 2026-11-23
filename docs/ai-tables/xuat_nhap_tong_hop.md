@@ -16,6 +16,7 @@
 | POST | `/api/xuat-nhap-tong-hop/:id/huy` | Phiếu đảo, không xóa vế lẻ |
 | DELETE | `/api/xuat-nhap-tong-hop/:id` | Xóa vĩnh viễn header + các mã `ma_phieu_nhap` / `ma_phieu_xuat` / phiếu đảo liên quan |
 | GET | `/api/xuat-nhap-tong-hop/ton` | Tồn dòng theo kho hoặc máy |
+| POST | `/api/xuat-nhap-tong-hop/ton-danh-sach` | Tồn theo lô mã NVL trong kho, dùng để chỉ gợi ý vật liệu còn tồn |
 | GET | `/api/ton-may?ma_may=` | Tồn NVL máy, đối chiếu `so_tron` / `bao_cao_may_nvl_ton` |
 | POST | `/api/xuat-nhap-tong-hop/ma-moi` | Thêm mã NVL hoặc dòng `nhap_kho` (nhánh NVL bắt buộc `ten_kho` kho NVL đã có trong quản lý kho, lưu `ten_nvl_sx` + `phan_loai` + `loai_kho` theo unique `ma+ten+ten_sx+kho`; trùng unique trả dòng đang sống thay vì 500) |
 
@@ -41,14 +42,14 @@ API tests: `tests/api/nvlWarehouseFlow.test.ts` (opt-in integration test, 10 mã
 
 - Ô `Người giao hàng` hiển thị `Người nhận hàng` ở mode xuất (nhập giữ nguyên); xem chi tiết tương tự (`ViewModal` theo `loai`).
 - Lưới dòng xuất bỏ cột `Nhóm VTHH`, ẩn cột `Tồn đầu ca` (logic tồn + cảnh báo vượt tồn giữ nguyên).
-- Cột **Giá** (nhập + xuất): dropdown giá đã từng nhập của mã NVL (`GET /api/phieu-xuat-kho/gia-nvl?ma_npl=`), vẫn cho gõ tay giá mới (`NvlPriceSelect`).
+- Cột **Giá** (nhập + xuất): dropdown giá đã từng nhập của mã NVL (`GET /api/phieu-xuat-kho/gia-nvl?ma_npl=`), vẫn cho gõ tay giá mới (`NvlPriceSelect`); hiển thị dấu phẩy ngăn nghìn, dấu chấm thập phân và giữ phần lẻ.
 
 ## Quy ước
 
 - Xuất NVL: chọn đợt 1–10 bắt buộc trên form; API từ chối phiếu xuất NVL thiếu đợt hợp lệ. Có loại **Xuất theo máy** để chọn máy đích trực tiếp, không cần PTĐM. Danh sách lọc theo đợt và hiển thị cột Đợt để đối chiếu với máy/kho.
 
 - Phiếu nhập: Nguồn Kho / Máy / NCC. Nhập lại / phế: máy nguồn + **Loại sản xuất** + đợt. Gợi ý kho nhập từ phiếu xuất cùng đợt–máy. Phế: SX01→Kho PC, SX06→Kho NVL Chính. Kho nhập chỉ Chính / Phụ / PC. Tên SX gõ + gợi ý (`revertOnBlurMismatch`).
-- Phiếu xuất (UI mới): tỷ lệ trộn, **theo máy**, trả NCC, phế băm/cái, khác — **không** tạo «Xuất theo phân xưởng». Xuất máy: đợt + ca + máy + Loại sản xuất. Lưới Xuất từ kho/máy; giá + FIFO lô. Phiếu cũ PX vẫn đọc.
+- Phiếu xuất (UI mới): tỷ lệ trộn, **theo máy**, trả NCC, phế băm/cái, khác — **không** tạo «Xuất theo phân xưởng». Xuất máy SX thường: đợt + ca + máy + Loại sản xuất; chuyển phế cho máy băm/tạo hạt không cần đợt hoặc Loại sản xuất. Lưới Xuất từ kho/máy; vật liệu nguồn kho chỉ hiện khi còn tồn, lô chọn lọc có số dư dương; ô tìm NVL hỗ trợ nhiều từ khóa ngăn cách bằng dấu phẩy. Phiếu cũ PX vẫn đọc.
 - Header lưu `nguoi_lap`, `nguoi_giao`, `dia_diem`, `ly_do`, `ghi_chu`. Người lập chọn từ nhân sự `trang_thai = Đang làm`. Chạy lại `supabase-phieu-nhap-xuat-tong-hop.sql` nếu thiếu 3 cột mới.
 - Phiếu **SX**: bắt buộc ngày + đợt (1–10) + **Loại sản xuất** (cột `phan_xuong`). Xuất máy: tồn đầu ca (cho phép `0`).
 - Quy trình băm / tạo hạt / trộn màu / mua ngoài: **wizard bán tự động** (`nvlProcessRecipes.ts`) gợi ý mã/kho/loại phiếu; chuyển PC→Chính/Phụ qua menu Chuyển kho. Mỗi nhập tạo lô giá; xuất trừ đúng `id_dong_nhap_nguon`.

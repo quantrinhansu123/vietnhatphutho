@@ -1,17 +1,17 @@
 import type { WarehouseSlipPrintData } from '../../components/WarehouseSlipPrintModal';
 import { parseLocalizedNumber } from '../../utils';
 import { roundKem, sumKemStored } from './chiPhiKemTheo';
-import { formatTongHopDate, isNvlWarehouseName, type TongHopHeader } from './model';
+import { formatTongHopDate, isNvlWarehouseName, parseNvlPrice, type TongHopHeader } from './model';
 
 function uniqueJoined(values: Array<string | null | undefined>) {
   return [...new Set(values.map(item => String(item || '').trim()).filter(Boolean))].join(', ');
 }
 
 function lineAmountOf(line: Record<string, unknown>) {
-  const stored = parseLocalizedNumber(line.thanh_tien ?? '');
+  const stored = parseNvlPrice(line.thanh_tien ?? '');
   if (Number.isFinite(stored) && stored !== 0) return stored;
   const qty = parseLocalizedNumber(line.so_luong ?? '') || 0;
-  const price = parseLocalizedNumber(line.don_gia ?? '') || 0;
+  const price = parseNvlPrice(line.don_gia ?? '') || 0;
   return Math.round(qty * price * 1000) / 1000;
 }
 
@@ -21,15 +21,15 @@ function mapPrintLines(detail: Array<Record<string, unknown>>): WarehouseSlipPri
     name: String(line.ten_hang || ''),
     unit: String(line.don_vi || ''),
     quantity: parseLocalizedNumber(line.so_luong ?? '') || 0,
-    unitPrice: parseLocalizedNumber(line.don_gia ?? '') || 0,
+    unitPrice: parseNvlPrice(line.don_gia ?? '') || 0,
     lineAmount: lineAmountOf(line),
     weightKg: parseLocalizedNumber(line.quy_doi_kg ?? '') || null,
     chiPhiKemTheo: (Array.isArray(line.chi_phi_kem_theo) ? line.chi_phi_kem_theo : []).map(item => {
       const rowItem = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
       return {
         ten: String(rowItem.ten || ''),
-        donGia: parseLocalizedNumber(rowItem.don_gia ?? '') || 0,
-        thanhTien: parseLocalizedNumber(rowItem.thanh_tien ?? '') || 0
+        donGia: parseNvlPrice(rowItem.don_gia ?? '') || 0,
+        thanhTien: parseNvlPrice(rowItem.thanh_tien ?? '') || 0
       };
     })
   }));

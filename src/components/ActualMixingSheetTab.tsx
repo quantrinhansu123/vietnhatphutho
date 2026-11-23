@@ -10,7 +10,7 @@ import { waitForPrintImagesReady } from '../utils/printReady';
 import { getProductionShiftOptions, normalizeShiftSettings } from '../utils/shiftSettings';
 import { STANDARD_SHIFTS } from '../types';
 import { normalizeProducts, type ProductRow } from '../features/san-pham';
-import { buildOrderTenGhep } from '../utils/productProductionName';
+import { buildOrderProductionName } from '../utils/productProductionName';
 import { parseLocalizedNumber } from '../utils';
 import type { MixingNormProduct } from './MixingNormMaterialsTab';
 
@@ -47,7 +47,7 @@ type ActualProduct = {
   ma_sp: string;
   ten_sp: string;
   ten_san_xuat: string;
-  ten_ghep?: string;
+
   /** Tổng SL sau hao hụt — từ định mức, dùng để cảnh báo/chặn khi tổng các cối thực tế vượt quá. */
   tong_trong_luong: number | null;
   dinh_luong_coi: number | null;
@@ -196,9 +196,9 @@ function normalizeStandardProducts(raw: unknown): ActualProduct[] {
       const ma_sp = String(product.ma_sp ?? '').trim();
       const ten_sp = String(product.ten_sp ?? '').trim();
       const ten_san_xuat = String(product.ten_san_xuat ?? product.tenSanXuat ?? '').trim();
-      const ten_ghep =
-        String(product.ten_ghep ?? product.tenGhep ?? '').trim() ||
-        buildOrderTenGhep(ten_san_xuat) ||
+      const production_display_name =
+        String(product.ten_san_xuat ?? product.productionName ?? '').trim() ||
+        buildOrderProductionName(ten_san_xuat) ||
         undefined;
       const tong_trong_luong = numberValue(product.tong_trong_luong);
       const dinh_luong_coi = numberValue(product.dinh_luong_coi);
@@ -212,7 +212,7 @@ function normalizeStandardProducts(raw: unknown): ActualProduct[] {
         .filter((line): line is StandardLineRaw => Boolean(line))
         .map(line => fillStandardPercents(line, dinh_luong_coi, tong_trong_luong));
       if (standardNvl.length === 0) return null;
-      return { ma_sp, ten_sp, ten_san_xuat, ten_ghep, tong_trong_luong, dinh_luong_coi, standardNvl, rounds: [] };
+      return { ma_sp, ten_sp, ten_san_xuat,  tong_trong_luong, dinh_luong_coi, standardNvl, rounds: [] };
     })
     .filter((product): product is ActualProduct => Boolean(product));
 }
@@ -299,7 +299,7 @@ function resolveCatalogProductName(catalog: ProductRow[], codeStr: string): stri
       );
       if (!match) return '';
       return (
-        buildOrderTenGhep(match.productionName || '', {
+        buildOrderProductionName(match.productionName || '', {
           nhomVthh: match.group,
           maAmis: match.amisCode
         }) ||
@@ -843,8 +843,8 @@ export default function ActualMixingSheetTab() {
         return {
           ma_sp: product.ma_sp,
           ten_sp: product.ten_sp,
-          ten_ghep: product.ten_ghep,
-          print_name: product.ten_ghep || catalogName || undefined,
+          ten_san_xuat: product.ten_san_xuat,
+          print_name: product.ten_san_xuat || catalogName || undefined,
           tong_trong_luong: product.tong_trong_luong,
           dinh_luong_coi: product.dinh_luong_coi,
           ghi_chu: '',
@@ -1048,8 +1048,8 @@ export default function ActualMixingSheetTab() {
                 <div>
                   <div className="text-sm font-black text-zinc-900">
                     Sản phẩm: {product.ma_sp}
-                    {product.ten_ghep || catalogName
-                      ? ` · ${product.ten_ghep || catalogName}`
+                    {product.ten_san_xuat || catalogName
+                      ? ` · ${product.ten_san_xuat || catalogName}`
                       : ''}
                   </div>
                   {product.ten_sp ? (

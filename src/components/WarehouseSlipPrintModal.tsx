@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, Printer, X } from 'lucide-react';
 import { PRINT_COMPANY_NAME, COMPANY_BRANCH_NAME, vietNhatLogoUrl } from './layout/constants';
-import { formatMoney, formatNumber, formatQty } from '../utils';
+import { formatMoney, formatMoneyExact, formatNumber, formatQty } from '../utils';
 import { formatVietnameseMoneyWords } from '../utils/vietnameseMoneyWords';
 import { isWarehouseKgUnit } from '../utils/warehouseWeight';
 import { waitForPrintImagesReady } from '../utils/printReady';
@@ -58,8 +58,8 @@ function TongHopCostPrintBlock({ data }: { data: WarehouseSlipPrintData }) {
                 <td>{row.code || ''}</td>
                 <td>{row.name || ''}</td>
                 <td>{row.ten || ''}</td>
-                <td className="warehouse-slip-print-right">{row.donGia > 0 ? formatMoney(row.donGia, 0) : ''}</td>
-                <td className="warehouse-slip-print-right">{row.thanhTien > 0 ? formatMoney(row.thanhTien, 0) : ''}</td>
+                <td className="warehouse-slip-print-right">{row.donGia > 0 ? formatMoneyExact(row.donGia) : ''}</td>
+                <td className="warehouse-slip-print-right">{row.thanhTien > 0 ? formatMoneyExact(row.thanhTien) : ''}</td>
               </tr>
             ))}
           </tbody>
@@ -546,10 +546,10 @@ function NhapKhoPrintBody({ data }: { data: WarehouseSlipPrintData }) {
                 </td>
                 <td className="warehouse-slip-print-right">{formatPrintQty(line.quantity, 2)}</td>
                 <td className="warehouse-slip-print-right">
-                  {line.unitPrice > 0 ? formatMoney(line.unitPrice, 0) : ''}
+                  {line.unitPrice > 0 ? formatMoneyExact(line.unitPrice) : ''}
                 </td>
                 <td className="warehouse-slip-print-right">
-                  {line.lineAmount > 0 ? formatMoney(line.lineAmount, 0) : ''}
+                  {line.lineAmount > 0 ? formatMoneyExact(line.lineAmount) : ''}
                 </td>
               </tr>
             );

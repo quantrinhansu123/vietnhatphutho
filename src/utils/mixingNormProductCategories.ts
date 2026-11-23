@@ -130,7 +130,7 @@ export function buildMixingNormProductSignals(input: {
   nhomVthh?: string;
   maAmis?: string;
   tenSanXuat?: string;
-  tenGhep?: string;
+  productionName?: string;
   tenSp?: string;
   mang?: string;
   hangPhe?: string;
@@ -146,7 +146,7 @@ export function buildMixingNormProductSignals(input: {
   off?: string;
 }): MixingNormProductSignals {
   const text = [
-    input.tenGhep,
+    input.productionName,
     input.tenSanXuat,
     input.tenSp,
     input.maAmis,
@@ -162,7 +162,7 @@ export function buildMixingNormProductSignals(input: {
     .filter(Boolean)
     .join(' | ');
   const px = resolveMixingNormPx(input.nhomVthh || '', text);
-  const parsed = parseProductionNameParts(input.tenSanXuat || input.tenGhep || '', input.nhomVthh || '', input.maAmis || '');
+  const parsed = parseProductionNameParts(input.tenSanXuat || input.productionName || '', input.nhomVthh || '', input.maAmis || '');
   const mang = String(input.mang || parsed.mang || extractMang(text) || '')
     .trim()
     .toUpperCase();

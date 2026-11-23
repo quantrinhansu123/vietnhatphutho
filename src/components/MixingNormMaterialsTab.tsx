@@ -15,7 +15,7 @@ import {
   type MixingBomItem,
   type MixingProductionOrder
 } from '../utils/mixingOrderAutofill';
-import { buildOrderTenGhep } from '../utils/productProductionName';
+import { buildOrderProductionName } from '../utils/productProductionName';
 import { isCuonProduct, isTamProduct } from '../features/_shared/orderHelpers';
 import { filterMachinesByScope, machineInScope, useMyMachineScope } from '../features/_shared/machineScope';
 import { waitForPrintImagesReady } from '../utils/printReady';
@@ -112,7 +112,7 @@ export type MixingNormProduct = {
   san_pham_variants?: string[];
   ten_sp: string;
   /** Tên ghép hiển thị trên phiếu in (ưu tiên hơn ten_san_xuat). */
-  ten_ghep?: string;
+  ten_san_xuat?: string;
   tong_trong_luong: number | null;
   ghi_chu: string;
   ty_le_hao_hut?: number | null;
@@ -161,7 +161,7 @@ type ProductOption = {
   newCode?: string;
   name: string;
   tenSanXuat?: string;
-  tenGhep?: string;
+  productionName?: string;
   totalWeight?: number | null;
   wastePercent?: number;
   nhomVthh?: string;
@@ -302,14 +302,14 @@ function hashVariantText(text: string): string {
  * Dòng cũ thiếu STT dùng vị trí trong danh sách; thiếu cả hai thì quay về tên ghép + ghi chú.
  */
 function orderLineVariant(
-  line: { tenGhep?: string; ghiChu?: string; stt?: number; orderCode?: string },
+  line: { productionName?: string; ghiChu?: string; stt?: number; orderCode?: string },
   index?: number
 ): string {
   const norm = (value?: string) => String(value ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi');
   const stt = Number(line.stt) > 0 ? Number(line.stt) : null;
   const seed = stt !== null ? `s${stt}` : index !== undefined ? `i${index + 1}` : null;
   if (seed !== null) return hashVariantText(`${norm(line.orderCode)}|${seed}`);
-  return hashVariantText(`${norm(line.tenGhep)}|${norm(line.ghiChu)}`);
+  return hashVariantText(`${norm(line.productionName)}|${norm(line.ghiChu)}`);
 }
 
 const emptyLine = (defaultNhomVthh = ''): LineForm => ({
@@ -550,9 +550,9 @@ function normalizeCatalogProducts(data: unknown): ProductOption[] {
       newCode: String(row.ma_sp_moi ?? row.newCode ?? '').trim(),
       name: name || code,
       tenSanXuat: String(row.ten_san_xuat ?? row.tenSanXuat ?? '').trim(),
-      tenGhep:
-        String(row.ten_ghep ?? row.tenGhep ?? '').trim() ||
-        buildOrderTenGhep(String(row.ten_san_xuat ?? row.tenSanXuat ?? '').trim(), {
+      productionName:
+        String(row.ten_san_xuat ?? row.productionName ?? '').trim() ||
+        buildOrderProductionName(String(row.ten_san_xuat ?? row.tenSanXuat ?? '').trim(), {
           nhomVthh: String(row.nhom_vthh ?? row.group ?? '').trim(),
           maAmis: String(row.ma_amis ?? row.amisCode ?? '').trim()
         }) ||
@@ -707,15 +707,15 @@ function PxTypeMarks({ labels }: { labels: string[] }) {
   );
 }
 
-function pxLabelsForCatalogHit(hit: { nhomVthh?: string; tenGhep?: string; tenSanXuat?: string; name?: string } | undefined): string[] {
+function pxLabelsForCatalogHit(hit: { nhomVthh?: string; productionName?: string; tenSanXuat?: string; name?: string } | undefined): string[] {
   if (!hit) return [];
   const fromGroup = collectWorkshopPxLabels([hit.nhomVthh]);
   if (fromGroup.length > 0) return fromGroup;
-  return collectWorkshopPxLabels([hit.tenGhep, hit.tenSanXuat, hit.name]);
+  return collectWorkshopPxLabels([hit.productionName, hit.tenSanXuat, hit.name]);
 }
 
 function pxLabelsForNormProduct(
-  product: Pick<MixingNormProduct, 'san_pham_id' | 'san_pham_ids' | 'ma_sp' | 'ten_sp' | 'ten_ghep'>,
+  product: Pick<MixingNormProduct, 'san_pham_id' | 'san_pham_ids' | 'ma_sp' | 'ten_sp' | "ten_san_xuat">,
   catalogById: Map<string, ProductOption>,
   catalogProducts: ProductOption[]
 ): string[] {
@@ -730,10 +730,10 @@ function pxLabelsForNormProduct(
       .flatMap(code => pxLabelsForCatalogHit(findCatalogProductByAnyCode(catalogProducts, code.trim())))
   );
   if (fromCodes.length > 0) return fromCodes;
-  return collectWorkshopPxLabels([product.ten_ghep, product.ten_sp]);
+  return collectWorkshopPxLabels([product.ten_san_xuat, product.ten_sp]);
 }
 
-function pxLabelsForProductOption(option: Pick<ProductOption, 'nhomVthh' | 'tenGhep' | 'tenSanXuat' | 'name'>): string[] {
+function pxLabelsForProductOption(option: Pick<ProductOption, 'nhomVthh' | "productionName" | 'tenSanXuat' | 'name'>): string[] {
   return pxLabelsForCatalogHit(option);
 }
 
@@ -1048,7 +1048,6 @@ function normalizeProductBlock(item: Record<string, unknown>): MixingNormProduct
       ? item.san_pham_variants.map(value => String(value ?? '').trim())
       : undefined,
     ten_sp,
-    ten_ghep: String(item.ten_ghep ?? item.tenGhep ?? '').trim() || undefined,
     tong_trong_luong,
     ghi_chu: String(item.ghi_chu ?? '').trim(),
     ty_le_hao_hut: parseNumberOrNull(item.ty_le_hao_hut),
@@ -1304,7 +1303,7 @@ function summarizeProductsNvl(products: MixingNormProduct[]) {
   if (products.length === 0) return '—';
   return products
     .map(product => {
-      const label = String(product.ten_sp || '').trim() || product.ten_ghep || product.ma_sp || 'SP';
+      const label = String(product.ten_sp || '').trim() || product.ten_san_xuat || product.ma_sp || 'SP';
       const materials = summarizeProductMaterials(product);
       const details = materials.length === 0
         ? 'Chưa có NVL'
@@ -1580,7 +1579,7 @@ export default function MixingNormMaterialsTab() {
         variantsByProductId.get(pid)!.add(orderLineVariant(line, lineIndex));
       });
     }
-    const add = (code: string, name: string, productId = '', productionName = '', tenGhep = '', quyCachMDai?: number | null, ghiChu = '', lineVariant = '', lineStt = 0, lineOrderCode = '') => {
+    const add = (code: string, name: string, productId = '', productionName = '', productionDisplayName = '', quyCachMDai?: number | null, ghiChu = '', lineVariant = '', lineStt = 0, lineOrderCode = '') => {
       const trimmedCode = code.trim();
       if (!trimmedCode) return;
       const catalog = productId
@@ -1597,7 +1596,7 @@ export default function MixingNormMaterialsTab() {
       // Cùng SP nhưng khác tên ghép/ghi chú → mỗi biến thể một lựa chọn; dòng giống hệt nhau gộp 1.
       const hasVariants = (variantsByProductId.get(identityKey)?.size ?? 0) > 1;
       const selectionKey = hasVariants
-        ? `${identityKey}${VARIANT_SEP}${lineVariant || orderLineVariant({ tenGhep, ghiChu })}`
+        ? `${identityKey}${VARIANT_SEP}${lineVariant || orderLineVariant({ productionName: productionDisplayName, ghiChu })}`
         : identityKey;
       if (byIdentity.has(selectionKey)) return;
       // Ghi chú chỉ hiện kèm nhãn khi SP có nhiều dòng; STT hiện ở đầu nhãn của MỌI sản phẩm trong lệnh.
@@ -1606,10 +1605,10 @@ export default function MixingNormMaterialsTab() {
         ? (selectedOrders.length > 1 && lineOrderCode ? `${lineOrderCode} #${lineStt}` : `#${lineStt}`)
         : '';
       const resolvedTenSanXuat = productionName.trim() || catalog?.tenSanXuat || '';
-      const resolvedTenGhep =
-        tenGhep.trim() ||
-        catalog?.tenGhep ||
-        buildOrderTenGhep(resolvedTenSanXuat, {
+      const resolvedProductionName =
+        productionDisplayName.trim() ||
+        catalog?.productionName ||
+        buildOrderProductionName(resolvedTenSanXuat, {
           nhomVthh: catalog?.nhomVthh,
           maAmis: catalog?.amisCode || catalog?.newCode,
           cutLengthM: quyCachMDai
@@ -1620,7 +1619,7 @@ export default function MixingNormMaterialsTab() {
             ...catalog,
             name: name.trim() || catalog.name,
             tenSanXuat: resolvedTenSanXuat || catalog.tenSanXuat,
-            tenGhep: resolvedTenGhep,
+            productionName: resolvedProductionName,
             selectionKey,
             ...(variantNote ? { variantNote } : {}),
             ...(linePrefix ? { linePrefix } : {})
@@ -1630,7 +1629,7 @@ export default function MixingNormMaterialsTab() {
             code: trimmedCode,
             name: name.trim(),
             tenSanXuat: resolvedTenSanXuat,
-            tenGhep: resolvedTenGhep,
+            productionName: resolvedProductionName,
             selectionKey,
             ...(variantNote ? { variantNote } : {}),
             ...(linePrefix ? { linePrefix } : {})
@@ -1645,7 +1644,7 @@ export default function MixingNormMaterialsTab() {
           line.productName,
           line.productId,
           line.productionName,
-          line.tenGhep || '',
+          line.productionName || '',
           line.quyCachMDai,
           line.ghiChu || '',
           orderLineVariant(line, lineIndex),
@@ -1665,16 +1664,16 @@ export default function MixingNormMaterialsTab() {
             catalog?.name || code,
             productId,
             catalog?.tenSanXuat || '',
-            catalog?.tenGhep || ''
+            catalog?.productionName || ''
           );
         });
       }
-      return [...byIdentity.values()].sort((a, b) => `${a.code} ${a.tenGhep || a.tenSanXuat || a.name}`.localeCompare(`${b.code} ${b.tenGhep || b.tenSanXuat || b.name}`, 'vi'));
+      return [...byIdentity.values()].sort((a, b) => `${a.code} ${a.productionName || a.tenSanXuat || a.name}`.localeCompare(`${b.code} ${b.productionName || b.tenSanXuat || b.name}`, 'vi'));
     }
 
     // Chưa chọn lệnh SX → nạp toàn bộ catalog + SP của mọi lệnh SX.
     for (const product of catalogProducts) {
-      add(product.code, product.name, product.id || '', product.tenSanXuat || '', product.tenGhep || '');
+      add(product.code, product.name, product.id || '', product.tenSanXuat || '', product.productionName || '');
     }
     for (const order of productionOrders) {
       for (const line of order.productLines) {
@@ -1683,20 +1682,20 @@ export default function MixingNormMaterialsTab() {
           line.productName,
           line.productId,
           line.productionName,
-          line.tenGhep || '',
+          line.productionName || '',
           line.quyCachMDai
         );
       }
     }
 
-    return [...byIdentity.values()].sort((a, b) => `${a.code} ${a.tenGhep || a.tenSanXuat || a.name}`.localeCompare(`${b.code} ${b.tenGhep || b.tenSanXuat || b.name}`, 'vi'));
+    return [...byIdentity.values()].sort((a, b) => `${a.code} ${a.productionName || a.tenSanXuat || a.name}`.localeCompare(`${b.code} ${b.productionName || b.tenSanXuat || b.name}`, 'vi'));
   }, [catalogProducts, catalogProductsById, productionOrders, selectedOrder, selectedOrders, form.products, form.secondaryProducts]);
 
   const productLabel = (option: ProductOption) =>
-    `${option.linePrefix ? `${option.linePrefix} · ` : ''}${option.amisCode || option.code} — ${option.tenGhep || option.tenSanXuat || option.name}${option.variantNote ? ` (${option.variantNote})` : ''}`;
+    `${option.linePrefix ? `${option.linePrefix} · ` : ''}${option.amisCode || option.code} — ${option.productionName || option.tenSanXuat || option.name}${option.variantNote ? ` (${option.variantNote})` : ''}`;
 
   const productSearchText = (option: ProductOption) =>
-    `${option.code} ${option.amisCode ?? ''} ${option.newCode ?? ''} ${option.name} ${option.tenSanXuat ?? ''} ${option.tenGhep ?? ''}`;
+    `${option.code} ${option.amisCode ?? ''} ${option.newCode ?? ''} ${option.name} ${option.tenSanXuat ?? ''} ${option.productionName ?? ''}`;
 
   const productOptionsByCode = useMemo(() => {
     const map = new Map<string, ProductOption>();
@@ -2101,11 +2100,11 @@ export default function MixingNormMaterialsTab() {
         group.catalog?.tenSanXuat?.trim() ||
         group.catalog?.name ||
         group.code;
-      const tenGhep =
-        selectedOption?.tenGhep?.trim() ||
-        orderLine?.tenGhep?.trim() ||
-        group.catalog?.tenGhep?.trim() ||
-        buildOrderTenGhep(tenSanXuat, {
+      const productionDisplayName =
+        selectedOption?.productionName?.trim() ||
+        orderLine?.productionName?.trim() ||
+        group.catalog?.productionName?.trim() ||
+        buildOrderProductionName(tenSanXuat, {
           nhomVthh: group.catalog?.nhomVthh,
           maAmis: group.catalog?.amisCode || group.catalog?.newCode,
           cutLengthM: orderLine?.quyCachMDai
@@ -2114,8 +2113,8 @@ export default function MixingNormMaterialsTab() {
       return {
         code: group.code,
         name: selectedOption?.name?.trim() || orderLine?.productName?.trim() || group.catalog?.name || group.code,
-        // Keep this identical to the selected chip label (ten_ghep first).
-        tenSanXuat: tenGhep,
+        // Keep this identical to the selected chip label (ten_san_xuat first).
+        tenSanXuat: productionDisplayName,
         linePrefix: selectedOption?.linePrefix || '',
         waste: group.catalog?.wastePercent ?? 0,
         kg
@@ -2483,7 +2482,7 @@ export default function MixingNormMaterialsTab() {
           amisCode: option.amisCode || catalog?.amisCode,
           name: option.name,
           tenSanXuat: option.tenSanXuat || catalog?.tenSanXuat,
-          tenGhep: option.tenGhep || catalog?.tenGhep,
+          productionName: option.productionName || catalog?.productionName,
           nhomVthh: option.nhomVthh || catalog?.nhomVthh,
           mang: option.mang || catalog?.mang,
           hangPhe: option.hangPhe || catalog?.hangPhe,
@@ -3206,10 +3205,10 @@ export default function MixingNormMaterialsTab() {
           return { lan: roundIndex + 1, tong_trong_luong: roundWeight, nvl: serializeLines(product.lines, roundWeight, batch, tong, product.maSp) };
         });
         const nvl = lan_tron[0]?.nvl ?? [];
-        const tenGhepList = resolveWasteBreakdown(product.maSpCodes, validIds)
+        const productionDisplayNameList = resolveWasteBreakdown(product.maSpCodes, validIds)
           .map(row => row.tenSanXuat.trim())
           .filter(Boolean);
-        const ten_ghep = [...new Set(tenGhepList)].join(' / ');
+        const production_display_name = [...new Set(productionDisplayNameList)].join(' / ');
         return {
           loai: undefined as string | undefined,
           ma_sp: product.maSp.trim(),
@@ -3219,7 +3218,7 @@ export default function MixingNormMaterialsTab() {
           ...(uniformLength !== null ? { quy_cach_m_dai: uniformLength } : {}),
           ...(uniformLength === null && distinctLengths.length > 1 ? { quy_cach_m_dai_list: distinctLengths } : {}),
           ten_sp: product.tenSp.trim(),
-          ...(ten_ghep ? { ten_ghep } : {}),
+          ...(production_display_name ? { ten_san_xuat: production_display_name } : {}),
           tong_trong_luong: tong,
           ty_le_hao_hut: parseNumberOrNull(product.haoHut),
           so_luong_goc: parseNumberOrNull(product.soLuongGoc),
@@ -3386,9 +3385,9 @@ export default function MixingNormMaterialsTab() {
       .flatMap(order => order.productLines)
       .find(line => normalizeProductLookupKey(line.productCode) === normalizeProductLookupKey(code));
     return (
-      orderLine?.tenGhep?.trim() ||
-      product?.tenGhep?.trim() ||
-      buildOrderTenGhep(orderLine?.productionName || product?.tenSanXuat || '', {
+      orderLine?.productionName?.trim() ||
+      product?.productionName?.trim() ||
+      buildOrderProductionName(orderLine?.productionName || product?.tenSanXuat || '', {
         nhomVthh: product?.nhomVthh,
         maAmis: product?.amisCode || product?.newCode,
         cutLengthM: orderLine?.quyCachMDai
@@ -3525,7 +3524,7 @@ export default function MixingNormMaterialsTab() {
                       {row.products.filter(isFormulaNormProduct).map((product, index) => (
                         <div key={`${row.id}-sp-${index}`} className="flex flex-wrap items-center gap-1">
                           <PxTypeMarks labels={pxLabelsForNormProduct(product, catalogProductsById, catalogProducts)} />
-                          <span>{String(product.ten_sp || '').trim() || product.ten_ghep || product.ma_sp || '—'}</span>
+                          <span>{String(product.ten_sp || '').trim() || product.ten_san_xuat || product.ma_sp || '—'}</span>
                           {product.tong_trong_luong !== null &&
                           product.tong_trong_luong !== undefined ? (
                             <span className="ml-1 font-black text-[#ef1b2d]">
@@ -3572,7 +3571,7 @@ export default function MixingNormMaterialsTab() {
                           <div key={`${row.id}-nvl-${pIndex}`}>
                             <p className="mb-0.5 flex flex-wrap items-center gap-1 font-black text-zinc-800">
                               <PxTypeMarks labels={pxLabelsForNormProduct(product, catalogProductsById, catalogProducts)} />
-                              <span>{String(product.ten_sp || '').trim() || product.ten_ghep || product.ma_sp || `SP #${pIndex + 1}`}</span>
+                              <span>{String(product.ten_sp || '').trim() || product.ten_san_xuat || product.ma_sp || `SP #${pIndex + 1}`}</span>
                             </p>
                             {materials.length === 0 ? (
                               <span className="text-zinc-400">Chưa có NVL</span>

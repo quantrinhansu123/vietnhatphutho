@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Printer, FileText, Warehouse, Truck, MapPin, User, Calendar, Clock, Tag, DollarSign, Scale, Hash, AlertTriangle } from 'lucide-react';
-import { takePendingTongHopView, type TongHopHeader } from './model';
+import { formatNvlPriceValue, parseNvlPrice, takePendingTongHopView, type TongHopHeader } from './model';
 import { formatTongHopDate } from './model';
 import { roundKem, sumKemStored } from './chiPhiKemTheo';
 import { formatMoney as formatMoneyUs, formatQty as formatQtyUs, parseLocalizedNumber } from '../../utils';
@@ -59,14 +59,14 @@ export function TongHopViewModal({
   const detail = Array.isArray(viewRecord.chi_tiet) ? viewRecord.chi_tiet : [];
   const isNhap = viewRecord.loai === 'nhap';
 
-  const totalAmount = detail.reduce((sum, line) => sum + (parseLocalizedNumber(line.thanh_tien ?? '') || 0), 0);
+  const totalAmount = detail.reduce((sum, line) => sum + (parseNvlPrice(line.thanh_tien ?? '') || 0), 0);
   const totalKem = roundKem(detail.reduce((sum, line) => sum + sumKemStored(line.chi_phi_kem_theo), 0));
   const totalKg = roundKem(detail.reduce((sum, line) => sum + (parseLocalizedNumber(line.quy_doi_kg ?? '') || 0), 0));
   /** Chi phí kèm phân bổ trên 1 kg = tổng chi phí kèm / tổng trọng lượng. */
   const kemPerKg = totalKg > 0 ? totalKem / totalKg : 0;
   /** Giá nhập kho của dòng = giá mua + chi phí kèm/1kg. */
   const importPriceOf = (line: Record<string, unknown>) => {
-    const price = parseLocalizedNumber(line.don_gia ?? '');
+    const price = parseNvlPrice(line.don_gia ?? '');
     return Number.isFinite(price) ? price + kemPerKg : null;
   };
   const importAmountOf = (line: Record<string, unknown>) => {
@@ -261,9 +261,9 @@ export function TongHopViewModal({
                       <td className="px-3 py-2 text-center text-zinc-600">{String(line.nhom_vthh || '')}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-mono text-emerald-700">{formatNumber(String(line.so_luong || ''))}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-mono">{formatNumber(String(line.quy_doi_kg || ''))}</td>
-                      <td className="px-3 py-2 text-right tabular-nums font-mono">{formatMoney(String(line.don_gia || ''))}</td>
-                      <td className="px-3 py-2 text-right tabular-nums font-mono text-zinc-900">{formatMoney(String(line.thanh_tien || ''))}</td>
-                      <td className="px-3 py-2 text-right tabular-nums font-mono text-sky-800" title={`Giá mua + Chi phí đi kèm/1kg (${formatMoney(kemPerKg)})`}>{importPrice === null ? '—' : formatMoney(importPrice)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-mono">{formatNvlPriceValue(line.don_gia ?? '')}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-mono text-zinc-900">{formatNvlPriceValue(line.thanh_tien ?? '')}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-mono text-sky-800" title={`Giá mua + Chi phí đi kèm/1kg (${formatNvlPriceValue(kemPerKg)})`}>{importPrice === null ? '—' : formatNvlPriceValue(importPrice)}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-mono text-sky-800">{importAmount === null ? '—' : formatMoney(importAmount)}</td>
                       {SHOW_NVL_ACTUAL_WEIGHT_IMAGE ? (
                         <td className="px-3 py-2 text-center">
@@ -293,13 +293,13 @@ export function TongHopViewModal({
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   {detail.flatMap(line =>
                     (line.chi_phi_kem_theo as Array<Record<string, unknown>> || []).map((item, i) => {
-                      const donGia = typeof item.don_gia === 'number' ? item.don_gia : parseLocalizedNumber(String(item.don_gia || ''));
-                      const thanhTien = typeof item.thanh_tien === 'number' ? item.thanh_tien : parseLocalizedNumber(String(item.thanh_tien || ''));
+                      const donGia = parseNvlPrice(item.don_gia ?? '');
+                      const thanhTien = parseNvlPrice(item.thanh_tien ?? '');
                       return (
                         <div key={`${line.ma_hang}-${i}`} className="rounded border border-zinc-200 bg-white p-2">
                           <p className="text-[11px] font-semibold text-zinc-950">{String(item.ten || '')}</p>
-                          <p className="text-xs text-zinc-600">Đơn giá: {formatMoney(donGia)}</p>
-                          <p className="text-xs text-zinc-600">Thành tiền: {formatMoney(thanhTien)}</p>
+                          <p className="text-xs text-zinc-600">Đơn giá: {formatNvlPriceValue(donGia)}</p>
+                          <p className="text-xs text-zinc-600">Thành tiền: {formatNvlPriceValue(thanhTien)}</p>
                         </div>
                       );
                     })

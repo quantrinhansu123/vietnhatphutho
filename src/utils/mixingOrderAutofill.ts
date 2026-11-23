@@ -1,7 +1,7 @@
 import { parsePercentInput } from '../utils';
 import { shiftNamesMatch } from './shiftSettings';
 import { isWarehouseKgUnit } from './warehouseWeight';
-import { buildOrderTenGhep } from './productProductionName';
+import { buildOrderProductionName } from './productProductionName';
 import type { MixingPhoiTron, MixingReportLine, MixingRoundItem } from '../components/MixingReportForm';
 
 export type MixingBomItem = {
@@ -40,7 +40,7 @@ export type MixingProductionOrderProductLine = {
   productName: string;
   productionName: string;
   /** Tên ghép từ đơn/lệnh SX — ưu tiên hiển thị thay ten_san_xuat. */
-  tenGhep?: string;
+
   unit: string;
   quantity: number | null;
   convertedWeightKg: number | null;
@@ -240,7 +240,7 @@ function expandMergedProductionProducts(
   convertedWeightKg: number | null = null,
   productId = '',
   productionName = '',
-  tenGhep = '',
+  productionDisplayName = '',
   quyCachMDai: number | null = null
 ): MixingProductionOrderProductLine[] {
   const codes = splitProductionProductCodes(productCode);
@@ -251,7 +251,7 @@ function expandMergedProductionProducts(
       productCode,
       productName,
       productionName,
-      ...(tenGhep ? { tenGhep } : {}),
+      ...(productionDisplayName ? { productionName: productionDisplayName } : {}),
       unit,
       quantity,
       convertedWeightKg,
@@ -267,7 +267,7 @@ function expandMergedProductionProducts(
     productCode: code,
     productName: names[index] ?? names[0] ?? '',
     productionName: productionName || '',
-    ...(tenGhep ? { tenGhep } : {}),
+    ...(productionDisplayName ? { productionName: productionDisplayName } : {}),
     unit: units[index] ?? units[0] ?? unit,
     quantity: codes.length === 1 ? quantity : null,
     convertedWeightKg: codes.length === 1 ? convertedWeightKg : null,
@@ -288,7 +288,7 @@ function expandProductionOrderProductLines(
       line.convertedWeightKg,
       line.productId,
       line.productionName,
-      line.tenGhep || '',
+      line.productionName || '',
       line.quyCachMDai ?? null
     );
   });
@@ -329,10 +329,10 @@ function parseOrderProductLines(record: Record<string, unknown>) {
           if (!productCode && !productName) return null;
           const quyCachMDai =
             parsePercentInput(String(row.quy_cach_m_dai ?? row.quyCachMDai ?? row.dai_m ?? row.daiM ?? '')) || null;
-          const tenGhepStored = pickText(row, ['ten_ghep', 'tenGhep'], '');
-          const tenGhep =
-            tenGhepStored ||
-            buildOrderTenGhep(productionName || productName, { cutLengthM: quyCachMDai }) ||
+          const productionDisplayNameStored = pickText(row, ["ten_san_xuat", "productionName"], '');
+          const productionDisplayName =
+            productionDisplayNameStored ||
+            buildOrderProductionName(productionName || productName, { cutLengthM: quyCachMDai }) ||
             '';
           const convertedWeightFromList = Array.isArray(row.ket_qua_quy_doi)
             ? row.ket_qua_quy_doi
@@ -345,7 +345,7 @@ function parseOrderProductLines(record: Record<string, unknown>) {
             productCode,
             productName,
             productionName,
-            ...(tenGhep ? { tenGhep } : {}),
+            ...(productionDisplayName ? { productionName: productionDisplayName } : {}),
             unit: pickText(row, ['don_vi', 'unit'], '-'),
             ...(pickText(row, ['ghi_chu', 'ghiChu', 'note'], '') ? { ghiChu: pickText(row, ['ghi_chu', 'ghiChu', 'note'], '') } : {}),
             ...(Number(row.stt ?? row.STT) > 0 ? { stt: Number(row.stt ?? row.STT) } : {}),
@@ -372,9 +372,9 @@ function parseOrderProductLines(record: Record<string, unknown>) {
   const productId = pickText(record, ['san_pham_id', 'productId', 'product_id'], '');
   const productionName = pickText(record, ['ten_san_xuat', 'productionName'], '');
   if (!productCode && !productName) return [];
-  const tenGhep =
-    pickText(record, ['ten_ghep', 'tenGhep'], '') ||
-    buildOrderTenGhep(productionName || productName) ||
+  const productionDisplayName =
+    pickText(record, ["ten_san_xuat", "productionName"], '') ||
+    buildOrderProductionName(productionName || productName) ||
     '';
 
   return expandMergedProductionProducts(
@@ -385,7 +385,7 @@ function parseOrderProductLines(record: Record<string, unknown>) {
     null,
     productId,
     productionName,
-    tenGhep
+    productionDisplayName
   );
 }
 

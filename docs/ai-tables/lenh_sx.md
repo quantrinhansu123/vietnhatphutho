@@ -1,5 +1,7 @@
 # lenh_sx
 
+Snapshot sản phẩm chỉ dùng `ten_san_xuat` làm tên hiển thị; parser không đọc hoặc ghi khóa JSON `ten_ghep`. Dữ liệu cũ đã sao lưu và dọn bằng `scripts/remove-ten-ghep-json-keys.mjs`.
+
 | | |
 |---|---|
 | **Bảng** | `lenh_sx` |

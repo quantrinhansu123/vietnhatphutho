@@ -1756,7 +1756,7 @@ function parseWarehouseProductionOrderLines(record: Record<string, unknown>): Wa
       const code = pickText(row, ['ma_sp', 'ma_hang', 'product_code', 'code'], '');
       const catalogName = pickText(row, ['ten_sp', 'ten_hang', 'product_name', 'name'], '');
       const productionName =
-        pickText(row, ['ten_ghep', 'tenGhep'], '') ||
+        pickText(row, ["ten_san_xuat", "productionName"], '') ||
         pickText(row, ['ten_san_xuat', 'tenSanXuat', 'productionName'], '') ||
         catalogName;
       if (!code && !productionName && !catalogName) return null;
@@ -1781,7 +1781,7 @@ function parseWarehouseProductionOrderLines(record: Record<string, unknown>): Wa
   const code = pickText(record, ['ma_hang', 'ma_sp'], '');
   const catalogName = pickText(record, ['ten_hang', 'ten_sp'], '');
   const productionName =
-    pickText(record, ['ten_ghep'], '') || pickText(record, ['ten_san_xuat'], '') || catalogName;
+    pickText(record, ["ten_san_xuat"], '') || pickText(record, ['ten_san_xuat'], '') || catalogName;
   if (!code && !productionName && !catalogName) return [];
   const quantityRaw = Number(record.so_luong);
   const quantity = Number.isFinite(quantityRaw) && quantityRaw > 0 ? quantityRaw : null;
@@ -2374,7 +2374,7 @@ export function WarehouseSlipPanel({
             selectableProducts.map(product => ({
               code: product.code,
               name: product.name,
-              productionName: product.tenGhep || product.productionName || undefined,
+              productionName: product.productionName || undefined,
               amisCode: product.amisCode || undefined,
               unit: product.unit && product.unit !== '-' ? product.unit : ''
             }))

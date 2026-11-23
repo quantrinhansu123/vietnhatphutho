@@ -7,12 +7,12 @@ import { formatDateVN, VnCalendarPicker } from '../so-che-do-may';
 import WarehouseSlipPrintModal, { type WarehouseSlipPrintData } from '../../components/WarehouseSlipPrintModal';
 import { readApiErrorMessage, showAppToast } from '../../lib/appToast';
 import { normalizeOrders } from '../don-hang';
-import { isRetailCutOrderType, orderFieldClass, parseSouthTemFromTenGhep } from '../_shared/orderHelpers';
+import { isRetailCutOrderType, orderFieldClass, parseSouthTemFromProductionName } from '../_shared/orderHelpers';
 import type { OrderProductLine, OrderRow } from '../_shared/orderRecordHelpers';
 import { normalizeProducts, type ProductRow } from '../san-pham';
 import { orderDuplicateDecimalText } from '../don-hang/southWeight';
 import { parseLocalizedNumber } from '../../utils';
-import { DEFAULT_RONG_WIDTH_M, buildOrderTenGhep, classifyProductPxGroup, extractDoLiDmNumber, normalizeDoLiDm, parseProductionNameParts, parseSongLengthMeters, replaceCutWidthMeters } from '../../utils/productProductionName';
+import { DEFAULT_RONG_WIDTH_M, buildOrderProductionName, classifyProductPxGroup, extractDoLiDmNumber, normalizeDoLiDm, parseProductionNameParts, parseSongLengthMeters, replaceCutWidthMeters } from '../../utils/productProductionName';
 import {
   KHO_TAI_CHE,
   buildCatLePrintSlips,
@@ -62,7 +62,7 @@ interface CutLine {
   productionName: string;
   /** Tên sản phẩm trên đơn / danh mục. */
   productName: string;
-  tenGhep: string;
+
   unit: string;
   /** Kg 1 tấm chuẩn (tl cuộn / tấm đủ dài). */
   sheetKg: string;
@@ -248,7 +248,7 @@ function cutLineFromSaved(item: CatLeSanPhamLine): CutLine {
     .filter(value => Number.isFinite(value) && value > 0)
     .reduce((sum, value) => sum + value, 0);
   const ordered = regionSum > 0 ? regionSum : Number(item.sl_can) > 0 ? Number(item.sl_can) : finished;
-  const temSaved = parseSouthTemFromTenGhep(cat1.ten_sp || nguon.ten_sp || '');
+  const temSaved = parseSouthTemFromProductionName(cat1.ten_sp || nguon.ten_sp || '');
   return {
     ...base,
     motherKey: '',
@@ -257,7 +257,7 @@ function cutLineFromSaved(item: CatLeSanPhamLine): CutLine {
     productId: nguon.id_san_pham_trong_kho || '',
     productionName: nguon.ten_sp || '',
     productName: nguon.ten_goc || '',
-    tenGhep: cat1.ten_sp || '',
+
     unit: (cat1 as unknown as { don_vi?: string }).don_vi || nguon.don_vi || '',
     sheetKg: nguon.kg > 0 ? String(nguon.kg) : '',
     nhomVthh: nguon.nhom_vthh || '',
@@ -293,7 +293,7 @@ const newCutLine = (): CutLine => {
     productId: '',
     productionName: '',
     productName: '',
-    tenGhep: '',
+
     unit: '',
     sheetKg: '',
     nhomVthh: '',
@@ -328,7 +328,7 @@ function orderFinishedQty(line: OrderProductLine): number {
 }
 
 /** Nhóm để ghép tên khi dòng chưa có nhóm VTHH. */
-function groupForTenGhep(group: string, name: string, code: string): string {
+function groupForProductionName(group: string, name: string, code: string): string {
   if (classifyProductPxGroup(group) !== 'other') return group;
   if (/rỗng/iu.test(name) || /^ecr/i.test(code)) return 'TP; PX Rỗng';
   if (/sóng/iu.test(name) || /^sts/i.test(code)) return 'TP; PX Sóng';
@@ -351,12 +351,12 @@ function canonicalTenSanXuat(input: {
   const raw = String(input.rawName || '').trim();
   if (!raw) return '';
   const code = String(input.code || '').trim();
-  const group = groupForTenGhep(String(input.group || '').trim(), raw, code);
+  const group = groupForProductionName(String(input.group || '').trim(), raw, code);
   const length = parseMeterInput(input.lengthText || '');
   const width = parseMeterInput(input.widthText || '');
   const parts = parseProductionNameParts(raw, group, code);
   const sourceWidth = parseMeterLabel(parts.doDayM);
-  let name = buildOrderTenGhep(raw, {
+  let name = buildOrderProductionName(raw, {
     nhomVthh: group,
     maAmis: code,
     cutLengthM: length && length > 0 ? length : undefined,
@@ -371,7 +371,7 @@ function canonicalTenSanXuat(input: {
 
 function withCanonicalName(line: CutLine, catalog: ProductRow[]): CutLine {
   const product = findBaseProduct(catalog, line.productId, line.amisCode);
-  const raw = line.tenGhep.trim() || line.productionName.trim() || product?.tenGhep || product?.productionName || '';
+  const raw = line.productionName.trim() || line.productionName.trim() || product?.productionName || '';
   const group = line.nhomVthh.trim() || product?.group || '';
   const name = canonicalTenSanXuat({
     rawName: raw,
@@ -382,7 +382,7 @@ function withCanonicalName(line: CutLine, catalog: ProductRow[]): CutLine {
     doLiDm: line.doLiDmText
   });
   if (!name) return line;
-  return { ...line, productionName: name, tenGhep: name, nhomVthh: group || line.nhomVthh };
+  return { ...line, productionName: name,  nhomVthh: group || line.nhomVthh };
 }
 
 function lineIsBlank(line: CutLine): boolean {
@@ -391,7 +391,7 @@ function lineIsBlank(line: CutLine): boolean {
 
 /** Tem / màu tem / dán 2 đầu trên dòng hoặc trong tên → hậu tố mã `TEM1.5li-MVKH-2DAU`. */
 function temArgsFromCutLine(line: CutLine | undefined): { tem: string; mauTem: string; danTem2Dau: boolean } {
-  const fromName = parseSouthTemFromTenGhep(line?.tenGhep || line?.productionName || '');
+  const fromName = parseSouthTemFromProductionName(line?.productionName || '');
   return {
     tem: String(line?.tem || '').trim() || fromName.tem,
     mauTem: String(line?.mauTem || '').trim() || fromName.mauTem,
@@ -420,7 +420,7 @@ function cutLineFromOrder(order: OrderRow, prodLine: OrderProductLine): CutLine 
     productId: String(prodLine.productId || '').trim(),
     productionName: String(prodLine.productionName || '').trim(),
     productName: String(prodLine.productName || '').trim(),
-    tenGhep: String(prodLine.tenGhep || '').trim(),
+
     unit: String(prodLine.unit || 'Tấm').trim(),
     // Mang trọng lượng đơn qua: ưu tiên TL/tấm (kg 1 SP), rồi mới tới TL cuộn.
     sheetKg: String(prodLine.kg1Sp || prodLine.tlTam || prodLine.tlCuon || '').trim(),
@@ -523,8 +523,8 @@ function motherFromCutLine(line: CutLine, catalog: ProductRow[]): CatLeMother | 
     kg1 = (tongKg / finished) * (length / cutLen);
   }
   if (!(kg1 > 0) && tongKg > 0 && finished > 0) kg1 = tongKg / finished;
-  const sourceGroup = groupForTenGhep(group, name, code);
-  const sourceTenGhep = canonicalTenSanXuat({
+  const sourceGroup = groupForProductionName(group, name, code);
+  const sourceProductionName = canonicalTenSanXuat({
     rawName: name,
     code,
     group: sourceGroup,
@@ -534,7 +534,7 @@ function motherFromCutLine(line: CutLine, catalog: ProductRow[]): CatLeMother | 
   });
   return {
     maSp: code,
-    tenSp: sourceTenGhep || name || code,
+    tenSp: sourceProductionName || name || code,
     donVi: line.unit.trim() || product?.unit || 'Tấm',
     kg1,
     a1: width * length,
@@ -634,7 +634,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         if (raw && raw !== day) return false;
       }
       if (!q) return true;
-      const hay = [order.orderCode, order.customer, ...order.products.flatMap(line => [line.productCode, line.productName, line.productionName, line.tenGhep])]
+      const hay = [order.orderCode, order.customer, ...order.products.flatMap(line => [line.productCode, line.productName, line.productionName, line.productionName])]
         .map(value => String(value || '').toLocaleLowerCase('vi'))
         .join(' ');
       return hay.includes(q);
@@ -777,7 +777,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
       const namedGroup = line.nhomVthh.trim() || product?.group || '';
       // Catalog trống nhóm thì đoán từ tên/mã (rỗng/sóng/đặc) để suy đúng kho — không lộn kho.
       const nhomVthh = classifyProductPxGroup(namedGroup) === 'other'
-        ? groupForTenGhep(namedGroup, line.productionName || mother.tenSp || '', line.amisCode.trim()) || namedGroup
+        ? groupForProductionName(namedGroup, line.productionName || mother.tenSp || '', line.amisCode.trim()) || namedGroup
         : namedGroup;
       const base = { ...empty, mother, nhomVthh, w2, l2, qty: 0, pieces: 1 };
       if (!w2 || !l2) return { ...base, error: 'Nhập Dài (m).' };
@@ -896,7 +896,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         doLiDm: line.doLiDmText,
         originMaCu: originCuForLine(line, mother),
         allowIdentical: Boolean(line.orderCode.trim()),
-        tenSanXuat: line.tenGhep.trim() || line.productionName.trim(),
+        tenSanXuat: line.productionName.trim() || line.productionName.trim(),
         ngayCat,
         ...temArgsFromCutLine(line)
       });
@@ -932,7 +932,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
         doLiDm: lines[index]?.doLiDmText,
         originMaCu: lines[index] ? originCuForLine(lines[index], preview.mother) : '',
         allowIdentical: Boolean(lines[index]?.orderCode?.trim()),
-        tenSanXuat: lines[index]?.tenGhep.trim() || lines[index]?.productionName.trim() || '',
+        tenSanXuat: lines[index]?.productionName.trim() || lines[index]?.productionName.trim() || '',
         ngayCat,
         ...temArgsFromCutLine(lines[index])
       });
@@ -1484,13 +1484,13 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                             </div>
                             <input
                               value={line.amisCode}
-                              onChange={e => updateLine(line.key, { amisCode: e.target.value, productId: '', tenGhep: '' })}
+                              onChange={e => updateLine(line.key, { amisCode: e.target.value, productId: '', productionName: '' })}
                               placeholder="Mã AMIS"
                               className={orderFieldClass}
                             />
                             <input
                               value={line.productionName}
-                              onChange={e => updateLine(line.key, { productionName: e.target.value, tenGhep: '' })}
+                              onChange={e => updateLine(line.key, { productionName: e.target.value })}
                               placeholder="Tên sản xuất"
                               className={orderFieldClass}
                             />
@@ -1504,7 +1504,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                               value={line.mDaiText}
                               onChange={e => {
                                 const next = withCanonicalName({ ...line, mDaiText: e.target.value }, catalog);
-                                updateLine(line.key, { mDaiText: e.target.value, productionName: next.productionName, tenGhep: next.tenGhep });
+                                updateLine(line.key, { mDaiText: e.target.value, productionName: next.productionName });
                               }}
                               onWheel={e => e.currentTarget.blur()}
                               inputMode="decimal"
@@ -1515,7 +1515,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                               value={line.khoRongText}
                               onChange={e => {
                                 const next = withCanonicalName({ ...line, khoRongText: e.target.value }, catalog);
-                                updateLine(line.key, { khoRongText: e.target.value, productionName: next.productionName, tenGhep: next.tenGhep });
+                                updateLine(line.key, { khoRongText: e.target.value, productionName: next.productionName });
                               }}
                               onWheel={e => e.currentTarget.blur()}
                               inputMode="decimal"
@@ -1527,7 +1527,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                               value={/\(|đm/iu.test(line.doLiDmText) ? doLiDmSo(line.doLiDmText) : line.doLiDmText}
                               onChange={e => {
                                 const next = withCanonicalName({ ...line, doLiDmText: e.target.value }, catalog);
-                                updateLine(line.key, { doLiDmText: e.target.value, productionName: next.productionName, tenGhep: next.tenGhep });
+                                updateLine(line.key, { doLiDmText: e.target.value, productionName: next.productionName });
                               }}
                               onWheel={e => e.currentTarget.blur()}
                               inputMode="decimal"
@@ -1571,13 +1571,13 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                               placeholder="Tổng KG"
                               className={cellInputClass}
                             />
-                            <input value={line.tem} onChange={e => updateLine(line.key, { tem: e.target.value, tenGhep: '' })} className={orderFieldClass} />
-                            <input value={line.mauTem} onChange={e => updateLine(line.key, { mauTem: e.target.value, tenGhep: '' })} className={orderFieldClass} />
+                            <input value={line.tem} onChange={e => updateLine(line.key, { tem: e.target.value, productionName: '' })} className={orderFieldClass} />
+                            <input value={line.mauTem} onChange={e => updateLine(line.key, { mauTem: e.target.value, productionName: '' })} className={orderFieldClass} />
                             <div className="flex h-11 items-center justify-center">
                               <input
                                 type="checkbox"
                                 checked={line.danTem2Dau}
-                                onChange={e => updateLine(line.key, { danTem2Dau: e.target.checked, tenGhep: '' })}
+                                onChange={e => updateLine(line.key, { danTem2Dau: e.target.checked, productionName: '' })}
                               />
                             </div>
                             <input
@@ -1884,7 +1884,7 @@ export function LenCatLePanel({ onBack }: { onBack: () => void }) {
                               <span className="text-xs font-black tabular-nums text-zinc-500">{index + 1}</span>
                             </label>
                             <input readOnly value={item.line.maAmis || item.line.productCode || ''} className={autofillReadClass} />
-                            <input readOnly value={canonicalTenSanXuat({ rawName: item.line.tenGhep || item.line.productionName || '', code: item.line.maAmis || item.line.productCode || '', lengthText: item.line.daiM, widthText: item.line.kho, doLiDm: item.line.doLiDm })} className={autofillReadClass} />
+                            <input readOnly value={canonicalTenSanXuat({ rawName: item.line.productionName || '', code: item.line.maAmis || item.line.productCode || '', lengthText: item.line.daiM, widthText: item.line.kho, doLiDm: item.line.doLiDm })} className={autofillReadClass} />
                             <input readOnly value={item.line.unit || ''} className={`${autofillReadClass} text-center`} />
                             <input readOnly value={item.line.daiM || ''} className={`${autofillReadClass} text-right`} />
                             <input readOnly value={item.line.kho || ''} className={`${autofillReadClass} text-right`} />

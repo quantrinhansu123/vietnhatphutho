@@ -399,7 +399,7 @@ export function downloadProductCatalogExcelTemplate() {
     [
       'STS02-11s-6zem',
       'Tấm nhựa sóng Standart màu xanh 11 sóng 6 zem',
-      'NHỰA SÓNG XANH - 11 SÓNG 6ZEM - ( ĐM 5.2KG/6M ) - 2m',
+      'NHỰA SÓNG XANH - 11 SÓNG - 6ZEM - (đm 5.2 kg/6m) - 2m',
       'TP; PX Sóng',
       'Tấm',
       'NHỰA SÓNG',

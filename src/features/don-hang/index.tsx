@@ -25,9 +25,9 @@ import {
   SALE_ORDER_TYPE,
   isCutOrderType,
   isRetailCutOrderType,
-  appendSouthTemToTenGhep,
+  appendSouthTemToProductionName,
   buildSouthTemSuffix,
-  parseSouthTemFromTenGhep,
+  parseSouthTemFromProductionName,
   orderFieldClass,
   normalizeOrderProducts,
   findOrderProductById,
@@ -63,7 +63,7 @@ import {
 } from '../_shared/orderHelpers';
 import { useAccessControl } from '../../app/accessControl';
 import { catalogWeightLi, resolveOrderDoLiDmField } from './dacDoLiDm';
-import { detectOrderLineWidthMismatch, doLiDmWeightScale, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderTenGhep, buildSouthOrderProductAmis, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInTenGhep, replaceDoLiTokenInTenGhep, replaceMangInName, seedProductionSpecs, stripDinhMucKgSegment, hasZemInName, stripDoLiDmLiSegment } from '../../utils/productProductionName';
+import { detectOrderLineWidthMismatch, doLiDmWeightScale, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderProductionName, buildSouthOrderProductAmis, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInProductionName, replaceDoLiTokenInProductionName, replaceMangInName, seedProductionSpecs, stripDinhMucKgSegment, hasZemInName, stripDoLiDmLiSegment } from '../../utils/productProductionName';
 import {
   orderDuplicateDecimalText,
   parseSouthDinhMucKg,
@@ -183,7 +183,7 @@ function orderAmisOptionLabel(product: OrderProductOption) {
 
 /** Chuỗi tìm trên ô Mã AMIS: mã, tên SP, tên SX, tên ghép (dấu phẩy = AND). */
 function orderAmisSearchText(product: OrderProductOption) {
-  return [product.code, product.name, product.productionName, product.tenGhep]
+  return [product.code, product.name, product.productionName, product.productionName]
     .map(part => String(part || '').trim())
     .filter(Boolean)
     .join(' ');
@@ -312,7 +312,7 @@ export type OrderProductFormLine = {
   productName: string;
   productionName: string;
   /** Tên ghép đã lưu trên dòng đơn — SL lệnh SX khớp theo id + tên ghép. */
-  tenGhep?: string;
+
   unit: string;
   quantity: string;
   /** SL theo miền — dùng cho "Đơn sản xuất", "Đơn theo quy cách của khách đặt" và "Đơn miền nam". SL tổng = Bắc + Trung + Nam. */
@@ -827,6 +827,7 @@ export function orderProductLinesToPayload(
   return lines
     .filter(line => line.productCode.trim() || line.productName.trim())
     .map((line, index) => {
+      const { ten_ghep: _legacyName, tenGhep: _legacyCamelName, ...canonicalSourceProduct } = line.sourceProduct || {};
       const selectedProduct = resolveOrderLineProduct(productOptions, line);
       // Tên sản xuất trên dòng sửa thường không còn khớp danh mục. ĐVT vẫn lấy nhóm theo id/mã
       // để lựa chọn Cuộn không bị ghi lại thành Tấm.
@@ -848,6 +849,9 @@ export function orderProductLinesToPayload(
       const trungVal = readOptionalRegionQty(line.slTrung);
       const namVal = readOptionalRegionQty(line.slNam);
       const isSouthOrder = isSouthOrderType(orderType);
+      const productRegion = String(selectedProduct?.mien || findOrderProductById(productOptions, line.productId)?.mien || line.sourceProduct?.mien ||
+        (isSouthOrder ? 'Miền Nam' : orderType === PRODUCTION_ORDER_TYPE ? '' : 'Miền Bắc'));
+      const productGroup = selectedProduct?.group || findOrderProductById(productOptions, line.productId)?.group || String(line.sourceProduct?.nhom_vthh || '');
       const isRegionOrder = isProductionOrder || isCutLikeOrder;
       const regionTotal = isSouthOrder
         ? (namVal !== null && namVal > 0 ? namVal : null)
@@ -866,7 +870,7 @@ export function orderProductLinesToPayload(
       const danTem2DauValue = Boolean(line.danTem2Dau);
       // Ô "Độ li ĐM" là độ li định mức `(đm n li)` với mọi nhóm, kể cả Đặc. Không lấy độ li thực.
       // Tên đã có ZEM (hàng sóng) thì không dùng định mức li.
-      const nameHasZem = hasZemInName(line.productionName, line.productName, line.productCode, line.tenGhep);
+      const nameHasZem = hasZemInName(line.productionName, line.productName, line.productCode, line.productionName);
       const doLiFields = resolveOrderDoLiDmField({
         isCutLikeOrder,
         group: selectedProduct?.group || String(line.sourceProduct?.nhom_vthh ?? ''),
@@ -874,7 +878,7 @@ export function orderProductLinesToPayload(
         fieldText: line.doLiDm,
         savedDoLi: String(line.sourceProduct?.do_li ?? '') || line.doLi || selectedProduct?.doLi || '',
         productionName: line.productionName,
-        tenGhep: line.tenGhep,
+
         maAmis: selectedProduct?.code || productCode,
         savedDoLiDm: String(line.sourceProduct?.do_li_dm ?? '')
       });
@@ -915,12 +919,9 @@ export function orderProductLinesToPayload(
             }
           : {};
 
-      // Canonical: ten_san_xuat (= productionName) là nguồn; tenGhep legacy chỉ fallback.
+      // Canonical: ten_san_xuat (= productionName) là nguồn; ten_san_xuat legacy chỉ fallback.
       const catalogProductionName = String(
-        selectedProduct?.productionName || selectedProduct?.tenGhep || ''
-      ).trim();
-      const catalogTenGhep = String(
-        selectedProduct?.tenGhep || selectedProduct?.productionName || ''
+        selectedProduct?.productionName || ''
       ).trim();
       const catalogMainLength = Number(String(selectedProduct?.doDaiM ?? '').replace(/m\s*$/iu, '').replace(',', '.'));
       const catalogWidth = Number(String(selectedProduct?.doDayM ?? '').replace(/m\s*$/iu, '').replace(',', '.'));
@@ -958,7 +959,8 @@ export function orderProductLinesToPayload(
           ? seedProductionSpecs({
               tenSanXuat: line.productionName.trim() || catalogProductionName,
               maAmis: selectedProduct?.code || productCode,
-              nhomVthh: selectedProduct?.group || ''
+              mien: productRegion,
+              nhomVthh: productGroup
             })
           : null;
       const doLiLine = String(line.doLi || '').trim();
@@ -968,12 +970,12 @@ export function orderProductLinesToPayload(
       // Tem (`1.5li`) thay token độ li chính trên tên; `(đm n li)` giữ nguyên.
       const applyTemDoLi = (name: string) => {
         if (!isCutLikeOrder || !temValue || nameHasZem || hasZemInName(name)) return name;
-        return replaceDoLiTokenInTenGhep(name, temValue);
+        return replaceDoLiTokenInProductionName(name, temValue);
       };
       // Nhóm Đặc: ô "Độ li ĐM" = độ li thực → sửa ô thì đổi token độ li chính của tên.
       const applyDacDoLi = (name: string) => {
         if (!isDacLiField || !dacDoLiChanged || !dacDoLiFieldToken) return name;
-        return replaceDoLiTokenInTenGhep(name, dacDoLiFieldToken);
+        return replaceDoLiTokenInProductionName(name, dacDoLiFieldToken);
       };
       // Đặc: lưu độ li thực vào `do_li` (cả đơn cắt lẻ) để lần sau load/mirror trọng lượng đọc đúng.
       const doLiStored = isDacLiField
@@ -991,9 +993,9 @@ export function orderProductLinesToPayload(
             ? dacDoLiFieldToken === normalizeDoLiToken(selectedProduct.doLi || '')
             : orderDoLiDmLiNumber(line.doLiDm) === orderDoLiDmLiNumber(selectedProduct.doLiDm))
           && (lineMang || '') === (selectedProduct.mang || '')
-          && temValue === (parseSouthTemFromTenGhep(catalogTenGhep)?.tem || '')
-          && mauTemValue === (parseSouthTemFromTenGhep(catalogTenGhep)?.mauTem || '')
-          && danTem2DauValue === Boolean(parseSouthTemFromTenGhep(catalogTenGhep)?.danTem2Dau)) &&
+          && temValue === (parseSouthTemFromProductionName(catalogProductionName)?.tem || '')
+          && mauTemValue === (parseSouthTemFromProductionName(catalogProductionName)?.mauTem || '')
+          && danTem2DauValue === Boolean(parseSouthTemFromProductionName(catalogProductionName)?.danTem2Dau)) &&
         (selectedProduct?.code || productCode) &&
         (needsGradeCorrection || cutDiffersForCode ||
           widthDiffersForCode ||
@@ -1037,25 +1039,26 @@ export function orderProductLinesToPayload(
             ...(selectedProduct?.code || productCode ? { ma_amis_cu: selectedProduct?.baseAmisCode || selectedProduct?.code || productCode } : {})
           }
         : {};
-      const resolveTenGhep = (tenSanXuat: string, cutLength?: number) => {
+      const resolveProductionName = (tenSanXuat: string, cutLength?: number) => {
         // Ghép lại từ cột màu / NP / độ li / khổ / mét dài. Không tìm-thay chữ trong tên cũ.
         const orderDoLi = isDacLiField ? dacDoLiFieldToken : doLiLine;
-        let tenGhep = buildOrderTenGhep(tenSanXuat || catalogProductionName, {
-          nhomVthh: selectedProduct?.group,
+        let productionDisplayName = buildOrderProductionName(tenSanXuat || catalogProductionName, {
+          nhomVthh: productGroup,
           maAmis: selectedProduct?.code || productCode,
+          mien: productRegion,
           cutLengthM: cutLength,
           doLiDm: doLiDmValue || undefined,
           mang: isSouthOrder || lineMang !== undefined ? lineMang : undefined,
           doLi: orderDoLi || undefined,
           doDayM: isSongLine || !(Number.isFinite(enteredWidth) && enteredWidth > 0) ? undefined : enteredWidth
         });
-        if (!tenGhep) return undefined;
-        tenGhep = applyTemDoLi(tenGhep);
-        if (isSouthOrder && pxGroup !== 'song' && !nameHasZem) tenGhep = stripDinhMucKgSegment(tenGhep);
-        return tenGhep;
+        if (!productionDisplayName) return undefined;
+        productionDisplayName = applyTemDoLi(productionDisplayName);
+        if (isSouthOrder && pxGroup !== 'song' && !nameHasZem) productionDisplayName = stripDinhMucKgSegment(productionDisplayName);
+        return productionDisplayName;
       };
       const withOrderTem = (name: string) =>
-        isCutLikeOrder ? appendSouthTemToTenGhep(name, temValue, mauTemValue, danTem2DauValue) : name;
+        isCutLikeOrder ? appendSouthTemToProductionName(name, temValue, mauTemValue, danTem2DauValue) : name;
 
       if (!shouldRecalculateConversion) {
         const storedConversionResults = line.conversionResults
@@ -1067,16 +1070,15 @@ export function orderProductLinesToPayload(
           : Number.isFinite(Number(line.quyCachMDai)) && Number(line.quyCachMDai) > 0
             ? Number(line.quyCachMDai)
             : undefined;
-        const tenSanXuat = resolveTenGhep(rawTenSanXuat, quyCachMDaiStored) || rawTenSanXuat;
-        const tenGhep = withOrderTem(tenSanXuat);
+        const tenSanXuat = resolveProductionName(rawTenSanXuat, quyCachMDaiStored) || rawTenSanXuat;
+        const productionDisplayName = withOrderTem(tenSanXuat);
 
         return {
-          ...(line.sourceProduct || {}),
+          ...canonicalSourceProduct,
           san_pham_id: line.productId.trim() || selectedProduct?.id || undefined,
           ma_sp: productCode,
           ten_sp: line.productName.trim(),
-          ten_san_xuat: tenSanXuat,
-          ...(tenGhep ? { ten_ghep: tenGhep } : {}),
+          ten_san_xuat: productionDisplayName || tenSanXuat,
           don_vi: unit,
           so_luong: Number.isFinite(quantity) && quantity > 0 ? quantity : null,
           ghi_chu: note || undefined,
@@ -1232,15 +1234,14 @@ export function orderProductLinesToPayload(
 
       const rawTenSanXuat =
         line.productionName.trim() || selectedProduct?.productionName || resolved.productionName || '';
-      const tenSanXuat = resolveTenGhep(rawTenSanXuat, quyCachMDai) || rawTenSanXuat;
-      const tenGhep = withOrderTem(tenSanXuat);
+      const tenSanXuat = resolveProductionName(rawTenSanXuat, quyCachMDai) || rawTenSanXuat;
+      const productionDisplayName = withOrderTem(tenSanXuat);
 
       return {
         san_pham_id: selectedProduct?.id || line.productId.trim() || undefined,
         ma_sp: productCode,
         ten_sp: productName,
-        ten_san_xuat: tenSanXuat,
-        ...(tenGhep ? { ten_ghep: tenGhep } : {}),
+        ten_san_xuat: productionDisplayName || tenSanXuat,
         don_vi: unit,
         so_luong: Number.isFinite(quantity) && quantity > 0 ? quantity : null,
         ghi_chu: note || undefined,
@@ -1300,7 +1301,7 @@ export function orderToForm(order: OrderRow): OrderFormState {
   const orderType = normalizeOrderType(order.orderType) || ORDER_TYPE_OPTIONS[0];
 
   const productLines = getOrderProductLines(order).map((line, lineIndex) => {
-    const fallbackTem = line.tem || line.mauTem || line.danTem2Dau ? null : parseSouthTemFromTenGhep(line.tenGhep);
+    const fallbackTem = line.tem || line.mauTem || line.danTem2Dau ? null : parseSouthTemFromProductionName(line.productionName);
     const keepRegionQty = positiveRegionTotal(line.soLuongBac, line.soLuongTrung, line.soLuongNam) !== null;
     return {
     key: `order-product-${line.productCode}-${Math.random().toString(36).slice(2, 7)}`,
@@ -1323,7 +1324,7 @@ export function orderToForm(order: OrderRow): OrderFormState {
     productCode: orderCellToInput(line.productCode),
     productName: orderCellToInput(line.productName),
     productionName: orderCellToInput(line.productionName || ''),
-    tenGhep: line.tenGhep || '',
+
     unit: orderCellToInput(line.unit),
     quantity: orderDuplicateDecimalText(orderCellToInput(line.quantity)),
     slBac: keepRegionQty ? orderDuplicateDecimalText(line.soLuongBac || '') : '',
@@ -1332,7 +1333,7 @@ export function orderToForm(order: OrderRow): OrderFormState {
     daiM: orderDuplicateDecimalText(line.daiM || ''),
     kho: orderDuplicateDecimalText(line.kho || ''),
     // Dòng cũ chưa lưu màng: lấy màng có sẵn trong tên (ECO/STD/SUN PC...) để lưu lại không làm mất màng khỏi tên.
-    mang: line.mang !== undefined ? orderCellToInput(line.mang) : (extractMang(line.productionName || line.tenGhep || '') || ''),
+    mang: line.mang !== undefined ? orderCellToInput(line.mang) : (extractMang(line.productionName || '') || ''),
     doDaiTamTieuChuan: orderDuplicateDecimalText(line.doDaiTamTieuChuan || ''),
     dinhMucTieuChuanKg: orderDuplicateDecimalText(line.dinhMucTieuChuanKg || ''),
     doLi: orderDuplicateDecimalText(line.doLi || ''),
@@ -1772,11 +1773,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
           // Đối với đơn hàng miền nam, tự động fill các cột phía sau nếu có:
           const conversion = productConversions.find(item => item.sanPhamId === match.id);
-          // Ưu tiên field tem/mauTem riêng trên danh mục SP; fallback parse từ tenGhep (dữ liệu cũ)
+          // Ưu tiên field tem/mauTem riêng trên danh mục SP; fallback parse từ ten_san_xuat (dữ liệu cũ)
           const catalogTemVal = match.tem || '';
           const catalogMauTemVal = match.mauTem || '';
           const parsedTem = !catalogTemVal
-            ? parseSouthTemFromTenGhep(match.tenGhep || match.productionName)
+            ? parseSouthTemFromProductionName(match.productionName)
             : { tem: '', mauTem: '', danTem2Dau: false };
           const autoTemVal = catalogTemVal || parsedTem.tem || line.tem || '';
           const autoMauTemVal = catalogMauTemVal || parsedTem.mauTem || line.mauTem || '';
@@ -1990,9 +1991,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   };
 
   const changeOrderType = (orderType: string) => {
-    const region = resolveOrderRegion(orderForm.orderType, orderForm.khu_vuc);
-    const nextType = resolveOrderTypeFromRegion(region, orderType, canSeeProductionOrder);
+    const selectedType = normalizeOrderType(orderType);
+    if (!selectedType) return;
+    const region = resolveOrderRegion(selectedType, orderForm.khu_vuc);
+    const nextType = resolveOrderTypeFromRegion(region, selectedType, canSeeProductionOrder);
     if (!nextType) return;
+    setFormError('');
     requestOrderScopeChange(nextType, region, 'loại đơn');
   };
 
@@ -2089,11 +2093,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     const match = findOrderProductById(productOptions, productId);
     const isSouthOrder = isSouthOrderType(orderForm.orderType);
     const conversion = productId ? productConversions.find(item => item.sanPhamId === productId) : undefined;
-    // Ưu tiên field tem/mauTem riêng trên danh mục SP; fallback parse từ tenGhep (dữ liệu cũ)
+    // Ưu tiên field tem/mauTem riêng trên danh mục SP; fallback parse từ ten_san_xuat (dữ liệu cũ)
     const catalogTem = match?.tem || '';
     const catalogMauTem = match?.mauTem || '';
     const parsedTem = match && !catalogTem
-      ? parseSouthTemFromTenGhep(match.tenGhep || match.productionName)
+      ? parseSouthTemFromProductionName(match.productionName)
       : null;
     const autoTem = catalogTem || parsedTem?.tem || '';
     const autoMauTem = catalogMauTem || parsedTem?.mauTem || '';
@@ -2159,8 +2163,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       if (source.conversions.length > 1) throw new Error('Sản phẩm gốc có nhiều bộ quy đổi ngoài cấu trúc hiện tại. Vui lòng kiểm tra danh mục trước khi tạo biến thể.');
       const options = normalizeOrderProducts([{
         id: source.product.id, ma_sp: source.product.code, ma_amis: source.product.amisCode, ma_amis_cu: source.product.amisOldCode,
+        mien: match.mien,
         ten_sp: source.product.name, ten_san_xuat: source.product.productionName,
-        ten_ghep: source.product.tenGhep, nhom_vthh: source.product.group, don_vi: source.product.unit,
+         nhom_vthh: source.product.group, don_vi: source.product.unit,
         do_dai_m: source.product.doDaiM, kho_rong: source.product.doDayM, do_li_dm: source.product.doLiDm,
         do_li: source.product.doLi, mang: source.product.mang
       }]);
@@ -2176,9 +2181,9 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
             cutLengthM: line.daiM || source.product.doDaiM
           })
         : '';
-      const projectedName = String(projected?.ten_ghep || projected?.ten_san_xuat || source.product.productionName || '');
+      const projectedName = String(projected?.ten_san_xuat || projected?.ten_san_xuat || source.product.productionName || '');
       // Modal thêm SP: tên SX/tên ghép không mang Dán Tem / Màu tem / 2 Đầu của dòng đơn.
-      const createProductName = appendSouthTemToTenGhep(projectedName, '', '', false);
+      const createProductName = appendSouthTemToProductionName(projectedName, '', '', false);
       setProductCreation({ source, line: { ...line },
         projection: { code: southProductAmis || String(projected?.ma_amis || source.product.amisCode), name: source.product.name, productionName: createProductName },
         specs: { width: line.kho || source.product.doDayM || '', length: line.daiM || source.product.doDaiM || '',
@@ -2235,18 +2240,18 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     const product = saved.product;
     const option = normalizeOrderProducts([{
       id: product.id, ma_sp: product.code, ma_amis: product.amisCode, ma_amis_cu: product.amisOldCode, ten_sp: product.name,
-      ten_san_xuat: product.productionName, ten_ghep: product.tenGhep, nhom_vthh: product.group,
+      ten_san_xuat: product.productionName,  nhom_vthh: product.group,
       don_vi: product.unit, do_dai_m: product.doDaiM, kho_rong: product.doDayM,
       do_li_dm: product.doLiDm, do_li: product.doLi, mang: product.mang, tong_trong_luong: product.totalWeight
     }])[0];
     if (!option) { setFormError('Không thể chọn sản phẩm đã lưu do thiếu mã AMIS.'); return; }
-    const tem = parseSouthTemFromTenGhep(product.tenGhep || product.productionName || '');
+    const tem = parseSouthTemFromProductionName(product.productionName || '');
     const conversion = saved.conversions[0];
     setProductOptions(prev => [option, ...prev.filter(item => item.id !== product.id)]);
     setProductConversions(prev => [...saved.conversions, ...prev.filter(item => item.sanPhamId !== product.id)]);
     setOrderForm(prev => ({ ...prev, productLines: prev.productLines.map(line => line.key !== productCreation.line.key ? line : {
       ...line, productId: product.id, productCode: product.amisCode, productName: product.name,
-      productionName: product.productionName || '', tenGhep: product.tenGhep || product.productionName,
+      productionName: product.productionName || '',
       unit: allowedOrderUnits(option).includes(line.unit) ? line.unit : product.unit,
       daiM: String(conversion?.khoTamDaiM || product.doDaiM || ''), kho: String(conversion?.khoTamRongM || product.doDayM || ''),
       doLi: product.doLi || '', doLiDm: orderDoLiDmLiNumber(product.doLiDm), mang: product.mang || '',
@@ -2315,7 +2320,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       }
     }
     // Chặn dòng lai mã-vs-tên (vụ DH015: mã 2.1m đi với tên SX sót khổ 1.22m).
-    // Mã có khổ *Wm nhưng Tên SX không chứa khổ đó → tên sót của variant cũ, lưu sẽ ra ten_ghep sai.
+    // Mã có khổ *Wm nhưng Tên SX không chứa khổ đó → tên sót của variant cũ, lưu sẽ ra ten_san_xuat sai.
     for (const [lineIndex, line] of activeProductLines.entries()) {
       const productionName = line.productionName.trim()
         || resolveOrderLineProduct(productOptions, line)?.productionName
@@ -2635,10 +2640,6 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const isFormCutLikeOrder = isCutOrderType(orderForm.orderType) || isFormSouthOrder;
   const isFormProductionOrder = orderForm.orderType === PRODUCTION_ORDER_TYPE;
   const formRegion = resolveOrderRegion(orderForm.orderType, orderForm.khu_vuc);
-  const formOrderTypeOptions = useMemo(
-    () => orderTypeOptionsForRegion(formRegion, canSeeProductionOrder),
-    [formRegion, canSeeProductionOrder]
-  );
   const regionProductOptions = useMemo(
     () => filterOrderProductsByRegion(productOptions, formRegion),
     [productOptions, formRegion]
@@ -2797,12 +2798,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 <input type="date" value={orderForm.deliveryDate} onChange={e => setOrderForm(prev => ({ ...prev, deliveryDate: e.target.value }))} className={orderFieldClass} />
               </label>
               <label className="space-y-1">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Miền *</span>
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Loại đơn</span>
                 <SearchableSelect
-                  value={formRegion}
-                  onChange={changeOrderRegion}
-                  options={[...ORDER_REGION_OPTIONS]}
-                  placeholder="Chọn miền"
+                  value={orderForm.orderType}
+                  onChange={changeOrderType}
+                  options={orderTypeOptionsForRegion('', canSeeProductionOrder)}
+                  placeholder="Chọn loại đơn"
                   getLabel={item => String(item)}
                   getValue={item => String(item)}
                   allowEmpty={false}
@@ -2810,12 +2811,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                 />
               </label>
               <label className="space-y-1">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Loại đơn</span>
+                <span className="text-xs font-black uppercase tracking-wider text-zinc-500">Miền *</span>
                 <SearchableSelect
-                  value={orderForm.orderType}
-                  onChange={changeOrderType}
-                  options={formOrderTypeOptions}
-                  placeholder="Chọn loại đơn"
+                  value={formRegion}
+                  onChange={changeOrderRegion}
+                  options={[...ORDER_REGION_OPTIONS]}
+                  placeholder="Chọn miền"
                   getLabel={item => String(item)}
                   getValue={item => String(item)}
                   allowEmpty={false}
@@ -3234,7 +3235,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           productId: line.productId || matchedLineProduct?.id,
                           productCode: line.productCode,
                           productionName: line.productionName,
-                          tenGhep: line.tenGhep,
+
                           stt: duplicateLineStt(orderForm.productLines, index) ? line.savedStt : undefined
                               }) : 0, true)}
                             </div>
@@ -3377,7 +3378,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         productId: line.productId || matchedLineProduct?.id,
                         productCode: line.productCode,
                         productionName: line.productionName,
-                        tenGhep: line.tenGhep,
+
                         stt: duplicateLineStt(orderForm.productLines, index) ? line.savedStt : undefined
                       }) : 0, true)}
                       <OrderLineField label="ĐVT">
@@ -3640,7 +3641,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         <span className="mr-2 font-black tabular-nums text-zinc-400">{line.stt || index + 1}.</span>
                         {line.productCode || '-'} · {line.productName || '-'}
                       </p>
-                      <p className="mt-0.5 text-xs font-semibold text-zinc-500">Tên sản xuất: {line.tenGhep || '-'}</p>
+                      <p className="mt-0.5 text-xs font-semibold text-zinc-500">Tên sản xuất: {line.productionName || line.productName || '-'}</p>
                       {line.mang ? (
                         <p className="mt-0.5 text-xs font-semibold text-zinc-500">Màng: {line.mang}</p>
                       ) : null}
@@ -3650,7 +3651,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           productId: line.productId,
                           productCode: line.productCode,
                           productionName: line.productionName,
-                          tenGhep: line.tenGhep,
+
                           stt: duplicateLineStt(getOrderProductLines(viewingOrder), index)
                         }), 3)}
                       </p>
@@ -3810,7 +3811,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
               <div className="grid grid-cols-[2rem_minmax(120px,1.15fr)_minmax(140px,1.45fr)_64px_48px_56px] gap-2">
                 <span>STT</span>
                 <span>Mã SP</span>
-                <span>Tên SP / Tên ghép</span>
+                <span>Tên sản xuất</span>
                 <span className="text-right">SL</span>
                 <span>ĐVT</span>
                 <span className="text-right">SL LSX</span>
@@ -3868,7 +3869,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           >
                             {line.productCode || '-'}
                           </span>
-                          <span className="text-zinc-800">{line.tenGhep || '-'}</span>
+                          <span className="text-zinc-800">{line.productionName || line.productName || '-'}</span>
                           <span className="text-right font-mono font-bold text-zinc-900">{line.quantity || '-'}</span>
                           <span className="font-bold text-zinc-600">{line.unit || '-'}</span>
                           <span className="text-right font-mono font-bold text-amber-700" title="Tổng SL đã lập lệnh sản xuất cho dòng này">
@@ -3876,7 +3877,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                               productId: line.productId,
                               productCode: line.productCode,
                               productionName: line.productionName,
-                              tenGhep: line.tenGhep,
+
                               stt: duplicateLineStt(productLines, index)
                             }), 3)}
                           </span>

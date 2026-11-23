@@ -39,9 +39,9 @@ describe('don-hang miền nam — kg/1m × dài × SL', () => {
     assert.equal(southLengthScaledTotalKg('5.7', '', '3', '6'), null);
   });
 
-  it('ưu tiên kg nhập, không có thì lấy TL tấm hoặc kg/1m danh mục', () => {
+  it('ưu tiên kg/1m DB khi không có số kg nhập, giữ số kg người dùng đã sửa', () => {
     assert.equal(Math.abs((southOrderKgPerMeter('5.7', 9, 1, '10') ?? 0) - 0.57) < 1e-9, true);
-    assert.equal(Math.abs((southOrderKgPerMeter('', 5.7, 1, '10') ?? 0) - 0.57) < 1e-9, true);
+    assert.equal(southOrderKgPerMeter('', 5.7, 1, '10'), 1);
     assert.equal(southOrderKgPerMeter('', '', 0.57, ''), 0.57);
   });
 });
@@ -136,17 +136,17 @@ describe('don-hang miền nam — cột Màng và trích xuất màng', () => {
     );
   });
 
-  it('buildOrderTenGhep hỗ trợ override màng mới và xóa màng', async () => {
-    const { buildOrderTenGhep } = await import('../../src/utils/productProductionName');
+  it('buildOrderProductionName hỗ trợ override màng mới và xóa màng', async () => {
+    const { buildOrderProductionName } = await import('../../src/utils/productProductionName');
     const base = 'TRẮNG 8ZEM - 30m - SUN PC';
-    const updated = buildOrderTenGhep(base, {
+    const updated = buildOrderProductionName(base, {
       nhomVthh: 'TP; PX Đặc',
       mang: 'ECO'
     });
     assert.ok(updated.includes('ECO'));
     assert.ok(!updated.includes('SUN PC'));
 
-    const cleared = buildOrderTenGhep(base, {
+    const cleared = buildOrderProductionName(base, {
       nhomVthh: 'TP; PX Đặc',
       mang: ''
     });
