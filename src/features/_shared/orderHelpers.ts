@@ -93,9 +93,15 @@ export function southTemColorLabel(mauTem?: string | null) {
  * " (Dán Tem 5li) Màu Hồng MVCC" + optional " Dán Tem 2 Đầu".
  * Tem / Màu / 2 Đầu độc lập: có phần nào ghép phần đó (màu hoặc tick lẻ không kèm tem
  * vẫn lên tên); màu để trống thì không tự mặc định.
+ * Khi `(đm n li)` đã đổi theo tem, hoặc dòng là Sóng (định mức kg), bỏ `(Dán Tem …)`, chỉ giữ màu và 2 Đầu.
  */
-export function buildSouthTemSuffix(tem?: string | null, mauTem?: string | null, danTem2Dau?: boolean | null) {
-  const temText = String(tem || '').trim();
+export function buildSouthTemSuffix(
+  tem?: string | null,
+  mauTem?: string | null,
+  danTem2Dau?: boolean | null,
+  options?: { omitTemLabel?: boolean }
+) {
+  const temText = options?.omitTemLabel ? '' : String(tem || '').trim();
   const mauText = String(mauTem || '').trim();
   if (!temText && !mauText && !danTem2Dau) return '';
   const parts: string[] = [];
@@ -132,10 +138,11 @@ export function appendSouthTemToProductionName(
   baseProductionName?: string | null,
   tem?: string | null,
   mauTem?: string | null,
-  danTem2Dau?: boolean | null
+  danTem2Dau?: boolean | null,
+  options?: { omitTemLabel?: boolean }
 ) {
   const base = stripSouthTemSuffix(baseProductionName);
-  const suffix = buildSouthTemSuffix(tem, mauTem, danTem2Dau);
+  const suffix = buildSouthTemSuffix(tem, mauTem, danTem2Dau, options);
   if (!suffix) return base;
   if (!base) return suffix.trim();
   return `${base}${suffix}`;

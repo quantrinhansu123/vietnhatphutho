@@ -21,21 +21,24 @@ type TemPatch = {
 };
 
 /**
- * Tem / Màu tem / 2 Đầu không đổi trọng lượng.
- * Click chỉ cập nhật ô ngay; ghi vào form đơn được nhường sau để không chờ render cả lưới.
+ * Tem / Màu tem / 2 Đầu ghi vào form sau click.
+ * Đơn miền nam đổi ô Độ li ĐM (và kg) theo tem ở nơi nhận patch, không xử lý ở đây.
  */
 export function SouthOrderTemCells({
   tem,
   mauTem,
   danTem2Dau,
   onPatch,
-  showLabels = false
+  showLabels = false,
+  temLiLocked = false
 }: {
   tem: string;
   mauTem: string;
   danTem2Dau: boolean;
   onPatch: (patch: TemPatch) => void;
   showLabels?: boolean;
+  /** Sóng / Rỗng: không chọn tem độ li. Màu tem và 2 Đầu vẫn chọn được. */
+  temLiLocked?: boolean;
 }) {
   const [temValue, setTemValue] = useState(tem);
   const [colorValue, setColorValue] = useState(mauTem);
@@ -60,13 +63,15 @@ export function SouthOrderTemCells({
       <div className="min-w-0 space-y-1" onMouseDown={stopRowClick} onClick={stopRowClick}>
         {showLabels ? <span className="block text-[10px] font-black uppercase tracking-wider text-zinc-500">Tem</span> : null}
         <SearchableSelect
-          value={temValue}
+          value={temLiLocked ? '' : temValue}
+          disabled={temLiLocked}
           onChange={next => {
+            if (temLiLocked) return;
             setTemValue(next);
             commit({ tem: next });
           }}
           options={TEM_OPTIONS}
-          placeholder="Chọn/nhập tem"
+          placeholder={temLiLocked ? 'Không dùng tem độ li' : 'Chọn/nhập tem'}
           getLabel={item => String(item)}
           getValue={item => String(item)}
           allowEmpty
