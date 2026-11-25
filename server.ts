@@ -53,7 +53,7 @@ import {
   resolveAuxiliaryWeightPerUnit,
   stripMixingNormRevisionSuffix
 } from './src/utils/mixingNormAuxiliary';
-import { buildCutAmisCodeFull, doLiDmWeightScale, buildMaAmisMoi, buildOrderProductionName, calculateDoLiDm, classifyProductPxGroup, extractSoSong, extractZemToken, hasZemInName, isDiscontinuedWhiteSuProduct, normalizeDinhMucKg, parseProductionNameParts, replaceCutLengthMeters, replaceDoLiDmInProductionName, replaceDoLiTokenInProductionName, replaceMangInName, stripTrailingDuplicateCutAfterTem } from './src/utils/productProductionName';
+import { buildCutAmisCodeFull, doLiDmWeightScale, buildMaAmisMoi, buildOrderProductionName, calculateDoLiDm, classifyProductPxGroup, extractSoSong, extractZemToken, isDiscontinuedWhiteSuProduct, normalizeDinhMucKg, parseProductionNameParts, stripTrailingDuplicateCutAfterTem } from './src/utils/productProductionName';
 import { buildCatLeSanPhamLine, KHO_CAT_LE, KHO_TAI_CHE, KHO_THANH_PHAM, inferKhoChinhTuNhom, normalizeCatLeSanPhamList, resolveCatLeNhomVthh, type CatLeSanPhamLine } from './src/features/lenh-cat-le/logic';
 
 dotenv.config();
@@ -7432,17 +7432,11 @@ function parseOrderQuantity(value: unknown): number | null {
 }
 
 /**
- * Frontend gửi tên sản xuất cuối sau khi hạ khổ/li/mét. Server giữ nguyên tên này;
- * chỉ dùng tên legacy và sửa mét cắt khi bản ghi cũ thiếu ten_san_xuat.
+ * Frontend gửi tên sản xuất cuối sau khi hạ khổ/li/mét. Server chỉ giữ nguyên tên này,
+ * không ghép lại và không suy từ tên bán hàng (`ten_sp`). Thiếu thì trả rỗng.
  */
-function resolveStoredOrderProductionName(
-  tenSanXuat: string,
-  tenSp: string,
-  cutLengthM: number | null
-): string {
-  const fromSx = String(tenSanXuat || '').trim();
-  if (fromSx) return fromSx;
-  return buildOrderProductionName(tenSp, { cutLengthM }) || '';
+function resolveStoredOrderProductionName(tenSanXuat: string): string {
+  return String(tenSanXuat || '').trim();
 }
 
 const PRODUCTION_ORDER_TYPE_SERVER = 'Đơn sản xuất';
@@ -7462,8 +7456,8 @@ function southMvByMauTemServer(mauTem?: string | null) {
   if (value === 'xanh') return 'MVGL';
   return 'MVCC';
 }
-function buildSouthTemSuffixServer(tem?: string | null, mauTem?: string | null, danTem2Dau?: boolean | number | null) {
-  const temText = String(tem || '').trim();
+function buildSouthTemSuffixServer(tem?: string | null, mauTem?: string | null, danTem2Dau?: boolean | number | null, omitTemLabel = false) {
+  const temText = omitTemLabel ? '' : String(tem || '').trim();
   const mauText = String(mauTem || '').trim();
   const haiDau = danTem2Dau === true || danTem2Dau === 1 || String(danTem2Dau || '').trim() === '1';
   if (!temText && !mauText && !haiDau) return '';
@@ -7493,23 +7487,6 @@ function stripSouthTemSuffixServer(productionDisplayName?: string | null) {
   }
   return text.replace(/\s*-\s*$/u, '').trim();
 }
-/** Gộp các token mét cắt lặp ở cuối do bug cũ ("- 15m - 15m" → "- 15m"). */
-function collapseDuplicateTrailingCutMetersServer(base?: string | null, cutLengthM?: number | null) {
-  const text = String(base || '').trim();
-  const cut = Number(cutLengthM);
-  if (!text || !Number.isFinite(cut) || cut <= 0) return text;
-  const label = Number.isInteger(cut) ? String(cut) : String(Math.round(cut * 1000) / 1000);
-  const esc = label.replace('.', '[,.]');
-  return text.replace(new RegExp(`(\\s*-\\s*${esc}\\s*m\\s*){2,}$`, 'iu'), ` - ${label}m`).trim();
-}
-function appendSouthTemToProductionNameServer(baseProductionName?: string | null, tem?: string | null, mauTem?: string | null, danTem2Dau?: boolean | number | null) {
-  const base = stripSouthTemSuffixServer(baseProductionName);
-  const suffix = buildSouthTemSuffixServer(tem, mauTem, danTem2Dau);
-  if (!suffix) return base;
-  if (!base) return suffix.trim();
-  return `${base}${suffix}`;
-}
-
 type OrderProductRecord = {
   san_pham_id?: string;
   ma_don_hang?: string;
@@ -7741,8 +7718,7 @@ function parseOrderProductsInput(
     const san_pham_id = pickRowField(row, ['san_pham_id', 'productId', 'product_id']);
     const ma_sp = pickRowField(row, ['ma_sp', 'ma_hang', 'productCode', 'code']);
     const ten_sp = pickRowField(row, ['ten_sp', 'ten_hang', 'productName', 'name']);
-    let ten_san_xuat = pickRowField(row, ['ten_san_xuat', 'productionName']);
-    const hasCanonicalProductionName = Boolean(ten_san_xuat);
+    const ten_san_xuat = pickRowField(row, ['ten_san_xuat', 'productionName']);
     const production_display_name_raw = pickRowField(row, ["ten_san_xuat", "productionName"]);
     const don_vi = pickRowField(row, ['don_vi', 'unit']);
     const so_luong_bac = parseOrderQuantity(row.so_luong_bac ?? row.sl_bac ?? row.slsx_bac ?? row.bac ?? row.slBac);
@@ -7779,42 +7755,19 @@ function parseOrderProductsInput(
       const match = quy_cach.match(/(\d+(?:[.,]\d+)?)/);
       if (match) parsedQuyCachMDai = Number(match[1].replace(',', '.'));
     }
-    // Đơn cắt lẻ / miền nam: BÓC suffix tem trước khi thay mét cắt — nếu không replaceCutLengthMeters
-    // thấy chuỗi kết thúc bằng "2 Đầu" (không phải mét) sẽ nối thêm "- Nm" rồi append suffix nữa,
-    // và vì parseOrderBody parse lại lần 2 nên mỗi lần lưu nhân thêm 1 lớp (bug triple suffix).
-    const stripped_production_display_name = isCutLikeSpecOrder ? stripSouthTemSuffixServer(production_display_name_raw) : String(production_display_name_raw || '');
-    const healed_production_display_name = isCutLikeSpecOrder
-      ? collapseDuplicateTrailingCutMetersServer(stripped_production_display_name, parsedQuyCachMDai)
-      : stripped_production_display_name;
-    let base_production_display_name = resolveStoredOrderProductionName(
-      ten_san_xuat,
-      ten_sp,
-      parsedQuyCachMDai
-    );
-    const lineMang = pickRowField(row, ['mang']);
-    if (!hasCanonicalProductionName && isCutLikeSpecOrder && Object.prototype.hasOwnProperty.call(row, 'mang')) {
-      if (ten_san_xuat) {
-        ten_san_xuat = replaceMangInName(ten_san_xuat, lineMang);
-      }
-      base_production_display_name = replaceMangInName(base_production_display_name, lineMang);
-    }
-    // Đơn cắt lẻ / miền nam: thay segment `(đm n li)`, giữ token độ li chính.
+    // Server giữ nguyên ten_san_xuat do FE gửi: không ghép lại, không bóc/thêm hậu tố tem, không suy từ ten_sp.
     const lineNhomVthh = pickRowField(row, ['nhom_vthh', 'nhomVthh', 'group']);
-    if (!hasCanonicalProductionName && isCutLikeSpecOrder && do_li_dm) {
-      base_production_display_name = replaceDoLiDmInProductionName(base_production_display_name, do_li_dm);
-    }
-    // Tem thay độ li chính trên tên; `(đm n li)` giữ nguyên.
-    if (!hasCanonicalProductionName && isCutLikeSpecOrder && tem && !hasZemInName(base_production_display_name, ten_san_xuat)) {
-      base_production_display_name = replaceDoLiTokenInProductionName(base_production_display_name, tem);
-      if (ten_san_xuat) ten_san_xuat = replaceDoLiTokenInProductionName(ten_san_xuat, tem);
-    }
-    const production_display_name = hasCanonicalProductionName ? ten_san_xuat : isCutLikeSpecOrder
-      ? appendSouthTemToProductionNameServer(base_production_display_name, tem, mau_tem, dan_tem_2_dau)
-      : base_production_display_name;
-    // Persist the composed display name in the canonical field; do not store legacy `ten_san_xuat`.
-    if (!hasCanonicalProductionName && production_display_name) ten_san_xuat = production_display_name;
+    const temLiNumber = String(tem || '').match(/[\d.,]+/)?.[0] || '';
+    const dmLiNumber = /\bkg\b/iu.test(do_li_dm) ? '' : (String(do_li_dm || '').match(/[\d.,]+/)?.[0] || '');
+    const temAlreadyInDoLiDm = Boolean(
+      temLiNumber && dmLiNumber
+      && Number(temLiNumber.replace(',', '.')) === Number(dmLiNumber.replace(',', '.'))
+    );
+    const isSongLine = classifyProductPxGroup(lineNhomVthh) === 'song'
+      || /\bSÓNG\b/iu.test(String(ten_san_xuat || production_display_name_raw || ''))
+      || /\bkg\b/iu.test(String(do_li_dm || ''));
     const mo_ta_tem = isCutLikeSpecOrder
-      ? buildSouthTemSuffixServer(tem, mau_tem, dan_tem_2_dau).trim()
+      ? buildSouthTemSuffixServer(tem, mau_tem, dan_tem_2_dau, temAlreadyInDoLiDm || isSongLine).trim()
       : '';
     const kg_1_sp = parseOrderQuantity(row.kg_1_sp ?? row.kg1Sp);
     const tong_kg = parseOrderQuantity(row.tong_kg ?? row.tongKg ?? row.trong_luong ?? row.trong_luong_kg);
@@ -7866,6 +7819,9 @@ function parseOrderProductsInput(
 
     if (!ma_sp && !ten_sp) {
       return { error: 'Mỗi dòng sản phẩm cần có mã SP hoặc tên SP.' };
+    }
+    if (!ten_san_xuat) {
+      return { error: `Thiếu tên sản xuất cho sản phẩm ${ma_sp || ten_sp}.` };
     }
     if (isRegionQuantityOrder && (!hasRegionQuantity || regionTotal <= 0)) {
       return { error: `Nhập số lượng Bắc, Trung hoặc Nam cho sản phẩm ${ma_sp || ten_sp}. Ít nhất một ô phải có số lượng.` };
@@ -8135,8 +8091,6 @@ async function enrichOrderProductsWithConversionData(
     // `dinh_muc_kg` là nhánh `(đm n kg)` tách khỏi `do_li_dm` (migration tcmb-zem-so-song);
     // fallback select cũ để chạy được khi DB chưa migrate cột mới.
     const catalogDoLiDmById = new Map<string, string>();
-    // Nhóm Đặc: ô "Độ li ĐM" trên đơn = độ li thực → hệ số so với token độ li chính danh mục (`do_li`).
-    const catalogDoLiRealById = new Map<string, string>();
     if (sanPhamIds.length > 0 && isCutLikeOrderTypeServer(orderType)) {
       const { data: dmRows, error: dmError } = await supabase
         .from(SUPABASE_PRODUCTS_TABLE)
@@ -8149,15 +8103,8 @@ async function enrichOrderProductsWithConversionData(
         const record = row as Record<string, unknown>;
         catalogDoLiDmById.set(
           String(record.id),
-          String(record.do_li_dm || record.dinh_muc_kg || '')
+          String(record.do_li_dm || '')
         );
-        // Danh mục legacy chưa có `do_li`: đọc token độ li chính từ tên SX / mã AMIS.
-        const catalogReal = String(record.do_li || '').trim() || parseProductionNameParts(
-          String(record.ten_san_xuat || ''),
-          String(record.nhom_vthh || ''),
-          String(record.ma_amis || '')
-        ).doLi;
-        catalogDoLiRealById.set(String(record.id), catalogReal);
       }
     }
 
@@ -8192,23 +8139,10 @@ async function enrichOrderProductsWithConversionData(
         : manualKgPerUnitRaw;
 
       if (isCutOrder) {
-        // Nhóm Đặc: ô Độ li ĐM = độ li thực → hệ số so với token độ li chính danh mục.
-        const lineGroup = String(product.nhom_vthh ?? '');
-        const isDacLine = classifyProductPxGroup(lineGroup) === 'dac';
-        // Dòng legacy có thể chưa lưu `do_li` — đọc token độ li chính từ tên ghép/tên SX/mã.
-        const lineParts = isDacLine
-          ? parseProductionNameParts(
-              String(product.ten_san_xuat || product.ten_san_xuat || ''),
-              lineGroup,
-              String(product.ma_amis || product.ma_sp || '')
-            )
-          : null;
-        const scaleCatalogLi = isDacLine
-          ? (catalogDoLiRealById.get(spId) || catalogDoLiDmById.get(spId))
-          : catalogDoLiDmById.get(spId);
-        const scaleLineLi = isDacLine
-          ? (String(product.do_li || '') || lineParts?.doLi || lineParts?.doLiDm || product.do_li_dm)
-          : product.do_li_dm;
+        // Ô Độ li ĐM là `(đm n li)` với mọi nhóm, kể cả Đặc. Tem đổi đm này thì kg đổi theo.
+        // Đm kg hoặc thiếu số: hệ số = 1.
+        const scaleCatalogLi = catalogDoLiDmById.get(spId);
+        const scaleLineLi = product.do_li_dm;
         const cutWeight = calculateCutOrderWeightServer(product.dai_m ?? null, product.so_luong, product.don_vi, conversion || null, product.ma_sp, product.ten_sp, Number(product.kho) || null, doLiDmWeightScale(scaleLineLi, scaleCatalogLi));
         const kg1Sp = manualKgPerUnit ?? cutWeight?.kg1Sp ?? product.kg_1_sp ?? null;
         const tongKg = isCustomerEnteredKg ? product.tong_kg ?? null : cutWeight?.tongKg ?? product.tong_kg ?? null;
@@ -8594,11 +8528,7 @@ function buildProductionOrderRecordFromOrder(
   const selectedProduct = product ?? parseOrderProductsFromRow(order)[0];
   const productCode = selectedProduct?.ma_sp ?? '';
   const productName = selectedProduct?.ten_sp ?? '';
-  const quyCachForProductionName =
-    selectedProduct?.quy_cach_m_dai ??
-    (selectedProduct?.dai_m && selectedProduct.dai_m > 0 ? selectedProduct.dai_m : null);
-  const productProductionName = String(selectedProduct?.ten_san_xuat || '').trim()
-    || resolveStoredOrderProductionName('', productName, quyCachForProductionName ?? null);
+  const productProductionName = resolveStoredOrderProductionName(selectedProduct?.ten_san_xuat || '');
   const customer = pickRowField(order, ['khach_hang', 'customer']);
   const unit = selectedProduct?.don_vi ?? '';
   const workers =
@@ -8709,7 +8639,7 @@ function parseProductionOrderProductsInput(source: Record<string, unknown>): Ord
     }
     const storedProductionName = stripTrailingDuplicateCutAfterTem(String(production_display_name_raw || '').trim());
     const production_display_name = storedProductionName
-      || resolveStoredOrderProductionName(ten_san_xuat, ten_sp, parsedQuyCachMDai);
+      || resolveStoredOrderProductionName(ten_san_xuat);
     const m2 = parseOrderQuantity(row.m2 ?? row.dien_tich_m2);
     const m_dai = parseOrderQuantity(row.m_dai ?? row.mDai ?? row.met_dai ?? row.chieu_dai_m);
     const tong_kg = parseOrderQuantity(row.tong_kg ?? row.tongKg ?? row.trong_luong ?? row.trong_luong_kg);

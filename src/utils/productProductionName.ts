@@ -1550,19 +1550,25 @@ export function buildOrderProductionName(
   if (Number.isFinite(cut) && cut > 0) {
     overrides.doDaiM = formatMetersLabel(cut);
   }
+  // Hàng ZEM không mang `(đm …)`. Sóng Miền Bắc luôn bỏ ZEM khi ghép (composeProductionDisplayName),
+  // nên xét theo tên ĐẦU RA: nếu xét tên đầu vào thì lần lưu 1 bỏ ZEM + mất đm, lần 2 mới thêm đm.
+  const isSongBac = classifyProductPxGroup(nhomVthh) === 'song' && options?.mien === 'Miền Bắc';
+  const keepsZemInOutput = hasZemInName(tenSanXuat, seeded.tenGoc) && !isSongBac;
   const dmOverride = normalizeDoLiDm(options?.doLiDm);
   if (dmOverride && /\bkg\b/iu.test(dmOverride)) {
     // Định mức kg → cột riêng, kể cả hàng ZEM.
     overrides.dinhMucKg = dmOverride;
-  } else if (dmOverride && !hasZemInName(tenSanXuat, seeded.tenGoc)) {
+  } else if (dmOverride && !keepsZemInOutput) {
     overrides.doLiDm = dmOverride;
   }
   if (options?.mang !== undefined) {
     overrides.mang = String(options.mang ?? '').trim();
   }
   const nextDoLi = String(options?.doLi ?? '').trim();
-  if (nextDoLi && !/\bkg\b/iu.test(nextDoLi)) {
-    overrides.doLi = normalizeDoLiToken(nextDoLi);
+  // Token không hợp lệ (vd số trần "2") → chuẩn hóa ra rỗng; không ghi đè để tránh xóa độ li hiện có.
+  const nextDoLiToken = nextDoLi && !/\bkg\b/iu.test(nextDoLi) ? normalizeDoLiToken(nextDoLi) : '';
+  if (nextDoLiToken) {
+    overrides.doLi = nextDoLiToken;
   }
   const width = Number(String(options?.doDayM ?? '').replace(/m\s*$/iu, '').replace(',', '.'));
   if (Number.isFinite(width) && width > 0) {
@@ -2111,16 +2117,16 @@ export function buildCutAmisCodeFull(input: MaAmisMoiInput & { ensureWidthM?: nu
  * Mã AMIS khi tạo sản phẩm mới từ đơn miền nam.
  * Giữ họ mã (`STD05`, `ECR06`, `STS02`) và hậu tố `NP`/`NP2`/`NS`.
  * - Đặc: độ li = tem (`2.5li`), khổ rộng = ô khổ (`*1.52m`). Không thêm mét dài.
- * - Rỗng: độ li = tem (`4.0li`), khổ rộng = ô khổ (`*1.22m`), mét dài = ô m dài (`-5.8m`).
- * - Sóng: độ li = tem (`1.0li`). Không thêm khổ hay mét dài.
- * Độ li số nguyên dưới 10 luôn ghi `.0` trên mã mới (`4li` → `4.0li`).
+ * - Rỗng: giữ độ li của mã, khổ rộng = ô khổ (`*1.22m`), mét dài = ô m dài (`-6m`).
+ * - Sóng: giữ độ li của mã. Không thêm khổ, mét dài, không đổi độ li theo tem.
+ * Độ li số nguyên dưới 10 luôn ghi `.0` trên mã mới (`4li` → `4.0li`) khi mã được sửa.
  * Hàng ZEM và nhóm khác chưa có công thức: trả mã gốc, không sửa token.
  */
 export function buildSouthOrderProductAmis(input: {
   baseMaAmis: string;
   nhomVthh?: string | null;
   tenSanXuat?: string | null;
-  /** Ô dán tem (`2.5li`, `4.0`, `1`). Trống thì giữ token độ li trong mã. */
+  /** Ô dán tem (`2.5li`). Chỉ nhóm Đặc thay token độ li. Sóng và Rỗng giữ độ li của mã. */
   tem?: string | null;
   cutWidthM?: number | string | null;
   cutLengthM?: number | string | null;
@@ -2143,7 +2149,7 @@ export function buildSouthOrderProductAmis(input: {
     base = raw.slice(0, npMatch.index).trim().replace(/-+$/, '');
   }
 
-  const temToken = formatAmisDoLiToken(String(input.tem || ''));
+  const temToken = group === 'dac' ? formatAmisDoLiToken(String(input.tem || '')) : '';
   if (temToken) base = replaceLiToken(base, temToken);
 
   const width = Number(String(input.cutWidthM ?? '').replace(/m\s*$/iu, '').replace(',', '.'));

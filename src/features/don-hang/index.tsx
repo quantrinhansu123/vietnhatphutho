@@ -63,7 +63,7 @@ import {
 } from '../_shared/orderHelpers';
 import { useAccessControl } from '../../app/accessControl';
 import { catalogWeightLi, resolveOrderDoLiDmField } from './dacDoLiDm';
-import { detectOrderLineWidthMismatch, doLiDmWeightScale, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderProductionName, buildSouthOrderProductAmis, classifyProductPxGroup, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiDmInProductionName, replaceDoLiTokenInProductionName, replaceMangInName, seedProductionSpecs, stripDinhMucKgSegment, hasZemInName, stripDoLiDmLiSegment } from '../../utils/productProductionName';
+import { detectOrderLineWidthMismatch, doLiDmWeightScale, extractMang, buildCutAmisCodeFull, buildMaAmisMoi, buildOrderProductionName, buildSouthOrderProductAmis, classifyProductPxGroup, normalizeDoLiDm, normalizeDoLiToken, replaceCutLengthMeters, replaceCutWidthMeters, replaceDoLiTokenInProductionName, replaceMangInName, seedProductionSpecs, stripDinhMucKgSegment, hasZemInName, stripDoLiDmLiSegment } from '../../utils/productProductionName';
 import {
   orderDuplicateDecimalText,
   parseSouthDinhMucKg,
@@ -74,7 +74,11 @@ import {
   southFallbackTlAndTotal,
   southKhoScale,
   inferSpecsFromProductionName,
-  orderDoLiDmLiNumber
+  orderDoLiDmLiNumber,
+  nextDoLiDmAfterTem,
+  temMayReplaceDoLi,
+  temLiLockedForGroup,
+  alignSouthStandardKgToStoredDoLi
 } from './southWeight';
 export {
   orderDuplicateDecimalText,
@@ -829,6 +833,8 @@ export function orderProductLinesToPayload(
     .map((line, index) => {
       const { ten_ghep: _legacyName, tenGhep: _legacyCamelName, ...canonicalSourceProduct } = line.sourceProduct || {};
       const selectedProduct = resolveOrderLineProduct(productOptions, line);
+      // Tên sản xuất đã gắn tem không còn khớp danh mục. Hệ số kg vẫn lấy độ li chuẩn theo id dòng.
+      const weightCatalogProduct = selectedProduct ?? findOrderProductById(productOptions, line.productId);
       // Tên sản xuất trên dòng sửa thường không còn khớp danh mục. ĐVT vẫn lấy nhóm theo id/mã
       // để lựa chọn Cuộn không bị ghi lại thành Tấm.
       const unitProduct = selectedProduct ?? (isCutLikeOrder ? orderUnitProductFromCatalog(productOptions, line) : null);
@@ -863,7 +869,8 @@ export function orderProductLinesToPayload(
       const quantity = isRegionOrder ? (regionTotal ?? Number.NaN) : typedQuantity;
       const daiM = parsePercentInput(line.daiM);
       const note = line.note.trim();
-      const temValue = String(line.tem || '').trim();
+      // Sóng và Rỗng không dùng tem độ li: tem trống khi lưu, tên và mã không ghi tem li.
+      const temValue = temLiLockedForGroup(productGroup) ? '' : String(line.tem || '').trim();
       // Tem / Màu tem / 2 Đầu độc lập: lưu đúng như màn hình, không tự điền, không tự xóa hộ.
       // Riêng hậu tố tên chỉ ghép khi có tem (buildSouthTemSuffix).
       const mauTemValue = String(line.mauTem || '').trim();
@@ -883,10 +890,48 @@ export function orderProductLinesToPayload(
         savedDoLiDm: String(line.sourceProduct?.do_li_dm ?? '')
       });
       const { isDacField: isDacLiField, fieldToken: dacDoLiFieldToken, changed: dacDoLiChanged } = doLiFields;
-      const doLiDmValue = doLiFields.doLiDmValue;
+      // Dán tem chỉ đổi `(đm n li)` với nhóm Đặc. Sóng và Rỗng giữ độ li.
+      // Đã ghi vào `(đm n li)` thì tên không lặp `(Dán Tem …)`, chỉ giữ màu và 2 Đầu.
+      const temLiNumber = temValue.match(/[\d.,]+/)?.[0] || '';
+      const currentDoLiDm = doLiFields.doLiDmValue;
+      const temChangesDoLi = temMayReplaceDoLi(productGroup);
+      const temReplacesDoLiDm = Boolean(
+        isCutLikeOrder && temChangesDoLi && !nameHasZem && temLiNumber && currentDoLiDm && !/\bkg\b/iu.test(currentDoLiDm)
+      );
+      const doLiDmValue = temReplacesDoLiDm
+        ? (normalizeDoLiDm(`${temLiNumber} li`) || currentDoLiDm)
+        : currentDoLiDm;
+      // Hệ số kg dùng độ li sẽ lưu (đã theo tem), không dùng ô còn độ li danh mục.
+      const weightDoLiDm = temReplacesDoLiDm
+        ? (String(doLiDmValue).match(/[\d.,]+/)?.[0] || line.doLiDm)
+        : line.doLiDm;
+      const lineProductId = selectedProduct?.id || line.productId.trim() || '';
+      const lineConversion = lineProductId
+        ? productConversions.find(item => item.sanPhamId === lineProductId)
+        : undefined;
+      const alignedStandardKg = isSouthOrder
+        ? alignSouthStandardKgToStoredDoLi({
+            catalogSheetKg: lineConversion?.trongLuongKgTam ?? selectedProduct?.totalWeight,
+            catalogDoLiDm: catalogWeightLi(weightCatalogProduct),
+            khoScale: southKhoScale(
+              line.kho,
+              String(selectedProduct?.doDayM || lineConversion?.khoTamRongM || lineConversion?.khoCuonRongM || '')
+            ),
+            fieldDoLiDm: line.doLiDm,
+            storedDoLiDm: doLiDmValue,
+            enteredStandardKg: line.dinhMucTieuChuanKg,
+            zem: nameHasZem
+          })
+        : null;
+      const effectiveDinhMucTieuChuanKg = alignedStandardKg !== null
+        ? String(alignedStandardKg)
+        : String(line.dinhMucTieuChuanKg ?? '');
+      // Sóng định mức là kg, không ghi `(Dán Tem …)` vào tên. Chỉ giữ màu và 2 Đầu.
+      const isSongGroup = classifyProductPxGroup(productGroup) === 'song';
+      const temSuffixOptions = { omitTemLabel: temReplacesDoLiDm || isSongGroup };
       // Ghi đè stale trong sourceProduct khi user xóa tem/màu/bỏ tick 2 Đầu (undefined bị JSON.stringify loại bỏ).
       const moTaTem = isCutLikeOrder
-        ? buildSouthTemSuffix(temValue, mauTemValue, danTem2DauValue).trim()
+        ? buildSouthTemSuffix(temValue, mauTemValue, danTem2DauValue, temSuffixOptions).trim()
         : '';
       // Màng: chỉ lưu khi sản phẩm có màng hoặc người dùng nhập (không còn mặc định SUN PC).
       const trimmedMang = String(line.mang ?? '').trim();
@@ -897,18 +942,20 @@ export function orderProductLinesToPayload(
             dan_tem_2_dau: danTem2DauValue ? 1 : undefined,
             do_li_dm: doLiDmValue || undefined,
             // Nhóm VTHH dòng (Đặc/Sóng/Rỗng) — BE mirror dùng để ghép tên đúng luật nhóm.
-            nhom_vthh: selectedProduct?.group || undefined,
+            nhom_vthh: productGroup || undefined,
             mo_ta_tem: moTaTem || undefined,
             ...(isSouthOrder
               ? {
                   mang: line.mang !== undefined ? line.mang.trim() : '',
                   do_dai_tam_tieu_chuan: parsePercentInput(String(line.doDaiTamTieuChuan ?? '')) || undefined,
-                  dinh_muc_tieu_chuan_kg: parsePercentInput(String(line.dinhMucTieuChuanKg ?? '')) || undefined
+                  dinh_muc_tieu_chuan_kg: parsePercentInput(effectiveDinhMucTieuChuanKg) || undefined
                 }
               : trimmedMang ? { mang: trimmedMang } : {})
           }
         : trimmedMang ? { mang: trimmedMang } : {};
-      const shouldRecalculateConversion = line.shouldRecalculateConversion !== false;
+      const standardKgChanged = alignedStandardKg !== null
+        && parseSouthDinhMucKg(line.dinhMucTieuChuanKg) !== alignedStandardKg;
+      const shouldRecalculateConversion = line.shouldRecalculateConversion !== false || standardKgChanged;
       const regionFields = isSouthOrder
         ? { so_luong_nam: namVal === null ? undefined : namVal }
         : isRegionOrder
@@ -967,10 +1014,14 @@ export function orderProductLinesToPayload(
       const doLiDiffersForCode =
         Boolean(doLiLine && (selectedProduct?.doLi || variantSpecs?.doLi)) &&
         normalizeDoLiToken(doLiLine) !== normalizeDoLiToken(selectedProduct?.doLi || variantSpecs?.doLi || '');
-      // Tem (`1.5li`) thay token độ li chính trên tên; `(đm n li)` giữ nguyên.
+      // Dán tem chỉ nhóm Đặc mới thay segment `(đm n li)`. Sóng, Rỗng, ZEM và `(đm n kg)` giữ nguyên.
       const applyTemDoLi = (name: string) => {
-        if (!isCutLikeOrder || !temValue || nameHasZem || hasZemInName(name)) return name;
-        return replaceDoLiTokenInProductionName(name, temValue);
+        if (!temChangesDoLi || !isCutLikeOrder || !temLiNumber || nameHasZem || hasZemInName(name)) return name;
+        if (!/\(\s*đm\s*[\d.,]+\s*li\b/iu.test(name)) return name;
+        const normalized = normalizeDoLiDm(`${temLiNumber} li`);
+        const number = normalized.match(/[\d.,]+/)?.[0];
+        if (!number) return name;
+        return name.replace(/(\(\s*đm\s*)[\d.,]+(\s*li\b)/iu, `$1${number}$2`);
       };
       // Nhóm Đặc: ô "Độ li ĐM" = độ li thực → sửa ô thì đổi token độ li chính của tên.
       const applyDacDoLi = (name: string) => {
@@ -1058,7 +1109,7 @@ export function orderProductLinesToPayload(
         return productionDisplayName;
       };
       const withOrderTem = (name: string) =>
-        isCutLikeOrder ? appendSouthTemToProductionName(name, temValue, mauTemValue, danTem2DauValue) : name;
+        isCutLikeOrder ? appendSouthTemToProductionName(name, temValue, mauTemValue, danTem2DauValue, temSuffixOptions) : name;
 
       if (!shouldRecalculateConversion) {
         const storedConversionResults = line.conversionResults
@@ -1119,7 +1170,7 @@ export function orderProductLinesToPayload(
       const dinhMucKgPerUnit = isCutLikeOrder && !isSouthOrder ? parseSouthDinhMucKg(line.dinhMucKg) : null;
       const southKgPerMeter = isSouthOrder
         ? southOrderKgPerMeter(
-            line.dinhMucTieuChuanKg,
+            effectiveDinhMucTieuChuanKg,
             conversion?.trongLuongKgTam ?? selectedProduct?.totalWeight,
             conversion?.trongLuongKgMDai,
             line.doDaiTamTieuChuan,
@@ -1130,18 +1181,20 @@ export function orderProductLinesToPayload(
       // TL/tấm (2 số lẻ) là nguồn duy nhất; Tổng KG = TL/tấm × SL (2 số lẻ) → hai số luôn khớp.
       // Đổi Khổ rộng / Độ li ĐM so với chuẩn danh mục → tính lại theo hệ số (đã có Định mức tiêu chuẩn).
       const southStandardKho = selectedProduct?.doDayM || conversion?.khoTamRongM || conversion?.khoCuonRongM || '';
-      // Định mức tiêu chuẩn (kg) đã được tính lại theo Dài / Khổ / Độ li ĐM khi người dùng đổi các ô này
-      // (recomputeSouthStandard) nên bước tính Tổng không nhân thêm hệ số.
-      const southSpecScale = 1;
+      // Có Định mức tiêu chuẩn thì hệ số độ li đã nằm trong số đó (recompute / align).
+      // Chưa có thì KG/1m danh mục còn theo độ li chuẩn, phải nhân theo độ li sẽ lưu.
+      const southSpecScale = parseSouthDinhMucKg(effectiveDinhMucTieuChuanKg) === null && !nameHasZem
+        ? (doLiDmWeightScale(weightDoLiDm, catalogWeightLi(weightCatalogProduct)) ?? 1)
+        : 1;
       const southHasLength = southKgPerMeter !== null && Number.isFinite(daiM) && daiM > 0;
       const southFallback = isSouthOrder && !southHasLength
-        ? southFallbackTlAndTotal(line.dinhMucTieuChuanKg, quantity, southSpecScale)
+        ? southFallbackTlAndTotal(effectiveDinhMucTieuChuanKg, quantity, southSpecScale)
         : null;
       const southUnitTl = isSouthOrder
         ? (southHasLength
             ? kg4((southKgPerMeter as number) * daiM * southSpecScale)
-            : (southFallback?.tl ?? (parseSouthDinhMucKg(line.dinhMucTieuChuanKg) !== null
-                ? kg4((parseSouthDinhMucKg(line.dinhMucTieuChuanKg) as number) * southSpecScale)
+            : (southFallback?.tl ?? (parseSouthDinhMucKg(effectiveDinhMucTieuChuanKg) !== null
+                ? kg4((parseSouthDinhMucKg(effectiveDinhMucTieuChuanKg) as number) * southSpecScale)
                 : null)))
         : null;
       const southScaledTotalKg = isSouthOrder && Number.isFinite(quantity) && quantity > 0
@@ -1157,7 +1210,7 @@ export function orderProductLinesToPayload(
       // Số nhập tay luôn ưu tiên hơn số tự tính (kể cả đơn miền nam đã cho sửa Tổng KG).
       const effectiveManualTotalKg = manualTotalKg ?? dinhMucTotalKg;
       const cutWeight = isCutLikeOrder
-        ? calculateCutOrderWeight(line.daiM, String(quantity), conversion, unit, productCode, productName, isSongLine ? '' : (line.kho || ''), doLiDmWeightScale(line.doLiDm, catalogWeightLi(selectedProduct)))
+        ? calculateCutOrderWeight(line.daiM, String(quantity), conversion, unit, productCode, productName, isSongLine ? '' : (line.kho || ''), doLiDmWeightScale(weightDoLiDm, catalogWeightLi(weightCatalogProduct)))
         : null;
 
       let cutQuyCach: string | undefined;
@@ -2206,7 +2259,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     const fromVariant = base.code.startsWith('VAR-');
     const baseAmis = fromVariant ? base.amisOldCode || base.amisCode : base.amisCode;
     if (isSouthOrder) {
-      // Đơn miền nam, tạo SP: giữ họ mã + NP/NP2. Độ li lấy từ tem. Đặc đổi khổ, Rỗng đổi mét dài, Sóng chỉ độ li.
+      // Đơn miền nam, tạo SP: Đặc đổi độ li theo tem. Sóng và Rỗng không đổi độ li theo tem.
       return buildSouthOrderProductAmis({
         baseMaAmis: baseAmis,
         nhomVthh: form.group,
@@ -2923,8 +2976,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       // Nhựa sóng: khổ cố định theo danh mục — khóa ô Khổ rộng (vẫn lưu `kho` =
                       // khổ chuẩn danh mục vào thông tin; không hiện trong tên ghép / Mã AMIS).
                       const isSongOrderLine = classifyProductPxGroup(matchedLineProduct?.group || '') === 'song';
+                      const temLiLocked = temLiLockedForGroup(matchedLineProduct?.group || findOrderProductById(productOptions, line.productId)?.group || String(line.sourceProduct?.nhom_vthh || ''));
+                      const weightCatalogProduct = matchedLineProduct ?? findOrderProductById(productOptions, line.productId);
                       const cutWeight = line.shouldRecalculateConversion
-                        ? calculateCutOrderWeight(line.daiM, cutEffectiveQty, matchedConversion, cutEffectiveUnit, line.productCode, matchedLineProduct?.name || line.productName, isSongOrderLine ? '' : (line.kho || ''), doLiDmWeightScale(line.doLiDm, catalogWeightLi(matchedLineProduct)))
+                        ? calculateCutOrderWeight(line.daiM, cutEffectiveQty, matchedConversion, cutEffectiveUnit, line.productCode, matchedLineProduct?.name || line.productName, isSongOrderLine ? '' : (line.kho || ''), doLiDmWeightScale(line.doLiDm, catalogWeightLi(weightCatalogProduct)))
                         : null;
                       const kgPerStandardMeter = isFormSouthOrder
                         ? southOrderKgPerMeter(
@@ -2937,8 +2992,11 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         : null;
                       const southLengthM = parsePercentInput(line.daiM);
                       const southQty = parsePercentInput(cutEffectiveQty);
-                      // Định mức tiêu chuẩn (kg) đã tính lại theo Dài / Khổ / Độ li ĐM (recomputeSouthStandard) → không nhân thêm hệ số.
-                      const southFormScale = 1;
+                      // Có Định mức tiêu chuẩn thì hệ số độ li đã nằm trong số đó. Chưa có thì nhân theo ô Độ li ĐM.
+                      const southFormScale = parseSouthDinhMucKg(line.dinhMucTieuChuanKg) === null
+                        && !hasZemInName(line.productionName, line.productName, line.productCode)
+                        ? (doLiDmWeightScale(line.doLiDm, catalogWeightLi(weightCatalogProduct)) ?? 1)
+                        : 1;
                       const southScaledTotal = isFormSouthOrder && southQty > 0
                         ? (kgPerStandardMeter !== null && southLengthM > 0
                             ? southScaledTlAndTotal(kgPerStandardMeter, southLengthM, southQty, southFormScale).total
@@ -2965,7 +3023,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         }
                         if (line.shouldRecalculateConversion) {
                           // TL/đơn vị không phụ thuộc SL → tính với SL = 1 để dòng mới (chưa nhập SL) vẫn tự fill.
-                          const perUnit = calculateCutOrderWeight(line.daiM, '1', matchedConversion, cutEffectiveUnit, line.productCode, matchedLineProduct?.name || line.productName, line.kho || '', doLiDmWeightScale(line.doLiDm, catalogWeightLi(matchedLineProduct)));
+                          const perUnit = calculateCutOrderWeight(line.daiM, '1', matchedConversion, cutEffectiveUnit, line.productCode, matchedLineProduct?.name || line.productName, line.kho || '', doLiDmWeightScale(line.doLiDm, catalogWeightLi(weightCatalogProduct)));
                           return positive(perUnit?.kg1Sp ?? Number.NaN);
                         }
                         return positive(parsePercentInput(String(cutEffectiveUnit === 'Cuộn' ? line.tlCuon || '' : line.tlTam || '')));
@@ -3195,9 +3253,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                             value={line.manualTongKg
                               ? String(line.tongKg ?? '')
                               : displayedCutWeight !== null && Number.isFinite(displayedCutWeight)
-                                ? (isFormSouthOrder
-                                    ? orderDuplicateDecimalText(formatNumber(truncateTo4Decimals(displayedCutWeight), 4))
-                                    : formatNumber(truncateTo4Decimals(displayedCutWeight), 4))
+                                ? formatNumber(truncateTo4Decimals(displayedCutWeight), 4)
                                 : ''}
                             onChange={e => {
                               updateProductLine(line.key, {
@@ -3242,10 +3298,36 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                           </div>
                           <div className="grid items-start gap-2 grid-cols-3">
                             <SouthOrderTemCells
-                              tem={line.tem || ''}
+                              temLiLocked={temLiLocked}
+                              tem={temLiLocked ? '' : (line.tem || '')}
                               mauTem={line.mauTem || ''}
                               danTem2Dau={Boolean(line.danTem2Dau)}
-                              onPatch={patch => updateProductLine(line.key, patch)}
+                              onPatch={patch => {
+                                if (!Object.prototype.hasOwnProperty.call(patch, 'tem')) {
+                                  updateProductLine(line.key, patch);
+                                  return;
+                                }
+                                const catalogForTem = matchedLineProduct ?? findOrderProductById(productOptions, line.productId);
+                                const nextDoLiDm = nextDoLiDmAfterTem({
+                                  tem: patch.tem,
+                                  previousTem: line.tem,
+                                  currentDoLiDm: line.doLiDm,
+                                  catalogDoLiDm: orderDoLiDmLiNumber(catalogForTem?.doLiDm, catalogForTem?.productionName),
+                                  allowReplace: temMayReplaceDoLi(catalogForTem?.group),
+                                  zem: hasZemInName(line.productionName, line.productName, line.productCode)
+                                });
+                                if (!isFormSouthOrder || nextDoLiDm === String(line.doLiDm || '').trim()) {
+                                  updateProductLine(line.key, patch);
+                                  return;
+                                }
+                                updateConversionProductLine(line.key, {
+                                  ...patch,
+                                  doLiDm: nextDoLiDm,
+                                  manualTongKg: false,
+                                  tongKg: '',
+                                  dinhMucKg: ''
+                                });
+                              }}
                               showLabels
                             />
                           </div>

@@ -78,7 +78,10 @@ export function OrderProductCreateModal({ source, projection, specs, projectCode
   const initialForm = useMemo(() => {
     const form = productToForm(source.product, source.conversions);
     const seeded = seedProductionSpecs({ tenSanXuat: projection.productionName, maAmis: projection.code, nhomVthh: form.group });
-    const doLi = noZem ? specs.tem || specs.doLi || seeded.doLi : '';
+    const isDacForm = classifyProductPxGroup(form.group) === 'dac';
+    const doLi = noZem
+      ? (isDacForm ? (specs.tem || specs.doLi || seeded.doLi) : (specs.doLi || seeded.doLi))
+      : '';
     const doDayM = specs.width || form.doDayM;
     const doDaiM = specs.length || form.doDaiM;
     const doLiDm = noZem
