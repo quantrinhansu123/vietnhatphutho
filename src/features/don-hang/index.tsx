@@ -91,6 +91,13 @@ export {
   southScaledTlAndTotal
 } from './southWeight';
 import { truncateTo4Decimals } from '../../utils/weightTruncate';
+import { resolveSheetKgPerUnit } from '../../utils/productConversionCalculation';
+
+/** Tấm thiếu TL/tấm trong bảng quy đổi: suy ra từ kg/m² × khổ × dài (cùng quy tắc với server). */
+const withResolvedSheetKg = (item: OrderProductConversion): OrderProductConversion => {
+  const kg = resolveSheetKgPerUnit(item as unknown as Record<string, unknown>);
+  return kg !== null && kg !== Number(item.trongLuongKgTam) ? { ...item, trongLuongKgTam: kg } : item;
+};
 import { productionNameAmisGrade } from '../../utils/productProductionName';
 import {
   parseOrderProductsFromRecord,
@@ -1591,7 +1598,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
           setStaffOptions(normalizeDaNangBusinessStaffOptions(staffData));
           setCustomerOptions(normalizeCustomerOptions(customerData));
           setProductOptions(normalizeOrderProducts(productData));
-          setProductConversions(conversions);
+          setProductConversions(conversions.map(withResolvedSheetKg));
         }
       } catch (error: any) {
         if (!cancelled) {
@@ -1650,7 +1657,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
       const nextOptions = normalizeOrderProducts(productData);
       if (lookupRegionRef.current !== requestedRegion) return;
       setProductOptions(nextOptions);
-      setProductConversions(conversions);
+      setProductConversions(conversions.map(withResolvedSheetKg));
       setProductSyncMessage(`Đã đồng bộ ${nextOptions.length} sản phẩm.`);
     } catch (error: any) {
       setLookupError(error.message || 'Không thể đồng bộ sản phẩm.');

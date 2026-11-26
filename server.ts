@@ -21,7 +21,7 @@ import { registerDataAdminRoutes } from './serverDataAdmin';
 import { registerPhieuNvlRoutes } from './serverPhieuNvl';
 import { normalizeAssignablePositions } from './src/features/cai-dat-thoi-gian/staffAssignments';
 import { isExternalStaffCode, resolveScheduleStaffName } from './src/utils/externalStaff';
-import { calculateProductConversionFormulas, roundImportedConversionWeight } from './src/utils/productConversionCalculation';
+import { calculateProductConversionFormulas, resolveSheetKgPerUnit, roundImportedConversionWeight } from './src/utils/productConversionCalculation';
 import { truncateTo4Decimals } from './src/utils/weightTruncate';
 import {
   isCutOrderType as isCutOrderTypeServer,
@@ -8058,7 +8058,15 @@ async function fetchConversionMapBySanPhamIds(
             kho_cuon_dai_m: Number(row.kho_cuon_dai_m) || null,
             trong_luong_kg_m_dai: Number(row.trong_luong_kg_m_dai) || null,
             trong_luong_kg_m2: Number(row.trong_luong_kg_m2) || null,
-            trong_luong_kg_tam: Number(row.trong_luong_kg_tam) || null,
+            // TL/tấm thiếu thì suy ra kg/m² × khổ × dài (cùng quy tắc với FE).
+            trong_luong_kg_tam: resolveSheetKgPerUnit({
+              trongLuongKgTam: row.trong_luong_kg_tam,
+              trongLuongKgM2: row.trong_luong_kg_m2,
+              khoTamRongM: row.kho_tam_rong_m,
+              khoTamDaiM: row.kho_tam_dai_m,
+              khoCuonRongM: row.kho_cuon_rong_m,
+              khoCuonDaiM: row.kho_cuon_dai_m
+            }),
             trong_luong_kg_cuon: Number(row.trong_luong_kg_cuon) || null
           });
         }
