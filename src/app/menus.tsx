@@ -35,7 +35,6 @@ import microscope3d from '@iconify-icons/fluent-emoji/microscope';
 import robot3d from '@iconify-icons/fluent-emoji/robot';
 import passportControl3d from '@iconify-icons/fluent-emoji/passport-control';
 import articulatedLorry3d from '@iconify-icons/fluent-emoji/articulated-lorry';
-import handshake3d from '@iconify-icons/fluent-emoji/handshake';
 import moneyBag3d from '@iconify-icons/fluent-emoji/money-bag';
 import spiralNotepad3d from '@iconify-icons/fluent-emoji/spiral-notepad';
 import books3d from '@iconify-icons/fluent-emoji/books';
@@ -56,7 +55,7 @@ import {
   FilePlus2, Layers, History, UsersRound, Building2, BriefcaseBusiness, Package, Cpu, Boxes,
   ClipboardList, Database, Factory, LayoutDashboard, FlaskConical, ArrowDownToLine, ArrowLeftRight, Scale, Settings,
   CalendarDays, ChevronRight, ChevronLeft, ClipboardCheck, PackageX, BarChart3, Activity, Truck,
-  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, AlertTriangle, Coins, Scissors, BookOpen, Beaker
+  ArrowRight, ArrowDown, ShieldCheck, UserRound, Warehouse, Ban, AlertTriangle, Coins, Scissors, BookOpen
 } from 'lucide-react';
 import type { AppTab } from '../routes';
 import { hubHasAllowedChild, isScopedPermissionTab, resolveAccessTab } from './tabAccess';
@@ -777,13 +776,6 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'warehouse-slip'
   },
   {
-    title: 'Cân kiểm kho',
-    desc: 'Mở trạm cân kiểm kho để chụp, đọc khối lượng và lưu phiếu kiểm kho.',
-    icon: Scale,
-    icon3d: scale3d,
-    tab: 'can-kiem-kho'
-  },
-  {
     title: 'Cắt lẻ',
     desc: 'Lệnh cắt lẻ, báo cáo đơn cắt lẻ và theo dõi cắt lẻ theo mã AMIS.',
     icon: Scissors,
@@ -812,20 +804,6 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'huong-dan-nhap-nvl'
   },
   {
-    title: 'NVL theo đợt – máy',
-    desc: 'Theo dõi xuất / nhập lại / phế theo ngày, đợt, máy và loại sản xuất.',
-    icon: CalendarDays,
-    icon3d: spiralCalendar3d,
-    tab: 'nvl-theo-dot-may'
-  },
-  {
-    title: 'Mô phỏng nguồn NVL',
-    desc: 'Xem dữ liệu mẫu: kho, máy, mã NVL, ca, NCC, loại phiếu, quy trình và tồn lô.',
-    icon: Beaker,
-    icon3d: testTube3d,
-    tab: 'nvl-mo-phong'
-  },
-  {
     title: 'Danh sách xuất nhập kho NVL',
     desc: 'Phiếu xuất nhập kho NVL đã ghi sổ. In, sửa hoặc hủy từ đây.',
     icon: History,
@@ -847,26 +825,11 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'thong-ke-nvl'
   },
   {
-    title: 'Sổ NVL (có duyệt)',
-    desc: 'Phiếu nhập/xuất NVL theo mã luồng, đợt, máy; nháp → duyệt → hủy, kiểm tồn khi xuất.',
-    icon: BarChart3,
-    icon3d: chartIncreasing3d,
-    tab: 'so-nvl'
-  },
-  {
     title: 'Lịch sử xuất nhập',
     desc: 'Tra cứu phiếu đã lưu, lọc theo loại và ngày.',
     icon: History,
     icon3d: warehouseHistory3d,
     tab: 'warehouse-history'
-  },
-  {
-    title: 'Chuẩn bị xuất hàng',
-    desc: 'Danh sách lệnh giao hàng, xác nhận đủ hàng và bàn giao cho lái xe.',
-    icon: Truck,
-    icon3d: handshake3d,
-    tab: 'factory-kho',
-    disabled: true
   }
 ];
 
@@ -1148,19 +1111,14 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Kho hàng', tab: 'inventory-catalog' },
       { label: 'Nhà cung cấp', tab: 'suppliers' },
       { label: 'Nhập Xuất Thành Phẩm', tab: 'warehouse-slip' },
-      { label: 'Cân kiểm kho', tab: 'can-kiem-kho' },
       { label: 'Lịch sử xuất nhập', tab: 'warehouse-history' },
       { label: 'Cắt lẻ', tab: 'cat-le' },
       { label: 'Chuyển kho', tab: 'chuyen-kho' },
       { label: 'Xuất nhập kho NVL', tab: 'phieu-nhap-xuat-tong-hop' },
       { label: 'Hướng dẫn nhập NVL', tab: 'huong-dan-nhap-nvl' },
-      { label: 'NVL theo đợt – máy', tab: 'nvl-theo-dot-may' },
-      { label: 'Mô phỏng nguồn NVL', tab: 'nvl-mo-phong' },
       { label: 'Danh sách xuất nhập kho NVL', tab: 'phieu-nhap-xuat-tong-hop-list' },
       { label: 'Tổng hợp NVL từ nhà cung cấp', tab: 'tong-hop-ncc' },
-      { label: 'Thống kê NVL', tab: 'thong-ke-nvl' },
-      { label: 'Sổ NVL (có duyệt)', tab: 'so-nvl' },
-      { label: 'Chuẩn bị xuất hàng', tab: 'factory-kho', disabled: true }
+      { label: 'Thống kê NVL', tab: 'thong-ke-nvl' }
     ]
   },
   {
