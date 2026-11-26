@@ -1,3 +1,4 @@
+import { truncateTo4Decimals } from './weightTruncate';
 export type ProductConversionCalculationInput = {
   sheetWidthM: number | null;
   sheetLengthM: number | null;
@@ -91,4 +92,30 @@ export function calculateProductConversionFormulas(
   }
 
   return { areaM2, kgPerLinearM, kgPerSheet, kgPerRoll };
+}
+
+/**
+ * TL/tấm: lấy `trongLuongKgTam` nếu có; thiếu thì suy ra = kg/m² × khổ rộng × dài tấm.
+ * Khổ/dài tấm lấy ô tấm trước, thiếu thì dùng khổ/dài cuộn (sản phẩm tấm có khổ cuộn = khổ tấm).
+ * Trả null nếu không đủ dữ liệu. Kết quả cắt 4 số lẻ (không làm tròn).
+ */
+export function resolveSheetKgPerUnit(row: {
+  trongLuongKgTam?: unknown;
+  trongLuongKgM2?: unknown;
+  khoTamRongM?: unknown;
+  khoTamDaiM?: unknown;
+  khoCuonRongM?: unknown;
+  khoCuonDaiM?: unknown;
+}): number | null {
+  const pos = (value: unknown): number | null => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const direct = pos(row.trongLuongKgTam);
+  if (direct !== null) return truncateTo4Decimals(direct);
+  const kgM2 = pos(row.trongLuongKgM2);
+  const width = pos(row.khoTamRongM) ?? pos(row.khoCuonRongM);
+  const length = pos(row.khoTamDaiM) ?? pos(row.khoCuonDaiM);
+  if (kgM2 === null || width === null || length === null) return null;
+  return truncateTo4Decimals(kgM2 * width * length);
 }
