@@ -1317,7 +1317,7 @@ export function MaterialsInventoryPanel({
       const matchesUnit = selectedUnit === 'all' || material.unit === selectedUnit;
       const matchesSearch =
         !normalizedSearch ||
-        `${material.code} ${material.name} ${material.productionName} ${material.unit} ${material.auxiliaryMaterialGroup} ${material.warehouse}`
+        `${material.code} ${material.name} ${material.productionName} ${material.unit} ${material.warehouse}`
           .toLowerCase()
           .includes(normalizedSearch);
       return matchesWarehouse && matchesUnit && matchesSearch;
@@ -1628,7 +1628,7 @@ export function MaterialsInventoryPanel({
         else byCode.set(codeKey, [material]);
         if (!MATERIAL_ROW_UUID.test(material.id) || material.inventoryBalanceOnly) continue;
         byIdentity.set(
-          materialImportIdentity(material.code, material.name, material.productionName, material.warehouse),
+          materialImportIdentity(material.code, '', material.productionName, material.warehouse),
           material
         );
       }
@@ -1644,26 +1644,22 @@ export function MaterialsInventoryPanel({
           continue;
         }
 
+        // Danh mục chỉ còn Mã + Tên NVL sản xuất (không import Tên NVL).
         const siblings = byCode.get(normalizeMaterialCodeKey(code)) ?? [];
-        let name = row.name.trim();
         let productionName = row.productionName.trim();
-        if (!name || name === '-') {
+        if (!productionName || productionName === '-') {
           if (siblings.length === 1) {
-            name = siblings[0].name.trim();
-            if (!productionName) productionName = siblings[0].productionName.trim();
-          } else {
-            failures.push(`dòng ${row.rowNumber}: thiếu tên nguyên phụ liệu`);
-            continue;
+            productionName = siblings[0].productionName.trim();
           }
         }
-        if (!name || name === '-') {
-          failures.push(`dòng ${row.rowNumber}: thiếu tên nguyên phụ liệu`);
+        if (!productionName || productionName === '-') {
+          failures.push(`dòng ${row.rowNumber}: thiếu tên NVL sản xuất`);
           continue;
         }
+        const name = '';
 
         const payload: Record<string, unknown> = {
           ...materialCatalogRowToPayload(row),
-          name,
           productionName
         };
 
@@ -1781,8 +1777,8 @@ export function MaterialsInventoryPanel({
       setFormError('Vui lòng nhập mã NPL.');
       return;
     }
-    if (!materialForm.name.trim()) {
-      setFormError('Vui lòng nhập tên nguyên phụ liệu.');
+    if (!materialForm.productionName.trim()) {
+      setFormError('Vui lòng nhập tên nguyên vật liệu sản xuất.');
       return;
     }
     const warehouseName = resolveMaterialWarehouseName(materialForm.warehouse);
@@ -1908,8 +1904,7 @@ export function MaterialsInventoryPanel({
   };
 
   const materialFormFields: Array<{ key: keyof MaterialFormState; label: string; required?: boolean; placeholder?: string }> = [
-    { key: 'name', label: 'Tên nguyên vật liệu', required: true, placeholder: 'VD: Màng PE' },
-    { key: 'productionName', label: 'Tên nguyên vật liệu sản xuất', placeholder: 'Tên dùng trong sản xuất' },
+    { key: 'productionName', label: 'Tên nguyên vật liệu sản xuất', required: true, placeholder: 'VD: Màng PE' },
     { key: 'phanLoai', label: 'Phân loại' },
     { key: 'auxiliaryMaterialGroup', label: 'Nhóm vật tư phụ' },
     { key: 'totalWeight', label: 'Tổng kg' },
@@ -2023,7 +2018,7 @@ export function MaterialsInventoryPanel({
           <TableSearchInput
             value={searchText}
             onChange={setSearchText}
-            placeholder="Tìm mã / tên / tên sản xuất / nhóm"
+            placeholder="Tìm mã / tên sản xuất"
             disabled={isLoadingMaterials}
           />
           <button
@@ -2373,12 +2368,9 @@ export function MaterialsInventoryPanel({
             />
           </TableHeadCell>
           <TableHeadCell>Mã NPL</TableHeadCell>
-          <TableHeadCell>Tên nguyên vật liệu</TableHeadCell>
-          <TableHeadCell>Phân loại</TableHeadCell>
-          <TableHeadCell>Nhóm vật tư phụ</TableHeadCell>
           <TableHeadCell>Tên NVL sản xuất</TableHeadCell>
+          {showKhoColumn ? <TableHeadCell>Kho</TableHeadCell> : null}
           <TableHeadCell>ĐV</TableHeadCell>
-            {showKhoColumn ? <TableHeadCell>Kho</TableHeadCell> : null}
           <TableHeadCell align="center">Tổng kg</TableHeadCell>
           <TableHeadCell>Tồn đầu</TableHeadCell>
           <TableHeadCell>Nhập</TableHeadCell>
@@ -2408,14 +2400,11 @@ export function MaterialsInventoryPanel({
                   )}
                 </td>
                 <td className="px-4 py-3 font-black text-zinc-950">{material.code || '-'}</td>
-                <td className="px-4 py-3 font-semibold text-zinc-900">{material.name || '-'}</td>
-                <td className="px-4 py-3 text-xs font-semibold text-zinc-600">{material.phanLoai || '-'}</td>
-                <td className="px-4 py-3 text-xs font-semibold text-zinc-700">{material.auxiliaryMaterialGroup || '-'}</td>
-                <td className="px-4 py-3 font-semibold text-zinc-700">{material.productionName || '-'}</td>
-                <td className="px-4 py-3 text-zinc-700">{material.unit}</td>
+                <td className="px-4 py-3 font-semibold text-zinc-900">{material.productionName || '-'}</td>
                 {showKhoColumn ? (
                   <td className="px-4 py-3 text-zinc-700">{material.warehouse || '—'}</td>
                 ) : null}
+                <td className="px-4 py-3 text-zinc-700">{material.unit}</td>
                 <td className="px-4 py-3 text-right font-mono font-bold text-zinc-800">{material.totalWeight}</td>
                 <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.openingStock}</td>
                 <td className="px-4 py-3 font-mono font-bold text-zinc-700">{material.inbound}</td>
@@ -2477,7 +2466,7 @@ export function MaterialsInventoryPanel({
                 </td>
               </TableRow>
               {periodReady && (material.priceBalances || []).length > 0 ? <tr className="border-b border-zinc-200 bg-zinc-50/70">
-                <td colSpan={showKhoColumn ? 15 : 14} className="px-5 py-2.5">
+                <td colSpan={showKhoColumn ? 12 : 11} className="px-5 py-2.5">
                   <div className="ml-3 rounded-lg border border-zinc-200 bg-white p-2.5">
                     <div className="mb-2 text-[10px] font-black uppercase tracking-wide text-zinc-500">Chi tiết tồn theo đơn giá · {material.code || material.name}</div>
                     {(material.priceBalances || []).length ? (
@@ -2502,7 +2491,7 @@ export function MaterialsInventoryPanel({
           })}
 
           {!isLoadingMaterials && visibleMaterials.length === 0 && (
-            <TableEmptyRow colSpan={showKhoColumn ? 15 : 14}>
+            <TableEmptyRow colSpan={showKhoColumn ? 12 : 11}>
               {warehouseFilter
                 ? 'Không có mã hàng trong kho này.'
                 : 'Chưa có nguyên vật liệu trong danh mục.'}

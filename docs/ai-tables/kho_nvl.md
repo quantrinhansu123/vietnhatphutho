@@ -45,6 +45,14 @@ Phiếu xuất nhập (`phieu_xuat_nhap_kho`) cập nhật tồn kho NVL.
 
 **View gộp Kho NVL (Tất cả / đúng "Kho NVL"):** khi đã chọn kỳ, ẩn dòng trùng mã có Tồn đầu = Nhập = Xuất = 0 nếu cùng mã đã phát sinh ở kho khác — `filterDuplicateZeroWarehouseRows` (`src/features/_shared/recordHelpers.ts`), dùng trong `displayedMaterials` → `visibleMaterials` (`src/features/kho-nvl/index.tsx`). Master cũ Kho NVL 0/0/0 không còn che dòng Kho NVL Phụ vừa nhập; lọc kho cụ thể và dữ liệu gốc giữ nguyên.
 
+### Không còn "Tên nguyên vật liệu" (26/11/2026)
+
+- Danh mục `kho_nvl` chỉ còn **Mã NPL + Tên NVL sản xuất** (+ kho, ĐV, nhóm). Cột `ten_npl` luôn **null** trong DB: `parseMaterialBody` bỏ `name`, bắt buộc `productionName`; `ensureKhoNvlCatalogForNvlLines` / `/api/xuat-nhap-tong-hop/ma-moi` ghi `ten_nvl_sx` (dòng thiếu tên SX lấy tên hiển thị), `ten_npl = null`.
+- Nhận diện dòng (`materialImportIdentityFromRecord`, `stampOutboundKhoNvlIds`) = **mã + tên NVL sản xuất + kho** (phần tên luôn rỗng, giữ vị trí identity).
+- API trả `ten_npl` = tên NVL sản xuất (`materialWithClassificationAliases`, catalog `/api/ton-kho-nvl`) để phiếu / PTĐM / sổ trộn (vốn đọc `ten_npl`) vẫn có tên hiển thị.
+- Bảng `/kho-nvl` & `/kho-hang`: ẩn cột Tên NVL, Phân loại và Nhóm vật tư phụ (ô tìm kiếm không còn lọc theo nhóm); cột **Kho** đứng ngay sau **Tên NVL sản xuất**. Form thêm/sửa: bỏ ô Tên NVL, Tên NVL sản xuất bắt buộc. Excel mẫu bỏ cột "Tên nguyên vật liệu"; import không gửi tên.
+- Đã xóa hết 236 dòng và import lại từ `MASTER DATA - NHÀ MÁY PHÚ THỌ-v3-7.8.xlsx` (sheet `DM_NVL`, cột Mã / Tên NVL SX / Mã kho ngầm định / Phân loại chính phụ / Nhóm vật tư phụ / ĐVT) — **giữ nguyên `id` cũ** (upsert theo id) để `id_danh_muc` trên phiếu vẫn khớp, tồn không mất.
+
 ### Excel danh mục NVL
 
 - **Tải mẫu Excel** / **Tải Excel lên** — `src/utils/materialCatalogExcel.ts`

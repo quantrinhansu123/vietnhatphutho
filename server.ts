@@ -4392,6 +4392,10 @@ async function validateMixingNormMaterialClasses(record: Record<string, unknown>
       String(row.ten_npl ?? '').trim() === reference.name &&
       String(row.ten_nvl_sx ?? '').trim() === reference.productionName
     ) ?? candidates.find(row =>
+      String(row.ten_nvl_sx ?? '').trim() !== '' &&
+      (String(row.ten_nvl_sx ?? '').trim() === reference.productionName ||
+        String(row.ten_nvl_sx ?? '').trim() === reference.name)
+    ) ?? candidates.find(row =>
       String(row.ten_npl ?? '').trim() === reference.name
     ) ?? candidates[0];
 
@@ -5290,10 +5294,11 @@ function normalizeAuxiliaryMaterialGroup(raw: unknown): string | null {
 function parseMaterialBody(body: unknown): { error: string } | MaterialWritePayload {
   const source = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
   const code = parseMaterialText(source.code);
-  const name = parseMaterialText(source.name);
+  // Danh mục NVL không còn "Tên nguyên vật liệu" — chỉ Mã + Tên NVL sản xuất.
+  const productionName = parseMaterialText(source.productionName ?? source.ten_nvl_sx);
 
   if (!code) return { error: 'Vui lòng nhập mã NPL.' };
-  if (!name) return { error: 'Vui lòng nhập tên nguyên phụ liệu.' };
+  if (!productionName) return { error: 'Vui lòng nhập tên NVL sản xuất.' };
   const rawAuxiliaryGroup = parseMaterialText(
     source.auxiliaryMaterialGroup ?? source.nhomVatTuPhu ?? source.nhom_vat_tu_phu
   );
@@ -5304,8 +5309,8 @@ function parseMaterialBody(body: unknown): { error: string } | MaterialWritePayl
 
   const record: Record<string, string | number | null> = {
     ma_npl: code,
-    ten_npl: name,
-    ten_nvl_sx: parseMaterialText(source.productionName ?? source.ten_nvl_sx) || null,
+    ten_npl: null,
+    ten_nvl_sx: productionName,
     don_vi: parseMaterialText(source.unit) || null,
     tong_trong_luong: parseOptionalMaterialDecimalText(source.totalWeight),
     trong_luong_nhua: parseOptionalMaterialDecimalText(source.plasticWeight),
@@ -5337,7 +5342,11 @@ async function attachMaterialKho(record: Record<string, string | number | null>)
   record.loai_kho = await resolveMaKho(tenKho || 'Kho NVL', 'kho_nvl');
 }
 
-/** Khớp unique kho_nvl_ma_ten_sx_kho_key: btrim mã + tên + tên sản xuất + kho. */
+/**
+ * Khớp unique kho_nvl_ma_ten_sx_kho_key: btrim mã + tên + tên sản xuất + kho.
+ * Danh mục không còn tên NVL (`ten_npl` luôn trống) nên phần tên luôn là '' — nhận diện
+ * thực tế = mã + tên NVL sản xuất + kho (giữ vị trí để tách identity theo '\0' không đổi).
+ */
 function materialImportIdentityFromRecord(record: {
   ma_npl?: unknown;
   ten_npl?: unknown;
@@ -5346,7 +5355,7 @@ function materialImportIdentityFromRecord(record: {
 }) {
   return [
     String(record.ma_npl ?? '').trim(),
-    String(record.ten_npl ?? '').trim(),
+    '',
     String(record.ten_nvl_sx ?? '').trim(),
     String(record.ten_kho ?? '').trim()
   ].join('\0');
@@ -5417,18 +5426,19 @@ async function ensureKhoNvlCatalogForNvlLines(
   for (const line of lines || []) {
     const code = String(line.code || '').trim();
     const name = String(line.name || '').trim();
-    if (!code || !name) continue;
+    // Danh mục chỉ còn mã + tên NVL sản xuất; dòng cũ thiếu tên SX thì dùng tên hiển thị.
+    const productionName = String(line.productionName || '').trim() || name;
+    if (!code || !productionName) continue;
     const identity = materialImportIdentityFromRecord({
       ma_npl: code,
-      ten_npl: name,
-      ten_nvl_sx: String(line.productionName || '').trim(),
+      ten_nvl_sx: productionName,
       ten_kho: warehouse
     });
     if (!seen.has(identity)) {
       seen.set(identity, {
         code,
         name,
-        productionName: String(line.productionName || '').trim(),
+        productionName,
         unit: String(line.unit || '').trim() || 'kg',
         phanLoai: catalogPhanLoaiLabel(line.materialClass || line.phanLoai)
       });
@@ -5453,8 +5463,8 @@ async function ensureKhoNvlCatalogForNvlLines(
     }
     const record: Record<string, string | number | null> = {
       ma_npl: entry.code,
-      ten_npl: entry.name,
-      ten_nvl_sx: entry.productionName || null,
+      ten_npl: null,
+      ten_nvl_sx: entry.productionName,
       don_vi: entry.unit || null,
       ten_kho: warehouse || null,
       ...(entry.phanLoai ? { phan_loai: entry.phanLoai } : {})
@@ -5548,8 +5558,7 @@ async function attachLiveKhoNvlIds<T extends Record<string, unknown>>(
   const stamped = records.map(record => {
     const identity = materialImportIdentityFromRecord({
       ma_npl: record.ma_npl,
-      ten_npl: record.ten_npl,
-      ten_nvl_sx: record.ten_nvl_sx,
+      ten_nvl_sx: String(record.ten_nvl_sx ?? '').trim() || String(record.ten_npl ?? '').trim(),
       ten_kho: String(record.ten_kho ?? warehouse).trim()
     });
     const hit = hits.get(identity);
@@ -5629,8 +5638,13 @@ function stripMissingMaterialKhoColumns<T extends Record<string, unknown>>(
 
 function materialWithClassificationAliases(record: Record<string, unknown>) {
   const phanLoai = String(record.phan_loai ?? record.kho_ngam_dinh ?? '').trim() || null;
+  // `ten_npl` trong DB luôn trống; API trả tên NVL sản xuất vào `ten_npl` để các màn hình
+  // phiếu/PTĐM/sổ trộn (vốn đọc `ten_npl`) vẫn có tên hiển thị.
+  const displayName =
+    String(record.ten_npl ?? '').trim() || String(record.ten_nvl_sx ?? '').trim() || null;
   return {
     ...record,
+    ten_npl: displayName,
     phan_loai: phanLoai,
     // Compatibility alias for older clients and saved local payloads.
     kho_ngam_dinh: phanLoai
@@ -17995,7 +18009,7 @@ async function loadKiemKhoLiveTongHopForDot(
         const tong = Number(row.tong_trong_luong ?? NaN);
         const balance = ensureBalance({
           code: String(row.ma_npl ?? ''),
-          name: String(row.ten_npl ?? ''),
+          name: String(row.ten_npl ?? '').trim() || String(row.ten_nvl_sx ?? '').trim(),
           productionName: String(row.ten_nvl_sx ?? ''),
           warehouse,
           unit: String(row.don_vi ?? ''),

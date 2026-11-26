@@ -1011,17 +1011,14 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       for (const row of ((data || []) as Array<Record<string, unknown>>)) {
         const id = text(row.id);
         if (!id) continue;
-        hits.set(
-          [text(row.ma_npl), text(row.ten_npl), text(row.ten_nvl_sx), text(row.ten_kho)].join(''),
-          id
-        );
+        // Danh mục không còn tên NVL: nhận diện = mã + tên NVL sản xuất + kho.
+        hits.set([text(row.ma_npl), text(row.ten_nvl_sx), text(row.ten_kho)].join(''), id);
       }
     }
     return records.map(record => {
       const identity = [
         text(record.ma_npl),
-        text(record.ten_npl),
-        text(record.ten_nvl_sx),
+        text(record.ten_nvl_sx) || text(record.ten_npl),
         text(record.ten_kho ?? warehouse)
       ].join('');
       const hit = hits.get(identity);
@@ -1985,7 +1982,8 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
     const code = text(source.code ?? source.ma);
     const name = text(source.name ?? source.ten);
     const unit = text(source.unit ?? source.don_vi) || (catalog === 'nvl' ? 'kg' : 'Cái');
-    if (!code || !name) return res.status(400).json({ error: 'Nhập mã và tên.' });
+    // NVL chỉ cần mã + tên NVL sản xuất (không còn tên NVL); thành phẩm vẫn cần tên.
+    if (!code || (catalog !== 'nvl' && !name)) return res.status(400).json({ error: 'Nhập mã và tên.' });
     if (catalog === 'nvl') {
       // Master kho_nvl khóa unique mã + tên + tên SX + kho: thiếu kho sẽ thành dòng
       // trống kho hiện canonical "Kho NVL" 0/0/0 gây nhiễu; thiếu tên SX/phân loại sẽ
@@ -1997,14 +1995,16 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       const phanLoai = nvlCatalogPhanLoaiLabel(
         source.phan_loai ?? source.phanLoai ?? source.materialClass ?? source.warehouseClass ?? source.phan_loai_nvl
       );
+      const sxName = tenNvlSx || name;
+      if (!sxName) return res.status(400).json({ error: 'Nhập tên NVL sản xuất.' });
       if (!tenKhoNvl) return res.status(400).json({ error: 'Chọn kho NVL (Kho NVL Chính / Phụ / PC) để thêm mã.' });
       const kho = await loadParty('kho', tenKhoNvl);
       if ('error' in kho) return res.status(400).json({ error: kho.error });
       if (!kho.vatTu) return res.status(400).json({ error: `Kho "${kho.ten}" không phải kho NVL.` });
-      const baseRecord: Record<string, unknown> = { ma_npl: code, ten_npl: name, don_vi: unit };
+      const baseRecord: Record<string, unknown> = { ma_npl: code, ten_npl: null, don_vi: unit };
       const fullRecord: Record<string, unknown> = {
         ...baseRecord,
-        ten_nvl_sx: tenNvlSx || null,
+        ten_nvl_sx: sxName,
         ten_kho: kho.ten,
         loai_kho: kho.maKho || (await deps.resolveMaKho(kho.ten, 'kho_nvl')),
         ...(phanLoai ? { phan_loai: phanLoai } : {})
@@ -2032,19 +2032,22 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
           if (!existing.error) {
             const hit = ((existing.data || []) as Array<Record<string, unknown>>).find(
               item =>
-                text(item.ten_npl) === name &&
-                text(item.ten_nvl_sx) === tenNvlSx &&
+                text(item.ten_nvl_sx) === sxName &&
                 deps.normalizeKho(text(item.ten_kho)) === deps.normalizeKho(kho.ten)
             );
-            if (hit) return res.status(200).json({ success: true, duplicate: true, item: hit });
+            if (hit) return res.status(200).json({ success: true, duplicate: true, item: { ...hit, ten_npl: sxName } });
           }
-          return res.status(409).json({ error: 'Mã, tên và tên sản xuất đã tồn tại trong kho này.' });
+          return res.status(409).json({ error: 'Mã và tên NVL sản xuất đã tồn tại trong kho này.' });
         }
         return res.status(500).json({ error: nvlResult.error.message || 'Không thêm được NVL.' });
       }
       const { data, error } = nvlResult;
       if (error) return res.status(500).json({ error: error.message || 'Không thêm được NVL.' });
-      return res.status(201).json({ success: true, item: (data || [])[0] || { ma_npl: code, ten_npl: name, don_vi: unit } });
+      // Trả `ten_npl` = tên NVL sản xuất để form phiếu vẫn có tên hiển thị.
+      return res.status(201).json({
+        success: true,
+        item: { ...((data || [])[0] || { ma_npl: code, don_vi: unit }), ten_npl: sxName }
+      });
     }
     const tenKho = text(source.ten_kho);
     const saved = await deps.insertNhapKho([
