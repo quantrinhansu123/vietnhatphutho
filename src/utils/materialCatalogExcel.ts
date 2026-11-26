@@ -24,11 +24,10 @@ export type MaterialCatalogExcelRow = {
 
 /**
  * Cột khớp UI bảng + form thêm/sửa.
- * Ô trống vẫn đẩy lên (null); tạo mới cần Mã NPL + Tên.
+ * Ô trống vẫn đẩy lên (null); tạo mới cần Mã NPL + Tên NVL sản xuất (không còn Tên NVL).
  */
 export const MATERIAL_CATALOG_EXCEL_HEADERS = [
   'Mã NPL',
-  'Tên nguyên vật liệu',
   'Tên NVL sản xuất',
   'Kho',
   'ĐV',
@@ -163,7 +162,6 @@ export function downloadMaterialCatalogExcelTemplate() {
     [...MATERIAL_CATALOG_EXCEL_HEADERS],
     [
       'NPL-001',
-      'Màng PE',
       'Màng PE sản xuất',
       'Kho NVL chính',
       'kg',
@@ -179,8 +177,8 @@ export function downloadMaterialCatalogExcelTemplate() {
       '',
       ''
     ],
-    // Dòng gần trống — vẫn đẩy lên được khi đã có mã + tên
-    ['NPL-002', 'NVL để trống các cột còn lại', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
+    // Dòng gần trống — vẫn đẩy lên được khi đã có mã + tên NVL sản xuất
+    ['NPL-002', 'NVL để trống các cột còn lại', '', '', '', '', '', '', '', '', '', '', '', '', '']
   ]);
   worksheet['!cols'] = MATERIAL_CATALOG_EXCEL_HEADERS.map(header => ({
     wch: Math.min(28, Math.max(10, header.length + 2))
@@ -194,7 +192,7 @@ export function downloadMaterialCatalogExcelTemplate() {
 export function materialCatalogRowToPayload(row: MaterialCatalogExcelRow) {
   return {
     code: row.code.trim(),
-    name: row.name.trim(),
+    // Không gửi tên NVL: danh mục chỉ còn Mã + Tên NVL sản xuất.
     productionName: row.productionName.trim(),
     // Ô Kho trống = không chạm kho đã gán (server chỉ ghi ten_kho/loai_kho khi có gửi).
     ...(row.warehouse.trim() ? { warehouse: row.warehouse.trim() } : {}),

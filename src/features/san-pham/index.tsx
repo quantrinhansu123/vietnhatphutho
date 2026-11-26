@@ -174,6 +174,18 @@ function productCodeCandidates(product: { code?: string; amisCode?: string; newC
   ];
 }
 
+/** Giá trị nhật ký có thể là chuỗi, số hoặc object (vd quy đổi) — luôn trả về chuỗi để render an toàn. */
+function formatAuditValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 function StockMetricLink({
   value,
   onClick,
@@ -3053,7 +3065,7 @@ export function ProductEditModal({
       action: string;
       actor_username?: string | null;
       actor_name?: string | null;
-      changes?: Record<string, { old?: string; new?: string; label?: string }>;
+      changes?: Record<string, { old?: unknown; new?: unknown; label?: string }>;
       created_at?: string;
     }>
   >([]);
@@ -3849,13 +3861,13 @@ export function ProductEditModal({
                             <span className="text-zinc-800">{change.label || key}</span>
                             {log.action === 'update' || log.action === 'import_update' ? (
                               <>
-                                : <span className="text-rose-600">{change.old || '∅'}</span>
+                                : <span className="text-rose-600">{formatAuditValue(change.old) || '∅'}</span>
                                 {' → '}
-                                <span className="text-emerald-700">{change.new || '∅'}</span>
+                                <span className="text-emerald-700">{formatAuditValue(change.new) || '∅'}</span>
                               </>
                             ) : (
                               <>
-                                : <span className="text-emerald-700">{change.new || change.old || '∅'}</span>
+                                : <span className="text-emerald-700">{formatAuditValue(change.new) || formatAuditValue(change.old) || '∅'}</span>
                               </>
                             )}
                           </li>
