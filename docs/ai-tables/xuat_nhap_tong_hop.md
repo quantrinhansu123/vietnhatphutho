@@ -51,7 +51,7 @@ API tests: `tests/api/nvlWarehouseFlow.test.ts` (opt-in integration test, 10 mã
 - Phiếu nhập: Nguồn Kho / Máy / NCC. Nhập lại / phế: máy nguồn + **Loại sản xuất** + đợt. Gợi ý kho nhập từ phiếu xuất cùng đợt–máy. Phế: SX01→Kho PC, SX06→Kho NVL Chính. Kho nhập chỉ Chính / Phụ / PC. Tên SX gõ + gợi ý (`revertOnBlurMismatch`).
 - Phiếu xuất (UI mới): tỷ lệ trộn, **theo máy**, trả NCC, phế băm/cái, khác — **không** tạo «Xuất theo phân xưởng». Xuất máy SX thường: đợt + ca + máy + Loại sản xuất; chuyển phế cho máy băm/tạo hạt không cần đợt hoặc Loại sản xuất. Lưới Xuất từ kho/máy; vật liệu nguồn kho chỉ hiện khi còn tồn, lô chọn lọc có số dư dương; ô tìm NVL hỗ trợ nhiều từ khóa ngăn cách bằng dấu phẩy. Phiếu cũ PX vẫn đọc.
 - Header lưu `nguoi_lap`, `nguoi_giao`, `dia_diem`, `ly_do`, `ghi_chu`. Người lập chọn từ nhân sự `trang_thai = Đang làm`. Chạy lại `supabase-phieu-nhap-xuat-tong-hop.sql` nếu thiếu 3 cột mới.
-- Phiếu **SX**: bắt buộc ngày + đợt (1–10) + **Loại sản xuất** (cột `phan_xuong`). Xuất máy: tồn đầu ca (cho phép `0`).
+- Phiếu **SX**: bắt buộc ngày + đợt (1–10) + **Loại sản xuất** (cột `phan_xuong`). Xuất máy: tồn đầu ca **không bắt buộc** (để trống thì không gửi `ton_dau_ca`).
 - Quy trình băm / tạo hạt / trộn màu / mua ngoài: **wizard bán tự động** (`nvlProcessRecipes.ts`) gợi ý mã/kho/loại phiếu; chuyển PC→Chính/Phụ qua menu Chuyển kho. Mỗi nhập tạo lô giá; xuất trừ đúng `id_dong_nhap_nguon`.
 - Ảnh số cân: tạm ẩn (`SHOW_NVL_ACTUAL_WEIGHT_IMAGE = false`).
 - **Ca không bắt buộc** trên phiếu nhập và xuất (header `ca` / `ca_list`); nếu chọn nhiều ca thì phải cùng loại ca. Ca lấy mục `loai_cai_dat = Thời gian` trong `/cai-dat`. Nhập lại dùng ca đầu tiên (nếu có) để tham chiếu tồn cuối sổ trộn.
