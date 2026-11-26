@@ -8190,15 +8190,20 @@ async function enrichOrderProductsWithConversionData(
         };
       }
 
-      const tlCuon = manualKgPerUnit !== null && isRollUnit
-        ? manualKgPerUnit
-        : product.tl_cuon ?? conversion?.trong_luong_kg_cuon ?? null;
+      // Dòng Tấm không dùng TL cuộn: không lấy TL cuộn quy đổi và bỏ tl_cuon cũ (tránh nhân kg/cuộn × số tấm).
+      const tlCuon = isSheetUnit
+        ? null
+        : manualKgPerUnit !== null && isRollUnit
+          ? manualKgPerUnit
+          : product.tl_cuon ?? conversion?.trong_luong_kg_cuon ?? null;
       const tlTam = manualKgPerUnit !== null && isSheetUnit
         ? manualKgPerUnit
         : product.tl_tam ?? conversion?.trong_luong_kg_tam ?? null;
+      const productBase: Record<string, unknown> = { ...product };
+      if (isSheetUnit) delete productBase.tl_cuon;
 
       return {
-        ...product,
+        ...productBase,
         ...(tlCuon !== null ? { tl_cuon: tlCuon } : {}),
         ...(tlTam !== null ? { tl_tam: tlTam } : {})
       };
@@ -24671,6 +24676,11 @@ async function loadKiemKhoLiveTongHopForDot(
         }
       });
 
+      // Fallback TL/cuộn, TL/tấm: lệnh SX chưa lưu quy đổi trong JSON thì lấy từ danh mục quy đổi SP
+      // (cùng cách tạo lệnh SX). Không có quy đổi thì giữ null.
+      const conversionByGroupSpId = await fetchConversionMapBySanPhamIds(
+        groupList.map(grp => String(grp.spId || '').trim()).filter(Boolean)
+      );
       const rows = groupList.map((grp, grpIdx) => {
         const item = grp.firstItem;
         // Tên hiển thị: ten_san_xuat đã lưu trong JSON san_pham lệnh SX.
@@ -24686,10 +24696,13 @@ async function loadKiemKhoLiveTongHopForDot(
         const maDonHangMerged = Array.from(grp.maDonHangs).join(', ');
         const ghiChuMerged = Array.from(grp.notes).join('; ');
 
-        // TL/cuộn và TL/tấm lấy từ quy đổi trong JSON san_pham của lệnh SX (tl_cuon/tl_tam),
-        // không tra bảng quy đổi san_pham_quy_doi.
+        // TL/cuộn và TL/tấm ưu tiên lấy từ JSON san_pham của lệnh SX (tl_cuon/tl_tam);
+        // thiếu thì fallback sang danh mục quy đổi san_pham_quy_doi (đã nạp ở trên).
         const kgCuonFromJson = Number(item?.tl_cuon ?? item?.kg_cuon ?? item?.trong_luong_kg_cuon);
         const tlTamFromJson = Number(item?.tl_tam ?? item?.trong_luong_kg_tam);
+        const conversionForGroup = conversionByGroupSpId.get(String(grp.spId || '').trim());
+        const kgCuonFromConversion = Number(conversionForGroup?.trong_luong_kg_cuon);
+        const tlTamFromConversion = Number(conversionForGroup?.trong_luong_kg_tam);
 
         return {
           key: `${id}__grp_${grpIdx + 1}`,
@@ -24708,8 +24721,12 @@ async function loadKiemKhoLiveTongHopForDot(
           slsx_bac: bac,
           slsx_trung: trung,
           slsx_nam: nam,
-          kg_cuon: Number.isFinite(kgCuonFromJson) && kgCuonFromJson > 0 ? kgCuonFromJson : null,
-          tl_tam: Number.isFinite(tlTamFromJson) && tlTamFromJson > 0 ? tlTamFromJson : null,
+          kg_cuon: Number.isFinite(kgCuonFromJson) && kgCuonFromJson > 0
+            ? kgCuonFromJson
+            : (Number.isFinite(kgCuonFromConversion) && kgCuonFromConversion > 0 ? kgCuonFromConversion : null),
+          tl_tam: Number.isFinite(tlTamFromJson) && tlTamFromJson > 0
+            ? tlTamFromJson
+            : (Number.isFinite(tlTamFromConversion) && tlTamFromConversion > 0 ? tlTamFromConversion : null),
           ghi_chu: ghiChuMerged,
           don_hang_notes: grp.noteDetails,
           has_saved_detail: grp.hasSavedDetail,

@@ -82,6 +82,7 @@ Gộp dòng tiến độ (`buildProductionProgressForOrder` trong `src/utils/pro
 
 - Mỗi ghi chú một dòng, cấu trúc `Mã ĐH - ghi chú` (vd `DH001 - Giao gấp`); ghi chú nhiều dòng gọn thành một dòng (`; `).
 - Helper dùng chung: `buildOrderGeneralNotesText` (+ `splitOrderRefCodes`) trong `src/features/_shared/orderRecordHelpers.ts`.
+- **Xem trước lệnh SX** (`/api/lenh-sx/:id/print-preview`, `server.ts` ~24697): TL/tấm, TL/cuộn ưu tiên giá trị trong JSON `san_pham` của lệnh; thiếu thì fallback `san_pham_quy_doi` (`fetchConversionMapBySanPhamIds`). Tổng TL = Tổng SX × TL/đơn vị.
 - Hiển thị **trên danh sách sản phẩm**: chi tiết lệnh (`ProductionOrderViewModal`), xem trước/in ở `/lenh-san-xuat` (`src/features/lenh-sx/PrintPreviewModal.tsx`), bản in giấy (`ProductionOrderPrintSheet` + CSS `.production-order-print-notes` trong `src/index.css`).
 - Form thêm/sửa: khối "Ghi chú chung từ đơn hàng (tự động)" + nút chép vào `ghi_chu`; lưu để trống thì client/server (`buildProductionOrderNotesFromOrders` trong `server.ts`, `POST /api/lenh-sx`) tự ghép từ `don_hang.ghi_chu`.
 - `ProductionOrderViewModal` ở `/bang-dieu-khien` phải được truyền `orders` (đã có fallback tự tải `/api/don-hang`).

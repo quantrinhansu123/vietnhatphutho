@@ -746,13 +746,7 @@ export function TongHopPanel({
             return;
           }
         }
-        const destIsMay =
-          destKind === 'may' || destKind === 'may-ptdm' || (destKind === 'flex' && xuatDenLoai === 'may');
-        // Xuất đến phân xưởng: đích là xưởng, không bắt tồn đầu ca theo máy.
-        if (destIsMay && (line.tonDau === null || !Number.isFinite(line.tonDau))) {
-          setError(`Dòng ${line.maHang}: nhập tồn đầu ca (cho phép 0) khi xuất đến máy.`);
-          return;
-        }
+        // Tồn đầu ca không bắt buộc (để trống thì không gửi ton_dau_ca).
         // Tạm thời không bắt buộc ảnh số cân thực tế. Bật lại khi cần chụp trước khi lưu.
       }
     }

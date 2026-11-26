@@ -2464,9 +2464,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
         const rM2 = roundVal(m2Val);
         const rMDai = roundVal(mDaiVal);
         const manualKgPerUnit = manualTotalKg !== null && qty > 0 ? truncateTo4Decimals(manualTotalKg / qty) : null;
+        // TL cuộn chỉ áp cho ĐVT Cuộn. Dòng Tấm không dùng TL cuộn (tránh nhân nhầm kg/cuộn × số tấm).
         const rTlCuon = manualKgPerUnit !== null && isCuonProduct(product.don_vi)
           ? manualKgPerUnit
-          : conversion?.trongLuongKgCuon
+          : isCuonProduct(product.don_vi) && conversion?.trongLuongKgCuon
             ? truncateTo4Decimals(conversion.trongLuongKgCuon)
             : null;
         const rTlTam = manualKgPerUnit !== null && isTamProduct(product.don_vi)
@@ -2506,9 +2507,12 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
           cleanProduct.quy_cach_m_dai = quyCachMDai;
         }
 
-        let finalTlCuon = rTlCuon ?? cleanProduct.tl_cuon;
+        // Dòng Tấm: không giữ TL cuộn (kể cả giá trị cũ trong dữ liệu dòng).
+        const isTamLine = isTamProduct(String(cleanProduct.don_vi || ''));
+        if (isTamLine) delete cleanProduct.tl_cuon;
+        let finalTlCuon: number | null = isTamLine ? null : (rTlCuon ?? cleanProduct.tl_cuon);
         const spId = String(cleanProduct.san_pham_id || '').trim();
-        if (!finalTlCuon && spId) {
+        if (!finalTlCuon && spId && !isTamLine) {
           const matchedConv = productConversions.find(item => item.sanPhamId === spId);
           if (matchedConv?.trongLuongKgCuon) {
             finalTlCuon = truncateTo4Decimals(matchedConv.trongLuongKgCuon);
