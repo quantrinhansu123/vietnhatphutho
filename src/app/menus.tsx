@@ -797,27 +797,6 @@ export const FACTORY_KHO_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'phieu-nhap-xuat-tong-hop'
   },
   {
-    title: 'Hướng dẫn nhập NVL',
-    desc: 'Từng bước nhập kho NVL: khoanh đỏ trên giao diện mẫu, bấm Tiếp để xem tiếp.',
-    icon: BookOpen,
-    icon3d: notebook3d,
-    tab: 'huong-dan-nhap-nvl'
-  },
-  {
-    title: 'Danh sách xuất nhập kho NVL',
-    desc: 'Phiếu xuất nhập kho NVL đã ghi sổ. In, sửa hoặc hủy từ đây.',
-    icon: History,
-    icon3d: warehouseHistory3d,
-    tab: 'phieu-nhap-xuat-tong-hop-list'
-  },
-  {
-    title: 'Tổng hợp NVL từ nhà cung cấp',
-    desc: 'Chi tiết mua vật tư theo NCC: SL nhập, giá nhập kho và SL trả lại NCC theo kỳ.',
-    icon: BarChart3,
-    icon3d: chartIncreasing3d,
-    tab: 'tong-hop-ncc'
-  },
-  {
     title: 'Thống kê NVL',
     desc: 'Nhập – xuất NVL theo kỳ, lọc nhiều máy và nhiều kho, bảng giống tổng hợp NCC.',
     icon: BarChart3,
@@ -1115,9 +1094,6 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Cắt lẻ', tab: 'cat-le' },
       { label: 'Chuyển kho', tab: 'chuyen-kho' },
       { label: 'Xuất nhập kho NVL', tab: 'phieu-nhap-xuat-tong-hop' },
-      { label: 'Hướng dẫn nhập NVL', tab: 'huong-dan-nhap-nvl' },
-      { label: 'Danh sách xuất nhập kho NVL', tab: 'phieu-nhap-xuat-tong-hop-list' },
-      { label: 'Tổng hợp NVL từ nhà cung cấp', tab: 'tong-hop-ncc' },
       { label: 'Thống kê NVL', tab: 'thong-ke-nvl' }
     ]
   },
