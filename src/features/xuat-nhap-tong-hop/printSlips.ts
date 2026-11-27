@@ -18,7 +18,7 @@ function lineAmountOf(line: Record<string, unknown>) {
 function mapPrintLines(detail: Array<Record<string, unknown>>): WarehouseSlipPrintData['lines'] {
   return detail.map(line => ({
     code: String(line.ma_hang || ''),
-    name: String(line.ten_hang || ''),
+    name: String(line.loai_danh_muc === 'san_pham' ? line.ten_hang || '' : line.ten_nvl_sx || ''),
     unit: String(line.don_vi || ''),
     quantity: parseLocalizedNumber(line.so_luong ?? '') || 0,
     unitPrice: parseNvlPrice(line.don_gia ?? '') || 0,

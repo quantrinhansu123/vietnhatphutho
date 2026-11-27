@@ -31,6 +31,7 @@ export interface SoTronPrintLoiRow {
 export interface SoTronPrintBanGiaoRow {
   ma_nvl: string;
   ten_nvl: string;
+  ten_nvl_sx?: string;
   lay_trong_kho: string;
   ton_dau_ca: string;
   tong_su_dung: number;
@@ -101,7 +102,7 @@ export function buildSoTronSlipHtml(input: SoTronPrintInput) {
   const nvlRows = padRows(input.nvl, NVL_PAD_ROWS)
     .map(
       row => `<tr>
-        <td class="l"><b>${esc(row?.ma_nvl ?? '')}</b>${row?.ten_nvl ? `<br>${esc(row.ten_nvl)}` : ''}${row?.ten_nvl_sx ? `<br><i>${esc(row.ten_nvl_sx)}</i>` : ''}</td>
+        <td class="l"><b>${esc(row?.ma_nvl ?? '')}</b>${row?.ten_nvl_sx ? `<br><i>${esc(row.ten_nvl_sx)}</i>` : ''}</td>
         <td>${esc(row?.dvt ?? '')}</td>
         ${nvlCells(row)}
         <td class="r"><b>${row ? fmt(row.tong) : ''}</b></td>
@@ -142,7 +143,7 @@ export function buildSoTronSlipHtml(input: SoTronPrintInput) {
   const bgRows = padRows(input.banGiao, BG_PAD_ROWS)
     .map(
       row => `<tr>
-        <td class="l"><b>${esc(row?.ma_nvl ?? '')}</b>${row?.ten_nvl ? `<br>${esc(row.ten_nvl)}` : ''}</td>
+        <td class="l"><b>${esc(row?.ma_nvl ?? '')}</b>${row?.ten_nvl_sx ? `<br>${esc(row.ten_nvl_sx)}` : ''}</td>
         <td class="r">${esc(row?.lay_trong_kho ?? '')}</td>
         <td class="r">${esc(row?.ton_dau_ca ?? '')}</td>
         <td class="r"><b>${row ? fmt(row.ton_cuoi_ca) : ''}</b></td>

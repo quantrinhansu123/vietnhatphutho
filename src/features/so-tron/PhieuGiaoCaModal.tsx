@@ -1,3 +1,4 @@
+import { serializeNvlDocument } from '../../utils/nvlDocument';
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, Plus, Printer, Save, Trash2, X, Check, FileText } from 'lucide-react';
@@ -622,7 +623,7 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
       const res = await fetch(`/api/so-tron/${encodeURIComponent(report.id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...soTronAuthHeaders() },
-        body: JSON.stringify({ ...payload, scope: scopes })
+        body: serializeNvlDocument({ ...payload, scope: scopes })
       });
 
       const resData = await res.json().catch(() => ({}));
@@ -953,12 +954,12 @@ export function PhieuGiaoCaModal({ open, report, onClose, onSaved, actor }: Prop
                         </td>
                         <td className="border border-slate-800 p-0.5">
                           <input
-                            value={row.ten_nvl_sx || row.ten_nvl}
-                            title={row.ten_nvl_sx || row.ten_nvl}
-                            onMouseEnter={e => showFullName(e, row.ten_nvl_sx || row.ten_nvl)}
+                            value={row.ten_nvl_sx || row.ma_nvl}
+                            title={row.ten_nvl_sx || row.ma_nvl}
+                            onMouseEnter={e => showFullName(e, row.ten_nvl_sx || row.ma_nvl)}
                             onMouseLeave={() => setHoverName(null)}
                             onChange={e =>
-                              updateVatTuRow(ri, row.ten_nvl_sx ? { ten_nvl_sx: e.target.value } : { ten_nvl: e.target.value })
+                              updateVatTuRow(ri, { ten_nvl_sx: e.target.value })
                             }
                             className={`${inputStyle} truncate font-semibold text-black`}
                             style={{ color: '#000', fontSize: 16 }}

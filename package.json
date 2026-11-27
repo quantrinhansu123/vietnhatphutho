@@ -12,6 +12,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "migrate:warehouse-numeric": "node scripts/migrate-warehouse-numeric.mjs",
+    "migrate:nvl-document-names": "tsx scripts/migrate-nvl-document-names.ts",
     "backfill:ma-kho": "node scripts/backfill-ma-kho.mjs"
   },
   "dependencies": {

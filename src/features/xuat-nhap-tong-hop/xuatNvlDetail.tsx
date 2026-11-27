@@ -82,7 +82,7 @@ export type XuatNvlLine = {
 };
 
 const gridCols =
-  'grid-cols-[1.75rem_4.5rem_8.5rem_7.5rem_11rem_9.5rem_2.75rem_4.5rem_4.25rem_6rem_6rem_2.75rem]';
+  'grid-cols-[1.75rem_4.5rem_8.5rem_7.5rem_9.5rem_2.75rem_4.5rem_4.25rem_6rem_6rem_2.75rem]';
 const detailMinW = 'min-w-[72rem]';
 const headerGrid = `mb-1 grid ${detailMinW} ${gridCols} items-end gap-1.5 rounded-lg bg-[#ef1b2d] px-1.5 py-1.5`;
 const lineGrid = `grid ${detailMinW} ${gridCols} items-center gap-1.5 border-b border-zinc-200/80 px-1.5 py-0.5`;
@@ -104,14 +104,12 @@ function sourceChoiceLabel(item: KhoOption, kind: 'kho' | 'may') {
 function materialRowId(item: MaterialOption) {
   const id = String(item.id || '').trim();
   if (id) return id;
-  return [item.code, item.name, item.productionName || ''].join('\u0001');
+  return [item.code, item.productionName || ''].join('\u0001');
 }
 
 function materialMenuLabel(item: MaterialOption) {
   const sxName = String(item.productionName || '').trim();
-  return sxName && sxName.toLocaleLowerCase('vi') !== item.name.toLocaleLowerCase('vi')
-    ? `${item.code} · ${item.name} · ${sxName}`
-    : `${item.code} · ${item.name}`;
+  return [item.code, sxName].filter(Boolean).join(' · ');
 }
 
 function classLabel(value: string) {
@@ -574,7 +572,6 @@ export function XuatNvlDetail({
           <span className={head}>Loại</span>
           <span className={head}>Xuất từ</span>
           <span className={head}>Mã nguyên vật liệu</span>
-          <span className={head}>Tên nguyên vật liệu</span>
           <span className={head}>Tên sản xuất</span>
           <span className={head}>ĐVT</span>
           <span className={head}>SL Thực</span>
@@ -693,7 +690,6 @@ export function XuatNvlDetail({
                   openUpward
                   disabled={viewOnly || !line.srcId}
                 />
-                <div className="truncate text-[11px] font-semibold text-zinc-700" title={line.tenHang}>{line.tenHang || '—'}</div>
                 <div>
                   <SearchableSelect
                     value={sxValue}
@@ -798,7 +794,7 @@ export function XuatNvlDetail({
         return (
           <ChiPhiLineModal
             open={Boolean(active)}
-            title={active ? `${active.maHang || 'Dòng'} · ${active.tenHang || 'Chưa chọn mã'}` : ''}
+            title={active ? `${active.maHang || 'Dòng'} · ${active.tenSanXuat || 'Chưa chọn mã'}` : ''}
             maHang={active?.maHang || ''}
             items={active?.chiPhiKemTheo || []}
             disabled={viewOnly}

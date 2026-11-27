@@ -1,5 +1,7 @@
 # so_tron
 
+**Tên NVL:** form, in và snapshot chỉ dùng mã + tên sản xuất. Serializer và transport server bỏ tên thương mại, giữ ID/định lượng. Quy trình migration: `docs/nvl-document-production-name.md`.
+
 | Bảng | `so_tron` |
 | Tab | `so-tron` → `/so-tron` (card **Sổ trộn và biên bản phiếu giao ca** trong `/bao-cao-truong-ca-tron`) + `so-tron-list` → `/danh-sach-so-tron` (card riêng **Danh sách phiếu giao ca** trên menu Sản xuất) |
 | SQL | `supabase-so-tron.sql` + `supabase-so-tron-tong-hop.sql` + `supabase-so-tron-tong-nhap.sql` |

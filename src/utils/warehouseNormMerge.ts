@@ -105,13 +105,9 @@ export function buildAuxMergeKey(parts: {
 }
 
 export function mergeNormMaterialLines(sources: NormMaterialSource[], materials: MaterialOption[]): NormMaterialLine[] {
-  const byCode = new Map<string, MaterialOption>();
-  const byName = new Map<string, MaterialOption>();
   const byId = new Map<string, MaterialOption>();
   materials.forEach(item => {
     if (item.id) byId.set(String(item.id).trim(), item);
-    if (item.code) byCode.set(normalizeMaterialKey(item.code), item);
-    if (item.name) byName.set(normalizeMaterialKey(item.name), item);
   });
   const merged = new Map<string, NormMaterialLine>();
   const add = (
@@ -124,10 +120,10 @@ export function mergeNormMaterialLines(sources: NormMaterialSource[], materials:
     ).trim();
     const code = String(raw.ma_nvl ?? raw.maNvl ?? '').trim();
     const name = String(raw.ten_nvl ?? raw.tenNvl ?? '').trim();
-    const catalog =
-      byId.get(rawMaterialId) ||
-      byCode.get(normalizeMaterialKey(code)) ||
-      byName.get(normalizeMaterialKey(name));
+    const snapshotSx = String(raw.ten_nvl_san_xuat ?? raw.ten_nvl_sx ?? raw.tenNvlSanXuat ?? raw.productionName ?? '').trim();
+    const candidates = materials.filter(item => normalizeMaterialKey(item.code) === normalizeMaterialKey(code)
+      && (!snapshotSx || normalizeMaterialKey(item.productionName || '') === normalizeMaterialKey(snapshotSx)));
+    const catalog = byId.get(rawMaterialId) || (candidates.length === 1 ? candidates[0] : undefined);
     const materialId = rawMaterialId || String(catalog?.id ?? '').trim();
     const effectiveCode = (code || catalog?.code || '').trim();
     const effectiveName = (name || catalog?.name || '').trim();
@@ -216,7 +212,9 @@ export function mergeNormMaterialLines(sources: NormMaterialSource[], materials:
   return [...merged.values()].map(line => {
     let normWeightPerUnitKg: number | undefined;
     if (line.warehouseClass === 'nvl_phu') {
-      const catalog = byCode.get(normalizeMaterialKey(line.code)) || byName.get(normalizeMaterialKey(line.name));
+      const candidates = materials.filter(item => normalizeMaterialKey(item.code) === normalizeMaterialKey(line.code)
+        && (!line.productionName || normalizeMaterialKey(item.productionName || '') === normalizeMaterialKey(line.productionName)));
+      const catalog = byId.get(line.materialId) || (candidates.length === 1 ? candidates[0] : undefined);
       const groupKey = normalizeNhomVatTuPhuKey(
         catalog?.nhomVatTuPhu || line.productionName || line.name || line.code
       );
