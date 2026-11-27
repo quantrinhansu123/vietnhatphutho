@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '../../components/shared/SearchableSelect';
 import { formatNvlPriceValue, parseNvlPrice } from './model';
+import {
+  buildNvlPriceHistoryOptions,
+  type NvlPriceHistoryOption
+} from './nvlPriceHistory';
 
 export type NvlPriceOption = { id: string; label: string; donGia: number };
 
@@ -46,21 +50,37 @@ export function toNvlPriceOption(donGia: number, soLan?: number): NvlPriceOption
   };
 }
 
-export async function fetchNvlPriceOptions(maNpl: string): Promise<NvlPriceOption[]> {
+export async function fetchNvlPriceOptions(maNpl: string): Promise<NvlPriceHistoryOption[]> {
   const code = String(maNpl || '').trim();
   if (!code) return [];
   const res = await fetch(`/api/phieu-xuat-kho/gia-nvl?ma_npl=${encodeURIComponent(code)}`);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) return [];
+  const lots = Array.isArray((data as { lots?: unknown }).lots)
+    ? (data as { lots: Array<Record<string, unknown>> }).lots
+    : [];
+  if (lots.length) return buildNvlPriceHistoryOptions(lots);
+  // Fallback API cũ chỉ trả prices gom theo đơn giá.
   const rows = Array.isArray((data as { prices?: unknown }).prices)
     ? (data as { prices: Array<{ don_gia?: number; so_lan?: number }> }).prices
     : [];
   return rows
-    .map(row => toNvlPriceOption(Number(row.don_gia), Number(row.so_lan) || undefined))
-    .filter(Boolean) as NvlPriceOption[];
+    .map(row => {
+      const opt = toNvlPriceOption(Number(row.don_gia), Number(row.so_lan) || undefined);
+      return opt
+        ? {
+            id: opt.id,
+            label: opt.label,
+            donGia: opt.donGia,
+            ngayPhieu: '',
+            dienGiai: ''
+          }
+        : null;
+    })
+    .filter(Boolean) as NvlPriceHistoryOption[];
 }
 
-/** Dropdown đơn giá NVL: chọn giá đã nhập trước, hoặc gõ tay giá mới. */
+/** Dropdown đơn giá NVL: chọn từng lần nhập (ngày + diễn giải), hoặc gõ tay giá mới. */
 export function NvlPriceSelect({
   maHang,
   value,
@@ -79,7 +99,7 @@ export function NvlPriceSelect({
   /** Giá thêm từ lô tồn / ngữ cảnh hiện tại. */
   extraPrices?: number[];
 }) {
-  const [remote, setRemote] = useState<NvlPriceOption[]>([]);
+  const [remote, setRemote] = useState<NvlPriceHistoryOption[]>([]);
   const [loading, setLoading] = useState(false);
   const code = String(maHang || '').trim();
 
@@ -103,24 +123,47 @@ export function NvlPriceSelect({
   }, [code]);
 
   const options = useMemo(() => {
-    const map = new Map<string, NvlPriceOption>();
+    const map = new Map<string, NvlPriceHistoryOption>();
     for (const item of remote) map.set(item.id, item);
     for (const raw of extraPrices || []) {
       const opt = toNvlPriceOption(raw);
-      if (opt && !map.has(opt.id)) map.set(opt.id, opt);
+      if (opt && !map.has(opt.id)) {
+        map.set(opt.id, {
+          id: opt.id,
+          label: opt.label,
+          donGia: opt.donGia,
+          ngayPhieu: '',
+          dienGiai: ''
+        });
+      }
     }
     const current = parseNvlPrice(value);
     if (Number.isFinite(current) && current >= 0) {
-      const opt = toNvlPriceOption(current);
-      if (opt && !map.has(opt.id)) map.set(opt.id, { ...opt, label: formatNvlPriceValue(current) });
+      const hasCurrent = [...map.values()].some(item => item.donGia === current);
+      if (!hasCurrent) {
+        const opt = toNvlPriceOption(current);
+        if (opt) {
+          map.set(opt.id, {
+            id: opt.id,
+            label: formatNvlPriceValue(current),
+            donGia: current,
+            ngayPhieu: '',
+            dienGiai: ''
+          });
+        }
+      }
     }
-    return [...map.values()].sort((a, b) => b.donGia - a.donGia);
+    return [...map.values()].sort((a, b) => {
+      if (a.ngayPhieu !== b.ngayPhieu) return b.ngayPhieu.localeCompare(a.ngayPhieu);
+      return b.donGia - a.donGia;
+    });
   }, [remote, extraPrices, value]);
 
   const selectedId = (() => {
     const parsed = parseNvlPrice(value);
     if (!Number.isFinite(parsed) || parsed < 0 || !String(value || '').trim()) return '';
-    return priceKey(parsed);
+    const match = options.find(item => item.donGia === parsed);
+    return match?.id || priceKey(parsed);
   })();
 
   return (
@@ -141,15 +184,17 @@ export function NvlPriceSelect({
         onChange(Number.isFinite(parsed) ? formatNvlPriceValue(custom) : custom);
       }}
       options={options}
-      getValue={(item: NvlPriceOption) => item.id}
-      getLabel={(item: NvlPriceOption) => item.label}
-      getSearchText={(item: NvlPriceOption) => `${item.label} ${item.donGia}`}
+      getValue={(item: NvlPriceHistoryOption) => item.id}
+      getLabel={(item: NvlPriceHistoryOption) => item.label}
+      getSearchText={(item: NvlPriceHistoryOption) =>
+        `${item.label} ${item.donGia} ${item.ngayPhieu} ${item.dienGiai}`
+      }
       placeholder={
         !code
           ? 'Chọn mã trước'
           : loading
             ? 'Đang tải giá...'
-            : placeholder || (options.length ? 'Chọn hoặc gõ giá' : 'Gõ giá mới')
+            : placeholder || (options.length ? 'Chọn ngày/giá hoặc gõ mới' : 'Gõ giá mới')
       }
       disabled={disabled || !code}
       inputClassName={inputClassName}

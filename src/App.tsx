@@ -80,6 +80,7 @@ import { queueTongHopProcess } from './features/xuat-nhap-tong-hop/model';
 import { HuongDanNhapNvlPanel } from './features/huong-dan-nhap-nvl';
 import { TongHopNccPanel } from './features/tong-hop-ncc';
 import { ThongKeNvlPanel } from './features/thong-ke-nvl';
+import { BaoCaoCodePanel } from './features/bao-cao-code';
 import { CustomersPanel } from './features/khach-hang';
 import { SuppliersPanel } from './features/nha-cung-cap';
 import { ShippingOrdersPanel } from './features/lenh-xuat-hang';
@@ -1992,6 +1993,8 @@ export default function App() {
               >
                 <SettingsPanel onBack={() => goBack('quan-tri')} />
               </motion.div>
+            ) : activeTab === 'bao-cao-code' ? (
+              <BaoCaoCodePanel key="bao-cao-code" onBack={() => goBack('quan-tri')} />
             ) : activeTab === 'data' ? (
               <motion.div
                 key="data"

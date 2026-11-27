@@ -4591,7 +4591,7 @@ input[type="number"] {
 }
 
 .mixing-norm-ratio-print-group-title {
-  margin: 6px 0 3px;
+  margin: 12px 0 5px;
   font-size: 10pt;
   font-weight: 800;
   text-transform: uppercase;
@@ -4841,6 +4841,7 @@ input[type="number"] {
 }
 
 .mixing-norm-ratio-print-page {
+  page: mixing-norm-ratio-page;
   page-break-inside: avoid;
   break-inside: avoid;
 }
@@ -4850,8 +4851,13 @@ input[type="number"] {
 }
 
 @media print {
+  /* PTĐM in A4 ngang (landscape) theo nghiệp vụ phiếu tỷ lệ trộn. */
   @page {
-    size: A4 portrait;
+    size: A4 landscape;
+    margin: 4mm 6mm;
+  }
+  @page mixing-norm-ratio-page {
+    size: A4 landscape;
     margin: 4mm 6mm;
   }
   .mixing-norm-ratio-print-batch,

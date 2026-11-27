@@ -611,6 +611,13 @@ export function BulkMaterialTotalWeightModal({
 }
 
 export interface MaterialMovementRow {
+  id?: string;
+  unitPrice?: number | null;
+  explanation?: string;
+  catalogId?: string;
+  itemName?: string;
+  productionName?: string;
+  warehouse?: string;
   slipCode: string;
   slipType: 'nhap' | 'xuat';
   slipDate: string;
@@ -630,6 +637,13 @@ export function parseMaterialMovements(data: unknown): MaterialMovementRow[] {
       const slipTypeRaw = String(record.loai_phieu ?? record.slipType ?? '').trim().toLowerCase();
       const quantity = Number(record.so_luong ?? record.quantity);
       return {
+        id: String(record.id ?? ''),
+        unitPrice: record.don_gia != null && Number.isFinite(Number(record.don_gia)) ? Number(record.don_gia) : null,
+        explanation: [record.ly_do, record.ghi_chu].map(value => String(value ?? '').trim()).filter(Boolean).join(' · '),
+        catalogId: String(record.id_danh_muc ?? ''),
+        itemName: String(record.ten_npl ?? '').trim(),
+        productionName: String(record.ten_nvl_sx ?? '').trim(),
+        warehouse: String(record.ten_kho ?? '').trim(),
         slipCode: String(record.ma_phieu ?? record.slipCode ?? '').trim(),
         slipType: slipTypeRaw === 'xuat' ? 'xuat' : 'nhap',
         slipDate: String(record.ngay_phieu ?? record.slipDate ?? '').trim(),
@@ -689,7 +703,11 @@ export function MaterialViewModal({
         const res = await fetch(`/api/phieu-xuat-nhap-kho?${params.toString()}`);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Không thể tải lịch sử xuất nhập.');
-        setMovements(parseMaterialMovements(data));
+        setMovements(parseMaterialMovements(data).filter(row => row.catalogId
+          ? row.catalogId === material.id
+          : row.itemName === material.name &&
+            (row.productionName || '') === (material.productionName === '-' ? '' : material.productionName || '') &&
+            normalizeWarehouseName(row.warehouse || '') === normalizeWarehouseName(material.warehouse || '')));
       } catch (error: any) {
         setMovements([]);
         setHistoryError(error.message || 'Không thể tải lịch sử xuất nhập.');
@@ -699,7 +717,7 @@ export function MaterialViewModal({
     };
 
     loadHistory();
-  }, [tab, material.code, movements.length]);
+  }, [tab, material.code, material.id, material.name, material.productionName, material.warehouse, movements.length]);
 
   useEffect(() => {
     if (tab !== 'issued-qr') return;
@@ -933,23 +951,27 @@ export function MaterialViewModal({
                         <TableHeadCell>Ngày</TableHeadCell>
                         <TableHeadCell>Phiếu</TableHeadCell>
                         <TableHeadCell align="center">SL</TableHeadCell>
+                        <TableHeadCell>Đơn giá</TableHeadCell>
+                        <TableHeadCell>Diễn giải</TableHeadCell>
                       </TableHead>
                       <TableBody>
-                        {(tab === 'inbound-history' ? inboundRows : outboundRows).map(row => (
-                          <React.Fragment key={`${row.slipCode}-${row.slipDate}-${row.quantity}`}>
+                        {(tab === 'inbound-history' ? inboundRows : outboundRows).map((row, index) => (
+                          <React.Fragment key={row.id || index}>
                             <TableRow>
-                              <td className="px-4 py-3 font-semibold text-zinc-700">{row.slipDate || '-'}</td>
+                              <td className="px-4 py-3 font-semibold text-zinc-700">{row.slipDate ? row.slipDate.slice(0, 10).split('-').reverse().join('/') : '—'}</td>
                               <td className="px-4 py-3 font-bold text-zinc-900">{row.slipCode || '-'}</td>
                               <td className={`px-4 py-3 text-right font-mono font-bold ${
                                 tab === 'inbound-history' ? 'text-emerald-700' : 'text-amber-800'
                               }`}>
                                 {formatNumberVN(row.quantity, 2)}
                               </td>
+                              <td className="px-4 py-3 text-right">{row.unitPrice == null ? '—' : formatMoneyVN(row.unitPrice, 2)}</td>
+                              <td className="px-4 py-3">{row.explanation || '—'}</td>
                             </TableRow>
                           </React.Fragment>
                         ))}
                         {(tab === 'inbound-history' ? inboundRows : outboundRows).length === 0 && (
-                          <TableEmptyRow colSpan={3}>
+                          <TableEmptyRow colSpan={5}>
                             {tab === 'inbound-history' ? 'Chưa có phiếu nhập' : 'Chưa có phiếu xuất'}
                           </TableEmptyRow>
                         )}

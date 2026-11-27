@@ -4,6 +4,7 @@ import { VnCalendarPicker } from '../so-che-do-may';
 import type { ShiftOption } from '../../utils/shiftSettings';
 import { formatMoney, formatQty } from '../../utils';
 import SearchableMultiSelect from '../../components/SearchableMultiSelect';
+import { reconcilePhysicalStock } from './stockModel';
 
 type Option = { id: string; label: string };
 type SoTronHandoverLine = {
@@ -328,23 +329,42 @@ export function MachineStockTab({
   }), [reports, machines, catalog, exportHeaders, returnHeaders]);
   const displayedRows = multiMachineMode ? allMachineRows : stockRows;
   const displayedTotalQuantity = displayedRows.reduce((sum, row) => sum + row.quantity, 0);
+  const rowReconKey = (row: MachineStockRow, index: number) =>
+    `${row.reportId || ''}|${row.machine || ''}|${row.code}|${index}`;
+  const reconcileByRow = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof reconcilePhysicalStock>[number]>();
+    displayedRows.forEach((row, index) => {
+      const [recon] = reconcilePhysicalStock([{
+        code: row.code,
+        name: row.productionName || row.name,
+        physical: row.quantity,
+        issued: row.sourceGroups.reduce((sum, group) => sum + group.issuedQty, 0),
+        returned: row.sourceGroups.reduce((sum, group) => sum + group.returnedQty, 0)
+      }]);
+      if (recon) map.set(rowReconKey(row, index), recon);
+    });
+    return map;
+  }, [displayedRows]);
+  const mismatchCount = [...reconcileByRow.values()].filter(
+    row => Math.abs(row.delta) > 1e-6 && row.issued + row.returned > 0
+  ).length;
   return (
     <div className="space-y-3">
-      <section className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
+      <section className="rounded-lg border border-zinc-200 bg-white p-3">
         <div className="grid items-end gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto]">
           <label className="block min-w-0 space-y-1">
-            <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Ngày Sổ trộn</span>
+            <span className="text-xs font-medium text-zinc-700">Ngày</span>
             <VnCalendarPicker value={date} onChange={setDate} triggerClassName="min-h-10" />
           </label>
           <label className="block min-w-0 space-y-1">
-            <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Ca</span>
+            <span className="text-xs font-medium text-zinc-700">Ca</span>
             <select value={shift} onChange={event => setShift(event.target.value)} className="h-10 w-full rounded-lg border border-zinc-300 bg-white px-2 text-xs font-semibold text-zinc-700">
               <option value="">Chọn ca</option>
               {shifts.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
             </select>
           </label>
           <label className="block min-w-0 space-y-1">
-            <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Máy</span>
+            <span className="text-xs font-medium text-zinc-700">Máy</span>
             <SearchableMultiSelect<Option>
               values={allMachinesMode ? [{ id: ALL_MACHINES, label: 'Tất cả máy' }] : machines.filter(item => machineIds.includes(item.id))}
               options={[{ id: ALL_MACHINES, label: 'Tất cả máy' }, ...machines]}
@@ -357,7 +377,7 @@ export function MachineStockTab({
               }}
               getValue={item => item.id}
               getLabel={item => item.label}
-              placeholder="Chọn một hoặc nhiều máy"
+              placeholder="Chọn máy"
               allowCustomValues={false}
               inputClassName="min-h-10 w-full min-w-0 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-700"
             />
@@ -370,12 +390,12 @@ export function MachineStockTab({
       </section>
 
       {error ? <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p> : null}
-      {notice ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">{notice}</p> : null}
+      {notice ? <p className="px-3 py-2 text-sm text-zinc-600">{notice}</p> : null}
 
       {loaded && reports.length > 1 && !multiMachineMode ? (
-        <label className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
-          Có nhiều phiếu Sổ trộn đúng ngày, ca, máy. Chọn phiếu cần kiểm tra:
-          <select value={selectedReportId} onChange={event => setSelectedReportId(event.target.value)} className="min-w-48 rounded-md border border-amber-300 bg-white px-2 py-1.5 text-xs">
+        <label className="flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700">
+          Phiếu Sổ trộn
+          <select value={selectedReportId} onChange={event => setSelectedReportId(event.target.value)} className="min-w-0 max-w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs">
             {reports.map((report, index) => <option key={report.id} value={report.id}>{`Phiếu ${index + 1} · ${report.id}`}</option>)}
           </select>
         </label>
@@ -384,19 +404,37 @@ export function MachineStockTab({
       {loaded && (multiMachineMode ? reports.length > 0 : Boolean(selectedReport)) ? (
         <>
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-zinc-600">
-            <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-zinc-200">{formatDateVN(date)} · {shift}</span>
-            <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-zinc-200">{allMachinesMode ? `Tất cả máy · ${reports.length} phiếu Sổ trộn` : multiMachineMode ? `${selectedMachineIds.length} máy · ${reports.length} phiếu Sổ trộn` : selectedMachine?.label || selectedReport?.ten_may || selectedReport?.ma_may}</span>
-            <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-black text-emerald-800 ring-1 ring-emerald-200">Tổng tồn cuối ca: {formatQty(displayedTotalQuantity)}</span>
-            <span className="text-zinc-500">Số lượng lấy theo cột “Tồn cuối ca” của Sổ trộn.</span>
+            <span className="text-zinc-600">{formatDateVN(date)} · {shift}</span>
+            <span className="text-zinc-600">{allMachinesMode ? `Tất cả máy · ${reports.length} phiếu Sổ trộn` : multiMachineMode ? `${selectedMachineIds.length} máy · ${reports.length} phiếu Sổ trộn` : selectedMachine?.label || selectedReport?.ten_may || selectedReport?.ma_may}</span>
+            <span className="font-semibold tabular-nums text-zinc-900">Tổng tồn cuối ca: {formatQty(displayedTotalQuantity)}</span>
+            {mismatchCount > 0 ? (
+              <span className="rounded-md bg-amber-50 px-2 py-0.5 font-semibold text-amber-900">
+                {mismatchCount} mã lệch tồn sổ ↔ chứng từ cấp
+              </span>
+            ) : displayedRows.some(row => row.sourceGroups.length > 0) ? (
+              <span className="rounded-md bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-800">
+                Tồn sổ khớp phần còn theo chứng từ cấp
+              </span>
+            ) : null}
           </div>
-          <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
-            <table className="min-w-[940px] w-full text-xs">
-              <thead><tr className="bg-zinc-900 text-left text-white">
+          <p className="text-[11px] text-zinc-500">
+            Đối chiếu: Tồn sổ trộn so với (Đã cấp − Đã nhập lại). Chênh lệch âm ≈ đã sử dụng; lệch bất thường khi thiếu chứng từ cấp/nhập lại.
+          </p>
+          <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
+            <table className="min-w-[880px] w-full text-xs">
+              <thead><tr className="border-b border-zinc-200 bg-zinc-50 text-left text-zinc-700">
                 {multiMachineMode ? <th className="px-3 py-2">Máy</th> : null}<th className="px-3 py-2">Mã NVL</th><th className="px-3 py-2">Tên NVL</th><th className="px-3 py-2">ĐVT</th>
-                <th className="px-3 py-2 text-right">Tồn cuối ca</th><th className="px-3 py-2">Kho đã cấp · giá</th>
+                <th className="px-3 py-2 text-right">Tồn sổ</th>
+                <th className="px-3 py-2 text-right">Còn theo cấp</th>
+                <th className="px-3 py-2 text-right">Chênh</th>
+                <th className="px-3 py-2">Kho đã cấp · giá</th>
               </tr></thead>
               <tbody>
                 {displayedRows.map((row, index) => {
+                  const recon = reconcileByRow.get(rowReconKey(row, index));
+                  const hasDocs = (recon?.issued || 0) + (recon?.returned || 0) > 0;
+                  const delta = recon?.delta ?? 0;
+                  const mismatch = hasDocs && Math.abs(delta) > 1e-6;
                   return (
                     <tr key={`${row.reportId || selectedReport?.id || 'machine'}-${row.code}-${index}`} className="border-b border-zinc-100 align-top hover:bg-zinc-50">
                       {multiMachineMode ? <td className="px-3 py-2 font-semibold">{row.machine || '—'}</td> : null}
@@ -404,24 +442,29 @@ export function MachineStockTab({
                       <td className="px-3 py-2"><div className="font-semibold">{row.name || '—'}</div>{row.productionName && row.productionName !== row.name ? <div className="mt-0.5 text-[11px] text-zinc-500">{row.productionName}</div> : null}</td>
                       <td className="px-3 py-2">{row.unit || '—'}</td>
                       <td className="px-3 py-2 text-right font-black tabular-nums">{formatQty(row.quantity)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-zinc-700">
+                        {hasDocs ? formatQty(recon?.remainingByDocs ?? 0) : '—'}
+                      </td>
+                      <td className={`px-3 py-2 text-right font-semibold tabular-nums ${mismatch ? 'text-amber-800' : 'text-zinc-600'}`}>
+                        {hasDocs ? formatQty(delta) : '—'}
+                      </td>
                       <td className="px-3 py-2">
                         {row.sourceGroups.length ? <div className="space-y-1">{row.sourceGroups.map(group => (
-                          <div key={group.key} className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1">
+                          <div key={group.key} className="tabular-nums">
                             <span className="font-bold">{group.warehouse}</span><span className="text-zinc-500"> · cấp {formatQty(group.issuedQty)} · đã nhập {formatQty(group.returnedQty)} · {formatMoney(group.unitPrice, 0)}/ĐVT</span>
                           </div>
-                        ))}</div> : <span className="text-zinc-400">Không thấy phiếu cấp máy có thông tin giá</span>}
+                        ))}</div> : <span className="text-zinc-600">Chưa xác định giá cấp</span>}
                       </td>
                     </tr>
                   );
                 })}
-                {!displayedRows.length ? <tr><td colSpan={multiMachineMode ? 6 : 5} className="px-3 py-8 text-center font-semibold text-zinc-500">Phiếu Sổ trộn chưa có dòng bàn giao NVL.</td></tr> : null}
+                {!displayedRows.length ? <tr><td colSpan={multiMachineMode ? 8 : 7} className="px-3 py-8 text-center font-semibold text-zinc-500">Phiếu Sổ trộn chưa có dòng bàn giao NVL.</td></tr> : null}
               </tbody>
             </table>
           </div>
         </>
       ) : null}
 
-      {loaded && !selectedReport && !notice ? <div className="rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-8 text-center text-sm font-semibold text-zinc-500">Chọn ngày, ca và ít nhất một máy rồi bấm “Kiểm tra tồn”.</div> : null}
 
     </div>
   );

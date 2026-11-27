@@ -23,6 +23,7 @@ export type MixingNormGroupProduct = {
   mang?: string;
   hangPhe?: string;
   doLi?: string;
+  width?: number | null;
   zem?: string;
   dinhMucKg?: string;
   doDaiM?: string;
@@ -58,7 +59,7 @@ type Props = {
   onAdd: (payload: MixingNormGroupAddPayload) => void;
 };
 
-const GROUP_ORDER: MixingNormCategoryGroup[] = ['song', 'dac', 'rong', 'other'];
+const GROUP_ORDER: MixingNormCategoryGroup[] = ['dac', 'rong', 'song', 'other'];
 
 const GROUP_HEADER_CLASS: Record<MixingNormCategoryGroup, string> = {
   song: 'bg-sky-100 text-sky-900 border-sky-200',
@@ -90,8 +91,8 @@ export default function MixingNormProductGroupModal({
   onClose,
   onAdd
 }: Props) {
-  const initialAssignments = useMemo(() => {
-    const map = new Map<string, string>();
+  const productSignals = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof buildMixingNormProductSignals>>();
     products.forEach(product => {
       const signals = buildMixingNormProductSignals({
         nhomVthh: product.nhomVthh,
@@ -112,10 +113,13 @@ export default function MixingNormProductGroupModal({
         np: product.np,
         off: product.off
       });
-      map.set(product.key, classifyMixingNormCategory(signals));
+      map.set(product.key, signals);
     });
     return map;
   }, [products]);
+
+  const initialAssignments = useMemo(() => new Map([...productSignals].map(([key, signals]) =>
+    [key, classifyMixingNormCategory(signals)])), [productSignals]);
 
   const [assignments, setAssignments] = useState<Map<string, string>>(initialAssignments);
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -140,8 +144,20 @@ export default function MixingNormProductGroupModal({
       if (!buckets.has(id)) buckets.set(id, []);
       buckets.get(id)!.push(product);
     });
+    const missingLast = (a: number | null | undefined, b: number | null | undefined) => (a ?? Infinity) - (b ?? Infinity);
+    for (const [category, items] of buckets) {
+      const group = mixingNormCategoryById(category).group;
+      items.sort((a, b) => {
+        const left = productSignals.get(a.key);
+        const right = productSignals.get(b.key);
+        const order = group === 'dac' ? missingLast(a.width, b.width) || missingLast(left?.doLi, right?.doLi) :
+          group === 'rong' ? missingLast(left?.doLi, right?.doLi) :
+          group === 'song' ? missingLast(left?.kg, right?.kg) || missingLast(left?.doDaiM, right?.doDaiM) : 0;
+        return order || a.code.localeCompare(b.code, 'vi', { numeric: true }) || a.key.localeCompare(b.key);
+      });
+    }
     return buckets;
-  }, [assignments, productsByKey]);
+  }, [assignments, productsByKey, productSignals]);
 
   /** Category đủ tick khi mọi SP con trong cột đều đang chọn. */
   const categoryFullySelected = (categoryId: string, selected: Set<string>) => {
@@ -189,9 +205,9 @@ export default function MixingNormProductGroupModal({
   const columns = useMemo(
     () =>
       GROUP_ORDER.flatMap(group =>
-        MIXING_NORM_CATEGORIES.filter(category => category.group === group)
+        MIXING_NORM_CATEGORIES.filter(category => category.group === group && (grouped.get(category.id)?.length || 0) > 0)
       ),
-    []
+    [grouped]
   );
 
   const toggleCategory = (categoryId: string) => {
@@ -218,7 +234,11 @@ export default function MixingNormProductGroupModal({
   };
 
   const moveProducts = (productKeys: string[], categoryId: string) => {
-    const unique = [...new Set(productKeys.filter(Boolean))];
+    const targetGroup = mixingNormCategoryById(categoryId).group;
+    const unique = [...new Set(productKeys.filter(key => {
+      const initial = initialAssignments.get(key);
+      return initial && mixingNormCategoryById(initial).group === targetGroup;
+    }))];
     if (unique.length === 0) return;
     setAssignments(prev => {
       const next = new Map(prev);
@@ -327,7 +347,7 @@ export default function MixingNormProductGroupModal({
                     key={group}
                     className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${GROUP_HEADER_CLASS[group]}`}
                   >
-                    {mixingNormCategoryGroupLabel(group)}
+                    {group === 'other' ? 'Cần xử lý thủ công' : mixingNormCategoryGroupLabel(group)}
                     <span className="ml-1.5 opacity-70">{count} cột</span>
                   </span>
                 );

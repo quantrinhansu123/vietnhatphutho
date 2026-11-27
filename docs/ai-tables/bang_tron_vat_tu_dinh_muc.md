@@ -8,7 +8,7 @@
 
 **API:** `/api/bang-tron-vat-tu-dinh-muc`  
 Query: `ngay`, `ca`, `q`  
-**UI:** `MixingNormMaterialsTab.tsx` · in: `MixingNormRatioPrintSheet.tsx` · chọn nhanh theo nhóm: `MixingNormProductGroupModal.tsx` + `utils/mixingNormProductCategories.ts` (rule `.ai/Rule_hien_thi_san_pham_phieu_tron.xlsx`)  
+**UI:** `MixingNormMaterialsTab.tsx` · in: `MixingNormRatioPrintSheet.tsx` (A4 ngang `@page mixing-norm-ratio-page`) · chọn nhanh theo nhóm: `MixingNormProductGroupModal.tsx` + `utils/mixingNormProductCategories.ts` (rule `.ai/Rule_hien_thi_san_pham_phieu_tron.xlsx`) · đối soát SL: `utils/mixingNormCoverage.ts` (khóa dòng = lệnh + productId/mã + tên SX + ghi chú + mét cắt + ĐVT, **không** dùng STT)
 Gợi ý sang form phối trộn: `MixingReportForm.tsx` + `utils/mixingNormSuggestion.ts` (phiếu không ca khớp theo ngày)
 
 **Lưới NVL chính:** Mã NVL rộng 160px; các cột Giá trị / % / Tổng trọng lượng tăng theo độ dài số của dòng và tổng. Header, dòng và tổng dùng chung template; màn hình hẹp cuộn ngang. Giá trị tính sẵn dùng `output` để không cắt nội dung như input chỉ đọc.

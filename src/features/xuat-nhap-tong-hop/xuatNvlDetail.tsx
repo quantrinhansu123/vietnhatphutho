@@ -18,6 +18,7 @@ import { isWarehouseKgUnit } from '../../utils/warehouseWeight';
 import { formatMoney, formatMoneyVN, formatNumber, parseLocalizedNumber } from '../../utils';
 import { formatNvlPriceTyped } from './NvlPriceSelect';
 import { allocateLots, sortLotsFifo, type LotAlloc } from './lotAllocation';
+import { fold } from '../thong-ke-nvl/stockModel';
 import { ChiPhiLineModal } from './ChiPhiLineModal';
 
 /** Tạm ẩn khối ảnh số cân NVL — bật `true` khi dùng lại chức năng chụp. */
@@ -279,10 +280,13 @@ export function XuatNvlDetail({
   const [lotsError, setLotsError] = useState('');
   const [chiPhiLineKey, setChiPhiLineKey] = useState<string | null>(null);
 
-  /** Giá FIFO đầu (không chọn lô tay). */
-  function priceFromFifoLot(code: string) {
-    const lots = sortLotsFifo(lotsByCode[code] || []);
-    return lots[0] || null;
+  function lotsFor(line: XuatNvlLine) {
+    return sortLotsFifo((lotsByCode[line.maHang.trim()] || []).filter(lot =>
+      Number(lot.so_luong_con) > 0 &&
+      fold(lot.ten_kho) === fold(line.srcId) &&
+      fold(lot.ten_npl) === fold(line.tenHang) &&
+      fold(lot.ten_nvl_sx) === fold(line.tenSanXuat)
+    ));
   }
 
   /** Phân bổ SL FIFO và tự điền giá — không gõ giá tay. */
@@ -290,22 +294,22 @@ export function XuatNvlDetail({
     const line = next[index];
     const code = line.maHang.trim();
     if (line.srcLoai === 'may' || !code) return;
-    const lots = lotsByCode[code] || [];
+    const FIFO = lotsFor(line);
+    const lots = line.preferredLotId ? FIFO.filter(lot => lot.id === line.preferredLotId) : FIFO;
     if (!lots.length) return;
     const qty = parseLocalizedNumber(line.soLuong);
     const hasQty = Number.isFinite(qty) && qty > 0;
 
     if (!hasQty) {
-      const lot = priceFromFifoLot(code);
+      const lot = lots[0];
       if (!lot) return;
       next[index] = {
         ...line,
-        preferredLotId: '',
         sourceInboundLineId: lot.id,
         sourceInboundSlipCode: lot.ma_phieu || '',
         lotAllocs: [],
         lotTonCon: Number(lot.so_luong_con) || 0,
-        donGia: formatMoneyVN(Number(lot.don_gia) || 0, 0)
+        donGia: formatNvlPriceTyped(String(lot.don_gia || 0))
       };
       return;
     }
@@ -324,17 +328,16 @@ export function XuatNvlDetail({
     });
     const result = allocateLots(lots, qty, reserved, undefined);
     if (!result.allocs.length) {
-      next[index] = { ...line, preferredLotId: '', ...clearLotFields() };
+      next[index] = { ...line, sourceInboundLineId: '', sourceInboundSlipCode: '', lotAllocs: [], lotTonCon: 0, donGia: '' };
       return;
     }
     next[index] = {
       ...line,
-      preferredLotId: '',
       sourceInboundLineId: result.allocs[0].id,
       sourceInboundSlipCode: result.allocs[0].maPhieu,
       lotAllocs: result.allocs,
       lotTonCon: result.available,
-      donGia: formatMoneyVN(result.avgPrice, 0)
+      donGia: formatNvlPriceTyped(String(Math.round(result.avgPrice * 100) / 100))
     };
   }
 
@@ -385,8 +388,7 @@ export function XuatNvlDetail({
     let changed = false;
     next.forEach((line, index) => {
       const code = line.maHang.trim();
-      const qty = parseLocalizedNumber(line.soLuong);
-      if (line.srcLoai === 'may' || !code || line.sourceInboundLineId || !Number.isFinite(qty) || qty <= 0) return;
+      if (line.srcLoai === 'may' || !code || line.sourceInboundLineId) return;
       if (!(lotsByCode[code] || []).length) return;
       allocateLine(next, index);
       if (next[index].sourceInboundLineId) changed = true;
@@ -576,7 +578,7 @@ export function XuatNvlDetail({
           <span className={head}>ĐVT</span>
           <span className={head}>SL Thực</span>
           <span className={head}>Quy đổi KG</span>
-          <span className={head}>Giá (FIFO)</span>
+          <span className={head}>Lô nhập và giá</span>
           <span className={`${head} text-right`}>Thành tiền</span>
           <span className={`${head} text-center`}>CP</span>
         </div>
@@ -715,14 +717,22 @@ export function XuatNvlDetail({
                   if (Number.isFinite(parsed)) patchAt(index, { soLuong: formatNumber(parsed, 3) });
                 }} disabled={viewOnly} className={`${field} border-emerald-200 bg-emerald-50/50`} />
                 <div className={`${field} flex items-center bg-emerald-50/60 font-mono font-bold text-emerald-800`}>{formatNumber(kg || 0, 3)}</div>
-                <div
+                {sourceKind === 'kho' && !viewOnly && lotsFor(line).length > 0 ? (
+                  <select aria-label={'Lô nhập ' + line.maHang} className={field}
+                    value={line.preferredLotId || ''} onChange={event => patchAt(index, { preferredLotId: event.target.value })}>
+                    <option value="">FIFO · {line.donGia || '—'}</option>
+                    {lotsFor(line).map(lot => <option key={lot.id} value={lot.id}>
+                      {lot.ngay_phieu.slice(0, 10).split('-').reverse().join('/')} · còn {formatNumber(lot.so_luong_con, 3)} · {formatNvlPriceTyped(String(lot.don_gia))}
+                    </option>)}
+                  </select>
+                ) : <div
                   className={`${field} flex items-center justify-end bg-zinc-50 font-mono text-[11px] font-bold tabular-nums text-zinc-800`}
                   title={(line.lotAllocs || []).length > 1
                     ? `FIFO · vắt ${(line.lotAllocs || []).length} lô · giá TB`
                     : 'Giá FIFO tự động — chi phí kèm mở nút CP'}
                 >
                   {line.donGia.trim() ? line.donGia : '—'}
-                </div>
+                </div>}
                 <div className="min-w-0 truncate text-right font-mono text-[11px] font-bold tabular-nums">{amountText}</div>
                 <div className="flex flex-col items-center justify-center gap-1">
                   <button

@@ -1,5 +1,7 @@
+import { isIsoDate } from '../../utils/isoDate';
+import { movementOf, scopeBalance, type UsageReport } from './stockModel';
 import React, { useEffect, useMemo, useState } from 'react';
-import { FileDown, Loader2, Search } from 'lucide-react';
+import { Boxes, FileDown, LayoutDashboard, Loader2, Search } from 'lucide-react';
 import SearchableMultiSelect from '../../components/SearchableMultiSelect';
 import { VnCalendarPicker } from '../so-che-do-may';
 import { queueTongHopEdit, type TongHopHeader } from '../xuat-nhap-tong-hop/model';
@@ -27,6 +29,8 @@ type SlipRecord = {
   loai_xuat: string | null;
   trang_thai: string | null;
   chi_tiet: SlipLine[];
+  dot_san_xuat_id?: string;
+  dot_so?: number;
 };
 
 type ReportRow = {
@@ -40,6 +44,9 @@ type ReportRow = {
   tenSx: string;
   kho: string;
   may: string;
+  source: string;
+  dot: string;
+  unit: string;
   slNhap: number;
   donGiaNhap: number;
   giaNhapKho: number;
@@ -49,21 +56,6 @@ type ReportRow = {
   donGiaXuat: number;
   thanhTienXuat: number;
 };
-
-type RenderRow =
-  | { type: 'section'; key: string; label: string }
-  | { type: 'group'; key: string; side: 'nhap' | 'xuat'; tenHang: string; tenSx: string }
-  | { type: 'data'; row: ReportRow }
-  | {
-      type: 'subtotal';
-      key: string;
-      side: 'nhap' | 'xuat';
-      slNhap: number;
-      thanhTienNhap: number;
-      thanhTienNhapKho: number;
-      slXuat: number;
-      thanhTienXuat: number;
-    };
 
 function todayIso() {
   const now = new Date();
@@ -239,7 +231,8 @@ export function matchTokenFilter(
 }
 
 export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit: () => void }) {
-  const [viewMode, setViewMode] = useState<'movements' | 'machine-stock'>('movements');
+  const [viewMode, setViewMode] = useState<'overview' | 'movements' | 'balance' | 'machine-stock'>('overview');
+  const [movementSide, setMovementSide] = useState<'xuat' | 'nhap'>('xuat');
   const [shiftOptions, setShiftOptions] = useState<ShiftOption[]>([]);
   const [from, setFrom] = useState(firstDayOfMonthIso());
   const [to, setTo] = useState(todayIso());
@@ -247,6 +240,9 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
   const [warehouseOptions, setWarehouseOptions] = useState<PickOption[]>([]);
   const [machines, setMachines] = useState<PickOption[]>([]);
   const [warehouses, setWarehouses] = useState<PickOption[]>([]);
+  const [dot, setDot] = useState('');
+  const [usage, setUsage] = useState<UsageReport[]>([]);
+  const [applied, setApplied] = useState({ from, to, machines, warehouses, dot });
   const [records, setRecords] = useState<SlipRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -296,12 +292,11 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
     };
   }, []);
 
-  // Tự tải thống kê từ phiếu xuất nhập NVL khi mở trang / đổi khoảng ngày.
+  // Tải lần đầu; các thay đổi bộ lọc chỉ áp dụng khi nhấn Xem để màn hình và CSV dùng cùng một snapshot.
   useEffect(() => {
-    if (viewMode !== 'movements') return;
     void loadReport();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, from, to]);
+  }, []);
 
   const aliasKind = useMemo(
     () => buildPartyAliasKind(machineOptions, warehouseOptions),
@@ -310,7 +305,7 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
 
   const maySet = useMemo(() => {
     const set = new Set<string>();
-    for (const item of machines) {
+    for (const item of applied.machines) {
       set.add(foldPartyKey(item.id));
       set.add(foldPartyKey(item.label));
       for (const part of item.label.split('—')) {
@@ -319,25 +314,39 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
       }
     }
     return set;
-  }, [machines]);
+  }, [applied.machines]);
 
   const khoSet = useMemo(() => {
     const set = new Set<string>();
-    for (const item of warehouses) {
+    for (const item of applied.warehouses) {
       set.add(foldPartyKey(item.id));
       set.add(foldPartyKey(item.label));
     }
     return set;
-  }, [warehouses]);
+  }, [applied.warehouses]);
+
+  const dotOptions = useMemo(() => {
+    const options = new Map<string, string>();
+    for (const slip of records) {
+      const id = text(slip.dot_san_xuat_id);
+      if (id) options.set(id, `Đợt ${text(slip.dot_so) || id.slice(0, 8)}`);
+      else if (slip.dot_so != null) options.set(`legacy:${slip.dot_so}`, `Đợt ${slip.dot_so} (phiếu cũ, chưa có mã đợt)`);
+    }
+    return [...options].map(([id, label]) => ({ id, label }));
+  }, [records]);
 
   const filterLabel = useMemo(() => {
-    const may = machines.length ? `${machines.length} máy` : 'Tất cả máy';
-    const kho = warehouses.length ? `${warehouses.length} kho` : 'Tất cả kho';
-    return `${may} · ${kho}`;
-  }, [machines, warehouses]);
+    const may = applied.machines.length ? `${applied.machines.length} máy` : 'Tất cả máy';
+    const kho = applied.warehouses.length ? `${applied.warehouses.length} kho` : 'Tất cả kho';
+    const dotDisplay = !applied.dot
+      ? 'Tất cả đợt'
+      : dotOptions.find(option => option.id === applied.dot)?.label ||
+        (applied.dot.startsWith('legacy:') ? `Đợt ${applied.dot.slice(7)}` : `Đợt ${applied.dot.slice(0, 8)}`);
+    return `${may} · ${kho} · ${dotDisplay}`;
+  }, [applied, dotOptions]);
 
   async function loadReport() {
-    if (!from || !to) {
+    if (!isIsoDate(from) || !isIsoDate(to)) {
       setError('Chọn từ ngày và đến ngày.');
       return;
     }
@@ -348,27 +357,41 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
     setLoading(true);
     setError('');
     try {
-      // API giới hạn 2000 phiếu mới nhất/kiểu — gọi riêng nhập + xuất rồi gộp
-      // để kỳ dài không mất phiếu cũ (order ngay desc + limit ở server).
-      const fetchKind = async (loai: 'nhap' | 'xuat') => {
-        const params = new URLSearchParams({ from: from.slice(0, 10), to: to.slice(0, 10), loai, limit: '2000' });
-        const res = await fetch(`/api/xuat-nhap-tong-hop?${params.toString()}`);
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'Không tải được phiếu xuất nhập NVL.');
-        return (Array.isArray(data.records) ? data.records : []) as SlipRecord[];
+      const snapshot = { from, to, machines, warehouses, dot };
+      const fetchPages = async <T,>(path: string, params: URLSearchParams, field: string) => {
+        const rows: T[] = [];
+        const cursors = new Set<string>();
+        for (;;) {
+          const response = await fetch(path + '?' + params);
+          const data = await response.json();
+          if (!response.ok || !Array.isArray(data[field]) || !('next_cursor' in data)) {
+            throw new Error(data.error || 'Không tải được đầy đủ dữ liệu thống kê NVL.');
+          }
+          rows.push(...data[field]);
+          if (!data.next_cursor) return rows;
+          if (cursors.has(data.next_cursor)) throw new Error('Máy chủ lặp trang dữ liệu thống kê.');
+          cursors.add(data.next_cursor);
+          params.set('cursor', data.next_cursor);
+        }
       };
-      const [nhapRecords, xuatRecords] = await Promise.all([fetchKind('nhap'), fetchKind('xuat')]);
+      const fetchKind = (loai: string) => fetchPages<SlipRecord>('/api/xuat-nhap-tong-hop',
+        new URLSearchParams({ to, loai, paged: '1', limit: '500' }), 'records');
+      const [nhapRecords, xuatRecords, usageRecords] = await Promise.all([
+        fetchKind('nhap'), fetchKind('xuat'), fetchPages<UsageReport>('/api/so-tron',
+          new URLSearchParams({ den_ngay: to, usage: '1', limit: '500' }), 'reports')
+      ]);
       const merged = new Map<string, SlipRecord>();
       for (const slip of [...nhapRecords, ...xuatRecords]) {
         const key = text(slip.id) || `${text(slip.ma_phieu_chung)}|${text(slip.loai)}`;
         if (key && !merged.has(key)) merged.set(key, slip);
       }
+      setApplied(snapshot);
+      setUsage(usageRecords);
       setRecords([...merged.values()]);
       setLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không tải được phiếu xuất nhập NVL.');
-      setRecords([]);
-      setLoaded(true);
+      setLoaded(false);
     } finally {
       setLoading(false);
     }
@@ -381,16 +404,53 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
     onEdit();
   }
 
+  const balances = useMemo(() => {
+    const machineAliases = new Map<string, string>();
+    for (const option of machineOptions) {
+      for (const alias of [option.id, option.label, ...option.label.split('—')]) {
+        const key = foldPartyKey(alias);
+        if (key) machineAliases.set(key, foldPartyKey(option.id));
+      }
+    }
+    const machineKey = (id: string) => machineAliases.get(foldPartyKey(id)) || foldPartyKey(id);
+    const scoped = maySet.size > 0 || khoSet.size > 0;
+    const dotFilter = applied.dot;
+    const movements = records
+      .filter(slip => slip.trang_thai !== 'huy')
+      .flatMap(slip =>
+        (Array.isArray(slip.chi_tiet) ? slip.chi_tiet : [])
+          .map(line => movementOf(slip, line))
+          .filter(item => item.code && (!dotFilter || item.dot === dotFilter))
+      );
+    // Lọc đợt: sổ trộn không gắn đợt → chỉ tính tồn theo chứng từ liên kết đợt đó.
+    return scopeBalance(
+      movements,
+      usage,
+      applied.from,
+      party => {
+        if (!party.id) return false;
+        const id = foldPartyKey(party.id);
+        const kind = party.kind || aliasKind.get(id);
+        return (
+          (kind === 'may' && (!scoped || maySet.has(id) || maySet.has(machineKey(id)))) ||
+          (kind === 'kho' && (!scoped || khoSet.has(id)))
+        );
+      },
+      machineKey,
+      applied.to,
+      { excludeUsage: Boolean(dotFilter) }
+    );
+  }, [records, usage, applied.from, applied.to, applied.dot, maySet, khoSet, machineOptions, aliasKind]);
+
   const rows = useMemo<ReportRow[]>(() => {
     const out: ReportRow[] = [];
     for (const slip of records) {
       if (text(slip.trang_thai) === 'huy') continue;
       const ngay = text(slip.ngay).slice(0, 10);
-      if (!ngay || ngay < from.slice(0, 10) || ngay > to.slice(0, 10)) continue;
+      if (!ngay || ngay < applied.from || ngay > applied.to) continue;
       const detail = Array.isArray(slip.chi_tiet) ? slip.chi_tiet : [];
-      const isNhap = text(slip.loai) === 'nhap';
-      const isXuat = text(slip.loai) === 'xuat';
-      if (!isNhap && !isXuat) continue;
+      const dotLabel = text(slip.dot_so);
+      if (applied.dot && (text(slip.dot_san_xuat_id) || (slip.dot_so == null ? '' : `legacy:${slip.dot_so}`)) !== applied.dot) continue;
       const totalKem = detail.reduce((sum, line) => sum + sumKemStored(line.chi_phi_kem_theo), 0);
       const totalKg = detail.reduce((sum, line) => sum + num(line.quy_doi_kg), 0);
       const kemPerKg = totalKg > 0 ? totalKem / totalKg : 0;
@@ -398,15 +458,20 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
         const maHang = text(line.ma_hang);
         if (!maHang) return;
         if (!matchTokenFilter(collectLineTokens(slip, line), maySet, khoSet, aliasKind)) return;
+        const movement = movementOf(slip, line);
+        const isReturn = movement.from.kind === 'may' && movement.to.kind === 'kho';
+        const isNhap = slip.loai === 'nhap' || isReturn;
+        const source = isReturn ? (line.so_tron_id ? 'Nhập lại · Sổ trộn' : 'Nhập lại từ máy') : '';
+        const unit = movement.unit;
         const qty = num(line.so_luong);
         const price = num(line.don_gia);
         const amount = num(line.thanh_tien) || Math.round(qty * price * 1000) / 1000;
         const tenHang = text(line.ten_hang);
         const tenSx = text(line.ten_nvl_sx) || tenHang;
         const parties = collectLineParties(slip, line);
-        const kho = text(line.kho_dong_ten) || text(line.kho_dong_id) || text(slip.kho_dich);
+        const kho = (isReturn ? movement.to.id : '') || text(line.kho_dong_ten) || text(line.kho_dong_id) || (movement.from.kind === 'kho' ? movement.from.id : '') || text(slip.kho_dich);
         const may =
-          text(line.may) ||
+          (isReturn ? movement.from.id : '') || text(line.may) ||
           (text(line.dich_dong_loai) === 'may' ? text(line.dich_dong_id) : '') ||
           (text(slip.dich_loai) === 'may' ? text(slip.dich_id) : '') ||
           (text(line.src_loai) === 'may' ? text(line.src_id) : '') ||
@@ -414,7 +479,7 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
           '';
         if (isNhap) {
           const importPrice = Math.round((price + kemPerKg) * 1000) / 1000;
-          const importAmount = Math.round(qty * importPrice * 1000) / 1000;
+          const importAmount = Math.round(qty * (price + kemPerKg) * 1000) / 1000;
           out.push({
             key: `${ngay}|${slip.ma_phieu_chung}|nhap|${index}|${maHang}`,
             slipId: text(slip.id),
@@ -426,6 +491,7 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
             tenSx,
             kho,
             may,
+            source, dot: dotLabel, unit,
             slNhap: qty,
             donGiaNhap: price,
             giaNhapKho: importPrice,
@@ -447,6 +513,7 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
             tenSx,
             kho,
             may,
+            source, dot: dotLabel, unit,
             slNhap: 0,
             donGiaNhap: 0,
             giaNhapKho: 0,
@@ -470,125 +537,63 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
       return a.maHang.localeCompare(b.maHang, 'vi');
     });
     return out;
-  }, [records, from, to, maySet, khoSet, aliasKind]);
-
-  const renderRows = useMemo<RenderRow[]>(() => {
-    const list: RenderRow[] = [];
-    const appendBlock = (source: ReportRow[], side: 'nhap' | 'xuat', sectionLabel: string) => {
-      if (!source.length) return;
-      list.push({ type: 'section', key: `section|${side}`, label: sectionLabel });
-      const sorted = [...source].sort((a, b) => {
-        const name = a.tenSx.localeCompare(b.tenSx, 'vi');
-        if (name) return name;
-        const hang = a.tenHang.localeCompare(b.tenHang, 'vi');
-        if (hang) return hang;
-        if (a.ngay !== b.ngay) return a.ngay.localeCompare(b.ngay);
-        if (a.maPhieu !== b.maPhieu) return a.maPhieu.localeCompare(b.maPhieu);
-        return a.maHang.localeCompare(b.maHang, 'vi');
-      });
-      let groupKey = '';
-      let group: ReportRow[] = [];
-      const flush = () => {
-        if (!group.length) return;
-        const first = group[0];
-        list.push({
-          type: 'group',
-          key: `grp|${side}|${groupKey}`,
-          side,
-          tenHang: first.tenHang,
-          tenSx: first.tenSx
-        });
-        for (const row of group) list.push({ type: 'data', row });
-        list.push({
-          type: 'subtotal',
-          key: `sub|${side}|${groupKey}`,
-          side,
-          slNhap: group.reduce((sum, item) => sum + item.slNhap, 0),
-          thanhTienNhap: group.reduce((sum, item) => sum + item.thanhTienNhap, 0),
-          thanhTienNhapKho: group.reduce((sum, item) => sum + item.thanhTienNhapKho, 0),
-          slXuat: group.reduce((sum, item) => sum + item.slXuat, 0),
-          thanhTienXuat: group.reduce((sum, item) => sum + item.thanhTienXuat, 0)
-        });
-        group = [];
-      };
-      for (const row of sorted) {
-        const key = `${row.tenSx.toLocaleLowerCase('vi')}||${row.tenHang.toLocaleLowerCase('vi')}`;
-        if (key !== groupKey) {
-          flush();
-          groupKey = key;
-        }
-        group.push(row);
-      }
-      flush();
-    };
-    appendBlock(rows.filter(row => row.kind === 'nhap'), 'nhap', 'Nhập');
-    appendBlock(rows.filter(row => row.kind === 'xuat'), 'xuat', 'Xuất');
-    return list;
-  }, [rows]);
+  }, [records, applied, maySet, khoSet, aliasKind]);
 
   const totals = useMemo(() => {
-    const maHang = new Set(rows.map(item => item.maHang.toLocaleLowerCase('vi')));
+    const totalsByUnit = new Map<string, { nhap: number; xuat: number }>();
+    for (const item of rows) {
+      const unit = totalsByUnit.get(item.unit) || { nhap: 0, xuat: 0 };
+      unit.nhap += item.slNhap;
+      unit.xuat += item.slXuat;
+      totalsByUnit.set(item.unit, unit);
+    }
     return {
-      maHang: maHang.size,
-      slNhap: rows.reduce((sum, item) => sum + item.slNhap, 0),
-      slXuat: rows.reduce((sum, item) => sum + item.slXuat, 0),
+      totalsByUnit,
       thanhTienNhap: rows.reduce((sum, item) => sum + item.thanhTienNhap, 0),
       thanhTienNhapKho: rows.reduce((sum, item) => sum + item.thanhTienNhapKho, 0),
       thanhTienXuat: rows.reduce((sum, item) => sum + item.thanhTienXuat, 0)
     };
   }, [rows]);
 
-  function summaryBar(position: 'tren' | 'duoi') {
-    const stat = (label: string, value: string, valueClass: string) => (
-      <div className="min-w-0">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">{label}</p>
-        <p className={`mt-0.5 truncate text-sm font-black tabular-nums ${valueClass}`}>{value}</p>
-      </div>
-    );
-    return (
-      <div
-        data-testid={`thong-ke-nvl-summary-${position}`}
-        className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm"
-      >
-        <div className="grid md:grid-cols-2">
-          <div className="border-b border-emerald-100 bg-emerald-50/70 p-3 md:border-b-0 md:border-r">
-            <p className="text-[11px] font-black uppercase tracking-wide text-emerald-800">Nhập NVL</p>
-            <div className="mt-2 grid grid-cols-3 gap-3">
-              {stat('SL nhập', formatQty(totals.slNhap), 'text-emerald-800')}
-              {stat('Thành tiền', formatMoney(totals.thanhTienNhap, 0), 'text-zinc-900')}
-              {stat('Tổng tiền theo giá nhập kho', formatMoney(totals.thanhTienNhapKho, 0), 'text-sky-800')}
-            </div>
-          </div>
-          <div className="bg-rose-50/70 p-3">
-            <p className="text-[11px] font-black uppercase tracking-wide text-rose-800">Xuất NVL</p>
-            <div className="mt-2 grid grid-cols-2 gap-3">
-              {stat('SL xuất', formatQty(totals.slXuat), 'text-rose-800')}
-              {stat('Thành tiền xuất', formatMoney(totals.thanhTienXuat, 0), 'text-zinc-900')}
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-zinc-100 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
-          <span>
-            Tổng mã hàng <strong className="font-black tabular-nums text-zinc-900">{formatNumber(totals.maHang, 0)}</strong>
-          </span>
-          <span className="text-zinc-300">·</span>
-          <span>{filterLabel}</span>
-          <span className="text-zinc-300">·</span>
-          <span>{rows.length} dòng chi tiết</span>
-        </div>
-      </div>
-    );
+  const filtersChanged = from !== applied.from || to !== applied.to || dot !== applied.dot ||
+    machines.map(item => item.id).join('|') !== applied.machines.map(item => item.id).join('|') ||
+    warehouses.map(item => item.id).join('|') !== applied.warehouses.map(item => item.id).join('|');
+
+  const quantityLabel = (side: 'nhap' | 'xuat') =>
+    [...totals.totalsByUnit]
+      .filter(([, qty]) => qty[side] !== 0)
+      .map(([unit, qty]) => `${formatQty(qty[side])} ${unit || 'đơn vị'}`)
+      .join(' · ') || '0';
+
+  function balanceQuantityLabel(field: 'used' | 'closing') {
+    if (balances.usageExcluded && field === 'used') return 'Chưa trừ (lọc đợt)';
+    if (balances.rows.some(row => row[field] === null)) return 'Chưa xác định';
+    const byUnit = new Map<string, number>();
+    for (const row of balances.rows) {
+      byUnit.set(row.unit, (byUnit.get(row.unit) ?? 0) + (row[field] ?? 0));
+    }
+    return [...byUnit].map(([unit, quantity]) => formatQty(quantity) + ' ' + (unit || 'đơn vị')).join(' · ') || '0';
   }
+
+  const summary = [
+    { label: 'Nhập', value: quantityLabel('nhap'), amounts: [
+      { label: 'Thành tiền', value: totals.thanhTienNhap },
+      { label: 'Theo giá nhập kho', value: totals.thanhTienNhapKho }
+    ] },
+    { label: 'Xuất', value: quantityLabel('xuat'), amounts: [{ label: 'Thành tiền', value: totals.thanhTienXuat }] },
+    { label: 'Sử dụng', value: balanceQuantityLabel('used') },
+    { label: 'Tồn cuối', value: balanceQuantityLabel('closing') }
+  ];
 
   function exportCsv() {
     const header = [
-      'Ngay',
+      'Ngày',
       'Phieu',
-      'Loai',
+      'Loai phieu',
       'Ten NVL',
       'Ten NVL san xuat',
       'Kho',
-      'May',
+      'Máy', 'Đợt', 'Nguồn', 'Đơn vị',
       'SL Nhap',
       'Don gia nhap',
       'Gia nhap kho',
@@ -603,11 +608,11 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
       [
         formatDateVN(item.ngay),
         item.maPhieu,
-        item.kind === 'nhap' ? 'Nhap' : 'Xuat',
+        item.kind === 'nhap' ? 'Phieu nhap' : 'Phieu xuat',
         esc(item.tenHang),
         esc(item.tenSx),
         esc(item.kho),
-        esc(item.may),
+        esc(item.may), esc(item.dot), esc(item.source), esc(item.unit),
         String(Math.round(item.slNhap * 1000) / 1000),
         String(Math.round(item.donGiaNhap * 1000) / 1000),
         String(Math.round(item.giaNhapKho * 1000) / 1000),
@@ -618,50 +623,124 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
         String(Math.round(item.thanhTienXuat * 1000) / 1000)
       ].join(',')
     );
-    const csv = `﻿${header.join(',')}\n${lines.join('\n')}`;
+    const stockLines = balances.rows.map(row =>
+      [esc(row.code), esc(row.name), esc(row.unit), row.opening, row.inbound, row.outbound,
+        balances.usageExcluded ? 'Chưa trừ (lọc đợt)' : (row.used ?? 'Chưa có dữ liệu'),
+        row.closing ?? 'Chưa xác định'].join(','));
+    const warnings = [
+      ...(balances.duplicateShifts > 0
+        ? [esc('Cảnh báo: có sổ trùng máy, ngày, ca — báo cáo dùng bản cập nhật mới nhất.')]
+        : []),
+      ...(balances.usageExcluded
+        ? [esc('Tồn theo đợt chỉ tính chứng từ liên kết đợt; sổ trộn không gắn đợt nên chưa trừ sử dụng.')]
+        : [])
+    ];
+    const csv = ['﻿' + esc(formatDateVN(applied.from) + ' – ' + formatDateVN(applied.to) + ' · ' + filterLabel),
+      ...warnings,
+      header.join(','), ...lines, '', 'Mã NVL,Tên SX,Đơn vị,Tồn đầu,Nhập phạm vi,Xuất phạm vi,Sử dụng,Tồn cuối theo chứng từ',
+      ...stockLines].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `thong-ke-nvl-${from.slice(0, 10)}-${to.slice(0, 10)}.csv`;
+    anchor.download = `thong-ke-nvl-${applied.from}-${applied.to}.csv`;
     document.body.appendChild(anchor);
     anchor.click();
     document.body.removeChild(anchor);
     URL.revokeObjectURL(url);
   }
 
+  const stockSection = (
+    <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white" aria-label="Tồn và sử dụng theo chứng từ">
+      {balances.duplicateShifts > 0 && <p className="mx-4 mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Có sổ trùng máy, ngày, ca.</p>}
+      {balances.usageExcluded && (
+        <p className="mx-4 mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+          Tồn theo đợt tính từ chứng từ gắn đợt đã chọn. Sổ trộn không gắn đợt nên cột Sử dụng chưa trừ; Tồn cuối = Tồn đầu + Nhập − Xuất.
+        </p>
+      )}
+      <div className="overflow-auto">
+        <table className="w-full min-w-[720px] border-collapse text-left text-xs sm:text-sm">
+          <thead className="bg-zinc-50 text-[11px] uppercase tracking-wide text-zinc-600"><tr>
+            {['Mã NVL', 'Tên sản xuất', 'ĐVT', 'Tồn đầu', 'Nhập', 'Xuất', 'Sử dụng', 'Tồn cuối'].map((label, index) => <th scope="col" key={label} className={'whitespace-nowrap border-b border-zinc-200 px-3 py-2 font-semibold ' + (index >= 3 ? 'text-right' : 'text-left')}>{label}</th>)}
+          </tr></thead>
+          <tbody>{balances.rows.length ? balances.rows.map(row => <tr key={JSON.stringify([row.code, row.name, row.unit])} className="border-b border-zinc-100 hover:bg-zinc-50">
+            <td className="px-3 py-2 font-bold">{row.code}</td><td className="px-3 py-2">{row.name}</td><td className="px-3 py-2">{row.unit || '—'}</td>
+            {[row.opening, row.inbound, row.outbound].map((value, index) => <td key={index} className="px-3 py-2 text-right tabular-nums">{formatQty(value)}</td>)}
+            <td className="px-3 py-2 text-right tabular-nums">{
+              balances.usageExcluded ? 'Chưa trừ (lọc đợt)' : row.used === null ? 'Chưa có dữ liệu' : formatQty(row.used)
+            }</td>
+            <td className="px-3 py-2 text-right font-bold tabular-nums">{row.closing === null ? 'Chưa xác định' : formatQty(row.closing)}</td>
+          </tr>) : <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-zinc-500">Chưa có dòng tồn trong phạm vi đã chọn.</td></tr>}</tbody>
+        </table>
+      </div>
+    </section>
+  );
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4 pb-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <button type="button" onClick={onBack} className="text-xs font-extrabold text-[#ef1b2d]">
+          <button type="button" onClick={onBack} className="text-xs font-bold text-[#ef1b2d] hover:underline">
             ← Kho
           </button>
-          <h2 className="mt-1 text-base font-black text-zinc-950">Thống kê NVL</h2>
-          <p className="mt-0.5 max-w-2xl text-xs font-medium text-zinc-500">
-            Nguồn dữ liệu: phiếu Xuất nhập kho NVL. Lọc theo kỳ, nhiều máy/kho — để trống là lấy tất cả.
-          </p>
+          <h2 className="mt-2 text-xl font-black tracking-tight text-zinc-950 sm:text-2xl">Thống kê nguyên vật liệu</h2>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Chế độ thống kê NVL">
-        <button type="button" role="tab" aria-selected={viewMode === 'movements'} onClick={() => setViewMode('movements')} className={`rounded-lg px-3 py-2 text-xs font-extrabold ${viewMode === 'movements' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-700'}`}>Nhập – xuất</button>
-        <button type="button" role="tab" aria-selected={viewMode === 'machine-stock'} onClick={() => setViewMode('machine-stock')} className={`rounded-lg px-3 py-2 text-xs font-extrabold ${viewMode === 'machine-stock' ? 'bg-zinc-900 text-white' : 'border border-zinc-200 bg-white text-zinc-700'}`}>Kiểm tra tồn theo máy</button>
+      <div className="overflow-x-auto border-b border-zinc-200" role="tablist" aria-label="Các phần thống kê NVL">
+        <div className="flex min-w-max gap-1">
+          {([
+            { id: 'overview', label: 'Tổng quan', icon: LayoutDashboard },
+            { id: 'movements', label: 'Chứng từ nhập–xuất' },
+            { id: 'balance', label: 'Tồn & sử dụng', icon: Boxes },
+            { id: 'machine-stock', label: 'Kiểm tra theo máy', icon: Search }
+          ] as const).map(tab => {
+            const Icon = 'icon' in tab ? tab.icon : null;
+            return <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              id={`nvl-tab-${tab.id}`}
+              aria-controls={`nvl-panel-${tab.id}`}
+              aria-selected={viewMode === tab.id}
+              onClick={() => setViewMode(tab.id)}
+              onKeyDown={event => {
+                if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                event.preventDefault();
+                const ids = ['overview', 'movements', 'balance', 'machine-stock'] as const;
+                const current = ids.indexOf(tab.id);
+                const next = event.key === 'Home' ? 0 : event.key === 'End' ? ids.length - 1 :
+                  (current + (event.key === 'ArrowRight' ? 1 : -1) + ids.length) % ids.length;
+                setViewMode(ids[next]);
+                document.getElementById(`nvl-tab-${ids[next]}`)?.focus();
+              }}
+              tabIndex={viewMode === tab.id ? 0 : -1}
+              className={`flex min-h-11 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-bold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-600 ${viewMode === tab.id ? 'border-[#ef1b2d] text-[#b91521]' : 'border-transparent text-zinc-600 hover:bg-zinc-50 hover:text-zinc-950'}`}
+            >{Icon ? <Icon className="h-4 w-4" /> : null}{tab.label}</button>;
+          })}
+        </div>
       </div>
 
-      {viewMode === 'movements' ? <>
-      <div className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
-        <div className="grid items-end gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+      {viewMode !== 'machine-stock' ? <div role="tabpanel" id={`nvl-panel-${viewMode}`} aria-labelledby={`nvl-tab-${viewMode}`} className="space-y-4">
+      <section aria-label="Bộ lọc báo cáo" className="rounded-lg border border-zinc-200 bg-white p-3">
+        <div className="grid grid-cols-2 items-end gap-3 md:grid-cols-3 xl:grid-cols-[repeat(3,minmax(0,1fr))_repeat(2,minmax(0,1.25fr))_auto]">
           <label className="block min-w-0 space-y-1">
-            <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Từ ngày</span>
+            <span className="text-xs font-medium text-zinc-700">Từ ngày</span>
             <VnCalendarPicker value={from} onChange={setFrom} triggerClassName="min-h-10" />
           </label>
           <label className="block min-w-0 space-y-1">
-            <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Đến ngày</span>
+            <span className="text-xs font-medium text-zinc-700">Đến ngày</span>
             <VnCalendarPicker value={to} onChange={setTo} triggerClassName="min-h-10" />
           </label>
+          <label className="block min-w-0 space-y-1">
+            <span className="text-xs font-medium text-zinc-700">Đợt</span>
+            <select className="min-h-10 w-full rounded-lg border border-zinc-200 px-2" value={dot} onChange={event => setDot(event.target.value)}>
+              <option value="">Tất cả đợt</option>
+              {dotOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
+          </label>
           <div className="block min-w-0 space-y-1">
-            <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Máy (chọn nhiều)</span>
+            <span className="text-xs font-medium text-zinc-700">Máy</span>
             <SearchableMultiSelect<PickOption>
               values={machines}
               onChange={setMachines}
@@ -676,7 +755,7 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
             />
           </div>
           <div className="block min-w-0 space-y-1">
-            <span className="text-[11px] font-black uppercase tracking-wider text-zinc-500">Kho (chọn nhiều)</span>
+            <span className="text-xs font-medium text-zinc-700">Kho</span>
             <SearchableMultiSelect<PickOption>
               values={warehouses}
               onChange={setWarehouses}
@@ -690,12 +769,12 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
               maxResults={100}
             />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="col-span-2 flex items-center gap-2 md:col-span-1">
             <button
               type="button"
               onClick={() => void loadReport()}
               disabled={loading}
-              className="flex h-9 items-center gap-1.5 rounded-lg bg-[#ef1b2d] px-3.5 text-xs font-extrabold text-white disabled:opacity-60"
+              className="flex min-h-10 items-center gap-2 rounded-lg bg-[#ef1b2d] px-4 text-sm font-bold text-white hover:bg-[#d71926] disabled:opacity-60"
             >
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
               Xem
@@ -703,152 +782,148 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
             <button
               type="button"
               onClick={exportCsv}
-              disabled={!rows.length}
-              className="flex h-9 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-extrabold text-zinc-700 disabled:opacity-50"
+              disabled={!loaded || loading}
+              className="flex min-h-10 items-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 text-sm font-bold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
             >
               <FileDown className="h-3.5 w-3.5" />
               Excel
             </button>
           </div>
         </div>
-      </div>
+        {filtersChanged && loaded && <p role="status" className="mt-2 text-xs text-amber-800">Chưa áp dụng · Đang xem {formatDateVN(applied.from)} – {formatDateVN(applied.to)} · {filterLabel}</p>}
+      </section>
 
       {error ? (
         <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p>
       ) : null}
 
+      {viewMode === 'movements' && (
+        <div className="flex gap-1 border-b border-zinc-200" role="tablist" aria-label="Loại chứng từ">
+          {(['xuat', 'nhap'] as const).map(side => (
+            <button key={side} type="button" role="tab" id={`nvl-movement-tab-${side}`}
+              aria-controls={`nvl-movement-panel-${side}`} aria-selected={movementSide === side}
+              tabIndex={movementSide === side ? 0 : -1}
+              onClick={() => setMovementSide(side)}
+              onKeyDown={event => {
+                if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                event.preventDefault();
+                const next = event.key === 'Home' ? 'xuat' : event.key === 'End' ? 'nhap' : movementSide === 'xuat' ? 'nhap' : 'xuat';
+                setMovementSide(next);
+                document.getElementById(`nvl-movement-tab-${next}`)?.focus();
+              }}
+              className={`min-h-10 border-b-2 px-5 text-sm font-bold ${movementSide === side
+                ? 'border-[#ef1b2d] text-[#b91521]' : 'border-transparent text-zinc-600 hover:bg-zinc-50'}`}
+            >{side === 'xuat' ? 'Xuất' : 'Nhập'}</button>
+          ))}
+        </div>
+      )}
+
       {loaded ? (
         <>
-          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-zinc-600">
-            <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-zinc-200">
-              {formatDateVN(from)} – {formatDateVN(to)}
-            </span>
-            <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-zinc-200">{filterLabel}</span>
-          </div>
-          {summaryBar('tren')}
-          <div className="max-h-[min(70vh,52rem)] overflow-auto rounded-xl border border-zinc-300 bg-white shadow-sm">
-            <table className="w-max min-w-full border-collapse text-[13px] text-zinc-900">
+          {viewMode === 'overview' && (
+            <dl data-testid="thong-ke-nvl-summary-tren" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {summary.map(({ label, value, amounts }) => (
+                <div key={label} className="min-w-0 rounded-lg border border-zinc-200 bg-white p-3">
+                  <dt className="text-sm font-medium text-zinc-600">{label}</dt>
+                  <dd className="mt-1 break-words text-lg font-semibold tabular-nums text-zinc-950">{value}</dd>
+                  {amounts?.map(amount => (
+                    <dd key={amount.label} className="mt-1 text-xs tabular-nums text-zinc-600">{amount.label} · {formatMoney(amount.value, 0)}</dd>
+                  ))}
+                </div>
+              ))}
+            </dl>
+          )}
+          {viewMode === 'balance' && stockSection}
+          {viewMode === 'movements' && <>
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <h3 className="text-base font-black text-zinc-900">Chi tiết chứng từ {movementSide === 'xuat' ? 'xuất' : 'nhập'}</h3>
+              <span className="text-xs text-zinc-600">{formatNumber(rows.filter(row => row.kind === movementSide).length, 0)} dòng</span>
+            </div>
+          <div role="tabpanel" id={`nvl-movement-panel-${movementSide}`} aria-labelledby={`nvl-movement-tab-${movementSide}`} className="min-w-0">
+            {([movementSide] as const).map(side => {
+              const nhapTable = side === 'nhap';
+              const sideRows = rows.filter(row => row.kind === side);
+              const columnCount = nhapTable ? 11 : 10;
+              return <section key={side} aria-label={`Chứng từ ${nhapTable ? 'nhập' : 'xuất'}`} className="min-w-0 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+              <div className="max-h-[min(70vh,52rem)] overflow-auto">
+              <table className="w-max min-w-full border-collapse text-xs text-zinc-900">
               <thead className="sticky top-0 z-20 shadow-[0_1px_0_0_rgb(212_212_216)]">
                 <tr>
-                  <th rowSpan={2} className="min-w-[6.5rem] border border-zinc-300 bg-zinc-100 px-2.5 py-2 text-center text-[11px] font-bold">Ngày</th>
-                  <th rowSpan={2} className="min-w-[7rem] border border-zinc-300 bg-zinc-100 px-2.5 py-2 text-center text-[11px] font-bold">Phiếu</th>
-                  <th rowSpan={2} className="min-w-[12rem] border border-zinc-300 bg-zinc-100 px-2.5 py-2 text-center text-[11px] font-bold">Tên NVL</th>
-                  <th rowSpan={2} className="min-w-[12rem] border border-zinc-300 bg-zinc-100 px-2.5 py-2 text-center text-[11px] font-bold">Tên NVL sản xuất</th>
-                  <th rowSpan={2} className="min-w-[9rem] border border-zinc-300 bg-zinc-100 px-2.5 py-2 text-center text-[11px] font-bold">Kho</th>
-                  <th rowSpan={2} className="min-w-[9rem] border border-zinc-300 bg-zinc-100 px-2.5 py-2 text-center text-[11px] font-bold">Máy</th>
-                  <th colSpan={4} className="border border-emerald-200 bg-emerald-100 px-2 py-1.5 text-center text-[11px] font-bold text-emerald-950">Liên quan đến nhập</th>
-                  <th colSpan={3} className="border border-rose-200 bg-rose-100 px-2 py-1.5 text-center text-[11px] font-bold text-rose-950">Liên quan đến xuất</th>
-                </tr>
-                <tr>
-                  {['SL Nhập', 'Đơn giá', 'Giá nhập kho', 'Thành tiền'].map(label => (
-                    <th key={label} className="whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-center text-[11px] font-bold text-emerald-950">
+                  {['Ngày', 'Phiếu', 'Loại phiếu', 'Tên NVL', 'Tên NVL sản xuất', 'Kho', 'Máy'].map(label => (
+                    <th key={label} scope="col" className="whitespace-nowrap border-b border-zinc-200 bg-zinc-50 px-2.5 py-2 text-left text-[11px] font-bold">{label}</th>
+                  ))}
+                  {nhapTable && ['SL nhập', 'Đơn giá', 'Giá nhập kho', 'Thành tiền'].map(label => (
+                    <th key={label} className="whitespace-nowrap border-b border-zinc-200 bg-zinc-50 px-2 py-1.5 text-right text-[11px] font-bold text-zinc-700">
                       {label}
                     </th>
                   ))}
-                  {['SL xuất', 'Đơn giá', 'Thành tiền'].map(label => (
-                    <th key={`xuat-${label}`} className="whitespace-nowrap border border-rose-200 bg-rose-50 px-2 py-1.5 text-center text-[11px] font-bold text-rose-950">
+                  {!nhapTable && ['SL xuất', 'Đơn giá', 'Thành tiền'].map(label => (
+                    <th key={`xuat-${label}`} className="whitespace-nowrap border-b border-zinc-200 bg-zinc-50 px-2 py-1.5 text-right text-[11px] font-bold text-zinc-700">
                       {label}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {renderRows.length === 0 ? (
+                {sideRows.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="border border-zinc-200 px-3 py-8 text-center font-semibold text-zinc-400">
-                      Chưa có phiếu Xuất nhập kho NVL trong kỳ này. Lập phiếu tại «Xuất nhập kho NVL» rồi nhấn Xem lại.
+                    <td colSpan={columnCount} className="border border-zinc-200 px-3 py-8 text-center font-semibold text-zinc-400">
+                      Chưa có chứng từ {nhapTable ? 'nhập' : 'xuất'} trong kỳ.
                     </td>
                   </tr>
                 ) : (
-                  renderRows.map(item => {
-                    const cell = 'border border-zinc-200 px-2.5 py-1.5 align-middle';
-                    const nhapNum = `${cell} whitespace-nowrap bg-emerald-50/50 text-right tabular-nums`;
-                    const xuatNum = `${cell} whitespace-nowrap bg-rose-50/50 text-right tabular-nums`;
-                    if (item.type === 'section') {
-                      const nhapSection = item.label === 'Nhập';
-                      return (
-                        <tr key={item.key} className={nhapSection ? 'bg-emerald-50' : 'bg-rose-50'}>
-                          <td colSpan={13} className={`${cell} font-bold ${nhapSection ? 'text-emerald-950' : 'text-rose-950'}`}>
-                            {item.label}
-                          </td>
-                        </tr>
-                      );
-                    }
-                    if (item.type === 'group') {
-                      const nhap = item.side === 'nhap';
-                      const title = item.tenSx && item.tenSx !== item.tenHang ? item.tenSx : item.tenHang;
-                      const subtitle = title !== item.tenHang ? item.tenHang : '';
-                      return (
-                        <tr key={item.key} className={nhap ? 'bg-emerald-100/70' : 'bg-rose-100/70'}>
-                          <td colSpan={13} className={`${cell} py-2`}>
-                            <span className="font-black text-zinc-950">{title}</span>
-                            {subtitle ? <span className="font-semibold text-zinc-500"> · {subtitle}</span> : null}
-                          </td>
-                        </tr>
-                      );
-                    }
-                    if (item.type === 'subtotal') {
-                      const nhap = item.side === 'nhap';
-                      return (
-                        <tr key={item.key} className="bg-amber-50 font-bold">
-                          <td className={cell} />
-                          <td className={cell} />
-                          <td className={`${cell} text-center`}>Tổng</td>
-                          <td className={cell} />
-                          <td className={cell} />
-                          <td className={cell} />
-                          <td className={nhapNum}>{nhap && item.slNhap ? formatQty(item.slNhap) : ''}</td>
-                          <td className={nhapNum} />
-                          <td className={nhapNum} />
-                          <td className={nhapNum}>{nhap && item.thanhTienNhap ? formatMoney(item.thanhTienNhap, 0) : ''}</td>
-                          <td className={xuatNum}>{!nhap && item.slXuat ? formatQty(item.slXuat) : ''}</td>
-                          <td className={xuatNum} />
-                          <td className={xuatNum}>{!nhap && item.thanhTienXuat ? formatMoney(item.thanhTienXuat, 0) : ''}</td>
-                        </tr>
-                      );
-                    }
-                    const row = item.row;
-                    const nhap = row.kind === 'nhap';
+                  sideRows.map(row => {
+                    const cell = 'border-b border-zinc-100 px-2 py-1.5 align-middle';
+                    const numberCell = `${cell} whitespace-nowrap text-right tabular-nums`;
                     return (
-                      <tr key={row.key} className="bg-white hover:bg-amber-50/40">
+                      <tr key={row.key} className="bg-white hover:bg-zinc-50">
                         <td className={`${cell} whitespace-nowrap text-center`}>{formatDateVN(row.ngay)}</td>
                         <td className={`${cell} whitespace-nowrap`}>
                           <button
                             type="button"
-                            title="Bấm để sửa phiếu"
+                            title="Sửa phiếu"
                             onClick={() => openSlip(row.slipId)}
                             className="cursor-pointer font-semibold text-[#ef1b2d] hover:underline"
                           >
                             {row.maPhieu}
                           </button>
                         </td>
+                        <td className={`${cell} whitespace-nowrap text-center font-semibold ${nhapTable ? 'text-emerald-800' : 'text-rose-800'}`}>
+                          {row.source || (nhapTable ? 'Phiếu nhập' : 'Phiếu xuất')}{row.dot ? ' · Đợt ' + row.dot : ''}
+                        </td>
                         <td className={`${cell} max-w-[16rem] truncate`} title={row.tenHang}>{row.tenHang}</td>
                         <td className={`${cell} max-w-[16rem] truncate`} title={row.tenSx}>{row.tenSx}</td>
                         <td className={`${cell} whitespace-nowrap`}>{row.kho || '—'}</td>
                         <td className={`${cell} whitespace-nowrap`}>{row.may || '—'}</td>
-                        <td className={nhapNum}>{nhap ? formatQty(row.slNhap) : ''}</td>
-                        <td className={nhapNum}>{nhap ? formatMoney(row.donGiaNhap, 0) : ''}</td>
-                        <td className={nhapNum}>{nhap ? formatMoney(row.giaNhapKho, 0) : ''}</td>
-                        <td className={nhapNum}>{nhap ? formatMoney(row.thanhTienNhap, 0) : ''}</td>
-                        <td className={xuatNum}>{!nhap ? formatQty(row.slXuat) : ''}</td>
-                        <td className={xuatNum}>{!nhap ? formatMoney(row.donGiaXuat, 0) : ''}</td>
-                        <td className={xuatNum}>{!nhap ? formatMoney(row.thanhTienXuat, 0) : ''}</td>
+                        {nhapTable ? <>
+                          <td className={numberCell}>{formatQty(row.slNhap)}</td>
+                          <td className={numberCell}>{formatMoney(row.donGiaNhap, 0)}</td>
+                          <td className={numberCell}>{formatMoney(row.giaNhapKho, 0)}</td>
+                          <td className={numberCell}>{formatMoney(row.thanhTienNhap, 0)}</td>
+                        </> : <>
+                          <td className={numberCell}>{formatQty(row.slXuat)}</td>
+                          <td className={numberCell}>{formatMoney(row.donGiaXuat, 0)}</td>
+                          <td className={numberCell}>{formatMoney(row.thanhTienXuat, 0)}</td>
+                        </>}
                       </tr>
                     );
                   })
                 )}
               </tbody>
             </table>
+              </div>
+              </section>;
+            })}
           </div>
-          {summaryBar('duoi')}
+          </>}
         </>
       ) : (
-        <div className="rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-8 text-center">
-          <p className="text-sm font-bold text-zinc-700">Chưa có số liệu trên màn hình</p>
-          <p className="mt-1 text-xs font-medium text-zinc-500">Chọn từ ngày, đến ngày, máy và kho rồi bấm Xem.</p>
+        <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-4 py-10 text-center">
+          {loading && <Loader2 className="mx-auto mb-3 h-6 w-6 animate-spin text-[#ef1b2d]" />}
+          <p className="text-sm font-bold text-zinc-700">{loading ? 'Đang tải…' : error ? 'Không thể hiển thị số liệu' : 'Chưa có số liệu'}</p>
         </div>
       )}
-      </> : <MachineStockTab machines={machineOptions} shifts={shiftOptions} />}
+      </div> : <div role="tabpanel" id="nvl-panel-machine-stock" aria-labelledby="nvl-tab-machine-stock"><MachineStockTab machines={machineOptions} shifts={shiftOptions} /></div>}
     </div>
   );
 }

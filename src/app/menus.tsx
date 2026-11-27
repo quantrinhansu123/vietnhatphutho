@@ -365,6 +365,13 @@ export const ADMIN_MENU_ITEMS: MenuCardConfig[] = [
     tab: 'data'
   },
   {
+    title: 'Báo cáo công việc code',
+    desc: 'Nhật ký triển khai và nghiệm thu.',
+    icon: Database,
+    icon3d: books3d,
+    tab: 'bao-cao-code'
+  },
+  {
     title: 'Danh mục dùng chung',
     desc: 'Sản phẩm, nguyên vật liệu, máy móc, kho/vị trí kho và phương tiện.',
     icon: Boxes,
@@ -1008,6 +1015,7 @@ export const PRIMARY_NAV_GROUPS: {
       { label: 'Người dùng và phân quyền', tab: 'settings' },
       { label: 'Cấu hình hệ thống', tab: 'settings' },
       { label: 'Data', tab: 'data' },
+      { label: 'Báo cáo công việc code', tab: 'bao-cao-code' },
       { label: 'Danh mục dùng chung', tab: 'quan-tri', disabled: true }
     ]
   },
@@ -1114,6 +1122,7 @@ export const PRIMARY_NAV_GROUPS: {
 export const TAB_TITLE_MAP: Record<string, { group: string; sub: string }> = {
   'menu': { group: 'Trang chủ', sub: 'Chọn chức năng' },
   'quan-tri': { group: 'Trang chủ', sub: 'Quản trị' },
+  'bao-cao-code': { group: 'Quản trị', sub: 'Báo cáo công việc code' },
   'hcns': { group: 'Trang chủ', sub: 'HCNS' },
   'business': { group: 'Trang chủ', sub: 'Kinh doanh' },
   'control-board': { group: 'Quản Đốc', sub: 'Theo dõi sản xuất' },

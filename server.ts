@@ -1,3 +1,5 @@
+import { readNormOrderQuantities } from './src/utils/mixingNormCoverage';
+import { isIsoDate } from './src/utils/isoDate';
 import express from 'express';
 import http from 'http';
 import path from 'path';
@@ -4030,7 +4032,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
   const source = body as Record<string, unknown>;
 
   const ngayRaw = String(source.ngay ?? '').trim();
-  const ngay = ngayRaw ? parseWarehouseSlipDate(ngayRaw) || ngayRaw : null;
+  const ngay = isIsoDate(ngayRaw) ? ngayRaw : null;
   const ma_lenh_sx = String(source.ma_lenh_sx ?? source.maLenhSx ?? '').trim() || null;
   const may = String(source.may ?? source.ma_may ?? source.ten_may ?? '').trim() || null;
   const caRaw = String(source.ca ?? source.shift ?? '').trim();
@@ -4266,6 +4268,7 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
             ? { san_pham_ids: sanPhamIds }
             : {}),
         ...(sanPhamVariants.some(Boolean) ? { san_pham_variants: sanPhamVariants } : {}),
+        ...(!isSecondary ? { order_quantities: readNormOrderQuantities(product.order_quantities) } : {}),
         ten_sp: ten_sp || null,
         tong_trong_luong,
         ty_le_hao_hut,
@@ -5742,6 +5745,8 @@ type NvlInboundLot = {
   so_luong_nhap: number;
   so_luong_da_xuat: number;
   so_luong_con: number;
+  ten_kho: string;
+  ten_nvl_sx: string;
 };
 
 function roundWarehouseMoney(value: number) {
@@ -5896,7 +5901,7 @@ async function buildNvlInboundLots(
   const { data: fastRows, error: fastError } = await queryWarehouseSplitRows('nhap', table => {
     let query = supabase
       .from(table)
-      .select('id, ma_phieu, ngay_phieu, ma_npl, ten_npl, don_vi, don_gia, so_luong, so_luong_da_xuat, so_luong_con, loai_phieu, loai_kho')
+      .select('id, ma_phieu, ngay_phieu, ma_npl, ten_npl, don_vi, don_gia, so_luong, so_luong_da_xuat, so_luong_con, loai_phieu, loai_kho, ten_kho, ten_nvl_sx')
       .eq('ma_npl', code)
       .eq('loai_phieu', 'nhap')
       .or(nvlOrFast);
@@ -5950,7 +5955,9 @@ async function buildNvlInboundLots(
       don_gia: roundWarehouseMoney(Number(row.don_gia) || 0),
       so_luong_nhap,
       so_luong_da_xuat,
-      so_luong_con
+      so_luong_con,
+      ten_kho: String(row.ten_kho || '').trim(),
+      ten_nvl_sx: String(row.ten_nvl_sx || '').trim()
     });
   }
   return { lots: fastLots };
@@ -5970,7 +5977,7 @@ async function buildNvlInboundLotsByScan(
   const { data: inboundRows, error: inboundError } = await queryWarehouseSplitRows('nhap', table =>
     supabase
       .from(table)
-      .select('id, ma_phieu, ngay_phieu, ma_npl, ten_npl, don_vi, don_gia, so_luong, loai_phieu, loai_kho')
+      .select('id, ma_phieu, ngay_phieu, ma_npl, ten_npl, don_vi, don_gia, so_luong, loai_phieu, loai_kho, ten_kho, ten_nvl_sx')
       .eq('ma_npl', code)
       .eq('loai_phieu', 'nhap')
       .or(nvlOrLot)
@@ -6035,7 +6042,9 @@ async function buildNvlInboundLotsByScan(
       don_gia: roundWarehouseMoney(Number(row.don_gia) || 0),
       so_luong_nhap,
       so_luong_da_xuat,
-      so_luong_con
+      so_luong_con,
+      ten_kho: String(row.ten_kho || '').trim(),
+      ten_nvl_sx: String(row.ten_nvl_sx || '').trim()
     });
   }
 
@@ -6103,7 +6112,7 @@ function parseWarehouseStorageType(value: unknown): 'nvl' | 'san_pham' | null {
 function parseWarehouseSlipDate(value: unknown): string | null {
   const raw = String(value ?? '').trim();
   if (!raw) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return isIsoDate(raw) ? raw : null;
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toISOString().slice(0, 10);
@@ -13924,7 +13933,7 @@ export function createApp() {
   /** Danh sách đơn giá đã từng nhập của 1 mã NVL (dropdown chọn / gõ tay giá mới). */
   app.get(['/api/phieu-xuat-nhap-kho/gia-nvl', '/api/phieu-nhap-kho/gia-nvl', '/api/phieu-xuat-kho/gia-nvl'], async (req, res) => {
     if (!supabase) {
-      return res.json({ prices: [], total: 0, source: 'local' });
+      return res.json({ prices: [], lots: [], total: 0, source: 'local' });
     }
     try {
       const maNpl = String(req.query.ma_npl ?? req.query.materialCode ?? req.query.code ?? '').trim();
@@ -13933,29 +13942,68 @@ export function createApp() {
       }
       const { nvl: nvlLoaiKhos } = await loaiKhoLists();
       const nvlOr = nvlLoaiKhoOrClause(nvlLoaiKhos);
-      const { data, error } = await queryWarehouseSplitRows('nhap', table =>
+      // Tách từng lần nhập (ngày + diễn giải + giá); thiếu cột ly_do/ghi_chu thì fallback cột tối thiểu.
+      let selectCols = 'id, ma_phieu, don_gia, so_luong, ngay_phieu, ly_do, ghi_chu';
+      let { data, error } = await queryWarehouseSplitRows('nhap', table =>
         supabase
           .from(table)
-          .select('don_gia, so_luong, ngay_phieu')
+          .select(selectCols)
           .eq('ma_npl', maNpl)
           .eq('loai_phieu', 'nhap')
           .or(nvlOr)
           .order('ngay_phieu', { ascending: false })
           .limit(2000)
       );
+      if (error && isMissingColumnError(error)) {
+        selectCols = 'id, ma_phieu, don_gia, so_luong, ngay_phieu';
+        ({ data, error } = await queryWarehouseSplitRows('nhap', table =>
+          supabase
+            .from(table)
+            .select(selectCols)
+            .eq('ma_npl', maNpl)
+            .eq('loai_phieu', 'nhap')
+            .or(nvlOr)
+            .order('ngay_phieu', { ascending: false })
+            .limit(2000)
+        ));
+      }
       if (error) {
         return res.status(500).json({ error: `Không tải được giá NVL. ${error.message}` });
       }
       const countByPrice = new Map<number, number>();
+      const lots: Array<{
+        id: string;
+        ma_phieu: string;
+        don_gia: number;
+        so_luong: number;
+        ngay_phieu: string;
+        ly_do: string;
+        ghi_chu: string;
+      }> = [];
       for (const row of data || []) {
         const donGia = roundWarehouseMoney(Number(row.don_gia) || 0);
         if (!Number.isFinite(donGia) || donGia < 0) continue;
         countByPrice.set(donGia, (countByPrice.get(donGia) || 0) + 1);
+        lots.push({
+          id: String(row.id || '').trim(),
+          ma_phieu: String(row.ma_phieu || '').trim(),
+          don_gia: donGia,
+          so_luong: roundWarehouseQty(Number(row.so_luong) || 0),
+          ngay_phieu: String(row.ngay_phieu || '').trim().slice(0, 10),
+          ly_do: String(row.ly_do || '').trim(),
+          ghi_chu: String(row.ghi_chu || '').trim()
+        });
       }
       const prices = [...countByPrice.entries()]
         .sort((a, b) => b[0] - a[0])
         .map(([don_gia, so_lan]) => ({ don_gia, so_lan }));
-      return res.json({ prices, total: prices.length, ma_npl: maNpl, source: 'supabase' });
+      return res.json({
+        prices,
+        lots,
+        total: lots.length,
+        ma_npl: maNpl,
+        source: 'supabase'
+      });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi tải giá NVL.' });
     }
@@ -22226,13 +22274,23 @@ async function loadKiemKhoLiveTongHopForDot(
       const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : 100;
       const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 1000) : 100;
 
+      const pagedUsage = req.query.usage === '1';
+      const cursor = String(req.query.cursor ?? '');
+      const [cursorDate, cursorId] = cursor.split('|');
+      if (pagedUsage && ((tuNgay && !isIsoDate(tuNgay)) || (denNgay && !isIsoDate(denNgay)) ||
+          (tuNgay && denNgay && tuNgay > denNgay) ||
+          (cursor && (!isIsoDate(cursorDate) || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(cursorId || '') || cursor.split('|').length !== 2)))) {
+        return res.status(400).json({ error: 'Khoảng ngày hoặc con trỏ không hợp lệ.' });
+      }
+      const pageLimit = Math.min(limit, 500);
       let query = supabase
         .from(SUPABASE_SO_TRON_TABLE)
-        .select('*')
+        .select(pagedUsage ? 'id, ngay, ca, ma_may, ten_may, created_at, updated_at, bang_ban_giao' : '*')
         .order('ngay', { ascending: false })
-        .order('created_at', { ascending: false })
-        .limit(limit);
+        .order(pagedUsage ? 'id' : 'created_at', { ascending: false })
+        .limit(pagedUsage ? pageLimit : limit);
 
+      if (pagedUsage && cursor) query = query.or('ngay.lt.' + cursorDate + ',and(ngay.eq.' + cursorDate + ',id.lt.' + cursorId + ')');
       if (ngay) query = query.eq('ngay', ngay);
       if (tuNgay) query = query.gte('ngay', tuNgay);
       if (denNgay) query = query.lte('ngay', denNgay);
@@ -22248,7 +22306,13 @@ async function loadKiemKhoLiveTongHopForDot(
         return res.status(500).json({ error: soTronWriteError(error) });
       }
 
-      return res.json({ reports: data || [], total: data?.length || 0 });
+      const rows = (data || []) as unknown as Array<{ ngay?: string; id?: string }>;
+      const last = rows.at(-1);
+      return res.json({
+        reports: rows,
+        total: rows.length,
+        ...(pagedUsage ? { next_cursor: rows.length === pageLimit && last?.ngay && last?.id ? `${last.ngay}|${last.id}` : null } : {})
+      });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || 'Lỗi khi tải sổ trộn.' });
     }
