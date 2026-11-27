@@ -31,6 +31,7 @@ type SlipLine = {
 };
 
 type DetailLine = {
+  material_id?: string;
   ma_hang: string;
   ten_hang: string;
   don_vi: string;
@@ -437,6 +438,7 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       if ('error' in kem) return kem;
       lines.push({
         ma_hang: ma,
+        material_id: text(item.material_id ?? item.materialId),
         ten_hang: text(item.ten_hang ?? item.tenHang ?? item.name),
         ten_nvl_sx: tenNvlSx,
         don_vi: text(item.don_vi ?? item.donVi ?? item.unit),
@@ -1468,6 +1470,24 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
   });
 
   async function saveHeader(header: ParsedHeader, existing?: Record<string, unknown>) {
+    // Catalog names are used transiently when attaching an inbound catalog row, never saved on the slip.
+    if (header.catalog !== 'san_pham' && deps.supabase) {
+      for (const line of header.lines) {
+        let query = deps.supabase.from(deps.tables.materials)
+          .select('id,ma_npl,ten_npl,ten_nvl_sx,ten_kho').eq('ma_npl', line.ma_hang);
+        if (line.material_id) query = query.eq('id', line.material_id);
+        else {
+          if (line.ten_nvl_sx) query = query.eq('ten_nvl_sx', line.ten_nvl_sx);
+          const warehouse = line.kho_dong_ten || line.src_id;
+          if (warehouse && line.src_loai !== 'may') query = query.eq('ten_kho', warehouse);
+        }
+        const { data, error } = await query;
+        if (error || data?.length !== 1) throw new Error(`NVL ${line.ma_hang}: cần chọn vật liệu và kho chính xác trước khi lưu.`);
+        line.material_id = text(data[0].id);
+        line.ten_hang = text(data[0].ten_npl);
+        line.ten_nvl_sx = line.ten_nvl_sx || text(data[0].ten_nvl_sx);
+      }
+    }
     if (!deps.supabase) throw new Error('Supabase chưa được cấu hình.');
     await assertSourceStock(header, []);
     const oldNhapCodes = text(existing?.ma_phieu_nhap).split(',').map(item => item.trim()).filter(Boolean);
@@ -1554,7 +1574,7 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       ca: header.ca,
       loai_nhap: header.loaiNhap,
       loai_xuat: header.loaiXuat,
-      chi_tiet: header.lines,
+      chi_tiet: header.lines.map(line => ({ ...line, loai_danh_muc: header.catalog === 'san_pham' ? 'san_pham' : 'kho_nvl' })),
       ma_phieu_nhap: codes.maNhap,
       ma_phieu_xuat: codes.maXuat,
       trang_thai: 'hoan_thanh',

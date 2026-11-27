@@ -1,5 +1,7 @@
 # bang_tron_vat_tu_dinh_muc
 
+**Tên NVL:** JSON không còn lưu `ten_nvl`; giữ `material_id`, `ma_nvl`, `ten_nvl_san_xuat`. Form/in dùng tên sản xuất; đối chiếu theo ID và mã + tên sản xuất khi thiếu ID. Migration: `docs/nvl-document-production-name.md`.
+
 | **Bảng** | `bang_tron_vat_tu_dinh_muc` |
 | **Tab** | `/danh-sach-bao-cao-phoi-tron` → **Phiếu trộn định mức** |
 | **SQL** | `supabase-bang-tron-vat-tu-dinh-muc.sql`, `supabase-bang-tron-vat-tu-dinh-muc-ngay-bat-buoc.sql`, `supabase-bang-tron-vat-tu-dinh-muc-ten-phieu.sql`, `supabase-bang-tron-vat-tu-dinh-muc-lich-su.sql`, `supabase-bang-tron-vat-tu-dinh-muc-may.sql` (cột `may`) |
@@ -8,6 +10,8 @@
 Query: `ngay`, `ca`, `q`  
 **UI:** `MixingNormMaterialsTab.tsx` · in: `MixingNormRatioPrintSheet.tsx` · chọn nhanh theo nhóm: `MixingNormProductGroupModal.tsx` + `utils/mixingNormProductCategories.ts` (rule `.ai/Rule_hien_thi_san_pham_phieu_tron.xlsx`)  
 Gợi ý sang form phối trộn: `MixingReportForm.tsx` + `utils/mixingNormSuggestion.ts` (phiếu không ca khớp theo ngày)
+
+**Lưới NVL chính:** Mã NVL rộng 160px; các cột Giá trị / % / Tổng trọng lượng tăng theo độ dài số của dòng và tổng. Header, dòng và tổng dùng chung template; màn hình hẹp cuộn ngang. Giá trị tính sẵn dùng `output` để không cắt nội dung như input chỉ đọc.
 
 **Nghiệp vụ hiện tại:**
 - **Nhiều lệnh SX / 1 phiếu:** ô Lệnh SX là select2 chọn nhiều (`SearchableMultiSelect`); các lệnh phải **cùng máy/nhóm máy** — trùng tên máy chuẩn hóa hoặc cùng `loai_may` trong danh mục máy (lọc options + validate khi chọn/đổi máy/lưu, thông báo ghi rõ nhóm máy). `ma_lenh_sx` lưu text nối bằng dấu phẩy (vd `"LSX-001, LSX-002"`); API khớp token khi lọc nên tương thích ngược.

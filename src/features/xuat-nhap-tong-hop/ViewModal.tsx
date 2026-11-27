@@ -234,7 +234,6 @@ export function TongHopViewModal({
                   <tr className="bg-zinc-50 border-b border-zinc-200">
                     <th className="px-3 py-2 text-left">STT</th>
                     <th className="px-3 py-2 text-left">Mã NVL</th>
-                    <th className="px-3 py-2 text-left">Tên nguyên vật liệu</th>
                     <th className="px-3 py-2 text-left">Tên SX</th>
                     <th className="px-3 py-2 text-center">ĐVT</th>
                     <th className="px-3 py-2 text-center">Nhóm VTHH</th>
@@ -255,7 +254,6 @@ export function TongHopViewModal({
                     <tr key={idx} className="border-b border-zinc-100 hover:bg-zinc-50/50">
                       <td className="px-3 py-2 text-zinc-500">{idx + 1}</td>
                       <td className="px-3 py-2 font-mono font-semibold text-zinc-950">{String(line.ma_hang || '')}</td>
-                      <td className="px-3 py-2 text-zinc-950">{String(line.ten_hang || '')}</td>
                       <td className="px-3 py-2 text-zinc-700">{String(line.ten_nvl_sx || '')}</td>
                       <td className="px-3 py-2 text-center text-zinc-600">{String(line.don_vi || '')}</td>
                       <td className="px-3 py-2 text-center text-zinc-600">{String(line.nhom_vthh || '')}</td>

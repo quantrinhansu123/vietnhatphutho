@@ -1,3 +1,5 @@
+import { nvlIdentityKey } from '../utils/nvlDocument';
+import { serializeNvlDocument } from '../utils/nvlDocument';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, Layers3, Loader2, Pencil, Plus, Printer, Save, Search, Trash2, X } from 'lucide-react';
 import { useTabAccess } from '../app/useTabAccess';
@@ -404,15 +406,10 @@ function matchMaterialInPool(
   }
   const code = normalizeProductLookupKey(ref.code);
   if (!code) return undefined;
-  const name = String(ref.name || '').trim();
   const productionName = String(ref.productionName || '').trim();
   const sameCode = pool.filter(item => normalizeProductLookupKey(item.code) === code);
-  if (sameCode.length === 0) return undefined;
-  return (
-    sameCode.find(item => (!name || item.name.trim() === name) && item.productionName.trim() === productionName) ??
-    sameCode.find(item => !name || item.name.trim() === name) ??
-    sameCode[0]
-  );
+  const candidates = sameCode.filter(item => !productionName || item.productionName.trim() === productionName);
+  return candidates.length === 1 ? candidates[0] : undefined;
 }
 
 const emptyForm = (): NormForm => ({
@@ -618,12 +615,12 @@ function normalizeProductLookupKey(value: string) {
 
 /** Ô đã chọn: mã - tên NVL. Tên sản xuất có cột riêng nên không hiện ở đây. */
 function materialSelectedLabel(item: Pick<MaterialOption, 'code' | 'name'>) {
-  return [item.code.trim(), item.name.trim()].filter(Boolean).join(' - ');
+  return item.code.trim();
 }
 
 /** Dropdown: mã và tên sản xuất. Không có tên sản xuất thì dùng tên NVL. */
 function materialDropdownLabel(item: Pick<MaterialOption, 'code' | 'name' | 'productionName'> & { nhomVatTuPhu?: string }) {
-  const detail = item.productionName.trim() || item.name.trim();
+  const detail = item.productionName.trim();
   const base = [item.code.trim(), detail].filter(Boolean).join(' - ');
   return item.nhomVatTuPhu ? `${base} (${item.nhomVatTuPhu})` : base;
 }
@@ -640,11 +637,8 @@ function isDuplicateMixingMaterialLine(
 ) {
   const aCode = normalizeProductLookupKey(a.maNvl);
   const bCode = normalizeProductLookupKey(b.maNvl);
-  const aName = normalizeProductLookupKey(a.tenNvl);
-  const bName = normalizeProductLookupKey(b.tenNvl);
   const sameCode = Boolean(aCode && aCode === bCode);
-  const sameName = Boolean(aName && aName === bName);
-  if (!sameCode && !sameName) return false;
+  if (!sameCode) return false;
   if (normalizeProductLookupKey(a.tenNvlSanXuat) !== normalizeProductLookupKey(b.tenNvlSanXuat)) return false;
   if (isSecondary) {
     if (normalizeProductLookupKey(a.nhomVthh || '') !== normalizeProductLookupKey(b.nhomVthh || '')) {
@@ -1224,7 +1218,7 @@ function normalizeRows(data: unknown): MixingNormRow[] {
 function mixingMaterialDisplayName(
   line: Pick<MixingNormLine, 'ma_nvl' | 'ten_nvl' | 'ten_nvl_san_xuat'>
 ) {
-  return line.ten_nvl_san_xuat?.trim() || line.ten_nvl.trim() || line.ma_nvl.trim() || 'NVL';
+  return line.ten_nvl_san_xuat?.trim() || line.ma_nvl.trim() || 'NVL';
 }
 
 function summarizeLines(lines: MixingNormLine[]) {
@@ -1273,7 +1267,7 @@ function summarizeProductMaterials(product: MixingNormProduct): SummarizedMateri
   const byMaterial = new Map<string, SummarizedMaterial>();
 
   sourceLines.forEach(({ line, isSecondary }, index) => {
-    const key = `${isSecondary ? 'phu' : 'chinh'}|${line.ma_nvl.trim().toLocaleLowerCase('vi')}|${line.ten_nvl.trim().toLocaleLowerCase('vi')}|${(line.ten_nvl_san_xuat ?? '').trim().toLocaleLowerCase('vi')}`
+    const key = `${isSecondary ? 'phu' : 'chinh'}|${nvlIdentityKey(line.material_id, line.ma_nvl, line.ten_nvl_san_xuat)}`
       || `line-${index}`;
     const current = byMaterial.get(key);
     const weight = isSecondary ? secondaryMaterialTotalWeight(line) : line.khoi_luong;
@@ -1382,12 +1376,8 @@ export default function MixingNormMaterialsTab() {
   /** Tên NVL sản xuất được lọc theo đúng mã + tên NVL đang chọn, giống form đơn hàng. */
   const getMaterialProductionNameOptions = (line: LineForm, options: MaterialOption[]) => {
     const code = normalizeProductLookupKey(line.maNvl);
-    const name = line.tenNvl.trim();
     const source = code
-      ? options.filter(item =>
-          normalizeProductLookupKey(item.code) === code &&
-          (!name || item.name.trim() === name)
-        )
+      ? options.filter(item => normalizeProductLookupKey(item.code) === code)
       : options;
     return [...new Set(
       source
@@ -2827,15 +2817,9 @@ export default function MixingNormMaterialsTab() {
 
   const patchLineFromMaterial = (line: LineForm, materialId: string): LineForm => {
     const selectedId = materialId.trim();
-    const material =
-      materials.find(item => item.id === selectedId) ??
-      materials.find(item =>
-        normalizeProductLookupKey(item.code) === normalizeProductLookupKey(selectedId) &&
-        item.productionName.trim() === line.tenNvlSanXuat.trim()
-      ) ??
-      materials.find(item =>
-        normalizeProductLookupKey(item.code) === normalizeProductLookupKey(selectedId)
-      );
+    const material = matchMaterialInPool(materials, {
+      id: selectedId, code: selectedId, productionName: line.tenNvlSanXuat
+    });
     if (!material) {
       return {
         ...line,
@@ -3332,7 +3316,7 @@ export default function MixingNormMaterialsTab() {
         {
           method: editingId ? 'PATCH' : 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: serializeNvlDocument(payload)
         }
       );
       const data = await res.json().catch(() => ({}));
@@ -3821,6 +3805,23 @@ export default function MixingNormMaterialsTab() {
                     { gia: 0, percent: 0, kg: 0, hasGia: product.lines.some(line => parseNumberOrNull(line.giaTri) !== null) }
                   );
                   const selectedProductOptions = resolveProductOptionsForCodes(product.maSpCodes, product.maSpIds);
+                  // Share one template across header, lines and totals. Numeric columns grow
+                  // with their displayed values instead of clipping inside fixed-width inputs.
+                  const numericValues = product.lines.map(line => {
+                    const stats = computeNplPercents(parseNumberOrNull(line.giaTri), line.donVi, standardBatch, productTotal || null);
+                    return {
+                      quantity: line.giaTri,
+                      percent: stats.ty_le_coi === null ? '' : `${stats.ty_le_coi}%`,
+                      weight: stats.tong_khoi_luong === null ? '' : formatKhoiLuongDisplay(stats.tong_khoi_luong)
+                    };
+                  });
+                  const quantityChars = Math.max(12, ...numericValues.map(value => value.quantity.length + 4),
+                    new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(lineTotals.gia).length + 4);
+                  const percentChars = Math.max(10, ...numericValues.map(value => value.percent.length + 4), `${roundPercent(lineTotals.percent)}%`.length + 4);
+                  const weightChars = Math.max(18, ...numericValues.map(value => value.weight.length + 4),
+                    formatKhoiLuongDisplay(productTotal > 0 ? productTotal : lineTotals.kg).length + 4);
+                  const normGridTemplate = `160px minmax(320px, 1fr) ${quantityChars}ch ${percentChars}ch ${percentChars}ch ${weightChars}ch 36px`;
+                  const normGridMinWidth = `calc(616px + ${quantityChars + percentChars * 2 + weightChars}ch)`;
                   return (
                     <div
                       key={product.key}
@@ -3992,7 +3993,7 @@ export default function MixingNormMaterialsTab() {
 
                       {showNvlEditor ? (
                         <div className="mt-3 overflow-x-auto pb-2">
-                          <div className="w-full min-w-[920px] rounded-lg border border-[#ef1b2d]/20 bg-red-50/50 p-2.5">
+                          <div className="w-full rounded-lg border border-[#ef1b2d]/20 bg-red-50/50 p-2.5" style={{ minWidth: normGridMinWidth }}>
                             <div className="mb-2 flex items-center justify-between gap-2">
                               <p className="text-xs font-black uppercase tracking-wider text-zinc-600 sm:text-sm">
                                 Cối trộn mẫu tiêu chuẩn · {formatKhoiLuongDisplay(standardBatch)}
@@ -4007,8 +4008,8 @@ export default function MixingNormMaterialsTab() {
                                  Thêm NVL chính
                               </button>
                             </div>
-                            <p className="mb-1.5 hidden text-[11px] font-bold uppercase tracking-wide text-zinc-500 sm:grid sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1.05fr)_64px_56px_56px_72px_32px] sm:gap-1.5 sm:px-1">
-                              <span>Mã NVL - Tên NVL</span>
+                            <p className="mb-1.5 grid gap-1.5 px-2 text-[11px] font-bold uppercase tracking-wide text-zinc-500" style={{ gridTemplateColumns: normGridTemplate }}>
+                              <span>Mã NVL</span>
                               <span>Tên NVL sản xuất</span>
                               <span>Giá trị (kg/cối)</span>
                               <span>% Cối trộn</span>
@@ -4028,7 +4029,8 @@ export default function MixingNormMaterialsTab() {
                                 return (
                                   <div
                                     key={line.key}
-                                    className="grid grid-cols-1 gap-1.5 rounded-lg border border-zinc-200 bg-white p-2 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1.05fr)_64px_56px_56px_72px_32px]"
+                                    className="grid items-center gap-1.5 rounded-lg border border-zinc-200 bg-white p-2"
+                                    style={{ gridTemplateColumns: normGridTemplate }}
                                   >
                                     <SearchableSelect
                                       value={materialSelectValue(line)}
@@ -4069,29 +4071,23 @@ export default function MixingNormMaterialsTab() {
                                           giaTri: event.target.value
                                         })
                                       }
-                                      className={`${inputClass} px-2 text-center text-[13px] font-bold`}
+                                      className={`${inputClass} min-w-0 px-2 text-right font-mono text-[13px] font-bold tabular-nums`}
                                       placeholder={line.donVi === '%' ? '%' : 'kg'}
                                       inputMode="decimal"
                                       title="Giá trị NVL cho 1 cối trộn mẫu tiêu chuẩn"
                                     />
-                                    <input
-                                      value={ty_le_coi === null ? '' : `${ty_le_coi}%`}
-                                      readOnly
-                                      className={`${inputClass} bg-zinc-50 px-2 text-center text-[13px] font-black text-zinc-700`}
+                                    <output
+                                      className="block min-h-10 whitespace-nowrap rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-2.5 text-right font-mono text-[13px] font-black tabular-nums text-zinc-700"
                                       title="% Cối trộn = giá trị (kg) / Định lượng 1 cối trộn mẫu tiêu chuẩn"
-                                    />
-                                    <input
-                                      value={ty_le_tong === null ? '' : `${ty_le_tong}%`}
-                                      readOnly
-                                      className={`${inputClass} bg-zinc-50 px-2 text-center text-[13px] font-black text-zinc-700`}
+                                    >{ty_le_coi === null ? '' : `${ty_le_coi}%`}</output>
+                                    <output
+                                      className="block min-h-10 whitespace-nowrap rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-2.5 text-right font-mono text-[13px] font-black tabular-nums text-zinc-700"
                                       title="% Tổng SL — bằng % Cối trộn vì tỷ lệ không đổi theo mẻ"
-                                    />
-                                    <input
-                                      value={tong_khoi_luong === null ? '' : formatKhoiLuongDisplay(tong_khoi_luong)}
-                                      readOnly
-                                      className={`${inputClass} bg-zinc-50 px-2 text-center text-[13px] font-black text-[#ef1b2d]`}
+                                    >{ty_le_tong === null ? '' : `${ty_le_tong}%`}</output>
+                                    <output
+                                      className="block min-h-10 whitespace-nowrap rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-2.5 text-right font-mono text-[13px] font-black tabular-nums text-[#ef1b2d]"
                                       title="Tổng trọng lượng = % Tổng SL × Tổng SL sau hao hụt"
-                                    />
+                                    >{tong_khoi_luong === null ? '' : formatKhoiLuongDisplay(tong_khoi_luong)}</output>
                                     <button
                                       type="button"
                                       onClick={() => removeLine(product.key, line.key)}
@@ -4105,15 +4101,17 @@ export default function MixingNormMaterialsTab() {
                                 );
                               })}
                               {lineTotals.hasGia ? (
-                                <div className="grid grid-cols-1 gap-1.5 rounded-lg border border-[#ef1b2d]/30 bg-red-50 px-2 py-1.5 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1.05fr)_64px_56px_56px_72px_32px]">
+                                <div className="grid items-center gap-1.5 rounded-lg border border-[#ef1b2d]/30 bg-red-50 px-2 py-1.5" style={{ gridTemplateColumns: normGridTemplate }}>
                                   <span className="flex items-center text-xs font-black uppercase tracking-wide text-zinc-700">Tổng</span>
                                   <span />
-                                  <span className="text-center text-[13px] font-black text-zinc-800">
+                                  <span className="whitespace-nowrap text-right font-mono text-[13px] font-black tabular-nums text-zinc-800">
                                     {new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(lineTotals.gia)}
                                   </span>
-                                  <span className="text-center text-[13px] font-black text-zinc-700">{roundPercent(lineTotals.percent)}%</span>
-                                  <span className="text-center text-[13px] font-black text-zinc-700">{roundPercent(lineTotals.percent)}%</span>
-                                  <span className="text-center text-[13px] font-black text-[#ef1b2d]">
+                                  <span className="whitespace-nowrap text-right font-mono text-[13px] font-black tabular-nums text-zinc-700">{roundPercent(lineTotals.percent)}%</span>
+                                  <span className="whitespace-nowrap text-right font-mono text-[13px] font-black tabular-nums text-zinc-700">{roundPercent(lineTotals.percent)}%</span>
+                                  <span
+                                    className="whitespace-nowrap text-right font-mono text-[13px] font-black tabular-nums text-[#ef1b2d]"
+                                  >
                                     {formatKhoiLuongDisplay(lineTotals.kg)}
                                   </span>
                                   <span />
@@ -4256,9 +4254,8 @@ export default function MixingNormMaterialsTab() {
                                   Thêm NVL phụ
                                 </button>
                               </div>
-                              <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_65px_80px_100px_30px] gap-1 px-1 text-[9px] font-black uppercase tracking-wider text-zinc-400 sm:grid">
+                              <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_65px_80px_100px_30px] gap-1 px-1 text-[9px] font-black uppercase tracking-wider text-zinc-400 sm:grid">
                                 <span>Mã NVL</span>
-                                <span>Tên NVL</span>
                                 <span>Tên NVL sản xuất</span>
                                 <span className="text-center">ĐVT</span>
                                 <span className="text-right">Giá trị</span>
@@ -4279,7 +4276,7 @@ export default function MixingNormMaterialsTab() {
                                   return (
                                     <div
                                       key={line.key}
-                                      className="grid grid-cols-1 gap-1 rounded-lg border border-amber-100 bg-amber-50/30 p-1.5 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_65px_80px_100px_30px]"
+                                      className="grid grid-cols-1 gap-1 rounded-lg border border-amber-100 bg-amber-50/30 p-1.5 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_65px_80px_100px_30px]"
                                     >
                                       <SearchableSelect
                                         value={materialSelectValue(line, secondaryMaterialOptions)}
@@ -4297,12 +4294,6 @@ export default function MixingNormMaterialsTab() {
                                         openUpward
                                         showAllWhenQueryMatchesSelection
                                         selectedOptionClassName="bg-yellow-50 font-black text-yellow-800 ring-2 ring-inset ring-yellow-400"
-                                      />
-                                      <input
-                                        value={line.tenNvl}
-                                        readOnly
-                                        className={inputClass + ' bg-zinc-50'}
-                                        placeholder="Tên NVL"
                                       />
                                       {isTapeOrStamp ? (
                                         <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] gap-1">

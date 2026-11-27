@@ -1,5 +1,7 @@
 # phieu_nhap_xuat_tong_hop
 
+**Tên NVL:** chứng từ chỉ lưu mã + tên sản xuất; JSON giữ `material_id`/`loai_danh_muc`, bỏ `ten_hang` với NVL. Migration/khôi phục: `docs/nvl-document-production-name.md`. Danh mục gốc giữ tên thương mại.
+
 | | |
 |---|---|
 | **Bảng** | `phieu_nhap_xuat_tong_hop` |

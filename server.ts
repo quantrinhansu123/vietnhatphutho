@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
+import { nvlDocumentFetch, type NvlCatalogRef } from './src/utils/nvlDocument';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { ProductionReport } from './src/types';
 import { hasFullMenuAccess, normalizeStaffViewPermissions, PRIMARY_ADMIN_USERNAME } from './src/features/nhan-su/menuViews';
@@ -487,9 +488,31 @@ async function fetchWithTimeoutAndRetry(
   }
 }
 
-const supabase = SUPABASE_URL && SUPABASE_KEY
+let nvlDocumentCatalogCache: { expires: number; rows: NvlCatalogRef[] } | null = null;
+const supabase: SupabaseClient | null = SUPABASE_URL && SUPABASE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_KEY, {
-      global: { fetch: fetchWithTimeoutAndRetry }
+      global: { fetch: nvlDocumentFetch(fetchWithTimeoutAndRetry, {
+        [SUPABASE_MIXING_NORM_TABLE]: 'mixing',
+        [SUPABASE_ACTUAL_MIXING_SHEET_TABLE]: 'mixing',
+        [SUPABASE_SO_TRON_TABLE]: 'mixing',
+        [process.env.SUPABASE_TONG_HOP_TABLE || 'phieu_nhap_xuat_tong_hop']: 'warehouse',
+        [SUPABASE_WAREHOUSE_NHAP_TABLE]: 'movement',
+        [SUPABASE_WAREHOUSE_XUAT_TABLE]: 'movement',
+        [SUPABASE_WAREHOUSE_MOVEMENTS_TABLE]: 'movement',
+        [SUPABASE_WAREHOUSE_HISTORY_TABLE]: 'history'
+      }, async () => {
+        if (nvlDocumentCatalogCache && nvlDocumentCatalogCache.expires > Date.now()) return nvlDocumentCatalogCache.rows;
+        const rows: NvlCatalogRef[] = [];
+        for (let offset = 0; ; offset += 1000) {
+          const { data, error } = await supabase!.from(SUPABASE_MATERIALS_TABLE)
+            .select('id,ma_npl,ten_nvl_sx,ten_kho').order('id').range(offset, offset + 999);
+          if (error) throw new Error(`Không tra được danh mục NVL: ${error.message}`);
+          rows.push(...(data || []) as NvlCatalogRef[]);
+          if (!data || data.length < 1000) break;
+        }
+        nvlDocumentCatalogCache = { rows, expires: Date.now() + 2000 };
+        return rows;
+      }) }
     })
   : null;
 /** Client riêng — chỉ dùng cho API phiếu cân `/api/phieu-can-dinh-ki`. */
@@ -4381,23 +4404,23 @@ async function validateMixingNormMaterialClasses(record: Record<string, unknown>
   }
 
   const materialRows = (Array.isArray(data) ? data : []) as Array<Record<string, unknown>>;
+  // Index theo mã — tránh filter toàn bảng cho mỗi dòng NVL.
+  const materialsByCode = new Map<string, Array<Record<string, unknown>>>();
+  for (const row of materialRows) {
+    const key = String(row.ma_npl ?? '').trim().toLocaleLowerCase('vi');
+    if (!key) continue;
+    const bucket = materialsByCode.get(key);
+    if (bucket) bucket.push(row);
+    else materialsByCode.set(key, [row]);
+  }
   for (const reference of references) {
     const normalizedCode = reference.code.trim().toLocaleLowerCase('vi');
-    const candidates = materialRows.filter(row =>
-      String(row.ma_npl ?? '').trim().toLocaleLowerCase('vi') === normalizedCode
-    );
-    const material = candidates.find(row =>
-      Boolean(reference.materialId) && String(row.id ?? '').trim() === reference.materialId
-    ) ?? candidates.find(row =>
-      String(row.ten_npl ?? '').trim() === reference.name &&
-      String(row.ten_nvl_sx ?? '').trim() === reference.productionName
-    ) ?? candidates.find(row =>
-      String(row.ten_nvl_sx ?? '').trim() !== '' &&
-      (String(row.ten_nvl_sx ?? '').trim() === reference.productionName ||
-        String(row.ten_nvl_sx ?? '').trim() === reference.name)
-    ) ?? candidates.find(row =>
-      String(row.ten_npl ?? '').trim() === reference.name
-    ) ?? candidates[0];
+    const candidates = materialsByCode.get(normalizedCode) || [];
+    const matches = candidates.filter(row => reference.materialId
+      ? String(row.id ?? '').trim() === reference.materialId
+      : (!reference.productionName || String(row.ten_nvl_sx ?? '').trim() === reference.productionName));
+    if (matches.length !== 1) return `NVL ${reference.code}: cần chọn ID vật liệu và tên sản xuất chính xác (tìm thấy ${matches.length} dòng).`;
+    const material = matches[0];
 
     const materialClass = String(material?.phan_loai ?? '').trim();
     if (material?.id) {
@@ -21724,8 +21747,8 @@ async function loadKiemKhoLiveTongHopForDot(
               }
               const actualWeight = parsedActualWeight ?? 0;
               return {
+                material_id: String(row.material_id ?? '').trim() || undefined,
                 ma_nvl,
-                ten_nvl,
                 ten_nvl_san_xuat: String(row.ten_nvl_san_xuat ?? '').trim(),
                 gia_tri: parseActualMixingNumber(row.gia_tri ?? row.dinh_muc),
                 khoi_luong: parseActualMixingNumber(row.khoi_luong),

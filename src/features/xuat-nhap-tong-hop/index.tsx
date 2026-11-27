@@ -1,3 +1,4 @@
+import { serializeNvlDocument } from '../../utils/nvlDocument';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, ChevronDown, ChevronLeft, Home, Loader2, Plus, Printer, RefreshCw, Search, Trash2, X } from 'lucide-react';
@@ -151,7 +152,7 @@ function bindMaterialInWarehouse<T extends {
   const sx = line.tenSanXuat.trim();
   const matches = pool.filter(item => {
     if (!sameWarehouseText(item.code, code)) return false;
-    if (name && !sameWarehouseText(item.name, name)) return false;
+
     if (sx && !sameWarehouseText(String(item.productionName || ''), sx)) return false;
     return true;
   });
@@ -576,7 +577,9 @@ export function TongHopPanel({
       phieu_xuat_goc_ma: null,
       lines: (mode === 'xuat' ? splitLinesByLot(payloadLines) : payloadLines).map((line, lineIndex) => ({
         ma_hang: line.maHang,
-        ten_hang: line.tenHang,
+        material_id: line.materialId,
+        loai_danh_muc: (mode === 'xuat' ? srcIsNvl(line.srcLoai, line.srcId) : warehouses.find(kho => kho.id === line.khoId)?.vatTu !== false) ? 'kho_nvl' : 'san_pham',
+        ...((mode === 'xuat' ? !srcIsNvl(line.srcLoai, line.srcId) : warehouses.find(kho => kho.id === line.khoId)?.vatTu === false) ? { ten_hang: line.tenHang } : {}),
         ten_nvl_sx: resolveTenSx(line.maHang, line.tenSanXuat, line.materialId),
         don_vi: line.donVi,
         so_luong: line.soLuong,
@@ -775,7 +778,7 @@ export function TongHopPanel({
       const res = await fetch(editingId ? `/api/xuat-nhap-tong-hop/${editingId}` : '/api/xuat-nhap-tong-hop', {
         method: editingId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildPayload())
+        body: serializeNvlDocument(buildPayload(), 'warehouse')
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1005,7 +1008,7 @@ export function TongHopPanel({
   function toPrintLines(group: Line[]): WarehouseSlipPrintData['lines'] {
     return group.map((line, lineIndex) => ({
       code: line.maHang,
-      name: line.tenHang,
+      name: line.tenSanXuat,
       unit: line.donVi,
       quantity: parseLocalizedNumber(line.soLuong) || 0,
       unitPrice: parseLocalizedNumber(line.donGia) || 0,
@@ -2219,9 +2222,7 @@ export function TongHopPanel({
                       getOptionLabel={item => {
                         const row = item as MaterialOption;
                         const sxName = String(row.productionName || '').trim();
-                        return sxName && sxName.toLocaleLowerCase('vi') !== row.name.toLocaleLowerCase('vi')
-                          ? `${row.code} · ${row.name} · ${sxName}`
-                          : `${row.code} · ${row.name}`;
+                        return [row.code, sxName].filter(Boolean).join(' · ');
                       }}
                       getSearchText={item => {
                         const row = item as MaterialOption;

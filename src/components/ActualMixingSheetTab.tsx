@@ -1,3 +1,5 @@
+import { nvlIdentityKey } from '../utils/nvlDocument';
+import { serializeNvlDocument } from '../utils/nvlDocument';
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Loader2, Plus, Printer, Save, Trash2, XCircle } from 'lucide-react';
 import {
@@ -16,6 +18,7 @@ import type { MixingNormProduct } from './MixingNormMaterialsTab';
 
 /** Cối trộn mẫu tiêu chuẩn (định mức) — chỉ đọc, không cho sửa. */
 type StandardLine = {
+  material_id?: string;
   ma_nvl: string;
   ten_nvl: string;
   ten_nvl_san_xuat: string;
@@ -28,8 +31,10 @@ type StandardLine = {
 
 /** 1 dòng NVL trong 1 cối trộn thực tế do người dùng thêm tay. */
 type ActualLine = {
+  material_id?: string;
   ma_nvl: string;
   ten_nvl: string;
+  ten_nvl_san_xuat?: string;
   phan_tram_thuc_te: number | null;
   trong_luong_thuc_te: number | null;
   trong_luong_thuc_te_input: string;
@@ -56,6 +61,7 @@ type ActualProduct = {
 };
 
 type SecondaryLine = {
+  material_id?: string;
   ma_nvl: string;
   ten_nvl: string;
   ten_nvl_san_xuat: string;
@@ -120,8 +126,8 @@ const recalculateActualPercents = (lines: ActualLine[]): ActualLine[] => {
   }));
 };
 
-function lineKey(maNvl: string, tenNvl: string) {
-  return `${maNvl.trim().toLowerCase()}|${tenNvl.trim().toLowerCase()}`;
+function lineKey(line: { material_id?: string; ma_nvl: string; ten_nvl_san_xuat?: string }) {
+  return nvlIdentityKey(line.material_id, line.ma_nvl, line.ten_nvl_san_xuat);
 }
 
 /** TL ĐM = % Cối trộn mẫu tiêu chuẩn × Tổng KL cối thực tế đã nhập ÷ 100 — chỉ để tham chiếu, không lưu riêng. */
@@ -131,6 +137,7 @@ function computeTlDm(standard: StandardLine | undefined, tongTrongLuongThucTe: n
 }
 
 type StandardLineRaw = {
+  material_id?: string;
   ma_nvl: string;
   ten_nvl: string;
   ten_nvl_san_xuat: string;
@@ -148,6 +155,7 @@ function parseStandardLine(entry: unknown): StandardLineRaw | null {
   const ten_nvl = String(row.ten_nvl ?? '').trim();
   if (!ma_nvl && !ten_nvl) return null;
   return {
+    material_id: String(row.material_id ?? ''),
     ma_nvl,
     ten_nvl,
     ten_nvl_san_xuat: String(row.ten_nvl_san_xuat ?? '').trim(),
@@ -175,6 +183,7 @@ function fillStandardPercents(
   const tong_khoi_luong =
     line.tong_khoi_luong ?? (ty_le_tong !== null && tongTrongLuong ? (ty_le_tong / 100) * tongTrongLuong : null);
   return {
+    material_id: line.material_id,
     ma_nvl: line.ma_nvl,
     ten_nvl: line.ten_nvl,
     ten_nvl_san_xuat: line.ten_nvl_san_xuat,
@@ -228,6 +237,7 @@ function parseSavedRoundLines(raw: unknown): ActualLine[] {
       if (!ma_nvl && !ten_nvl) return null;
       const actualWeight = numberValue(row.trong_luong_thuc_te) ?? 0;
       return {
+        material_id: String(row.material_id ?? ''),
         ma_nvl,
         ten_nvl,
         phan_tram_thuc_te: null,
@@ -333,7 +343,7 @@ function normalizeSecondaryProducts(raw: unknown): ActualSecondaryProduct[] {
             : [];
 
       const lines: SecondaryLine[] = rawLines
-        .map(entry => {
+        .map((entry): SecondaryLine | null => {
           if (!entry || typeof entry !== 'object') return null;
           const row = entry as Record<string, unknown>;
           const ma_nvl = String(row.ma_nvl ?? '').trim();
@@ -341,6 +351,7 @@ function normalizeSecondaryProducts(raw: unknown): ActualSecondaryProduct[] {
           if (!ma_nvl && !ten_nvl) return null;
           const kl = numberValue(row.khoi_luong ?? row.gia_tri ?? row.tong_khoi_luong);
           return {
+            material_id: String(row.material_id ?? ''),
             ma_nvl,
             ten_nvl,
             ten_nvl_san_xuat: String(row.ten_nvl_san_xuat ?? '').trim(),
@@ -390,13 +401,13 @@ function attachSavedSecondary(
     for (const s of savedLinesRaw) {
       if (!s || typeof s !== 'object') continue;
       const row = s as Record<string, unknown>;
-      const k = lineKey(String(row.ma_nvl ?? ''), String(row.ten_nvl ?? ''));
+      const k = lineKey({ material_id: String(row.material_id ?? ''), ma_nvl: String(row.ma_nvl ?? ''), ten_nvl_san_xuat: String(row.ten_nvl_san_xuat ?? '') });
       const val = numberValue(row.trong_luong_thuc_te);
       if (val !== null) savedLineMap.set(k, val);
     }
 
     const updatedLines = sec.lines.map(line => {
-      const k = lineKey(line.ma_nvl, line.ten_nvl);
+      const k = lineKey(line);
       if (savedLineMap.has(k)) {
         const savedVal = savedLineMap.get(k)!;
         return {
@@ -454,7 +465,7 @@ function readStoredSelection() {
 
 function writeStoredSelection(date: string, shift: string, normId: string) {
   try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ date, shift, normId }));
+    sessionStorage.setItem(STORAGE_KEY, serializeNvlDocument({ date, shift, normId }));
   } catch {
     /* ignore */
   }
@@ -571,8 +582,10 @@ export default function ActualMixingSheetTab() {
         if (pi !== productIndex) return product;
         const nextLan = product.rounds.reduce((max, round) => Math.max(max, round.lan), 0) + 1;
         const nvl: ActualLine[] = product.standardNvl.map(std => ({
+          material_id: std.material_id,
           ma_nvl: std.ma_nvl,
           ten_nvl: std.ten_nvl,
+          ten_nvl_san_xuat: std.ten_nvl_san_xuat,
           phan_tram_thuc_te: null,
           trong_luong_thuc_te: null,
           trong_luong_thuc_te_input: ''
@@ -606,9 +619,9 @@ export default function ActualMixingSheetTab() {
     const product = products[productIndex];
     const round = product?.rounds[roundIndex];
     if (round && round.tong_trong_luong !== null) {
-      const standardByKey = new Map<string, StandardLine>(product.standardNvl.map(s => [lineKey(s.ma_nvl, s.ten_nvl), s]));
+      const standardByKey = new Map<string, StandardLine>(product.standardNvl.map(s => [lineKey(s), s]));
       const hasManualEdit = round.nvl.some(line => {
-        const std = standardByKey.get(lineKey(line.ma_nvl, line.ten_nvl));
+        const std = standardByKey.get(lineKey(line));
         const expected = computeTlDm(std, round.tong_trong_luong);
         if (expected === null) return line.trong_luong_thuc_te !== null && line.trong_luong_thuc_te !== 0;
         return Math.abs((line.trong_luong_thuc_te ?? 0) - expected) > 0.005;
@@ -623,13 +636,13 @@ export default function ActualMixingSheetTab() {
     setProducts(current =>
       current.map((p, pi) => {
         if (pi !== productIndex) return p;
-        const standardByKey = new Map<string, StandardLine>(p.standardNvl.map(s => [lineKey(s.ma_nvl, s.ten_nvl), s]));
+        const standardByKey = new Map<string, StandardLine>(p.standardNvl.map(s => [lineKey(s), s]));
         return {
           ...p,
           rounds: p.rounds.map((r, ri) => {
             if (ri !== roundIndex) return r;
             const nvl = r.nvl.map(line => {
-              const std = standardByKey.get(lineKey(line.ma_nvl, line.ten_nvl));
+              const std = standardByKey.get(lineKey(line));
               const tlDm = computeTlDm(std, total);
               return {
                 ...line,
@@ -735,9 +748,11 @@ export default function ActualMixingSheetTab() {
       const existing = actuals.find(row => String(row.dinh_muc_id) === String(norm.id));
       const serializeLines = (lines: ActualLine[]) =>
         lines.map(line => ({
+          material_id: line.material_id,
           ma_nvl: line.ma_nvl,
           ten_nvl: line.ten_nvl,
           phan_tram_thuc_te: line.phan_tram_thuc_te,
+          ten_nvl_san_xuat: line.ten_nvl_san_xuat || '',
           trong_luong_thuc_te: line.trong_luong_thuc_te_input || null
         }));
       const payloadChiTiet: any[] = products.map(product => {
@@ -757,6 +772,7 @@ export default function ActualMixingSheetTab() {
 
       for (const sec of secondaryProducts) {
         const nvl_phu = sec.lines.map(line => ({
+          material_id: line.material_id,
           ma_nvl: line.ma_nvl,
           ten_nvl: line.ten_nvl,
           ten_nvl_san_xuat: line.ten_nvl_san_xuat,
@@ -780,7 +796,7 @@ export default function ActualMixingSheetTab() {
       const res = await fetch('/api/phieu-tron-thuc-te', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: serializeNvlDocument({
           id: existing?.id,
           ngay: date,
           ca: effectiveCa,
@@ -838,7 +854,7 @@ export default function ActualMixingSheetTab() {
     if (!selectedNorm) return;
     const printProducts: Array<MixingNormProduct & { print_name?: string }> = [
       ...products.map(product => {
-        const standardByKey = new Map<string, StandardLine>(product.standardNvl.map(s => [lineKey(s.ma_nvl, s.ten_nvl), s]));
+        const standardByKey = new Map<string, StandardLine>(product.standardNvl.map(s => [lineKey(s), s]));
         const catalogName = resolveCatalogProductName(catalogProducts, product.ma_sp);
         return {
           ma_sp: product.ma_sp,
@@ -849,6 +865,7 @@ export default function ActualMixingSheetTab() {
           dinh_luong_coi: product.dinh_luong_coi,
           ghi_chu: '',
           chi_tiet: product.standardNvl.map(std => ({
+            material_id: std.material_id,
             ma_nvl: std.ma_nvl,
             ten_nvl: std.ten_nvl,
             ten_nvl_san_xuat: std.ten_nvl_san_xuat,
@@ -863,8 +880,9 @@ export default function ActualMixingSheetTab() {
             lan: round.lan,
             tong_trong_luong: round.tong_trong_luong,
             nvl: round.nvl.map(line => {
-              const std = standardByKey.get(lineKey(line.ma_nvl, line.ten_nvl));
+              const std = standardByKey.get(lineKey(line));
               return {
+                material_id: line.material_id,
                 ma_nvl: line.ma_nvl,
                 ten_nvl: line.ten_nvl,
                 ten_nvl_san_xuat: std?.ten_nvl_san_xuat || '',
@@ -879,6 +897,7 @@ export default function ActualMixingSheetTab() {
       ...secondaryProducts.map(sec => {
         const catalogName = resolveCatalogProductName(catalogProducts, sec.ma_sp);
         const lines = sec.lines.map(line => ({
+          material_id: line.material_id,
           ma_nvl: line.ma_nvl,
           ten_nvl: line.ten_nvl,
           ten_nvl_san_xuat: line.ten_nvl_san_xuat,
@@ -1084,7 +1103,7 @@ export default function ActualMixingSheetTab() {
                     <thead className="bg-zinc-950 text-white">
                       <tr>
                         <th className="px-2 py-1.5">Mã NVL</th>
-                        <th className="px-2 py-1.5">Tên NVL</th>
+
                         <th className="px-2 py-1.5">Tên NVL SX</th>
                         <th className="px-2 py-1.5 text-center">Giá trị (kg/cối trộn mẫu)</th>
                         <th className="px-2 py-1.5 text-center">% Cối trộn</th>
@@ -1103,7 +1122,7 @@ export default function ActualMixingSheetTab() {
                         product.standardNvl.map((line, li) => (
                           <tr key={`${line.ma_nvl}-${li}`}>
                             <td className="px-2 py-1.5 font-mono font-bold">{line.ma_nvl}</td>
-                            <td className="break-words px-2 py-1.5">{line.ten_nvl}</td>
+
                             <td className="break-words px-2 py-1.5">{line.ten_nvl_san_xuat}</td>
                             <td className="px-2 py-1.5 text-center font-mono">{formatNumber(line.gia_tri)}</td>
                             <td className="px-2 py-1.5 text-center font-mono">
@@ -1182,7 +1201,7 @@ export default function ActualMixingSheetTab() {
                           <thead className="bg-zinc-950 text-white">
                             <tr>
                               <th className="px-2 py-1.5">Mã NVL</th>
-                              <th className="px-2 py-1.5">Tên NVL</th>
+
                               <th className="px-1 py-1.5 text-center" title="Trọng lượng định mức quy theo tổng KL cối thực tế">
                                 TL ĐM
                               </th>
@@ -1202,13 +1221,13 @@ export default function ActualMixingSheetTab() {
                             ) : (
                               round.nvl.map((line, li) => {
                                 const std = product.standardNvl.find(
-                                  s => lineKey(s.ma_nvl, s.ten_nvl) === lineKey(line.ma_nvl, line.ten_nvl)
+                                  s => lineKey(s) === lineKey(line)
                                 );
                                 const tlDm = computeTlDm(std, round.tong_trong_luong);
                                 return (
                                   <tr key={`${line.ma_nvl}-${li}`}>
                                     <td className="px-2 py-1.5 font-mono font-bold">{line.ma_nvl}</td>
-                                    <td className="break-words px-2 py-1.5">{line.ten_nvl}</td>
+
                                     <td className="px-1 py-1.5 text-center font-mono">{formatNumber(tlDm)}</td>
                                     <td className="px-1 py-1">
                                       <input
@@ -1267,7 +1286,7 @@ export default function ActualMixingSheetTab() {
                       <tr>
                         <th className="w-10 px-2 py-1.5 text-center">STT</th>
                         <th className="w-28 px-2 py-1.5">Mã NVL</th>
-                        <th className="px-2 py-1.5">Tên NVL</th>
+
                         <th className="px-2 py-1.5">Tên NVL SX</th>
                         <th className="w-32 px-2 py-1.5 text-center">Định mức (kg)</th>
                         <th className="w-36 px-2 py-1.5 text-center">Trọng lượng thực tế (kg)</th>
@@ -1278,7 +1297,7 @@ export default function ActualMixingSheetTab() {
                         <tr key={`${line.ma_nvl}-${li}`}>
                           <td className="px-2 py-1.5 text-center font-bold text-zinc-500">{li + 1}</td>
                           <td className="px-2 py-1.5 font-mono font-bold">{line.ma_nvl}</td>
-                          <td className="break-words px-2 py-1.5">{line.ten_nvl}</td>
+
                           <td className="break-words px-2 py-1.5">{line.ten_nvl_san_xuat || '—'}</td>
                           <td className="px-2 py-1.5 text-center font-mono font-bold">
                             {formatNumber(line.khoi_luong_dinh_muc)}

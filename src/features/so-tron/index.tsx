@@ -1,3 +1,4 @@
+import { serializeNvlDocument } from '../../utils/nvlDocument';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ClipboardList, ExternalLink, Loader2, Lock, Minus, Plus, Printer, RefreshCw, Save, Trash2, Unlock, X } from 'lucide-react';
 import { BackButton } from '../../components/layout/NavButtons';
@@ -1231,17 +1232,17 @@ export function SoTronPanel({
   }, [materials]);
 
   const resolveNvlDisplay = (materialId: string, ma: string, ten: string, sx: string) => {
-    const dir =
-      (str(materialId) && materialById.get(str(materialId))) ||
-      materialByCode.get(str(ma).toLowerCase());
+    const candidates = materials.filter(item => str(item.code).toLowerCase() === str(ma).toLowerCase()
+      && (!str(sx) || str(item.productionName).toLowerCase() === str(sx).toLowerCase()));
+    const dir = (str(materialId) && materialById.get(str(materialId))) || (candidates.length === 1 ? candidates[0] : undefined);
     if (!dir) {
       return { material_id: str(materialId), ma_nvl: str(ma), ten_nvl: str(ten), ten_nvl_sx: str(sx) };
     }
     return {
       material_id: dir.id,
       ma_nvl: dir.code || str(ma),
-      ten_nvl: dir.name || str(ten),
-      ten_nvl_sx: dir.productionName || str(sx)
+      ten_nvl: '',
+      ten_nvl_sx: str(sx) || dir.productionName || ''
     };
   };
 
@@ -2571,7 +2572,7 @@ export function SoTronPanel({
       const res = await fetch(isUpdate ? `/api/so-tron/${encodeURIComponent(phieuId)}` : '/api/so-tron', {
         method: isUpdate ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json', ...soTronAuthHeaders() },
-        body: JSON.stringify({
+        body: serializeNvlDocument({
           chi_nhanh: CHI_NHANH_MAC_DINH,
           ngay,
           ma_may: idn.ma_may,
@@ -3110,7 +3111,7 @@ export function SoTronPanel({
         const res = await fetch(url, {
           method: editingId || dup ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json', ...soTronAuthHeaders() },
-          body: JSON.stringify({ ...basePayload, ma_may: idn.ma_may, ten_may: idn.ten_may, ca: idn.ca, scope: scopes })
+          body: serializeNvlDocument({ ...basePayload, ma_may: idn.ma_may, ten_may: idn.ten_may, ca: idn.ca, scope: scopes })
         });
         const data = await res.json().catch(() => ({}));
         return { idn, ok: res.ok, updated: Boolean(editingId || dup), error: str(data.error), id: str(data?.report?.id || dup?.id) };
@@ -3341,7 +3342,7 @@ export function SoTronPanel({
       const res = await fetch(`/api/so-tron/${encodeURIComponent(editingId)}/${unlock ? 'unlock' : 'lock'}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...soTronAuthHeaders() },
-        body: JSON.stringify({ ly_do: lyDo.trim() })
+        body: serializeNvlDocument({ ly_do: lyDo.trim() })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -3903,7 +3904,7 @@ export function SoTronPanel({
                             <thead>
                               <tr className="border-y border-slate-100 text-[10.5px] uppercase tracking-wider text-slate-400">
                                 <th className="px-3 py-1.5">Mã NVL</th>
-                                <th className="px-3 py-1.5">Tên NVL</th>
+                                <th className="px-3 py-1.5">Tên sản xuất</th>
                                 <th className="px-3 py-1.5">ĐVT</th>
                                 <th className="px-3 py-1.5 text-right">Giá trị</th>
                               </tr>
@@ -3920,7 +3921,7 @@ export function SoTronPanel({
                                   <tr key={li} className="border-b border-slate-50 last:border-0">
                                     <td className="px-3 py-1.5 font-bold">{line.ma_nvl}</td>
                                     <td className="px-3 py-1.5">
-                                      <div>{line.ten_nvl_sx || line.ten_nvl}</div>
+                                      <div>{line.ten_nvl_sx || line.ma_nvl}</div>
                                     </td>
                                     <td className="px-3 py-1.5">{line.dvt}</td>
                                     <td className="px-3 py-1.5 text-right tabular-nums">{line.gia_tri ? formatKg3(parseNum(line.gia_tri)) : ''}</td>
@@ -4010,7 +4011,7 @@ export function SoTronPanel({
                     <tr key={row.key} className="border-b border-slate-100 last:border-0">
                       <td className="px-2 py-1.5">
                         <div className="text-[12.5px] font-bold text-slate-800">{row.ma_nvl}</div>
-                        <div className="text-[11px] text-slate-500">{row.ten_nvl}</div>
+
                         {row.ten_nvl_sx ? (
                           <div className="text-[11px] italic text-slate-400">{row.ten_nvl_sx}</div>
                         ) : null}
@@ -4420,7 +4421,7 @@ export function SoTronPanel({
                       <tr key={row.key} className="border-b border-slate-100 last:border-0">
                         <td className="px-2 py-1.5">
                           <div className="text-[12.5px] font-bold text-slate-800">{row.ma_nvl}</div>
-                          <div className="text-[11px] text-slate-500">{row.ten_nvl}</div>
+
                           {row.ten_nvl_sx ? (
                             <div className="text-[11px] italic text-slate-400">{row.ten_nvl_sx}</div>
                           ) : null}
@@ -4976,7 +4977,7 @@ export function SoTronPanel({
                       )}
                       {section.lines.map(({ row, dinhMuc }) => {
                         const sx = row.ten_nvl_sx.trim();
-                        const ten = row.ten_nvl.trim();
+                        const ten = ''; // Commercial names are not document labels.
                         const ma = row.ma_nvl.trim();
                         const showSx = Boolean(sx && sx !== ten);
                         return (
@@ -5750,7 +5751,7 @@ export function SoTronPanel({
                         {banGiaoRows.map(row => {
                           const suDung = nvlUsageOf(row.material_id, row.ma_nvl);
                           const tonCuoi = round1(parseNum(row.lay_trong_kho) + parseNum(row.ton_dau_ca) - suDung);
-                          const ten = (row.ten_nvl_sx || row.ten_nvl || row.ma_nvl).trim();
+                          const ten = (row.ten_nvl_sx || row.ma_nvl).trim();
                           return (
                             <tr key={row.key}>
                               <td className="border border-slate-700 px-2 py-1 text-left">

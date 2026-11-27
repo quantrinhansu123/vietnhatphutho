@@ -1,3 +1,4 @@
+import { nvlIdentityKey } from '../utils/nvlDocument';
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
@@ -104,7 +105,7 @@ function resolveStandardBatchRow(line: MixingNormLine, product: MixingNormProduc
 }
 
 function materialPrintName(line: MixingNormLine) {
-  return line.ten_nvl_san_xuat?.trim() || line.ten_nvl.trim();
+  return line.ten_nvl_san_xuat?.trim() || line.ma_nvl.trim();
 }
 
 export function formatWorkerName(name: string | null | undefined): string {
@@ -283,7 +284,7 @@ function NormPrintProductSection({
             <tr>
               <th className="col-stt">STT</th>
               <th className="col-code">Mã NVL</th>
-              <th className="col-name">Tên NVL</th>
+              <th className="col-name">Tên sản xuất</th>
               <th className="col-kg">Giá trị (kg/cối trộn mẫu)</th>
               <th className="col-kg">Tổng trọng lượng</th>
             </tr>
@@ -324,7 +325,7 @@ function NormPrintProductSection({
             <tr>
               <th className="col-stt">STT</th>
               <th className="col-code">Mã NVL</th>
-              <th className="col-name">Tên NVL</th>
+              <th className="col-name">Tên sản xuất</th>
               <th className="col-val">Giá trị</th>
               <th className="col-unit">ĐVT</th>
               <th className="col-kg">{isActual ? 'Định mức (kg)' : 'Tổng trọng lượng (kg)'}</th>
@@ -512,7 +513,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                           ))}
                         </colgroup>
                         <thead><tr>
-                          <th className="col-stt">STT</th><th className="col-code">Mã NVL</th><th className="col-name">Tên NVL</th>
+                          <th className="col-stt">STT</th><th className="col-code">Mã NVL</th><th className="col-name">Tên sản xuất</th>
                           {Array.from({ length: MIXING_ROUNDS_PER_TABLE }, (_, index) => (
                             <React.Fragment key={index}>
                               <th className="col-round">{index < rounds.length ? `L${tableIndex * MIXING_ROUNDS_PER_TABLE + index + 1}` : ''}</th>
@@ -526,7 +527,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                             product.lan_tron?.[roundOffset + index]?.nvl ?? displayLines
                           );
                           const uniqueLines = new Map<string, MixingNormLine>();
-                          normRounds.flat().forEach(line => uniqueLines.set(`${line.ma_nvl}|${line.ten_nvl}`.toLowerCase(), line));
+                          normRounds.flat().forEach(line => uniqueLines.set(nvlIdentityKey(line.material_id, line.ma_nvl, line.ten_nvl_san_xuat), line));
                           return [...uniqueLines.values()].map((displayLine, lineIndex) => (
                             <tr key={`${displayLine.ma_nvl}-${displayLine.ten_nvl}-${lineIndex}`}>
                               <td className="col-stt">{lineIndex + 1}</td><td className="col-code">{displayLine.ma_nvl}</td><td className="col-name">{materialPrintName(displayLine)}</td>
@@ -535,7 +536,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                                 if (roundWeight === undefined) return <React.Fragment key={slotIndex}><td className="col-round" /><td className="col-round col-round-actual" /></React.Fragment>;
                                 const globalRoundIndex = roundOffset + slotIndex;
                                 const normLines = normRounds[slotIndex] ?? [];
-                                const normLineIndex = normLines.findIndex(line => `${line.ma_nvl}|${line.ten_nvl}`.toLowerCase() === `${displayLine.ma_nvl}|${displayLine.ten_nvl}`.toLowerCase());
+                                const normLineIndex = normLines.findIndex(line => nvlIdentityKey(line.material_id, line.ma_nvl, line.ten_nvl_san_xuat) === nvlIdentityKey(displayLine.material_id, displayLine.ma_nvl, displayLine.ten_nvl_san_xuat));
                                 const normLine = normLines[normLineIndex] ?? displayLine;
                                 const pct = normLine?.ty_le_coi ?? (normLine?.don_vi === '%' ? normLine?.gia_tri : null);
                                 const kg = normLine
@@ -559,7 +560,7 @@ export function MixingNormRatioPrintSheet({ doc }: { doc: MixingNormRatioPrintDo
                       <tr>
                         <th className="col-stt">STT</th>
                         <th className="col-code">Mã NVL</th>
-                        <th className="col-name">Tên NVL</th>
+                        <th className="col-name">Tên sản xuất</th>
                         <th className="col-pct">Tỷ lệ</th>
                         <th className="col-kg">Khối lượng</th>
                         <th className="col-kg">Thực tế</th>
