@@ -44,13 +44,14 @@ API tests: `tests/api/nvlWarehouseFlow.test.ts` (opt-in integration test, 10 mã
 
 - Ô `Người giao hàng` hiển thị `Người nhận hàng` ở mode xuất (nhập giữ nguyên); xem chi tiết tương tự (`ViewModal` theo `loai`).
 - Lưới dòng xuất bỏ cột `Nhóm VTHH`, ẩn cột `Tồn đầu ca` (logic tồn + cảnh báo vượt tồn giữ nguyên).
-- Cột **Giá** (nhập + xuất): dropdown giá đã từng nhập của mã NVL (`GET /api/phieu-xuat-kho/gia-nvl?ma_npl=`), vẫn cho gõ tay giá mới (`NvlPriceSelect`); hiển thị dấu phẩy ngăn nghìn, dấu chấm thập phân và giữ phần lẻ.
+- Cột **Giá** (nhập + xuất): dropdown từng lần nhập của mã NVL (`GET /api/phieu-xuat-kho/gia-nvl?ma_npl=` trả `lots[]` ngày + `ly_do`/`ghi_chu` + giá; `prices[]` gom theo giá vẫn giữ tương thích), chọn option chỉ điền đơn giá (`NvlPriceSelect` + `nvlPriceHistory.ts`); cùng mã khác giá/ngày/diễn giải hiện riêng; vẫn cho gõ tay giá mới.
 
 ## Quy ước
 
 - Xuất NVL: chọn đợt 1–10 bắt buộc trên form; API từ chối phiếu xuất NVL thiếu đợt hợp lệ. Có loại **Xuất theo máy** để chọn máy đích trực tiếp, không cần PTĐM. Danh sách lọc theo đợt và hiển thị cột Đợt để đối chiếu với máy/kho.
 
 - Phiếu nhập: Nguồn Kho / Máy / NCC. Nhập lại / phế: máy nguồn + **Loại sản xuất** + đợt. Gợi ý kho nhập từ phiếu xuất cùng đợt–máy. Phế: SX01→Kho PC, SX06→Kho NVL Chính. Kho nhập chỉ Chính / Phụ / PC. Tên SX gõ + gợi ý (`revertOnBlurMismatch`).
+- Kho NVL được chọn và lưu theo từng dòng phiếu nhập (`chi_tiet[].kho_dong`). Kho phía trên chỉ là mặc định cho **dòng thêm sau khi chọn**, không ghi đè dòng đã có; lần chọn đầu điền dòng trống ban đầu. Có thể chỉnh kho riêng từng dòng (kể cả khi nguồn là Kho); đổi kho trên dòng sẽ bỏ mã NVL/giá cũ để chọn lại đúng danh mục.
 - Phiếu xuất (UI mới): tỷ lệ trộn, **theo máy**, trả NCC, phế băm/cái, khác — **không** tạo «Xuất theo phân xưởng». Xuất máy SX thường: đợt + ca + máy + Loại sản xuất; chuyển phế cho máy băm/tạo hạt không cần đợt hoặc Loại sản xuất. Lưới Xuất từ kho/máy; vật liệu nguồn kho chỉ hiện khi còn tồn, lô chọn lọc có số dư dương; ô tìm NVL hỗ trợ nhiều từ khóa ngăn cách bằng dấu phẩy. Phiếu cũ PX vẫn đọc.
 - Header lưu `nguoi_lap`, `nguoi_giao`, `dia_diem`, `ly_do`, `ghi_chu`. Người lập chọn từ nhân sự `trang_thai = Đang làm`. Chạy lại `supabase-phieu-nhap-xuat-tong-hop.sql` nếu thiếu 3 cột mới.
 - Phiếu **SX**: bắt buộc ngày + đợt (1–10) + **Loại sản xuất** (cột `phan_xuong`). Xuất máy: tồn đầu ca **không bắt buộc** (để trống thì không gửi `ton_dau_ca`).

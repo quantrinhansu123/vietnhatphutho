@@ -330,6 +330,8 @@ export type NvlInboundLotOption = {
   so_luong_nhap: number;
   so_luong_da_xuat: number;
   so_luong_con: number;
+  ten_kho?: string;
+  ten_nvl_sx?: string;
 };
 
 export type WarehouseSlipPrefillDraft = {

@@ -8,7 +8,7 @@
 
 **API:** `/api/bang-tron-vat-tu-dinh-muc`  
 Query: `ngay`, `ca`, `q`  
-**UI:** `MixingNormMaterialsTab.tsx` · in: `MixingNormRatioPrintSheet.tsx` · chọn nhanh theo nhóm: `MixingNormProductGroupModal.tsx` + `utils/mixingNormProductCategories.ts` (rule `.ai/Rule_hien_thi_san_pham_phieu_tron.xlsx`)  
+**UI:** `MixingNormMaterialsTab.tsx` · in: `MixingNormRatioPrintSheet.tsx` (A4 ngang `@page mixing-norm-ratio-page`) · chọn nhanh theo nhóm: `MixingNormProductGroupModal.tsx` + `utils/mixingNormProductCategories.ts` (rule `.ai/Rule_hien_thi_san_pham_phieu_tron.xlsx`) · đối soát SL: `utils/mixingNormCoverage.ts` (khóa dòng = lệnh + productId/mã + tên SX + ghi chú + mét cắt + ĐVT, **không** dùng STT)
 Gợi ý sang form phối trộn: `MixingReportForm.tsx` + `utils/mixingNormSuggestion.ts` (phiếu không ca khớp theo ngày)
 
 **In / đối soát (19/11):** khoảng cách giữa khối SP khi in tăng (`mixing-norm-ratio-print-block`); tổng TL ngoài danh sách NVL = `tong_trong_luong` SP (cắt 4 số lẻ, không làm tròn 2 số rồi cộng lại); chọn nhanh sort khổ → độ li; form hiện banner đối soát TL/SP với lệnh SX.

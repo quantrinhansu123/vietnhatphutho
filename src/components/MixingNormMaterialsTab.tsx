@@ -1,5 +1,8 @@
 import { nvlIdentityKey } from '../utils/nvlDocument';
 import { serializeNvlDocument } from '../utils/nvlDocument';
+import { isIsoDate } from '../utils/isoDate';
+import { VnCalendarPicker } from '../features/so-che-do-may';
+import { compareNormCoverage, orderQuantity } from '../utils/mixingNormCoverage';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, Layers3, Loader2, Pencil, Plus, Printer, Save, Search, Trash2, X } from 'lucide-react';
 import { useTabAccess } from '../app/useTabAccess';
@@ -155,6 +158,7 @@ type MaterialOption = {
   /** Tên kho vật lý trên kho_nvl.ten_kho. */
   warehouse: string;
   nhomVatTuPhu?: string;
+  rollWidth?: number | null;
 };
 
 type ProductOption = {
@@ -171,11 +175,12 @@ type ProductOption = {
   mang?: string;
   hangPhe?: string;
   doLi?: string;
-  /** Khổ rộng (m) — `do_day_m` / `kho_rong`. */
-  doDayM?: string;
+  width?: number | null;
   zem?: string;
   dinhMucKg?: string;
   doDaiM?: string;
+  /** Khổ rộng (m) — do_day_m / kho_rong. */
+  doDayM?: string;
   mau?: string;
   tcmb?: boolean | string;
   tcmn?: string;
@@ -412,8 +417,14 @@ function matchMaterialInPool(
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 
+function normToday() {
+  const date = new Date();
+  return [date.getFullYear(), date.getMonth() + 1, date.getDate()].map((part, index) =>
+    String(part).padStart(index === 0 ? 4 : 2, '0')).join('-');
+}
+
 const emptyForm = (): NormForm => ({
-  ngay: new Date().toISOString().slice(0, 10),
+  ngay: normToday(),
   maLenhSx: '',
   may: '',
   ghiChu: '',
@@ -505,7 +516,8 @@ function normalizeMaterials(data: unknown): MaterialOption[] {
         donViGoc: unitRaw || 'kg',
         phanLoai: String(row.phan_loai ?? row.kho_ngam_dinh ?? '').trim(),
         warehouse: String(row.ten_kho ?? row.warehouse ?? '').trim(),
-        nhomVatTuPhu: String(row.nhom_vat_tu_phu ?? '').trim()
+        nhomVatTuPhu: String(row.nhom_vat_tu_phu ?? '').trim(),
+        rollWidth: parseNumberOrNull(row.kho_cuon)
       };
     })
     .filter((item): item is MaterialOption => Boolean(item));
@@ -559,6 +571,7 @@ function normalizeCatalogProducts(data: unknown): ProductOption[] {
       nhomVthh: String(row.nhom_vthh ?? row.group ?? '').trim(),
       mang: String(row.mang ?? '').trim(),
       hangPhe: String(row.hang_phe ?? row.hangPhe ?? '').trim(),
+      width: parseNumberOrNull(row.kho_rong ?? row.kho ?? row.width),
       doLi: String(row.do_li ?? row.doLi ?? '').trim(),
       doDayM: String(row.kho_rong ?? row.do_day_m ?? row.doDayM ?? row.khoRong ?? '').trim(),
       zem: String(row.zem ?? '').trim(),
@@ -1377,7 +1390,8 @@ export default function MixingNormMaterialsTab() {
     [materials]
   );
   const secondaryMaterialOptions = useMemo(
-    () => pickPreferredSecondaryMaterials(materials),
+    () => pickPreferredSecondaryMaterials(materials).sort((a, b) =>
+      (a.rollWidth ?? Infinity) - (b.rollWidth ?? Infinity) || a.code.localeCompare(b.code, 'vi')),
     [materials]
   );
   const catalogProductsById = useMemo(() => {
@@ -1905,7 +1919,7 @@ export default function MixingNormMaterialsTab() {
     const formulaProducts = row.products.filter(isFormulaNormProduct);
     const savedSecondary = collectSavedSecondaryProducts(row.products, secondaryMaterialOptions, catalogProducts);
     setForm({
-      ngay: row.ngay || new Date().toISOString().slice(0, 10),
+      ngay: row.ngay || normToday(),
       maLenhSx: row.ma_lenh_sx,
       may: row.may,
       ghiChu: row.ghi_chu,
@@ -1929,7 +1943,7 @@ export default function MixingNormMaterialsTab() {
     );
     const formulaProducts = row.products.filter(isFormulaNormProduct);
     setForm({
-      ngay: new Date().toISOString().slice(0, 10),
+      ngay: normToday(),
       maLenhSx: row.ma_lenh_sx,
       may: row.may,
       ghiChu: row.ghi_chu,
@@ -2549,7 +2563,7 @@ export default function MixingNormMaterialsTab() {
         const onThisBlock = optionMatchesKeySet(option, preselectedProductKeysForModal);
         const usedElsewhere =
           optionMatchesKeySet(option, usedProductKeysOnForm) && !onThisBlock;
-        return !usedElsewhere;
+        return Boolean(option.linePrefix) && !usedElsewhere;
       })
       .map(option => {
         const catalog = option.id ? catalogProductsById.get(option.id) : undefined;
@@ -2565,7 +2579,7 @@ export default function MixingNormMaterialsTab() {
           mang: option.mang || catalog?.mang,
           hangPhe: option.hangPhe || catalog?.hangPhe,
           doLi: option.doLi || catalog?.doLi,
-          doDayM: option.doDayM || catalog?.doDayM,
+          width: option.width ?? catalog?.width,
           zem: option.zem || catalog?.zem,
           dinhMucKg: option.dinhMucKg || catalog?.dinhMucKg,
           doDaiM: option.doDaiM || catalog?.doDaiM,
@@ -3045,10 +3059,27 @@ export default function MixingNormMaterialsTab() {
     }));
   };
 
+  const quantitiesFor = (codes: string[], ids: string[]) =>
+    collectGroupedOrderLines(codes, ids).flatMap(group => group.lines.flatMap(line => {
+      const row = orderQuantity(line);
+      return row ? [row] : [];
+    }));
+  const coverage = compareNormCoverage(
+    selectedOrders.flatMap(order => order.productLines.flatMap(line => {
+      const row = orderQuantity(line);
+      return row ? [row] : [];
+    })),
+    form.products.flatMap(product => quantitiesFor(product.maSpCodes, product.maSpIds))
+  );
+  const coverageIssues = coverage.filter(item => item.ambiguous || Math.abs(item.delta) > 1e-6);
+
   const handleSave = async () => {
     setErrorProductKey('');
-    // Ngày phiếu tự điền (không còn ô chọn) — phiếu mới lấy hôm nay, sửa giữ ngày cũ.
-    const slipNgay = form.ngay.trim() || new Date().toISOString().slice(0, 10);
+    const slipNgay = form.ngay.trim();
+    if (!isIsoDate(slipNgay)) {
+      setError('Ngày phiếu không hợp lệ.');
+      return;
+    }
     const orderCodes = splitLsxCodes(form.maLenhSx);
     if (orderCodes.length === 0) {
       setError('Vui lòng chọn ít nhất 1 lệnh SX.');
@@ -3268,6 +3299,7 @@ export default function MixingNormMaterialsTab() {
           )
         ];
         const uniformLength = distinctLengths.length === 1 ? distinctLengths[0] : null;
+        const order_quantities = quantitiesFor(product.maSpCodes, validIds);
         const tong =
           product.tongTrongLuong.trim() === ''
             ? null
@@ -3312,6 +3344,7 @@ export default function MixingNormMaterialsTab() {
         return {
           loai: undefined as string | undefined,
           ma_sp: product.maSp.trim(),
+          order_quantities,
           san_pham_id: nonEmptyIds[0] || undefined,
           ...(nonEmptyIds.length > 1 ? { san_pham_ids: nonEmptyIds } : {}),
           ...(variantKeys.some(Boolean) ? { san_pham_variants: variantKeys } : {}),
@@ -3611,7 +3644,7 @@ export default function MixingNormMaterialsTab() {
                     })()}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-zinc-800">
-                    {row.ngay || '—'}
+                    {row.ngay ? row.ngay.slice(0, 10).split('-').reverse().join('/') : '—'}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5 font-black text-zinc-800">{getMachineDisplayName(row.may) || '—'}</td>
                   <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs font-bold text-zinc-700">
@@ -3925,6 +3958,13 @@ export default function MixingNormMaterialsTab() {
                 </div>
               </div>
 
+              <label className="block max-w-48 text-xs font-bold">Ngày phiếu
+                <VnCalendarPicker value={form.ngay} onChange={ngay => setForm(current => ({ ...current, ngay }))} />
+              </label>
+              {coverage.length > 0 && <p className={coverageIssues.length ? 'text-xs font-semibold text-amber-800' : 'text-xs text-emerald-800'}>
+                {coverageIssues.length ? coverageIssues.map(item => item.label + (item.ambiguous ? ' chưa gán rõ hoặc trùng' :
+                  item.delta > 0 ? ' thiếu ' + item.delta : ' thừa ' + Math.abs(item.delta))).join(' · ') : 'Đủ số lượng theo lệnh sản xuất.'}
+              </p>}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs font-black uppercase tracking-wider text-zinc-500">
                   Sản phẩm ({form.products.length})

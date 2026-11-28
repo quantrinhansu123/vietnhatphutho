@@ -196,6 +196,13 @@ function chunks<T>(items: T[], size: number) {
   );
 }
 
+function localTodayIso() {
+  const now = new Date();
+  return [now.getFullYear(), now.getMonth() + 1, now.getDate()]
+    .map((part, index) => String(part).padStart(index === 0 ? 4 : 2, '0'))
+    .join('-');
+}
+
 /** Một phiếu DB → một tờ in (nhiều khối SP). */
 export function toPrintDoc(
   row: MixingNormRow,
@@ -206,7 +213,7 @@ export function toPrintDoc(
     tenPhieu: row.ten_phieu || formatMixingNormSlipName(row.may || row.ca, row.ma_lenh_sx),
     maLenhSx: row.ma_lenh_sx.trim(),
     may: row.may?.trim(),
-    ngay: row.ngay || new Date().toISOString().slice(0, 10),
+    ngay: row.ngay || localTodayIso(),
     ca: row.ca,
     ghiChu: row.ghi_chu?.trim(),
     products: [...row.products]

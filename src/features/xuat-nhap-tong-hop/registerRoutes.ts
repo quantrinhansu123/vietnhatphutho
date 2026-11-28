@@ -3,6 +3,7 @@
  * Header không có tên kho chung. Kho hoặc máy nằm trên từng dòng / đích.
  * Ghi vế vào phieu_nhap_kho / phieu_xuat_kho. ten_kho không bao giờ là tên máy.
  */
+import { isIsoDate } from '../../utils/isoDate';
 import type { Express } from 'express';
 import { findExceededMachinePriceGroup, machinePriceGroupKey } from './machineReturnPriceGroups';
 import { parseNvlPrice, xuatPheMayKhongCanDot } from './model';
@@ -1364,7 +1365,9 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
   }
 
   app.get('/api/xuat-nhap-tong-hop', async (req, res) => {
-    if (!deps.supabase) return res.json({ records: [], total: 0, source: 'local' });
+    if (!deps.supabase) return req.query.paged === '1'
+      ? res.status(503).json({ error: 'Supabase chưa được cấu hình; không thể thống kê phiếu.' })
+      : res.json({ records: [], total: 0, source: 'local' });
     const loai = text(req.query.loai);
     const from = text(req.query.from || req.query.tu_ngay);
     const to = text(req.query.to || req.query.den_ngay);
@@ -1372,12 +1375,19 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
     const loaiNhap = text(req.query.loai_nhap);
     const loaiXuat = text(req.query.loai_xuat);
     const limit = Math.min(2000, Math.max(1, Number(req.query.limit) || 500));
-    const isoDate = (value: string) => (/^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '');
+    const paged = req.query.paged === '1';
+    const cursor = text(req.query.cursor);
+    const [cursorDate, cursorId] = cursor.split('|');
+    if ((from && !isIsoDate(from)) || (to && !isIsoDate(to)) || (from && to && from > to) ||
+        (cursor && (!isIsoDate(cursorDate) || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(cursorId || '') || cursor.split('|').length !== 2))) {
+      return res.status(400).json({ error: 'Khoảng ngày hoặc con trỏ không hợp lệ.' });
+    }
     const buildListQuery = (columns: string) => {
-      let query = deps.supabase!.from(deps.tables.header).select(columns).order('ngay', { ascending: false }).limit(limit);
+      let query = deps.supabase!.from(deps.tables.header).select(columns).order('ngay', { ascending: false }).order('id', { ascending: false }).limit(paged ? Math.min(500, limit) : limit + 1);
+      if (cursor) query = query.or('ngay.lt.' + cursorDate + ',and(ngay.eq.' + cursorDate + ',id.lt.' + cursorId + ')');
       if (loai === 'nhap' || loai === 'xuat') query = query.eq('loai', loai);
-      if (isoDate(from)) query = query.gte('ngay', from.slice(0, 10));
-      if (isoDate(to)) query = query.lte('ngay', to.slice(0, 10));
+      if (from) query = query.gte('ngay', from.slice(0, 10));
+      if (to) query = query.lte('ngay', to.slice(0, 10));
       if (loaiNhap) query = query.eq('loai_nhap', loaiNhap);
       if (loaiXuat) query = query.eq('loai_xuat', loaiXuat);
       if (ncc) query = query.or(`nguon_id.eq.${ncc},dich_id.eq.${ncc}`);
@@ -1391,7 +1401,11 @@ export function registerXuatNhapTongHopRoutes(app: Express, deps: TongHopRouteDe
       if (deps.isMissingTable(error)) return res.status(503).json({ error: tableMissing(error), records: [] });
       return res.status(500).json({ error: error.message || 'Không tải được phiếu tổng hợp.' });
     }
-    return res.json({ records: data || [], total: (data || []).length, source: 'supabase' });
+    const records = paged ? (data || []) : (data || []).slice(0, limit);
+    const last = records[records.length - 1] as unknown as { ngay: string; id: string } | undefined;
+    return res.json({ records, total: records.length, source: 'supabase',
+      ...(paged ? { next_cursor: records.length === Math.min(500, limit) && last ? last.ngay + '|' + last.id : null } :
+        { truncated: (data || []).length > limit }) });
   });
 
   app.post('/api/xuat-nhap-tong-hop/ton-danh-sach', async (req, res) => {
