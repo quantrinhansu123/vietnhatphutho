@@ -23,6 +23,8 @@ export type MixingNormGroupProduct = {
   mang?: string;
   hangPhe?: string;
   doLi?: string;
+  /** Khổ rộng (m). */
+  doDayM?: string;
   zem?: string;
   dinhMucKg?: string;
   doDaiM?: string;
@@ -35,6 +37,27 @@ export type MixingNormGroupProduct = {
   linePrefix?: string;
   selectionKey?: string;
 };
+
+function parseSortNumber(raw: string, stripLi = false): number {
+  const text = String(raw || '')
+    .trim()
+    .replace(/\s*m\s*$/iu, '')
+    .replace(stripLi ? /\s*li\s*$/iu : /$/, '')
+    .replace(',', '.');
+  const n = Number(text);
+  return Number.isFinite(n) && n > 0 ? n : Number.POSITIVE_INFINITY;
+}
+
+/** Trong mỗi nhóm: độ khổ → độ li → mã. */
+function compareGroupProductsByKhoLi(a: MixingNormGroupProduct, b: MixingNormGroupProduct) {
+  const byKho = parseSortNumber(a.doDayM || '') - parseSortNumber(b.doDayM || '');
+  if (byKho !== 0) return byKho;
+  const byLi = parseSortNumber(a.doLi || '', true) - parseSortNumber(b.doLi || '', true);
+  if (byLi !== 0) return byLi;
+  const byCode = String(a.code || '').localeCompare(String(b.code || ''), 'vi');
+  if (byCode !== 0) return byCode;
+  return String(a.name || '').localeCompare(String(b.name || ''), 'vi');
+}
 
 export type MixingNormGroupAddPayload =
   | {
@@ -139,6 +162,9 @@ export default function MixingNormProductGroupModal({
         : MIXING_NORM_OTHER_CATEGORY.id;
       if (!buckets.has(id)) buckets.set(id, []);
       buckets.get(id)!.push(product);
+    });
+    buckets.forEach((list, id) => {
+      buckets.set(id, [...list].sort(compareGroupProductsByKhoLi));
     });
     return buckets;
   }, [assignments, productsByKey]);

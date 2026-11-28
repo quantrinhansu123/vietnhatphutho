@@ -4587,11 +4587,15 @@ input[type="number"] {
 }
 
 .mixing-norm-ratio-print-block {
-  margin: 0 0 6px;
+  margin: 16px 0 0;
+}
+
+.mixing-norm-ratio-print-block:first-of-type {
+  margin-top: 4px;
 }
 
 .mixing-norm-ratio-print-group-title {
-  margin: 6px 0 3px;
+  margin: 16px 0 6px;
   font-size: 10pt;
   font-weight: 800;
   text-transform: uppercase;
@@ -4603,7 +4607,7 @@ input[type="number"] {
 }
 
 .mixing-norm-ratio-print-product {
-  margin: 0 0 2px;
+  margin: 0 0 4px;
   font-size: 9.5pt;
   font-weight: 700;
   text-transform: none;

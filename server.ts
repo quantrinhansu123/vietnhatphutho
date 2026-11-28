@@ -4243,15 +4243,31 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
 
       const roundsRaw = Array.isArray(product.lan_tron) ? product.lan_tron : [];
       const lan_tron: Array<Record<string, unknown>> = [];
-      for (const [roundIndex, roundItem] of roundsRaw.entries()) {
-        if (!roundItem || typeof roundItem !== 'object') continue;
-        const round = roundItem as Record<string, unknown>;
-        const roundNvl = parseNvlLines(round.nvl, `SP ${ma_sp}, lần trộn ${roundIndex + 1}`);
-        if ('error' in roundNvl) return { error: roundNvl.error };
-        const expectedWeight = tong_trong_luong && dinh_luong_coi
-          ? Math.min(dinh_luong_coi, Math.max(0, tong_trong_luong - dinh_luong_coi * roundIndex))
-          : tong_trong_luong;
-        lan_tron.push({ lan: roundIndex + 1, tong_trong_luong: expectedWeight, nvl: roundNvl.lines });
+      // Client mới chỉ gửi {lan, tong_trong_luong} — tái dùng nvlParsed, không parse lại từng cối.
+      // Client cũ vẫn gửi nvl đầy đủ từng lần → parse khi có mảng nvl không rỗng.
+      if (roundsRaw.length > 0) {
+        for (const [roundIndex, roundItem] of roundsRaw.entries()) {
+          if (!roundItem || typeof roundItem !== 'object') continue;
+          const round = roundItem as Record<string, unknown>;
+          const expectedWeight = tong_trong_luong && dinh_luong_coi
+            ? Math.min(dinh_luong_coi, Math.max(0, tong_trong_luong - dinh_luong_coi * roundIndex))
+            : tong_trong_luong;
+          const rawRoundNvl = round.nvl;
+          if (Array.isArray(rawRoundNvl) && rawRoundNvl.length > 0) {
+            const roundNvl = parseNvlLines(rawRoundNvl, `SP ${ma_sp}, lần trộn ${roundIndex + 1}`);
+            if ('error' in roundNvl) return { error: roundNvl.error };
+            lan_tron.push({ lan: roundIndex + 1, tong_trong_luong: expectedWeight, nvl: roundNvl.lines });
+          } else {
+            lan_tron.push({ lan: roundIndex + 1, tong_trong_luong: expectedWeight, nvl: nvlParsed.lines });
+          }
+        }
+      } else if (!isSecondary && so_lan_tron > 0) {
+        for (let roundIndex = 0; roundIndex < so_lan_tron; roundIndex += 1) {
+          const expectedWeight = tong_trong_luong && dinh_luong_coi
+            ? Math.min(dinh_luong_coi, Math.max(0, tong_trong_luong - dinh_luong_coi * roundIndex))
+            : tong_trong_luong;
+          lan_tron.push({ lan: roundIndex + 1, tong_trong_luong: expectedWeight, nvl: nvlParsed.lines });
+        }
       }
       if (!isSecondary && so_lan_tron > 0 && lan_tron.length !== so_lan_tron) {
         return { error: `SP ${ma_sp} phải có đúng ${so_lan_tron} danh sách lần trộn.` };
