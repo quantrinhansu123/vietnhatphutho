@@ -5,6 +5,7 @@ import { PRINT_COMPANY_NAME, vietNhatLogoUrl } from './layout/constants';
 import type { MixingNormLine, MixingNormProduct, MixingNormRow } from './MixingNormMaterialsTab';
 import { collectWorkshopPxLabels, formatMixingNormSlipName, stripMixingNormStdPrefix } from '../utils/mixingNormAuxiliary';
 import { parseLocalizedNumber } from '../utils';
+import { truncateTo4Decimals } from '../utils/weightTruncate';
 
 export type MixingNormRatioPrintDoc = {
   tenPhieu?: string;
@@ -36,9 +37,14 @@ function formatPrintDateLong(iso: string) {
 
 function formatNumberVi(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '';
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(value);
+  // Tổng trọng lượng ngoài danh sách NVL: cắt 4 số lẻ, không làm tròn.
+  return new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: 4,
+    minimumFractionDigits: 0
+  }).format(truncateTo4Decimals(value));
 }
 
+/** Cột trong bảng NVL — hiển thị tối đa 2 số lẻ (chỉ format, không đổi nguồn tổng ngoài list). */
 function formatNumberVi2(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '';
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value);
@@ -316,10 +322,15 @@ function NormPrintProductSection({
                 Tổng trọng lượng NVL chính cần
               </td>
               <td className="col-kg">
-                {formatNumberVi2(primaryLines.reduce(
-                  (sum, line) => sum + (resolveStandardBatchRow(line, product).tongKg ?? 0),
-                  0
-                ))}{' '}kg
+                {/* Không cộng các dòng đã làm tròn 2 số — lấy tổng SP ngoài danh sách. */}
+                {formatNumberVi(
+                  product.tong_trong_luong !== null && product.tong_trong_luong !== undefined
+                    ? product.tong_trong_luong
+                    : primaryLines.reduce(
+                        (sum, line) => sum + (resolveStandardBatchRow(line, product).tongKg ?? 0),
+                        0
+                      )
+                )}{' '}kg
               </td>
             </tr>
           </tfoot>

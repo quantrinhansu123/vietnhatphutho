@@ -11,7 +11,11 @@ Query: `ngay`, `ca`, `q`
 **UI:** `MixingNormMaterialsTab.tsx` · in: `MixingNormRatioPrintSheet.tsx` (A4 ngang `@page mixing-norm-ratio-page`) · chọn nhanh theo nhóm: `MixingNormProductGroupModal.tsx` + `utils/mixingNormProductCategories.ts` (rule `.ai/Rule_hien_thi_san_pham_phieu_tron.xlsx`) · đối soát SL: `utils/mixingNormCoverage.ts` (khóa dòng = lệnh + productId/mã + tên SX + ghi chú + mét cắt + ĐVT, **không** dùng STT)
 Gợi ý sang form phối trộn: `MixingReportForm.tsx` + `utils/mixingNormSuggestion.ts` (phiếu không ca khớp theo ngày)
 
+**In / đối soát (19/11):** khoảng cách giữa khối SP khi in tăng (`mixing-norm-ratio-print-block`); tổng TL ngoài danh sách NVL = `tong_trong_luong` SP (cắt 4 số lẻ, không làm tròn 2 số rồi cộng lại); chọn nhanh sort khổ → độ li; form hiện banner đối soát TL/SP với lệnh SX.
+
 **Lưới NVL chính:** Mã NVL rộng 160px; các cột Giá trị / % / Tổng trọng lượng tăng theo độ dài số của dòng và tổng. Header, dòng và tổng dùng chung template; màn hình hẹp cuộn ngang. Giá trị tính sẵn dùng `output` để không cắt nội dung như input chỉ đọc.
+
+**Lưu phiếu (perf):** FE serialize NVL 1 lần / SP, `lan_tron` chỉ `{lan, tong_trong_luong}` (server gắn lại `nvl` từ công thức); sau lưu ghép `record` vào list thay vì `GET` full; validate NVL index theo mã.
 
 **Nghiệp vụ hiện tại:**
 - **Nhiều lệnh SX / 1 phiếu:** ô Lệnh SX là select2 chọn nhiều (`SearchableMultiSelect`); các lệnh phải **cùng máy/nhóm máy** — trùng tên máy chuẩn hóa hoặc cùng `loai_may` trong danh mục máy (lọc options + validate khi chọn/đổi máy/lưu, thông báo ghi rõ nhóm máy). `ma_lenh_sx` lưu text nối bằng dấu phẩy (vd `"LSX-001, LSX-002"`); API khớp token khi lọc nên tương thích ngược.

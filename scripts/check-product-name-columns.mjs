@@ -1,0 +1,4 @@
+import dotenv from 'dotenv';import {createClient} from '@supabase/supabase-js';import {mkdir,writeFile} from 'node:fs/promises';dotenv.config({quiet:true});
+const db=createClient(process.env.SUPABASE_URL,process.env.SUPABASE_SERVICE_KEY,{auth:{persistSession:false}});const result=[];
+for(const table of ['san_pham','san_pham_mb','san_pham_mn']){const canonical=await db.from(table).select('id,ten_san_xuat').limit(1);if(canonical.error)throw Error(canonical.error.message);const legacy=await db.from(table).select('ten_ghep').limit(1);result.push({table,hasTenSanXuat:true,hasTenGhep:!legacy.error,errorCode:legacy.error?.code||null});}
+await mkdir('outputs/remove-ten-ghep-final',{recursive:true});await writeFile('outputs/remove-ten-ghep-final/product-columns.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));

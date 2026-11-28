@@ -4245,15 +4245,31 @@ function parseMixingNormBody(body: unknown): { error: string } | { record: Recor
 
       const roundsRaw = Array.isArray(product.lan_tron) ? product.lan_tron : [];
       const lan_tron: Array<Record<string, unknown>> = [];
-      for (const [roundIndex, roundItem] of roundsRaw.entries()) {
-        if (!roundItem || typeof roundItem !== 'object') continue;
-        const round = roundItem as Record<string, unknown>;
-        const roundNvl = parseNvlLines(round.nvl, `SP ${ma_sp}, lần trộn ${roundIndex + 1}`);
-        if ('error' in roundNvl) return { error: roundNvl.error };
-        const expectedWeight = tong_trong_luong && dinh_luong_coi
-          ? Math.min(dinh_luong_coi, Math.max(0, tong_trong_luong - dinh_luong_coi * roundIndex))
-          : tong_trong_luong;
-        lan_tron.push({ lan: roundIndex + 1, tong_trong_luong: expectedWeight, nvl: roundNvl.lines });
+      // Client mới chỉ gửi {lan, tong_trong_luong} — tái dùng nvlParsed, không parse lại từng cối.
+      // Client cũ vẫn gửi nvl đầy đủ từng lần → parse khi có mảng nvl không rỗng.
+      if (roundsRaw.length > 0) {
+        for (const [roundIndex, roundItem] of roundsRaw.entries()) {
+          if (!roundItem || typeof roundItem !== 'object') continue;
+          const round = roundItem as Record<string, unknown>;
+          const expectedWeight = tong_trong_luong && dinh_luong_coi
+            ? Math.min(dinh_luong_coi, Math.max(0, tong_trong_luong - dinh_luong_coi * roundIndex))
+            : tong_trong_luong;
+          const rawRoundNvl = round.nvl;
+          if (Array.isArray(rawRoundNvl) && rawRoundNvl.length > 0) {
+            const roundNvl = parseNvlLines(rawRoundNvl, `SP ${ma_sp}, lần trộn ${roundIndex + 1}`);
+            if ('error' in roundNvl) return { error: roundNvl.error };
+            lan_tron.push({ lan: roundIndex + 1, tong_trong_luong: expectedWeight, nvl: roundNvl.lines });
+          } else {
+            lan_tron.push({ lan: roundIndex + 1, tong_trong_luong: expectedWeight, nvl: nvlParsed.lines });
+          }
+        }
+      } else if (!isSecondary && so_lan_tron > 0) {
+        for (let roundIndex = 0; roundIndex < so_lan_tron; roundIndex += 1) {
+          const expectedWeight = tong_trong_luong && dinh_luong_coi
+            ? Math.min(dinh_luong_coi, Math.max(0, tong_trong_luong - dinh_luong_coi * roundIndex))
+            : tong_trong_luong;
+          lan_tron.push({ lan: roundIndex + 1, tong_trong_luong: expectedWeight, nvl: nvlParsed.lines });
+        }
       }
       if (!isSecondary && so_lan_tron > 0 && lan_tron.length !== so_lan_tron) {
         return { error: `SP ${ma_sp} phải có đúng ${so_lan_tron} danh sách lần trộn.` };
@@ -7486,9 +7502,10 @@ function resolveStoredOrderProductionName(tenSanXuat: string): string {
 }
 
 const PRODUCTION_ORDER_TYPE_SERVER = 'Đơn sản xuất';
+const SALE_ORDER_TYPE_SERVER = 'Đơn bán';
 function isRegionQuantityOrderTypeServer(orderType?: string | null) {
   const value = String(orderType || '').trim();
-  return value === PRODUCTION_ORDER_TYPE_SERVER || isCutLikeOrderTypeServer(value);
+  return value === PRODUCTION_ORDER_TYPE_SERVER || value === SALE_ORDER_TYPE_SERVER || isCutLikeOrderTypeServer(value);
 }
 function southMvByMauTemServer(mauTem?: string | null) {
   const value = String(mauTem || '')
@@ -18092,42 +18109,7 @@ async function loadKiemKhoLiveTongHopForDot(
         if (balance && catalogId) balancesById.set(catalogId, balance);
       }
 
-      let ledgerRows: unknown[] = [];
-      const ledgerFull = await supabase
-        .from(SUPABASE_NHAP_KHO_TABLE)
-        .select('ma_sp, ten_sp, ten_san_xuat, don_vi, ten_kho, loai_kho, ma_may')
-        .limit(20000);
-      if (!ledgerFull.error) {
-        ledgerRows = ledgerFull.data || [];
-      } else if (!isMissingTableError(ledgerFull.error) && isMissingColumnError(ledgerFull.error)) {
-        const ledgerBase = await supabase
-          .from(SUPABASE_NHAP_KHO_TABLE)
-          .select('ma_sp, ten_sp, don_vi, ten_kho, loai_kho')
-          .limit(20000);
-        if (ledgerBase.error && !isMissingTableError(ledgerBase.error)) {
-          console.error('Supabase ton-kho-nvl nhap_kho error:', ledgerBase.error);
-        } else {
-          ledgerRows = ledgerBase.data || [];
-        }
-      } else if (!isMissingTableError(ledgerFull.error)) {
-        console.error('Supabase ton-kho-nvl nhap_kho error:', ledgerFull.error);
-      }
-      for (const record of ledgerRows) {
-        const row = record as Record<string, unknown>;
-        if (String(row.ma_may ?? '').trim()) continue;
-        const warehouse = canonicalNvlCoreWarehouse(row.ten_kho, row.loai_kho, cores);
-        if (!warehouse) continue;
-        if (selectedCore && nvlWarehouseKey(warehouse) !== nvlWarehouseKey(selectedCore.ten_kho)) continue;
-        const code = String(row.ma_sp ?? '').trim();
-        if (maNpl && code !== maNpl) continue;
-        ensureBalance({
-          code,
-          name: String(row.ten_sp ?? ''),
-          productionName: String(row.ten_san_xuat ?? ''),
-          warehouse,
-          unit: String(row.don_vi ?? '')
-        });
-      }
+      // Không đọc sổ cái nhap_kho (chỉ thành phẩm) để tạo dòng NVL: dòng NVL chỉ lấy từ danh mục kho_nvl.
 
       const addSlipQty = (balance: NvlBalance, row: Record<string, unknown>) => {
         const qty = Number(row.so_luong);

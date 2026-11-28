@@ -20,7 +20,7 @@ import {
   type MixingBomItem,
   type MixingProductionOrder
 } from '../utils/mixingOrderAutofill';
-import { buildOrderProductionName } from '../utils/productProductionName';
+import { buildOrderProductionName, parseDoDaiMLength } from '../utils/productProductionName';
 import { isCuonProduct, isTamProduct } from '../features/_shared/orderHelpers';
 import { filterMachinesByScope, machineInScope, useMyMachineScope } from '../features/_shared/machineScope';
 import { waitForPrintImagesReady } from '../utils/printReady';
@@ -31,6 +31,7 @@ import {
 } from './MixingNormRatioPrintSheet';
 import { getProductionShiftOptions, normalizeShiftSettings } from '../utils/shiftSettings';
 import { parseLocalizedNumber } from '../utils';
+import { truncateTo4Decimals } from '../utils/weightTruncate';
 import { convertProductQuantity, type ProductConversionFactors } from '../utils/productUnitConversion';
 import {
   type WorkshopType,
@@ -178,6 +179,8 @@ type ProductOption = {
   zem?: string;
   dinhMucKg?: string;
   doDaiM?: string;
+  /** Khổ rộng (m) — do_day_m / kho_rong. */
+  doDayM?: string;
   mau?: string;
   tcmb?: boolean | string;
   tcmn?: string;
@@ -363,10 +366,6 @@ function roundPercent(value: number) {
   return Math.round(value * 100) / 100;
 }
 
-function roundMixingWeight2(value: number) {
-  return Math.round(value * 100) / 100;
-}
-
 /** % Cối trộn = giá trị / Định lượng 1 cối trộn mẫu tiêu chuẩn; % Tổng SL giữ nguyên vì tỷ lệ không đổi theo mẻ. */
 function computeNplPercents(
   giaTri: number | null,
@@ -383,8 +382,9 @@ function computeNplPercents(
       ? roundPercent((giaTri / dinhLuongCoi) * 100)
       : null;
   const ty_le_tong = ty_le_coi;
+  // Không làm tròn 2 số ở đây — tổng ngoài danh sách lấy tongTrongLuong; dòng chỉ cắt 4 số lẻ.
   const tong_khoi_luong = ty_le_tong !== null && tongTrongLuong
-    ? roundMixingWeight2((ty_le_tong / 100) * tongTrongLuong)
+    ? truncateTo4Decimals((ty_le_tong / 100) * tongTrongLuong)
     : null;
   return { ty_le_coi, ty_le_tong, tong_khoi_luong };
 }
@@ -573,6 +573,7 @@ function normalizeCatalogProducts(data: unknown): ProductOption[] {
       hangPhe: String(row.hang_phe ?? row.hangPhe ?? '').trim(),
       width: parseNumberOrNull(row.kho_rong ?? row.kho ?? row.width),
       doLi: String(row.do_li ?? row.doLi ?? '').trim(),
+      doDayM: String(row.kho_rong ?? row.do_day_m ?? row.doDayM ?? row.khoRong ?? '').trim(),
       zem: String(row.zem ?? '').trim(),
       dinhMucKg: String(row.dinh_muc_kg ?? row.dinhMucKg ?? '').trim(),
       doDaiM: String(row.do_dai_m ?? row.doDaiM ?? '').trim(),
@@ -614,7 +615,10 @@ export function calcNvlKhoiLuong(
 
 function formatKhoiLuongDisplay(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return '—';
-  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(value)} kg`;
+  return `${new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: 4,
+    minimumFractionDigits: 0
+  }).format(truncateTo4Decimals(value))} kg`;
 }
 
 function formatGiaTriDisplay(value: number | null | undefined, unit: string): string {
@@ -789,8 +793,34 @@ function findCatalogProductForProductionLine(
     || matches[0];
 }
 
+/** Trọng lượng / SL kg trên form PTĐM: cắt 4 số lẻ, không làm tròn. */
 function roundMixing(value: number) {
-  return Math.round(value * 1000) / 1000;
+  return truncateTo4Decimals(value);
+}
+
+function parseLiSortValue(raw: string): number {
+  const text = String(raw || '')
+    .trim()
+    .replace(/\s*li\s*$/iu, '')
+    .replace(',', '.');
+  const n = Number(text);
+  return Number.isFinite(n) && n > 0 ? n : Number.POSITIVE_INFINITY;
+}
+
+/** Sort SP theo độ khổ (m) → độ li → mã. */
+function compareByKhoThenLi(
+  a: { doDayM?: string; doLi?: string; code?: string; name?: string },
+  b: { doDayM?: string; doLi?: string; code?: string; name?: string }
+) {
+  const khoA = parseDoDaiMLength(String(a.doDayM || '')) ?? Number.POSITIVE_INFINITY;
+  const khoB = parseDoDaiMLength(String(b.doDayM || '')) ?? Number.POSITIVE_INFINITY;
+  if (khoA !== khoB) return khoA - khoB;
+  const liA = parseLiSortValue(String(a.doLi || ''));
+  const liB = parseLiSortValue(String(b.doLi || ''));
+  if (liA !== liB) return liA - liB;
+  const byCode = String(a.code || '').localeCompare(String(b.code || ''), 'vi');
+  if (byCode !== 0) return byCode;
+  return String(a.name || '').localeCompare(String(b.name || ''), 'vi');
 }
 
 function resolveSecondaryWorkshopType(
@@ -2023,6 +2053,64 @@ export default function MixingNormMaterialsTab() {
     return { sourceKg: roundMixing(sourceKg), allConverted };
   };
 
+  /** Đối soát phiếu với lệnh SX: SP đã chọn vs SP trên lệnh, TL trước hao hụt. */
+  const orderReconcile = useMemo(() => {
+    if (selectedOrders.length === 0) return null;
+    const orderLines = selectedOrders.flatMap(order => order.productLines);
+    const orderKeys = new Set<string>();
+    let orderKg = 0;
+    orderLines.forEach(line => {
+      const id = String(line.productId || '').trim();
+      const code = normalizeProductLookupKey(line.productCode);
+      if (id) orderKeys.add(id);
+      if (code) orderKeys.add(code);
+      const catalog =
+        (id ? catalogProductsById.get(id) : undefined) ||
+        findCatalogProductByAnyCode(catalogProducts, line.productCode);
+      const kg = resolveOrderLineKg(line, catalog);
+      if (kg !== null) orderKg += kg;
+    });
+    const selectedKeys = new Set<string>();
+    let slipSourceKg = 0;
+    let slipAfterWasteKg = 0;
+    let matched = 0;
+    let missingOnOrder = 0;
+    form.products.forEach(product => {
+      const ids = product.maSpIds.map(id => baseProductId(id)).filter(Boolean);
+      const codes = product.maSpCodes.map(code => normalizeProductLookupKey(code)).filter(Boolean);
+      const keys = [...ids, ...codes];
+      if (keys.length === 0) return;
+      const onOrder = keys.some(key => orderKeys.has(key));
+      keys.forEach(key => selectedKeys.add(key));
+      if (onOrder) matched += 1;
+      else missingOnOrder += 1;
+      const source = parseNumberOrNull(product.soLuongGoc);
+      const after = parseNumberOrNull(product.tongTrongLuong);
+      if (source !== null) slipSourceKg += source;
+      if (after !== null) slipAfterWasteKg += after;
+    });
+    const orderOnlyCount = [...orderKeys].filter(key => {
+      // Chỉ đếm mã (không đếm id trùng) — xấp xỉ: bỏ qua nếu đã chọn.
+      return !selectedKeys.has(key);
+    }).length;
+    const weightDiff = Math.abs(truncateTo4Decimals(orderKg) - truncateTo4Decimals(slipSourceKg));
+    const ok =
+      missingOnOrder === 0 &&
+      matched > 0 &&
+      (slipSourceKg <= 0 || weightDiff < 0.05);
+    return {
+      ok,
+      matched,
+      missingOnOrder,
+      orderLineCount: orderLines.length,
+      orderKg: truncateTo4Decimals(orderKg),
+      slipSourceKg: truncateTo4Decimals(slipSourceKg),
+      slipAfterWasteKg: truncateTo4Decimals(slipAfterWasteKg),
+      weightDiff,
+      orderOnlyHint: orderOnlyCount > 0
+    };
+  }, [selectedOrders, form.products, catalogProducts, catalogProductsById]);
+
   /** Mét cắt chuẩn hóa để gộp dòng (null khi không có). */
   const normalizeGroupLength = (value: unknown): number | null => {
     const num = parseLocalizedNumber(value ?? '');
@@ -2469,7 +2557,7 @@ export default function MixingNormMaterialsTab() {
 
   const groupModalProducts = useMemo((): MixingNormGroupProduct[] => {
     // Chỉ hiện SP của block đang mở + SP chưa gắn block nào.
-    // SP đã chọn ở block khác → ẩn.
+    // SP đã chọn ở block khác → ẩn. Sort khổ → độ li trong từng nhóm (modal).
     return productOptions
       .filter(option => {
         const onThisBlock = optionMatchesKeySet(option, preselectedProductKeysForModal);
@@ -2504,7 +2592,8 @@ export default function MixingNormMaterialsTab() {
           linePrefix: option.linePrefix,
           selectionKey: option.selectionKey
         };
-      });
+      })
+      .sort(compareByKhoThenLi);
   }, [productOptions, catalogProductsById, usedProductKeysOnForm, preselectedProductKeysForModal]);
 
   const openProductGroupModal = (productKey: string) => {
@@ -3175,8 +3264,12 @@ export default function MixingNormMaterialsTab() {
             throw new Error(`Giá trị NVL #${index + 1} của SP ${productLabel} không hợp lệ.`);
           }
           const percents = computeNplPercents(gia_tri, line.donVi, batch, tong);
+          // Đã có materialId thì không quét pool lại.
+          const material_id = line.materialId.trim()
+            ? line.materialId.trim()
+            : findMaterialForLine(line)?.id || undefined;
           return {
-            material_id: line.materialId || findMaterialForLine(line)?.id || undefined,
+            material_id,
             ma_nvl: line.maNvl.trim(),
             ten_nvl: line.tenNvl.trim(),
             ten_nvl_san_xuat: line.tenNvlSanXuat.trim(),
@@ -3196,9 +3289,11 @@ export default function MixingNormMaterialsTab() {
         const variantKeys = validIds.filter(Boolean).map(key => splitSelectionKey(key).variant);
         // Mét cắt của block = mét chung của các nhóm (san_pham_id, quy_cach_m_dai);
         // nhiều mét khác nhau thì lưu danh sách để không mất thông tin.
+        // Gọi collectGroupedOrderLines 1 lần / SP (dùng chung mét cắt + tên SX).
+        const groupedOrderLines = collectGroupedOrderLines(product.maSpCodes, validIds);
         const distinctLengths = [
           ...new Set(
-            collectGroupedOrderLines(product.maSpCodes, validIds)
+            groupedOrderLines
               .map(group => group.length)
               .filter((length): length is number => length !== null)
           )
@@ -3215,15 +3310,35 @@ export default function MixingNormMaterialsTab() {
         const batch = parseNumberOrNull(product.dinhLuongCoi) ?? 0;
         const so_lan_tron = tong && batch ? Math.ceil(tong / batch) : 0;
         const roundCount = Math.max(1, so_lan_tron);
+        // Serialize NVL 1 lần (cối mẫu). lan_tron chỉ gửi {lan, tong} — server gắn nvl từ product.nvl.
+        // Tránh nhân bản O(số cối × dòng NVL) trên payload + CPU.
+        const nvl = serializeLines(
+          product.lines,
+          batch > 0 ? batch : (tong ?? 0),
+          batch,
+          tong,
+          product.maSp
+        );
         const lan_tron = Array.from({ length: roundCount }, (_, roundIndex) => {
           const roundWeight = tong === null || batch <= 0
             ? tong ?? 0
             : Math.min(batch, Math.max(0, tong - batch * roundIndex));
-          return { lan: roundIndex + 1, tong_trong_luong: roundWeight, nvl: serializeLines(product.lines, roundWeight, batch, tong, product.maSp) };
+          return { lan: roundIndex + 1, tong_trong_luong: roundWeight };
         });
-        const nvl = lan_tron[0]?.nvl ?? [];
-        const productionDisplayNameList = resolveWasteBreakdown(product.maSpCodes, validIds)
-          .map(row => row.tenSanXuat.trim())
+        const productionDisplayNameList = groupedOrderLines
+          .map(group => {
+            const selectedOption =
+              ((group.selKey || group.spId)
+                ? productOptionsById.get(group.selKey || group.spId)
+                : undefined) ||
+              productOptionsByCode.get(normalizeProductLookupKey(group.code));
+            return (
+              selectedOption?.tenSanXuat?.trim() ||
+              group.lines[0]?.productionName?.trim() ||
+              group.catalog?.tenSanXuat?.trim() ||
+              ''
+            );
+          })
           .filter(Boolean);
         const production_display_name = [...new Set(productionDisplayNameList)].join(' / ');
         return {
@@ -3255,9 +3370,10 @@ export default function MixingNormMaterialsTab() {
         const validIds = resolveValidProductIds(codes, item.maSpIds);
         const nonEmptyIds = validIds.filter(Boolean).map(baseProductId);
         const variantKeys = validIds.filter(Boolean).map(key => splitSelectionKey(key).variant);
+        const secondaryGrouped = collectGroupedOrderLines(codes, validIds);
         const distinctLengths = [
           ...new Set(
-            collectGroupedOrderLines(codes, validIds)
+            secondaryGrouped
               .map(group => group.length)
               .filter((length): length is number => length !== null)
           )
@@ -3273,7 +3389,10 @@ export default function MixingNormMaterialsTab() {
             if (gia_tri !== null && !Number.isFinite(gia_tri)) {
               throw new Error(`Giá trị NVL phụ #${index + 1} của SP ${codes.join(', ')} không hợp lệ.`);
             }
-            const mat = findMaterialForLine(line, secondaryMaterialOptions);
+            const mat = line.materialId.trim()
+              ? (secondaryMaterialOptions.find(option => option.id === line.materialId.trim()) ||
+                findMaterialForLine(line, secondaryMaterialOptions))
+              : findMaterialForLine(line, secondaryMaterialOptions);
             const nhomVatTuPhu = mat?.nhomVatTuPhu || '';
             const donVi = mat?.donViGoc || mat?.unit || line.donVi || 'kg';
             const isTapeOrStamp = isTapeOrStampMaterial(nhomVatTuPhu || line.tenNvl || line.maNvl);
@@ -3364,7 +3483,21 @@ export default function MixingNormMaterialsTab() {
           : `Đã thêm phiếu định mức (${products.length} SP).`
       );
       closeForm();
-      await loadRows();
+      // Ghép record trả về vào list — không tải lại toàn bộ danh sách sau mỗi lần lưu.
+      const savedRecord = data && typeof data === 'object' ? (data as { record?: unknown }).record : null;
+      const savedRows = savedRecord ? normalizeRows([savedRecord]) : [];
+      if (savedRows.length > 0) {
+        const saved = savedRows[0];
+        setRows(prev => {
+          if (taoLichSu || !editingId) {
+            const withoutDup = prev.filter(row => row.id !== saved.id);
+            return [saved, ...withoutDup];
+          }
+          return prev.map(row => (row.id === saved.id ? saved : row));
+        });
+      } else {
+        await loadRows();
+      }
     } catch (err: any) {
       const errorMessage = err?.message || 'Không lưu được phiếu trộn định mức.';
       const errorProduct = products.find(product => errorMessage.includes(product.maSp.trim()));
@@ -3793,6 +3926,35 @@ export default function MixingNormMaterialsTab() {
                       </span>
                     </div>
                   ) : null}
+                  {orderReconcile ? (
+                    <div
+                      className={`mt-2 rounded-xl border px-3 py-2 text-[11px] font-semibold ${
+                        orderReconcile.ok
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                          : 'border-amber-300 bg-amber-50 text-amber-900'
+                      }`}
+                      title="Đối chiếu SP và trọng lượng phiếu với lệnh SX đã chọn"
+                    >
+                      <span className="font-black uppercase tracking-wide">Đối soát lệnh SX · </span>
+                      {orderReconcile.matched} block SP khớp lệnh
+                      {orderReconcile.missingOnOrder > 0
+                        ? ` · ${orderReconcile.missingOnOrder} block không có trên lệnh`
+                        : ''}
+                      {' · '}
+                      TL lệnh {formatKhoiLuongDisplay(orderReconcile.orderKg)}
+                      {' · '}
+                      TL phiếu trước HH {formatKhoiLuongDisplay(orderReconcile.slipSourceKg)}
+                      {orderReconcile.slipAfterWasteKg > 0
+                        ? ` · sau HH ${formatKhoiLuongDisplay(orderReconcile.slipAfterWasteKg)}`
+                        : ''}
+                      {!orderReconcile.ok && orderReconcile.weightDiff >= 0.05
+                        ? ` · lệch ${formatKhoiLuongDisplay(orderReconcile.weightDiff)}`
+                        : ''}
+                      {orderReconcile.orderOnlyHint && orderReconcile.ok
+                        ? ' · lệnh còn SP chưa gắn phiếu'
+                        : ''}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -4152,8 +4314,9 @@ export default function MixingNormMaterialsTab() {
                                   <span className="whitespace-nowrap text-right font-mono text-[13px] font-black tabular-nums text-zinc-700">{roundPercent(lineTotals.percent)}%</span>
                                   <span
                                     className="whitespace-nowrap text-right font-mono text-[13px] font-black tabular-nums text-[#ef1b2d]"
+                                    title="Tổng ngoài danh sách = Tổng SL sau hao hụt (không cộng các dòng đã format)"
                                   >
-                                    {formatKhoiLuongDisplay(lineTotals.kg)}
+                                    {formatKhoiLuongDisplay(productTotal > 0 ? productTotal : lineTotals.kg)}
                                   </span>
                                   <span />
                                 </div>

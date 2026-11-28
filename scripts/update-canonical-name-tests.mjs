@@ -1,0 +1,2 @@
+import {readdir,readFile,writeFile} from 'node:fs/promises';
+for(const file of ['src/utils/productProductionName.test.ts',...(await readdir('tests/unit')).filter(x=>x.endsWith('.ts')).map(x=>'tests/unit/'+x)]){let text=await readFile(file,'utf8');const original=text;text=text.replace(/TenGhep/g,'ProductionName');if(file==='src/utils/productProductionName.test.ts')text=text.replace(/\.tenGhep\b/g,'.productionName');if(original!==text)await writeFile(file,text);}
