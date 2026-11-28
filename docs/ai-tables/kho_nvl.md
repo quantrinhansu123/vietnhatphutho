@@ -45,6 +45,11 @@ Phiếu xuất nhập (`phieu_xuat_nhap_kho`) cập nhật tồn kho NVL.
 
 **View gộp Kho NVL (Tất cả / đúng "Kho NVL"):** khi đã chọn kỳ, ẩn dòng trùng mã có Tồn đầu = Nhập = Xuất = 0 nếu cùng mã đã phát sinh ở kho khác — `filterDuplicateZeroWarehouseRows` (`src/features/_shared/recordHelpers.ts`), dùng trong `displayedMaterials` → `visibleMaterials` (`src/features/kho-nvl/index.tsx`). Master cũ Kho NVL 0/0/0 không còn che dòng Kho NVL Phụ vừa nhập; lọc kho cụ thể và dữ liệu gốc giữ nguyên.
 
+### Sổ cái `nhap_kho` không còn tạo dòng NVL (26/11/2026)
+
+- `/api/ton-kho-nvl` không đọc `nhap_kho` để tạo dòng NVL nữa (trước đây các dòng `loai_kho = kho_nvl` tạo dòng "Kho NVL" 0/0/0 trùng lặp). Dòng NVL chỉ lấy từ `kho_nvl`.
+- Đã xóa 14 dòng cũ `nhap_kho` (`loai_kho = kho_nvl`, không gắn máy, tạo 28/09) — không có phiếu nào tham chiếu.
+
 ### Không còn "Tên nguyên vật liệu" (26/11/2026)
 
 - Danh mục `kho_nvl` chỉ còn **Mã NPL + Tên NVL sản xuất** (+ kho, ĐV, nhóm). Cột `ten_npl` luôn **null** trong DB: `parseMaterialBody` bỏ `name`, bắt buộc `productionName`; `ensureKhoNvlCatalogForNvlLines` / `/api/xuat-nhap-tong-hop/ma-moi` ghi `ten_nvl_sx` (dòng thiếu tên SX lấy tên hiển thị), `ten_npl = null`.

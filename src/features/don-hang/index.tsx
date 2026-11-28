@@ -835,6 +835,7 @@ export function orderProductLinesToPayload(
 ) {
   const isCutLikeOrder = isCutOrderType(orderType) || isSouthOrderType(orderType);
   const isProductionOrder = orderType === PRODUCTION_ORDER_TYPE;
+  const isSaleOrder = orderType === SALE_ORDER_TYPE;
   return lines
     .filter(line => line.productCode.trim() || line.productName.trim())
     .map((line, index) => {
@@ -865,7 +866,7 @@ export function orderProductLinesToPayload(
       const productRegion = String(selectedProduct?.mien || findOrderProductById(productOptions, line.productId)?.mien || line.sourceProduct?.mien ||
         (isSouthOrder ? 'Miền Nam' : orderType === PRODUCTION_ORDER_TYPE ? '' : 'Miền Bắc'));
       const productGroup = selectedProduct?.group || findOrderProductById(productOptions, line.productId)?.group || String(line.sourceProduct?.nhom_vthh || '');
-      const isRegionOrder = isProductionOrder || isCutLikeOrder;
+      const isRegionOrder = isProductionOrder || isSaleOrder || isCutLikeOrder;
       const regionTotal = isSouthOrder
         ? (namVal !== null && namVal > 0 ? namVal : null)
         : isRegionOrder
@@ -2344,7 +2345,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
     const isSouthOrder = isSouthOrderType(orderForm.orderType);
     const isCutLikeOrder = isCutOrderType(orderForm.orderType) || isSouthOrder;
-    const isRegionOrder = isCutLikeOrder || orderForm.orderType === PRODUCTION_ORDER_TYPE;
+    const isRegionOrder = isCutLikeOrder || orderForm.orderType === PRODUCTION_ORDER_TYPE || orderForm.orderType === SALE_ORDER_TYPE;
     const activeProductLines = orderForm.productLines.filter(line => line.productCode.trim() || line.productName.trim());
     if (isSouthOrder) {
       for (const line of activeProductLines) {
@@ -2703,6 +2704,8 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
   const isFormSouthOrder = isSouthOrderType(orderForm.orderType);
   const isFormCutLikeOrder = isCutOrderType(orderForm.orderType) || isFormSouthOrder;
   const isFormProductionOrder = orderForm.orderType === PRODUCTION_ORDER_TYPE;
+  // Đơn sản xuất và Đơn bán đều nhập SL theo Bắc / Trung / Nam (lưới cùng layout).
+  const isFormRegionQtyOrder = isFormProductionOrder || orderForm.orderType === SALE_ORDER_TYPE;
   const formRegion = resolveOrderRegion(orderForm.orderType, orderForm.khu_vuc);
   const regionProductOptions = useMemo(
     () => filterOrderProductsByRegion(productOptions, formRegion),
@@ -2712,7 +2715,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
     ? orderMienNamProductGridClass
     : isFormCutLikeOrder
     ? orderSouthProductGridClass
-    : isFormProductionOrder
+    : isFormRegionQtyOrder
       ? orderProductionProductGridClass
       : orderProductGridClass;
   const customerSelect2Options = useMemo(
@@ -2951,7 +2954,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
 
               <div className="col-span-1 min-w-0 sm:col-span-2 xl:col-span-7">
               <div className="max-h-[65vh] overflow-auto">
-              <div className={isFormProductionOrder ? ORDER_PRODUCTION_TABLE_MIN_WIDTH : isFormSouthOrder ? ORDER_MIEN_NAM_TABLE_MIN_WIDTH : isFormCutLikeOrder ? ORDER_SOUTH_TABLE_MIN_WIDTH : ORDER_PRODUCT_TABLE_MIN_WIDTH}>
+              <div className={isFormRegionQtyOrder ? ORDER_PRODUCTION_TABLE_MIN_WIDTH : isFormSouthOrder ? ORDER_MIEN_NAM_TABLE_MIN_WIDTH : isFormCutLikeOrder ? ORDER_SOUTH_TABLE_MIN_WIDTH : ORDER_PRODUCT_TABLE_MIN_WIDTH}>
               <RepeatableLinesBlock
                 title="Sản phẩm"
                 required
@@ -3365,10 +3368,10 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                     ? (allowedUnits.includes(line.unit.trim()) ? line.unit.trim() : allowedUnits[0] || 'kg')
                     : line.unit;
                   // Có miền > 0 thì SL tổng = Bắc + Trung + Nam. Không nhập miền thì giữ SL tổng và quy đổi theo số đó.
-                  const regionQtyTotal = isFormProductionOrder
+                  const regionQtyTotal = isFormRegionQtyOrder
                     ? positiveRegionTotal(line.slBac, line.slTrung, line.slNam)
                     : null;
-                  const effectiveQtyText = isFormProductionOrder
+                  const effectiveQtyText = isFormRegionQtyOrder
                     ? (regionQtyTotal !== null ? String(regionQtyTotal) : '0')
                     : line.quantity;
                   const calculatedConversion = line.shouldRecalculateConversion && matchedConversion
@@ -3477,7 +3480,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                       <OrderLineField label="ĐVT">
                         {matchedLineProduct ? <select value={effectiveUnit} onChange={e => updateConversionProductLine(line.key, { unit: e.target.value })} className={orderFieldClass}>{allowedUnits.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select> : <input value={line.unit} onChange={e => updateConversionProductLine(line.key, { unit: e.target.value })} className={orderFieldClass} placeholder="ĐVT" />}
                       </OrderLineField>
-                      {isFormProductionOrder ? (
+                      {isFormRegionQtyOrder ? (
                         <>
                           <OrderLineField label="Bắc">
                             <OrderNumberInput
@@ -3592,7 +3595,7 @@ export function OrdersPanel({ onBack }: { onBack: () => void }) {
                         />
                       </OrderLineField>
                     </>,
-                    isFormProductionOrder ? orderProductionRow2GridClass : orderProductRow2GridClass,
+                    isFormRegionQtyOrder ? orderProductionRow2GridClass : orderProductRow2GridClass,
                     <div className="min-w-0 space-y-1">
                       <span className={orderLineFieldLabelClass}>Tên sản xuất</span>
                       {renderProductionNameSelect(line)}

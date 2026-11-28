@@ -2155,7 +2155,7 @@ export function TongHopPanel({
         {mode === 'nhap' ? <><div className="space-y-2">
           <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
             <div className="min-w-[62rem]">
-              <div className="grid grid-cols-[2rem_minmax(6.5rem,0.9fr)_minmax(7rem,1.1fr)_minmax(6.5rem,1fr)_4.5rem_5rem_4rem_4.5rem_4.75rem_4.75rem_4.5rem_3.25rem_1.75rem] items-center gap-1 bg-[#ef1b2d] px-2 py-1.5 text-[9px] font-black uppercase tracking-wide text-white">
+              <div className="grid grid-cols-[2rem_5.5rem_minmax(7rem,1.1fr)_minmax(6.5rem,1fr)_4.5rem_7rem_4rem_4.5rem_4.75rem_4.75rem_4.5rem_3.25rem_1.75rem] items-center gap-1 bg-[#ef1b2d] px-2 py-1.5 text-[9px] font-black uppercase tracking-wide text-white">
                 <span className="text-center">#</span>
                 <span>Mã</span>
                 <span>Tên</span>
@@ -2207,7 +2207,7 @@ export function TongHopPanel({
                 return (
                   <div
                     key={line.key}
-                    className="grid grid-cols-[2rem_minmax(6.5rem,0.9fr)_minmax(7rem,1.1fr)_minmax(6.5rem,1fr)_4.5rem_5rem_4rem_4.5rem_4.75rem_4.75rem_4.5rem_3.25rem_1.75rem] items-center gap-1 border-b border-zinc-100 px-2 py-1 last:border-b-0"
+                    className="grid grid-cols-[2rem_5.5rem_minmax(7rem,1.1fr)_minmax(6.5rem,1fr)_4.5rem_7rem_4rem_4.5rem_4.75rem_4.75rem_4.5rem_3.25rem_1.75rem] items-center gap-1 border-b border-zinc-100 px-2 py-1 last:border-b-0"
                   >
                     <div className="text-center text-[11px] font-bold text-zinc-500">{index + 1}</div>
                     <SearchableSelect

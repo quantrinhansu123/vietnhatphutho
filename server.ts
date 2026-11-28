@@ -7477,9 +7477,10 @@ function resolveStoredOrderProductionName(tenSanXuat: string): string {
 }
 
 const PRODUCTION_ORDER_TYPE_SERVER = 'Đơn sản xuất';
+const SALE_ORDER_TYPE_SERVER = 'Đơn bán';
 function isRegionQuantityOrderTypeServer(orderType?: string | null) {
   const value = String(orderType || '').trim();
-  return value === PRODUCTION_ORDER_TYPE_SERVER || isCutLikeOrderTypeServer(value);
+  return value === PRODUCTION_ORDER_TYPE_SERVER || value === SALE_ORDER_TYPE_SERVER || isCutLikeOrderTypeServer(value);
 }
 function southMvByMauTemServer(mauTem?: string | null) {
   const value = String(mauTem || '')
@@ -18044,42 +18045,7 @@ async function loadKiemKhoLiveTongHopForDot(
         if (balance && catalogId) balancesById.set(catalogId, balance);
       }
 
-      let ledgerRows: unknown[] = [];
-      const ledgerFull = await supabase
-        .from(SUPABASE_NHAP_KHO_TABLE)
-        .select('ma_sp, ten_sp, ten_san_xuat, don_vi, ten_kho, loai_kho, ma_may')
-        .limit(20000);
-      if (!ledgerFull.error) {
-        ledgerRows = ledgerFull.data || [];
-      } else if (!isMissingTableError(ledgerFull.error) && isMissingColumnError(ledgerFull.error)) {
-        const ledgerBase = await supabase
-          .from(SUPABASE_NHAP_KHO_TABLE)
-          .select('ma_sp, ten_sp, don_vi, ten_kho, loai_kho')
-          .limit(20000);
-        if (ledgerBase.error && !isMissingTableError(ledgerBase.error)) {
-          console.error('Supabase ton-kho-nvl nhap_kho error:', ledgerBase.error);
-        } else {
-          ledgerRows = ledgerBase.data || [];
-        }
-      } else if (!isMissingTableError(ledgerFull.error)) {
-        console.error('Supabase ton-kho-nvl nhap_kho error:', ledgerFull.error);
-      }
-      for (const record of ledgerRows) {
-        const row = record as Record<string, unknown>;
-        if (String(row.ma_may ?? '').trim()) continue;
-        const warehouse = canonicalNvlCoreWarehouse(row.ten_kho, row.loai_kho, cores);
-        if (!warehouse) continue;
-        if (selectedCore && nvlWarehouseKey(warehouse) !== nvlWarehouseKey(selectedCore.ten_kho)) continue;
-        const code = String(row.ma_sp ?? '').trim();
-        if (maNpl && code !== maNpl) continue;
-        ensureBalance({
-          code,
-          name: String(row.ten_sp ?? ''),
-          productionName: String(row.ten_san_xuat ?? ''),
-          warehouse,
-          unit: String(row.don_vi ?? '')
-        });
-      }
+      // Không đọc sổ cái nhap_kho (chỉ thành phẩm) để tạo dòng NVL: dòng NVL chỉ lấy từ danh mục kho_nvl.
 
       const addSlipQty = (balance: NvlBalance, row: Record<string, unknown>) => {
         const qty = Number(row.so_luong);
