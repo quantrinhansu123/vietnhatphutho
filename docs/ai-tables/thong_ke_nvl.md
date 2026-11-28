@@ -15,6 +15,7 @@
 | GET | `/api/quan-ly-kho` | Options kho (`ten_kho`) |
 | GET | `/api/cai-dat` | Danh sách ca sản xuất theo cài đặt |
 | GET | `/api/so-tron?den_ngay=&usage=1&cursor=&limit=` | Phân trang `bang_ban_giao[].tong_su_dung`; tab tồn máy vẫn dùng ngày/ca/máy |
+| GET | `/api/ton-kho-nvl?from=&to=&ten_kho=` | Nút kiểm tra tồn kho theo đơn giá trong tab Tồn & sử dụng; đọc `gia_ton[]`, tách “Chưa rõ giá”, chỉ kho vật lý, không gán giá cho máy/đợt |
 | POST | `/api/xuat-nhap-tong-hop` | Nhập lại máy → kho; lưu giá từng dòng, kiểm tra tổng lượng theo Sổ trộn và giới hạn theo từng lớp mã + kho nguồn + đơn giá |
 
 ## Frontend

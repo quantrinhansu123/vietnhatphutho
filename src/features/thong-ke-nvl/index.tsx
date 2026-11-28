@@ -15,6 +15,15 @@ type PickOption = { id: string; label: string };
 
 type SlipLine = Record<string, unknown>;
 
+type WarehousePriceBalance = {
+  ma_npl: string;
+  ten_nvl_sx: string;
+  ten_kho: string;
+  don_vi: string;
+  ton_cuoi: number;
+  gia_ton?: Array<{ don_gia: number; so_luong: number; thanh_tien: number; chua_ro_gia?: boolean; ly_do?: string }>;
+};
+
 type SlipRecord = {
   id: string;
   ma_phieu_chung: string;
@@ -244,6 +253,9 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
   const [usage, setUsage] = useState<UsageReport[]>([]);
   const [applied, setApplied] = useState({ from, to, machines, warehouses, dot });
   const [records, setRecords] = useState<SlipRecord[]>([]);
+  const [priceStock, setPriceStock] = useState<{ key: string; rows: WarehousePriceBalance[] } | null>(null);
+  const [priceLoading, setPriceLoading] = useState(false);
+  const [priceError, setPriceError] = useState('');
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
@@ -388,6 +400,8 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
       setApplied(snapshot);
       setUsage(usageRecords);
       setRecords([...merged.values()]);
+      setPriceStock(null);
+      setPriceError('');
       setLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không tải được phiếu xuất nhập NVL.');
@@ -402,6 +416,33 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
     if (!slip) return;
     queueTongHopEdit(slip as unknown as TongHopHeader);
     onEdit();
+  }
+
+  const priceStockKey = JSON.stringify([applied.from, applied.to, applied.warehouses.map(item => item.id).sort()]);
+  async function loadPriceStock() {
+    if (applied.dot) return;
+    setPriceLoading(true);
+    setPriceError('');
+    try {
+      const warehouseNames = [...new Set(applied.warehouses.map(item => item.id).filter(Boolean))];
+      const queries = warehouseNames.length ? warehouseNames : [''];
+      const result = await Promise.all(queries.map(async warehouse => {
+        const params = new URLSearchParams({ from: applied.from, to: applied.to });
+        if (warehouse) params.set('ten_kho', warehouse);
+        const response = await fetch(`/api/ton-kho-nvl?${params}`);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !Array.isArray(data.rows) || data.source === 'local') {
+          throw new Error(data.error || 'Không tải được tồn kho theo đơn giá.');
+        }
+        return data.rows as WarehousePriceBalance[];
+      }));
+      setPriceStock({ key: priceStockKey, rows: result.flat() });
+    } catch (err) {
+      setPriceStock(null);
+      setPriceError(err instanceof Error ? err.message : 'Không tải được tồn kho theo đơn giá.');
+    } finally {
+      setPriceLoading(false);
+    }
   }
 
   const balances = useMemo(() => {
@@ -585,6 +626,13 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
     { label: 'Tồn cuối', value: balanceQuantityLabel('closing') }
   ];
 
+  const pricedWarehouseRows = priceStock?.key === priceStockKey
+    ? priceStock.rows.flatMap(material => {
+        const prices = (material.gia_ton || []).filter(price => price.so_luong > 0);
+        return prices.map(price => ({ material, price }));
+      })
+    : [];
+
   function exportCsv() {
     const header = [
       'Ngày',
@@ -635,10 +683,16 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
         ? [esc('Tồn theo đợt chỉ tính chứng từ liên kết đợt; sổ trộn không gắn đợt nên chưa trừ sử dụng.')]
         : [])
     ];
+    const priceLines = pricedWarehouseRows.map(({ material, price }) =>
+      [esc(material.ma_npl), esc(material.ten_nvl_sx), esc(material.ten_kho), esc(material.don_vi),
+        price.chua_ro_gia ? 'Chưa rõ giá' : price.don_gia, price.so_luong,
+        price.chua_ro_gia ? 'Chưa tính' : price.thanh_tien, esc(price.ly_do || '')].join(','));
     const csv = ['﻿' + esc(formatDateVN(applied.from) + ' – ' + formatDateVN(applied.to) + ' · ' + filterLabel),
       ...warnings,
       header.join(','), ...lines, '', 'Mã NVL,Tên SX,Đơn vị,Tồn đầu,Nhập phạm vi,Xuất phạm vi,Sử dụng,Tồn cuối theo chứng từ',
-      ...stockLines].join('\n');
+      ...stockLines,
+      ...(priceStock?.key === priceStockKey ? ['', 'Tồn kho vật lý theo đơn giá (không bao gồm máy; không phân bổ theo đợt)',
+        'Mã NVL,Tên SX,Kho,Đơn vị,Đơn giá,Tồn cuối,Thành tiền,Ghi chú', ...priceLines] : [])].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -672,6 +726,38 @@ export function ThongKeNvlPanel({ onBack, onEdit }: { onBack: () => void; onEdit
             <td className="px-3 py-2 text-right font-bold tabular-nums">{row.closing === null ? 'Chưa xác định' : formatQty(row.closing)}</td>
           </tr>) : <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-zinc-500">Chưa có dòng tồn trong phạm vi đã chọn.</td></tr>}</tbody>
         </table>
+      </div>
+      <div className="border-t border-zinc-200 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-bold text-zinc-900">Tồn kho theo đơn giá</h3>
+            <p className="text-xs text-zinc-600">Đối chiếu kho vật lý theo lô nhập đến {formatDateVN(applied.to)}; không gồm tồn máy hoặc sử dụng tại máy.</p>
+          </div>
+          <button type="button" disabled={priceLoading || Boolean(applied.dot)} onClick={() => void loadPriceStock()}
+            className="min-h-9 rounded-lg border border-zinc-300 bg-white px-3 text-xs font-bold text-zinc-800 disabled:opacity-50">
+            {priceLoading ? 'Đang tải…' : 'Kiểm tra theo đơn giá'}
+          </button>
+        </div>
+        {applied.dot && <p className="mt-2 text-xs text-amber-800">Không thể phân bổ tồn theo đơn giá cho từng đợt từ dữ liệu lô hiện có.</p>}
+        {priceError && <p role="alert" className="mt-2 text-xs font-bold text-rose-700">{priceError}</p>}
+        {priceStock?.key === priceStockKey && !applied.dot && (
+          <div className="mt-3 overflow-auto">
+            <table className="w-full min-w-[760px] border-collapse text-xs">
+              <thead className="bg-zinc-50"><tr>{['Mã NVL', 'Tên sản xuất', 'Kho', 'ĐVT', 'Đơn giá', 'Tồn cuối', 'Thành tiền'].map(label =>
+                <th key={label} scope="col" className="border-b border-zinc-200 px-3 py-2 text-left">{label}</th>)}</tr></thead>
+              <tbody>{pricedWarehouseRows.length ? pricedWarehouseRows.map(({ material, price }, index) =>
+                <tr key={`${material.ma_npl}-${material.ten_nvl_sx}-${material.ten_kho}-${index}`} className="border-b border-zinc-100">
+                  <td className="px-3 py-2 font-semibold">{material.ma_npl}</td>
+                  <td className="px-3 py-2">{material.ten_nvl_sx}</td>
+                  <td className="px-3 py-2">{material.ten_kho}</td>
+                  <td className="px-3 py-2">{material.don_vi}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{price.chua_ro_gia ? (price.ly_do || 'Chưa rõ giá') : formatMoney(price.don_gia, 3)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatQty(price.so_luong)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{price.chua_ro_gia ? 'Chưa tính' : formatMoney(price.thanh_tien, 0)}</td>
+                </tr>) : <tr><td colSpan={7} className="px-3 py-6 text-center text-zinc-500">Không có tồn kho theo đơn giá trong kỳ.</td></tr>}</tbody>
+            </table>
+          </div>
+        )}
       </div>
     </section>
   );
